@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RIP Workbench：只读研究工作台（Beta）</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23CBA6F7'/%3E%3Ctext x='16' y='21' font-size='14' font-family='monospace' text-anchor='middle' fill='%2315141A'%3ERP%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">RP</div>
+        <div class="brand-text">
+          <h1>RIP Workbench</h1>
+          <span class="beta-badge">Beta：只读工作台</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav" aria-label="主导航">
+        <button class="nav-item active" data-tab="overview" type="button">Overview<span>总览</span></button>
+        <button class="nav-item" data-tab="resources" type="button">Resources<span>资源中心</span></button>
+        <button class="nav-item" data-tab="reviews" type="button">Reviews<span>审核队列</span></button>
+        <button class="nav-item" data-tab="tasks" type="button">Tasks<span>任务</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="foot-row" id="db-meta">数据库：加载中</div>
+        <div class="foot-row muted">API 仅 GET，绑定 127.0.0.1，无写端点</div>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <section class="tab-panel" id="tab-overview" data-panel="overview">
+        <header class="panel-head">
+          <div>
+            <h2>Overview</h2>
+            <p class="panel-sub">平台资源、知识、审核与任务总览（dryrun 数据）</p>
+          </div>
+          <button class="btn ghost refresh" data-refresh="overview" type="button">刷新</button>
+        </header>
+        <div class="panel-body" id="overview-body"><div class="state loading">加载中…</div></div>
+      </section>
+
+      <section class="tab-panel hidden" id="tab-resources" data-panel="resources">
+        <header class="panel-head">
+          <div>
+            <h2>Resources</h2>
+            <p class="panel-sub">资源目录：关键词搜索、质量等级过滤</p>
+          </div>
+          <button class="btn ghost refresh" data-refresh="resources" type="button">刷新</button>
+        </header>
+        <div class="filter-bar">
+          <input id="res-keyword" type="search" placeholder="搜索名称、仓库、描述、URL…" autocomplete="off">
+          <select id="res-grade" aria-label="质量等级">
+            <option value="">全部等级</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+          <select id="res-limit" aria-label="每页条数">
+            <option value="50">50 条</option>
+            <option value="100">100 条</option>
+            <option value="200">200 条</option>
+          </select>
+          <button class="btn primary" id="res-search" type="button">搜索</button>
+        </div>
+        <div class="panel-body" id="resources-body"><div class="state loading">加载中…</div></div>
+      </section>
+
+      <section class="tab-panel hidden" id="tab-reviews" data-panel="reviews">
+        <header class="panel-head">
+          <div>
+            <h2>Reviews</h2>
+            <p class="panel-sub">审核队列：D5 重复对 / License 许可 / Mapping 映射</p>
+          </div>
+          <button class="btn ghost refresh" data-refresh="reviews" type="button">刷新</button>
+        </header>
+        <div class="chip-row" id="rev-chips">
+          <button class="chip active" data-queue="" type="button">全部</button>
+          <button class="chip" data-queue="d5" type="button">D5</button>
+          <button class="chip" data-queue="license" type="button">License</button>
+          <button class="chip" data-queue="mapping" type="button">Mapping</button>
+        </div>
+        <div class="panel-body" id="reviews-body"><div class="state loading">加载中…</div></div>
+      </section>
+
+      <section class="tab-panel hidden" id="tab-tasks" data-panel="tasks">
+        <header class="panel-head">
+          <div>
+            <h2>Tasks</h2>
+            <p class="panel-sub">研究任务状态分布与列表</p>
+          </div>
+          <button class="btn ghost refresh" data-refresh="tasks" type="button">刷新</button>
+        </header>
+        <div class="panel-body" id="tasks-body"><div class="state loading">加载中…</div></div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
