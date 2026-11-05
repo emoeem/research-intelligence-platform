@@ -261,3 +261,7 @@ python3 -I etl_dryrun.py                          # 第 1 次 ETL
 python3 -I etl_dryrun.py                          # 第 2 次（应为 no-op）
 python3 -I verify.py                              # 对账，期望 exit 0 / 一致率 100%
 ```
+
+---
+
+> 第二批（ID 冲突审计 / ResearchTask 35 映射 / Evidence 抽样映射 / 反知识父链接回填 / verify 扩展 72 项全 PASS）产物与结论见同目录 `M1_BATCH2_REPORT.md` 与 `M1_ID_AUDIT_REPORT.md`。本文其余内容保持第一批时点原貌（其中"反知识父链接 1/17 未解析"已在第二批回填关闭；源 k_negative.knowledge_id 实为 900015，第一批所记 900021 系笔误，勘误见 M1_BATCH2_REPORT.md §4）。

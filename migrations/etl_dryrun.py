@@ -4,7 +4,11 @@
 M1 第一批 ETL Dry-run（隔离环境，不切流）
 =========================================
 
-版本：1.0.0（M1_IMPLEMENTATION_PLAN M1-D：脚本带版本号；转换器版本随行记录）
+版本：1.1.0（M1_IMPLEMENTATION_PLAN M1-D：脚本带版本号；转换器版本随行记录）
+  v1.1.0 变更（M1 第二批）：B2 反知识父链接回填，源 k_negative 的父 poc 存在于
+  源但不在 k_meta 覆盖时（第一批 1/17 悬空），迁移该父 poc 行为 knowledge(own)
+  （无 k_meta 分层字段，lifecycle=DISCOVERED）并回填 negates_knowledge_id；
+  CONTENT_TABLES 加入 research_task（第二批新增表纳入内容摘要）。
 
 职责（对齐 RESEARCH_INTELLIGENCE_PLATFORM_MASTER_PLAN §6.3 ETL 原则）：
   Extract：三个源全部只读打开（sqlite3 URI mode=ro / JSON 只读），抽取前记录源库 SHA-256。
@@ -24,7 +28,10 @@ M1 第一批 ETL Dry-run（隔离环境，不切流）
       k_negative（17）     → knowledge record_kind='negative'（K-17 最小治理对象）
       14,111 条 nuclei 模板索引（poc.source='nuclei'）不迁移：可重建，归属 Resource 侧，
                            仅统计（MIGRATION_STRATEGY §10.1 可重建级）。
-      其余非 k_meta、非模板 poc（578 条）本批不迁移：属未分层自有知识，留第二批。
+      其余非 k_meta、非模板 poc（578 条）：v1.0.0 全部不迁移，留第二批；
+                           v1.1.0 起其中 1 条（悬空反知识的父 poc 900015）作为
+                           父链接回填例外迁移（见上 v1.1.0 变更），其余 577 条
+                           仍不迁移。
   源C RTIS task JSON（35 个）
       仅统计数量与状态分布（rtis_tasks_stats.json），M1 第一批不迁移 task 实体。
   28 个 assets.db：不迁移（M1_ASSETS_DB_COMPATIBILITY 盘点，留第二批做 Evidence 映射）。
@@ -46,7 +53,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-ETL_VERSION = "1.0.0"
+ETL_VERSION = "1.1.0"
 
 # ---------------------------------------------------------------------------
 # 路径常量（硬约束：源只读；只写 migrations/ 目录内）
@@ -156,6 +163,7 @@ CONTENT_TABLES = {
     "tool_version": "tv_id",
     "skill": "skill_id",
     "audit_event": "event_id",
+    "research_task": "task_id",  # v1.1.0：第二批新增表纳入内容摘要
 }
 
 
@@ -346,7 +354,7 @@ def etl_knowledge(conn: sqlite3.Connection, stats: dict) -> None:
     not_migrated_other = poc_total - nuclei_cnt - kmeta_cnt  # 非 k_meta 非 nuclei
     stats["kb_poc_total"] = poc_total
     stats["kb_nuclei_index_not_migrated"] = nuclei_cnt
-    stats["kb_other_not_migrated"] = not_migrated_other
+    stats["kb_other_unstratified_total"] = not_migrated_other
     stats["kb_kmeta_source"] = kmeta_cnt
     stats["kb_knegative_source"] = kneg_cnt
 
@@ -405,9 +413,52 @@ def etl_knowledge(conn: sqlite3.Connection, stats: dict) -> None:
         neg_id = f"neg:{r['parent_code']}"
         parent_code = r["parent_code"]
         parent_in_target = parent_code in own_lifecycle
+        # v1.1.0（第二批回填）：父不在 k_meta 覆盖时，若父 poc 行存在于源
+        # （k_negative.knowledge_id 外键保证其存在），迁移该父 poc 行为
+        # knowledge(own)（无 k_meta 分层字段，lifecycle=DISCOVERED 链首最小主张），
+        # 并登记别名，使反知识 negates_knowledge_id 可解析（FK 完整），不再悬空。
+        # 父行计入 stats['knowledge_parent_backfilled']；对账口径见 verify §2/§5。
+        if not parent_in_target:
+            prow = src.execute(
+                "SELECT * FROM poc WHERE id = ? AND code = ?",
+                (r["knowledge_id"], parent_code)).fetchone()
+            if prow is not None:
+                cur.execute(
+                    "INSERT OR REPLACE INTO knowledge ("
+                    " knowledge_id, record_kind, lifecycle, governance, title, content_kind,"
+                    " category, cve, component, versions, severity, language, source, source_url,"
+                    " description, usage, content, path, verified, verified_note, hit_count,"
+                    " used_on, engagement_id, engagement_name, asset_target, found_by_agent, tags,"
+                    " original_category, normalized_type, archetypes, technology_tags, method_tags,"
+                    " evidence_level, verification_basis, dedup_key, meta_version, last_reviewed,"
+                    " meta_updated_at, source_lifecycle,"
+                    " neg_do_not_conclude, neg_false_positive_cases, neg_known_failures,"
+                    " neg_stop_conditions, neg_not_applicable_when, neg_source_knowledge_id,"
+                    " negates_knowledge_id, source_system, created_by, created_at, updated_at,"
+                    " schema_version"
+                    ") VALUES (" + ",".join(["?"] * 51) + ")",
+                    (parent_code, "own", "DISCOVERED", GOVERNANCE_ACTIVE, prow["title"],
+                     prow["kind"], prow["category"], prow["cve"], prow["component"],
+                     prow["versions"], prow["severity"], prow["language"], prow["source"],
+                     prow["source_url"], prow["description"], prow["usage"], prow["content"],
+                     prow["path"], prow["verified"], prow["verified_note"], prow["hit_count"],
+                     prow["used_on"], prow["engagement_id"], prow["engagement_name"],
+                     prow["asset_target"], prow["found_by_agent"], prow["tags"],
+                     None, None, None, None, None, None,
+                     None, None, None, None, None, None,
+                     None, None, None, None, None, None, None,
+                     SOURCE_SYSTEM_KNOWLEDGE, prow["created_by"], prow["created_at"],
+                     prow["updated_at"], SCHEMA_VERSION),
+                )
+                own_lifecycle[parent_code] = "DISCOVERED"
+                parent_in_target = True
+                stats["knowledge_parent_backfilled"] += 1
+                register_alias(conn, cur, "knowledge", parent_code,
+                               SOURCE_SYSTEM_KNOWLEDGE, "knowledge.poc.code",
+                               parent_code, stats)
         # 反知识行生命周期：继承父知识映射后的生命周期（确定性派生）；
-        # 父未迁移（1/17，父 poc 不在 k_meta 覆盖内）时取链首 DISCOVERED（成熟度未知的
-        # 最小主张），negates 置空，源引用保留于 neg_source_knowledge_id，不猜测转换。
+        # 父行源侧也不存在（回填后仍不可能，防御性保留该分支）时取链首 DISCOVERED，
+        # negates 置空，源引用保留于 neg_source_knowledge_id，不猜测转换。
         if parent_in_target:
             lifecycle = own_lifecycle[parent_code]
         else:
@@ -444,6 +495,10 @@ def etl_knowledge(conn: sqlite3.Connection, stats: dict) -> None:
         register_alias(conn, cur, "knowledge", neg_id,
                        SOURCE_SYSTEM_KNOWLEDGE, "knowledge.k_negative.id",
                        str(r["id"]), stats)
+
+    # 净未迁移口径：未分层总数 - 已作为反知识父回填迁出的行（v1.1.0）
+    stats["kb_other_not_migrated"] = (stats["kb_other_unstratified_total"]
+                                      - stats.get("knowledge_parent_backfilled", 0))
 
     src.close()
 

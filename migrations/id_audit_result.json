@@ -1,0 +1,166 @@
+{
+  "alias_entity_consistency": {
+    "alias_types_without_pk_table": [],
+    "pass": true,
+    "per_type": {
+      "evidence": {
+        "alias_count": 23,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 23,
+        "reverse_missing": []
+      },
+      "knowledge": {
+        "alias_count": 46,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 46,
+        "reverse_missing": []
+      },
+      "research_task": {
+        "alias_count": 35,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 35,
+        "reverse_missing": []
+      },
+      "resource": {
+        "alias_count": 81,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 81,
+        "reverse_missing": []
+      },
+      "resource_source": {
+        "alias_count": 81,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 81,
+        "reverse_missing": []
+      },
+      "review": {
+        "alias_count": 165,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 165,
+        "reverse_missing": []
+      }
+    }
+  },
+  "alias_pass": true,
+  "collision_count": 0,
+  "conclusion": "现网 ID 可直接沿用，无需批量生成新 ID",
+  "cross_source_collisions": {
+    "count": 0,
+    "pairs": []
+  },
+  "derived_target_ids": {
+    "evidence": {
+      "count": 23,
+      "distinct": 23,
+      "duplicates": [],
+      "format_rule": "^EVD-[A-Za-z0-9_-]+-(http_evidence|shot)-\\d+$",
+      "format_violations": [],
+      "uniqueness_pass": true
+    },
+    "knowledge_negative": {
+      "count": 17,
+      "distinct": 17,
+      "duplicates": [],
+      "format_rule": "^neg:\\S+$",
+      "format_violations": [],
+      "uniqueness_pass": true
+    },
+    "research_task": {
+      "count": 35,
+      "distinct": 35,
+      "duplicates": [],
+      "format_rule": "^rtis-\\d{8}-\\d{6}-\\d{2,}$",
+      "format_violations": [],
+      "uniqueness_pass": true
+    },
+    "review": {
+      "count": 165,
+      "distinct": 165,
+      "duplicates": [],
+      "format_rule": "^eri-catalog:review_log:\\d+$",
+      "format_violations": [],
+      "uniqueness_pass": true
+    }
+  },
+  "format_pass": true,
+  "generated_at": "2026-11-05T18:22:01Z",
+  "id_audit_version": "1.0.0",
+  "intentional_reuse": {
+    "intersection_size": 35,
+    "note": "同一现网 task ID 有意沿用为平台主键（002_tasks.sql），非跨源冲突",
+    "set_a": "rtis_task_id",
+    "set_b": "research_task.task_id"
+  },
+  "scope": {
+    "catalog": "/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db",
+    "knowledge": "/home/emo/.dsh/redteam/knowledge.db",
+    "mode": "全量只读（计划 §5.4：ID 冲突审计完成前禁止批量生成新 ID）",
+    "target_db": "/home/emo/code/pensting/research-platform/migrations/platform-dryrun.db",
+    "tasks_dir": "/home/emo/.dsh/redteam/rtis/data/tasks"
+  },
+  "sources": {
+    "catalog_resource_id": {
+      "count": 81,
+      "distinct": 81,
+      "duplicates": [],
+      "format_rule": "gh:owner/repo 或 url:16位小写hex",
+      "format_violations": [],
+      "prefix_distribution": {
+        "gh": 79,
+        "url": 2
+      },
+      "source": "catalog.db resources.resource_id",
+      "uniqueness_pass": true
+    },
+    "knowledge_poc_code": {
+      "charset_profile": {
+        "ascii_only": 14592,
+        "contains_cjk_or_wide": 125,
+        "nuclei_template_codes": 14111
+      },
+      "count": 14717,
+      "distinct": 14717,
+      "duplicates": [],
+      "format_rule": "非空且不含空白/控制字符，长度<=256（源约束 UNIQUE(code)）",
+      "format_violations": [],
+      "source": "knowledge.db poc.code（全量，含 nuclei 模板索引）",
+      "uniqueness_pass": true
+    },
+    "rtis_task_id": {
+      "dir_count": 36,
+      "dir_format_violations": [],
+      "dir_without_json": [
+        "rtis-20261102-220844-7484",
+        "rtis-20261102-221343-0716",
+        "rtis-20261102-221404-1375",
+        "rtis-20261102-221528-2123",
+        "rtis-20261102-221551-2908",
+        "rtis-20261102-225102-7665"
+      ],
+      "distinct": 35,
+      "duplicates": [],
+      "format_rule": "rtis-YYYYMMDD-HHMMSS-ms（ms 为 2 位以上数字）",
+      "format_violations": [],
+      "id_count": 35,
+      "json_count": 35,
+      "json_without_dir": [
+        "rtis-20261103-003535-9050",
+        "rtis-20261103-011047-6358",
+        "rtis-20261103-033416-0158",
+        "rtis-20261103-060355-5306",
+        "rtis-20261105-231342-2697"
+      ],
+      "pairing_note": "目录与 JSON 的配对差异属工件布局事实，登记备查，不构成 ID 冲突",
+      "parse_errors": [],
+      "source": "RTIS rtis/data/tasks/*.json task.id + 任务目录名",
+      "uniqueness_pass": true
+    }
+  },
+  "uniqueness_pass": true
+}

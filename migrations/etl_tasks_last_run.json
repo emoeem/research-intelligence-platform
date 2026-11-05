@@ -1,0 +1,34 @@
+{
+  "content_digests": {
+    "research_task:research_task": "5ee5858013091f5c9a862aa5cefb3315f1af8b111d1f93437b5cf507473401f9"
+  },
+  "etl_script": "etl_tasks.py",
+  "etl_version": "1.0.0",
+  "finished_at": "2026-11-05T18:15:55Z",
+  "fk_violations": 0,
+  "parse_errors": [],
+  "row_counts": {
+    "entity_alias@research_task": 35,
+    "research_task": 35
+  },
+  "source": {
+    "dir": "/home/emo/.dsh/redteam/rtis/data/tasks",
+    "sha256_dir_listing": "acda86cddf95b48521ae330405e9dfb7e94f447c0d273ff0b06f46706fd7d806"
+  },
+  "source_task_json_count": 35,
+  "started_at": "2026-11-05T18:15:55Z",
+  "state_distribution": {
+    "AUTHORIZATION_REVIEW": 7,
+    "AUTHORIZED_EXECUTION": 1,
+    "COMPLETED": 2,
+    "CREATED": 24,
+    "LOCAL_KNOWLEDGE_RETRIEVAL": 1
+  },
+  "stats": {
+    "alias_inserted": 0,
+    "alias_skipped_existing": 35,
+    "research_task": 35
+  },
+  "tables_changed_vs_previous_state": [],
+  "target_db": "/home/emo/code/pensting/research-platform/migrations/platform-dryrun.db"
+}

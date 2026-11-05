@@ -7,7 +7,7 @@ M1 第一批对账（verify）
 依据：MIGRATION_STRATEGY §10.5（verify.py 约定）、计划 §M1-E、M1_IMPLEMENTATION_PLAN §6 门槛
 A-1/A-2/A-3/A-4/A-5。
 
-校验维度（计划 M1-E 四类 + 字段抽样哈希 + 幂等）：
+校验维度（计划 M1-E 四类 + 字段抽样哈希 + 幂等 + 第二批扩展）：
   1. 快照完整性：源库 SHA-256 与 source_manifest.json 一致（源未被写入）。
   2. 行数对账：逐映射 源行数 = 目标行数 + 隔离行数（逐实体逐表，不允许总量对抵）。
   3. ID 覆盖率：源 ID 100% 出现在目标或隔离清单；迁移行 100% 有 entity_alias 登记。
@@ -15,6 +15,13 @@ A-1/A-2/A-3/A-4/A-5。
   5. 关系完整性：PRAGMA foreign_key_check = 0；孤儿关系 = 0 未解释。
   6. 字段抽样哈希：每个映射源/目标各抽 10 行（确定性等距抽样），规范化 md5 比对。
   7. 幂等：最近两次 ETL 运行内容摘要一致，且当前库内容与最后一次运行一致。
+  8. ResearchTask 对账（第二批）：源 35 JSON = 目标 35 行；状态分布原样一致；
+     status_history 保真；etl_tasks 重复执行 no-op。
+  9. Evidence 抽样对账（第二批）：逐库逐表 源总数/抽取数/目标行数 对账；
+     payload_json + content_hash 全字段逐行复建比对；隔离登记 2 条；
+     etl_evidence 重复执行 no-op。
+  10. ID 审计结论（计划 §5.4）：id_audit_result.json 结论为"现网 ID 可直接沿用"，
+      唯一性/格式/跨源碰撞/alias 一致性全过，且结果与当前库同步。
 
 红线：一致率必须 100%；任何一项失败 exit 1。
 """
@@ -23,18 +30,25 @@ import hashlib
 import json
 import sqlite3
 import sys
+from collections import Counter
 from pathlib import Path
 
 MIG_DIR = Path(__file__).resolve().parent
 
 SRC_CATALOG = Path("/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db")
 SRC_KNOWLEDGE = Path("/home/emo/.dsh/redteam/knowledge.db")
+SRC_TASKS_DIR = Path("/home/emo/.dsh/redteam/rtis/data/tasks")
 TARGET_DB = MIG_DIR / "platform-dryrun.db"
 MANIFEST_JSON = MIG_DIR / "source_manifest.json"
 QUARANTINE_D5 = MIG_DIR / "quarantine" / "d5_candidates.jsonl"
 RUN_LOG_JSONL = MIG_DIR / "etl_run_log.jsonl"
+TASKS_RUN_LOG_JSONL = MIG_DIR / "etl_tasks_run_log.jsonl"
+EVID_RUN_LOG_JSONL = MIG_DIR / "etl_evidence_run_log.jsonl"
+EVID_LAST_RUN_JSON = MIG_DIR / "etl_evidence_last_run.json"
+ID_AUDIT_RESULT_JSON = MIG_DIR / "id_audit_result.json"
 
 SAMPLE_N = 10
+SAMPLE_LIMIT = 20  # etl_evidence.py 每源表抽取行数（同一常量）
 
 FAILURES: list[str] = []
 INFOS: list[str] = []
@@ -102,7 +116,14 @@ def verify_snapshot(manifest: dict) -> None:
 # ---------------------------------------------------------------------------
 def verify_row_counts(cat, kb, tgt, manifest_run_stats: dict) -> None:
     print("\n== 2. 行数对账（源 = 目标 + 隔离，逐映射） ==")
-    q = lambda c, sql: c.execute(sql).fetchone()[0]  # noqa: E731
+    q = lambda c, sql, *p: c.execute(sql, p).fetchone()[0]  # noqa: E731
+
+    # 第二批口径：own 总数 = k_meta 覆盖行（28）+ 反知识父回填行（1，非 k_meta 覆盖）
+    kmeta_codes = [r[0] for r in kb.execute(
+        "SELECT p.code FROM poc p JOIN k_meta m ON m.knowledge_id=p.id")]
+    kmeta_json = json.dumps(sorted(kmeta_codes))
+    own_kmeta = q(tgt, "SELECT COUNT(*) FROM knowledge WHERE record_kind='own'"
+                       " AND knowledge_id IN (SELECT value FROM json_each(?))", kmeta_json)
 
     pairs = [
         ("catalog.resources → resource",
@@ -120,9 +141,8 @@ def verify_row_counts(cat, kb, tgt, manifest_run_stats: dict) -> None:
         ("catalog.d5_candidates → 隔离待审清单（不转实体）",
          q(cat, "SELECT COUNT(*) FROM d5_candidates"), 0,
          sum(1 for _ in open(QUARANTINE_D5, encoding="utf-8"))),
-        ("knowledge poc×k_meta → knowledge(own)",
-         q(kb, "SELECT COUNT(*) FROM k_meta"),
-         q(tgt, "SELECT COUNT(*) FROM knowledge WHERE record_kind='own'"), 0),
+        ("knowledge poc×k_meta → knowledge(own)（k_meta 覆盖行）",
+         q(kb, "SELECT COUNT(*) FROM k_meta"), own_kmeta, 0),
         ("knowledge.k_negative → knowledge(negative)",
          q(kb, "SELECT COUNT(*) FROM k_negative"),
          q(tgt, "SELECT COUNT(*) FROM knowledge WHERE record_kind='negative'"), 0),
@@ -132,14 +152,26 @@ def verify_row_counts(cat, kb, tgt, manifest_run_stats: dict) -> None:
         check(ok, f"行数对账：{label}",
               f"源={s_cnt} 目标={t_cnt} 隔离={quar}")
 
-    # poc 全量口径（信息性 + 未迁移解释）
+    # 第二批：父回填行集合必须恰为"源中不在 k_meta 覆盖的反知识父 code 集合"
+    expect_backfill = sorted(r[0] for r in kb.execute(
+        "SELECT DISTINCT p.code FROM k_negative n JOIN poc p ON p.id=n.knowledge_id"
+        " WHERE p.id NOT IN (SELECT knowledge_id FROM k_meta)"))
+    actual_backfill = sorted(r[0] for r in tgt.execute(
+        "SELECT knowledge_id FROM knowledge WHERE record_kind='own'"
+        " AND knowledge_id NOT IN (SELECT value FROM json_each(?))", (kmeta_json,)))
+    check(expect_backfill == actual_backfill and len(actual_backfill) == 1,
+          "反知识父回填行集合 = 源中不在 k_meta 覆盖的反知识父集合（恰 1 行）",
+          f"源期望={expect_backfill} 目标实际={actual_backfill}")
+
+    # poc 全量口径（信息性 + 未迁移解释；第二批起 own 含 1 行父回填）
     poc_total = q(kb, "SELECT COUNT(*) FROM poc")
     nuclei = q(kb, "SELECT COUNT(*) FROM poc WHERE source='nuclei'")
     own = q(tgt, "SELECT COUNT(*) FROM knowledge WHERE record_kind='own'")
     other = poc_total - nuclei - own
     info("poc 全量口径",
-         f"总数={poc_total} = 迁移own={own} + nuclei模板(可重建,归属Resource侧,不迁移)={nuclei}"
-         f" + 其余未分层(留第二批)={other}")
+         f"总数={poc_total} = 迁移own={own}（k_meta {own_kmeta} + 父回填 {own - own_kmeta}）"
+         f" + nuclei模板(可重建,归属Resource侧,不迁移)={nuclei}"
+         f" + 其余未分层(留后续批次)={other}")
     check(poc_total == own + nuclei + other,
           "poc 全量口径自洽（无未解释行）",
           f"{poc_total} = {own}+{nuclei}+{other}")
@@ -188,8 +220,10 @@ def verify_id_coverage(cat, kb, tgt) -> None:
     check(missing_rv == 0, "review 行 100% 有 entity_alias", f"缺失={missing_rv}")
 
     alias_total = q(tgt, "SELECT COUNT(*) FROM entity_alias")
-    info("entity_alias 总数", f"{alias_total}"
-         f"（resource 81 + resource_source 81 + knowledge 45 + review 165）")
+    dist = tgt.execute("SELECT entity_type, COUNT(*) AS c FROM entity_alias"
+                       " GROUP BY entity_type ORDER BY entity_type").fetchall()
+    info("entity_alias 总数",
+         f"{alias_total}（" + " + ".join(f"{r[0]} {r[1]}" for r in dist) + "）")
 
 
 # ---------------------------------------------------------------------------
@@ -240,9 +274,23 @@ def verify_relations(cat, kb, tgt) -> None:
     unresolved = tgt.execute(
         "SELECT knowledge_id, neg_source_knowledge_id FROM knowledge"
         " WHERE record_kind='negative' AND negates_knowledge_id IS NULL").fetchall()
-    check(len(unresolved) == 1,
-          "反知识父链接未解析数 = 1（唯一已知例外：父 poc 不在 k_meta 覆盖，源引用已保留）",
+    check(len(unresolved) == 0,
+          "反知识父链接未解析数 = 0（第二批已回填悬空父行，negates 全部可解析）",
           f"未解析={[r['knowledge_id'] for r in unresolved]}")
+
+    # 第二批回填正确性（全量）：每条反知识的 negates 链接 = 源父 poc.code
+    src_neg_pairs = {str(r[0]): r[1] for r in kb.execute(
+        "SELECT n.knowledge_id, p.code FROM k_negative n"
+        " JOIN poc p ON p.id=n.knowledge_id")}
+    tgt_neg_pairs = {r["neg_source_knowledge_id"]: r["negates_knowledge_id"]
+                     for r in tgt.execute(
+        "SELECT neg_source_knowledge_id, negates_knowledge_id FROM knowledge"
+        " WHERE record_kind='negative'").fetchall()}
+    bad_neg = sorted(code for pid, code in src_neg_pairs.items()
+                     if tgt_neg_pairs.get(pid) != code)
+    check(not bad_neg,
+          "反知识 negates_knowledge_id = 源父 poc.code（全量 17 条）",
+          f"坏链接={bad_neg}")
 
     # review → 目标引用
     bad_d5 = q(cat, "SELECT COUNT(*) FROM review_log WHERE queue='d5' AND"
@@ -426,7 +474,7 @@ def verify_idempotency() -> None:
         "resource": "resource_id", "resource_source": "id", "knowledge": "knowledge_id",
         "review": "review_id", "entity_alias": "id", "evidence": "evidence_id",
         "tool": "tool_id", "tool_version": "tv_id", "skill": "skill_id",
-        "audit_event": "event_id",
+        "audit_event": "event_id", "research_task": "task_id",
     }
     diffs = []
     for t, pk in tables.items():
@@ -444,9 +492,172 @@ def verify_idempotency() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 8. ResearchTask 对账（第二批映射）
+# ---------------------------------------------------------------------------
+def verify_research_task(tgt) -> None:
+    print("\n== 8. ResearchTask 对账（第二批映射，源只读） ==")
+    q = lambda c, sql: c.execute(sql).fetchone()[0]  # noqa: E731
+
+    files = sorted(SRC_TASKS_DIR.glob("*.json"))
+    src_ids, src_state = [], Counter()
+    for f in files:
+        with open(f, encoding="utf-8") as fh:  # 只读打开源 JSON
+            t = (json.load(fh).get("task") or {})
+        src_ids.append(t.get("id"))
+        src_state[t.get("state") or t.get("status") or "MISSING"] += 1
+
+    tgt_rows = tgt.execute(
+        "SELECT task_id, state, status_history FROM research_task ORDER BY task_id"
+    ).fetchall()
+    tgt_ids = {r["task_id"] for r in tgt_rows}
+    check(len(src_ids) == len(tgt_rows),
+          "行数对账：RTIS task JSON → research_task",
+          f"源={len(src_ids)} 目标={len(tgt_rows)}")
+    check(set(src_ids) == tgt_ids, "task ID 集合一致（现网 ID 直接沿用为平台主键）",
+          f"差异={sorted(set(src_ids) ^ tgt_ids)}")
+    tgt_state = Counter(r["state"] for r in tgt_rows)
+    check(src_state == tgt_state,
+          "研究状态分布与源一致（state 原值保留，不归一化）",
+          f"源={dict(sorted(src_state.items()))} 目标={dict(sorted(tgt_state.items()))}")
+
+    bad_hist = [r["task_id"] for r in tgt_rows
+                if not isinstance(json.loads(r["status_history"]), list)]
+    check(not bad_hist, "status_history JSON 保真可解析（数组）", f"坏行={bad_hist}")
+
+    missing_alias = q(tgt, "SELECT COUNT(*) FROM research_task t WHERE NOT EXISTS"
+                           " (SELECT 1 FROM entity_alias a WHERE a.entity_type='research_task'"
+                           "  AND a.entity_id=t.task_id)")
+    check(missing_alias == 0, "research_task 行 100% 有 entity_alias", f"缺失={missing_alias}")
+
+    sv2 = q(tgt, "SELECT COUNT(*) FROM schema_version WHERE version=2")
+    check(sv2 == 1, "schema_version 已登记第二批增量（version=2）", f"行数={sv2}")
+
+    runs = [json.loads(l) for l in open(TASKS_RUN_LOG_JSONL, encoding="utf-8")]
+    no_op = (len(runs) >= 2 and runs[-2]["content_digests"] == runs[-1]["content_digests"]
+             and runs[-2]["row_counts"] == runs[-1]["row_counts"])
+    check(no_op, "etl_tasks 重复执行 no-op（最近两次运行摘要一致）",
+          f"共 {len(runs)} 次运行")
+
+
+# ---------------------------------------------------------------------------
+# 9. Evidence 抽样对账（第二批映射）
+# ---------------------------------------------------------------------------
+def _http_pair_content_hash(row) -> str:
+    # 与 etl_evidence.py http_pair_content_hash 同一规则（复制以保持 -I 隔离可运行）
+    canon = "\x1f".join([
+        row["method"] or "", row["url"] or "",
+        "" if row["status"] is None else str(row["status"]),
+        row["request"] or "", row["response"] or "",
+    ])
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()  # noqa: S324
+
+
+def verify_evidence(tgt) -> None:
+    print("\n== 9. Evidence 抽样对账（第二批映射，源只读） ==")
+
+    last = json.loads(EVID_LAST_RUN_JSON.read_text(encoding="utf-8"))
+
+    # 隔离登记：恰 2 条（1 异构 + 1 无库），原因齐备
+    iso = last["isolated"]
+    iso_classes = sorted(r["class"] for r in iso)
+    check(len(iso) == 2 and iso_classes == ["heterogeneous", "no_db"]
+          and all(r.get("reason") for r in iso),
+          "异构/无库隔离登记 = 2 且名称与原因齐备",
+          f"登记={[(r['engagement'], r['class']) for r in iso]}")
+    info("隔离名单（不抽取）",
+          "；".join(f"{r['engagement']}（{r['class']}）" for r in iso))
+    check(last["source"]["compatible_count"] == 26
+          and last["source"]["engagement_count"] == 28,
+          "28 库盘点口径（26 兼容 + 1 异构 + 1 无库）",
+          f"兼容={last['source']['compatible_count']} 总数={last['source']['engagement_count']}")
+
+    # 逐库逐表对账 + 全字段逐行复建比对
+    for d in last["sampled"]:
+        db_path = Path(d["db_path"])
+        src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        src.row_factory = sqlite3.Row
+        for t in ("http_evidence", "shot"):
+            rec = d["tables"][t]
+            total = src.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: S608
+            expect = min(total, SAMPLE_LIMIT)
+            tgt_cnt = tgt.execute(
+                "SELECT COUNT(*) FROM evidence WHERE source_pk LIKE ?",
+                (f"{d['db_path']}#{t}#%",)).fetchone()[0]
+            check(rec["source_total"] == total and rec["extracted"] == expect
+                  and tgt_cnt == expect,
+                  f"抽样对账：{d['engagement']}（{d['role']}）#{t}",
+                  f"源总数={total} 应抽={expect} 目标行={tgt_cnt}")
+            bad = []
+            for row in src.execute(
+                    f"SELECT * FROM {t} ORDER BY id LIMIT ?",  # noqa: S608
+                    (SAMPLE_LIMIT,)).fetchall():
+                if t == "http_evidence":
+                    eid = f"EVD-{d['slug']}-http_evidence-{row['id']}"
+                    ch = _http_pair_content_hash(row)
+                else:
+                    eid = f"EVD-{d['slug']}-shot-{row['id']}"
+                    ch = row["sha256"] or ""
+                prow = tgt.execute(
+                    "SELECT payload_json, content_hash FROM evidence WHERE evidence_id=?",
+                    (eid,)).fetchone()
+                if prow is None:
+                    bad.append(row["id"])
+                    continue
+                pj = json.dumps({k: row[k] for k in row.keys()},
+                                ensure_ascii=False, sort_keys=True)
+                if prow["payload_json"] != pj or (prow["content_hash"] or "") != ch:
+                    bad.append(row["id"])
+            check(not bad,
+                  f"全字段保真（payload_json + content_hash 逐行复建）："
+                  f"{d['engagement']}#{t}", f"不一致行={bad}")
+        src.close()
+
+    missing_alias = tgt.execute(
+        "SELECT COUNT(*) FROM evidence e WHERE NOT EXISTS"
+        " (SELECT 1 FROM entity_alias a WHERE a.entity_type='evidence'"
+        "  AND a.entity_id=e.evidence_id)").fetchone()[0]
+    check(missing_alias == 0, "evidence 行 100% 有 entity_alias", f"缺失={missing_alias}")
+
+    runs = [json.loads(l) for l in open(EVID_RUN_LOG_JSONL, encoding="utf-8")]
+    no_op = (len(runs) >= 2 and runs[-2]["content_digests"] == runs[-1]["content_digests"]
+             and runs[-2]["row_counts"] == runs[-1]["row_counts"])
+    check(no_op, "etl_evidence 重复执行 no-op（最近两次运行摘要一致）",
+          f"共 {len(runs)} 次运行")
+
+
+# ---------------------------------------------------------------------------
+# 10. ID 审计结论（计划 §5.4 硬门槛）
+# ---------------------------------------------------------------------------
+def verify_id_audit() -> None:
+    print("\n== 10. ID 冲突审计结论（计划 §5.4，id_audit.py 输出对账） ==")
+    if not ID_AUDIT_RESULT_JSON.exists():
+        check(False, "id_audit_result.json 存在", "文件缺失：先运行 python3 -I id_audit.py")
+        return
+    d = json.loads(ID_AUDIT_RESULT_JSON.read_text(encoding="utf-8"))
+    check(bool(d["uniqueness_pass"]), "ID 全局唯一性（三源全量 + 派生）",
+          "违例=0" if d["uniqueness_pass"] else "存在重复")
+    check(d["collision_count"] == 0, "跨源碰撞 = 0（intentional reuse 单列不计冲突）",
+          f"碰撞={d['collision_count']}")
+    check(bool(d["format_pass"]), "ID 格式合规（resource_id/poc.code/task id/派生前缀）",
+          "违规=0" if d["format_pass"] else "存在违规")
+    check(bool(d["alias_pass"]), "alias↔实体主键双向一致", "缺失=0" if d["alias_pass"] else "存在缺失")
+    check(str(d["conclusion"]).startswith("现网 ID 可直接沿用"),
+          "审计结论（硬门槛）", str(d["conclusion"]))
+
+    conn = sqlite3.connect(str(TARGET_DB))
+    cur_total = conn.execute("SELECT COUNT(*) FROM entity_alias").fetchone()[0]
+    conn.close()
+    audited_total = sum(v["alias_count"]
+                        for v in d["alias_entity_consistency"]["per_type"].values())
+    check(cur_total == audited_total, "审计结果与当前隔离库同步（无陈旧）",
+          f"审计时 alias={audited_total} 当前={cur_total}")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     print("=" * 72)
-    print("M1 第一批 verify 对账（MIGRATION_STRATEGY §10.5 / 计划 §M1-E）")
+    print("M1 verify 对账（第一批 Schema/ETL + 第二批 task/evidence/回填/ID 审计扩展；"
+          "MIGRATION_STRATEGY §10.5 / 计划 §M1-E）")
     print("=" * 72)
 
     manifest = json.loads(MANIFEST_JSON.read_text(encoding="utf-8"))
@@ -463,6 +674,9 @@ def main() -> int:
     verify_relations(cat, kb, tgt)
     verify_field_hash(cat, kb, tgt)
     verify_idempotency()
+    verify_research_task(tgt)
+    verify_evidence(tgt)
+    verify_id_audit()
 
     cat.close()
     kb.close()

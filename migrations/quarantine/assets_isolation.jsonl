@@ -1,0 +1,2 @@
+{"class": "heterogeneous", "db_path": "/home/emo/.dsh/redteam/engagements/openredir-landing/assets.db", "disposition": "隔离登记；不抽取", "engagement": "openredir-landing", "fingerprint_md5": "9b6b4cab4ae0781f6f13c2492ea122c9", "reason": "表集指纹偏离多数派（26 库同构基线）：表数 37，未知结构不猜测转换（计划 §6.2）", "size_bytes": 786432, "table_count": 37}
+{"class": "no_db", "db_path": null, "disposition": "隔离登记（无证据库）；不抽取", "engagement": "王红娘-520-wanghongniang-com", "fingerprint_md5": null, "reason": "目录无 assets.db（无证据库）", "size_bytes": null, "table_count": null}
