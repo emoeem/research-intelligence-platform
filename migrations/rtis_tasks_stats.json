@@ -1,0 +1,19 @@
+{
+  "generated_by": "etl_dryrun.py 1.0.0",
+  "note": "M1 第一批不迁移 task 实体（数量与状态分布仅入报告）；字段映射留 M1 第二批（UNIFIED_DOMAIN_MODEL §7.13）。",
+  "parse_errors": [],
+  "source_dir": "/home/emo/.dsh/redteam/rtis/data/tasks",
+  "state_distribution": {
+    "AUTHORIZATION_REVIEW": 7,
+    "AUTHORIZED_EXECUTION": 1,
+    "COMPLETED": 2,
+    "CREATED": 24,
+    "LOCAL_KNOWLEDGE_RETRIEVAL": 1
+  },
+  "task_json_count": 35,
+  "task_type_distribution": {
+    "full": 6,
+    "recon": 12,
+    "vuln": 17
+  }
+}
