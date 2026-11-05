@@ -44,6 +44,27 @@
         "pass": true,
         "pk_count": 165,
         "reverse_missing": []
+      },
+      "skill": {
+        "alias_count": 125,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 125,
+        "reverse_missing": []
+      },
+      "tool": {
+        "alias_count": 20,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 20,
+        "reverse_missing": []
+      },
+      "workflow": {
+        "alias_count": 13,
+        "forward_missing": [],
+        "pass": true,
+        "pk_count": 13,
+        "reverse_missing": []
       }
     }
   },
@@ -89,7 +110,7 @@
     }
   },
   "format_pass": true,
-  "generated_at": "2026-11-05T18:22:01Z",
+  "generated_at": "2026-11-05T19:33:04Z",
   "id_audit_version": "1.0.0",
   "intentional_reuse": {
     "intersection_size": 35,

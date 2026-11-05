@@ -4,7 +4,7 @@
 M1 第二批：ID 冲突审计（全量，计划 §5.4 硬门槛）
 ================================================
 
-版本：1.0.0
+版本：1.1.0（M6 起 alias↔实体一致性补 tool/skill/workflow 三类，etl_m6.py 域）
 
 审计范围（三源现有稳定 ID，全量）：
   A. catalog.db resources.resource_id（81，gh:/url: 两型）
@@ -39,7 +39,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ID_AUDIT_VERSION = "1.0.0"
+ID_AUDIT_VERSION = "1.1.0"
 
 MIG_DIR = Path(__file__).resolve().parent
 
@@ -203,6 +203,10 @@ def audit_alias_entity_consistency(tgt: sqlite3.Connection) -> dict:
         "review": "SELECT review_id FROM review",
         "research_task": "SELECT task_id FROM research_task",
         "evidence": "SELECT evidence_id FROM evidence",
+        # M6 扩展（etl_m6.py 域）：tool/skill 沿用现网 name，workflow 沿用源 WF-xx id
+        "tool": "SELECT tool_id FROM tool",
+        "skill": "SELECT skill_id FROM skill",
+        "workflow": "SELECT workflow_id FROM workflow",
     }
     per_type = {}
     alias_rows = tgt.execute(
