@@ -1,0 +1,17 @@
+[package]
+name = "resource-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "RIP 资源引擎垂直切片：Resource Repository + Resolve 查询（platform 库），resolve 输出与 eri_p2.resolve 字段级兼容（MODULE_BOUNDARIES §8.4）"
+
+[dependencies]
+database = { workspace = true }
+domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "rp-resolve"
+path = "src/bin/rp-resolve.rs"

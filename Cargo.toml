@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/domain",
+    "crates/database",
+    "crates/audit-engine",
+    "crates/resource-engine",
+    "tests",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.99"
+authors = ["RIP core team"]
+
+[workspace.dependencies]
+# 依赖锁定最少集（DEC-001 / PROBE-RESULT.md 约定：rusqlite bundled 免系统 sqlite）
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
+domain = { path = "crates/domain" }
+database = { path = "crates/database" }
+audit-engine = { path = "crates/audit-engine" }
+resource-engine = { path = "crates/resource-engine" }
+
+[profile.release]
+# 商业化基线：体积与 panic 行为显式声明
+strip = "debuginfo"

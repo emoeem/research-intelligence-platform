@@ -1,0 +1,11 @@
+[package]
+name = "audit-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "RIP 统一审计事件流：Emit（各模块唯一出口）+ Trace(correlation_id) + 旁路缓冲（MODULE_BOUNDARIES §8.1/§8.2.4）"
+
+[dependencies]
+database = { workspace = true }
+domain = { workspace = true }

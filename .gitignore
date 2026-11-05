@@ -1,6 +1,10 @@
 probe-cargo/target/
 probe-cargo/vendor/
+/target/
 legacy/eri/db/catalog.db*
 legacy/eri/cache/
 *.pyc
 __pycache__/
+target/
+workers/python/.cache/
+workers/.cache/

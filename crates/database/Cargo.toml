@@ -1,0 +1,10 @@
+[package]
+name = "database"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "RIP 数据库基础设施：rusqlite 连接池化封装（with_conn/with_tx）+ 迁移执行器（MODULE_BOUNDARIES §8.1：连接、迁移、事务）"
+
+[dependencies]
+rusqlite = { workspace = true }

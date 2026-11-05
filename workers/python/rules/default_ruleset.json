@@ -1,0 +1,33 @@
+{
+  "version": "1",
+  "description": "Knowledge evaluation 默认规则集：规则外置可配，host 可经 task.rules / task.rules_path 覆盖。AI 输出一律是建议（candidate/reject/review），不得直接置为 VERIFIED。",
+  "reject_if": [
+    {
+      "rule_id": "missing_source",
+      "when": {"field": "source_count", "op": "eq", "value": 0},
+      "reason": "无来源，建议拒绝"
+    }
+  ],
+  "candidate_if": [
+    {
+      "rule_id": "has_cve",
+      "when": {"field": "cve_count", "op": "ge", "value": 1},
+      "reason": "含 CVE 编号，建议进入候选"
+    },
+    {
+      "rule_id": "evidence_refs_enough",
+      "when": {"field": "evidence_ref_count", "op": "ge", "value": 2},
+      "reason": "证据引用数达 2 条以上，建议进入候选"
+    }
+  ],
+  "score_weights": {
+    "source": 0.3,
+    "cve": 0.2,
+    "evidence": 0.3,
+    "content": 0.2
+  },
+  "score_thresholds": {
+    "candidate": 0.6,
+    "reject": 0.2
+  }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "rp-eri-parity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "M2-B ERI 行为对照测试：同一批关键词跑 eri_p2.py 与 Rust resolve，断言核心命中集合重叠（tests/ 集成测试载具）"
+
+[dependencies]
+database = { workspace = true }
+domain = { workspace = true }
+audit-engine = { workspace = true }
+resource-engine = { workspace = true }
+serde_json = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

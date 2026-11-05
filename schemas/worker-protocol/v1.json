@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/worker-protocol/v1.json",
+  "title": "RIP Worker Protocol v1",
+  "description": "JSON-RPC 2.0 over stdio, newline-delimited. One JSON object per line, UTF-8. Defines handshake, execution with budget/idempotency, cancellation, and error codes. Referenced by workers/python/runtime/worker_runtime.py and the three M3 workers.",
+  "type": "object",
+  "$defs": {
+    "jsonrpc": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "requestId": {
+      "description": "JSON-RPC id. REQUIRED on every request (protocol deviation from JSON-RPC notifications: this protocol has no notifications). Echoed verbatim in the response.",
+      "type": ["string", "integer", "null"],
+      "maxLength": 4096
+    },
+    "protocolVersion": {
+      "description": "Major protocol version string. v1 is exactly \"1\". A mismatch yields error -32000.",
+      "type": "string",
+      "const": "1"
+    },
+    "budget": {
+      "description": "Per-request execution budget. Applies to execute only. Defaults: timeout_ms=30000, max_output_bytes=1048576. Hard caps: timeout_ms in [1, 600000], max_output_bytes in [256, 67108864]. Violations yield error -32003.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000,
+          "default": 30000
+        },
+        "max_output_bytes": {
+          "description": "Upper bound on the serialized single-line JSON-RPC response in UTF-8 bytes. Oversized results are replaced by a truncation envelope and usage.truncated=true.",
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 67108864,
+          "default": 1048576
+      }
+      }
+    },
+    "usage": {
+      "description": "Execution accounting attached to every execute response.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens_est", "elapsed_ms", "output_bytes", "truncated"],
+      "properties": {
+        "tokens_est": {
+          "description": "Heuristic token estimate over the serialized result data: ceil(chars/4), minimum 1. Not a real tokenizer.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_bytes": {
+          "description": "UTF-8 byte length of the response line actually delivered.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "protocolError": {
+      "description": "Top-level JSON-RPC error object for transport/dispatch failures and execute preconditions.",
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "enum": [
+            -32700, -32600, -32601, -32602, -32603,
+            -32000, -32001, -32002, -32003, -32004,
+            -32005, -32006, -32007, -32008, -32009
+          ],
+          "description": "-32700 parse error; -32600 invalid request; -32601 method not found; -32602 invalid params; -32603 internal error; -32000 protocol version mismatch; -32001 not initialized; -32002 budget timeout; -32003 budget invalid; -32004 cancelled; -32005 idempotency conflict; -32006 execution error; -32007 unknown cancel target; -32008 input error; -32009 unsupported format."
+        },
+        "message": { "type": "string" },
+        "data": { "type": ["object", "null"] }
+      }
+    },
+    "taskError": {
+      "description": "Error object inside an execute result when status is error or timeout.",
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "enum": [-32002, -32004, -32006, -32008, -32009, -32602, -32603]
+        },
+        "message": { "type": "string" },
+        "data": { "type": ["object", "null"] }
+      }
+    },
+    "truncationEnvelope": {
+      "description": "Replaces result.data when the response line would exceed budget.max_output_bytes.",
+      "type": "object",
+      "required": ["truncated", "original_bytes", "data_head"],
+      "properties": {
+        "truncated": { "const": true },
+        "original_bytes": { "type": "integer", "minimum": 0 },
+        "data_head": {
+          "description": "Head of the original serialized data JSON, cut at a UTF-8 character boundary. String, so always valid JSON inside the envelope.",
+          "type": "string"
+        }
+      }
+    },
+    "initializeParams": {
+      "type": "object",
+      "required": ["protocol_version"],
+      "properties": {
+        "protocol_version": { "type": "string" },
+        "client": {
+          "description": "Optional client identification, informational only.",
+          "type": "object"
+        }
+      }
+    },
+    "initializeResult": {
+      "type": "object",
+      "required": ["protocol_version", "worker_name", "worker_version", "capabilities"],
+      "properties": {
+        "protocol_version": { "$ref": "#/$defs/protocolVersion" },
+        "worker_name": { "type": "string" },
+        "worker_version": { "type": "string" },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "capabilitiesResult": {
+      "type": "object",
+      "required": ["protocol_version", "worker_name", "worker_version", "methods", "capabilities", "initialized"],
+      "properties": {
+        "protocol_version": { "$ref": "#/$defs/protocolVersion" },
+        "worker_name": { "type": "string" },
+        "worker_version": { "type": "string" },
+        "methods": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["initialize", "get_capabilities", "execute", "cancel", "ping"] }
+        },
+        "capabilities": { "type": "array", "items": { "type": "string" } },
+        "initialized": { "type": "boolean" }
+      }
+    },
+    "executeParams": {
+      "type": "object",
+      "required": ["task"],
+      "properties": {
+        "task": {
+          "description": "Worker-specific input. Shape defined per worker; parsing: {text|path, format?}; embedding: {text|texts, dim?, ngram_range?, model?}; evaluation: {entries, rules?|rules_path?}. Debug op sleep/boom requires env WORKER_ALLOW_DEBUG=1.",
+          "type": "object"
+        },
+        "budget": { "$ref": "#/$defs/budget" },
+        "idempotency_key": {
+          "description": "Non-empty string. Same key + same task (and same worker_version) returns the cached result with cached=true. Same key + different task returns error -32005. Cache file: <workers>/.cache/<sha256(key)>.json.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "executeResult": {
+      "description": "The result member of an execute response. status=result|error|timeout. Cached hits reuse a stored result with cached=true. Cancelled tasks return status=error with code -32004.",
+      "type": "object",
+      "required": ["worker_name", "worker_version", "protocol_version", "status", "cached", "usage"],
+      "properties": {
+        "worker_name": { "type": "string" },
+        "worker_version": { "type": "string" },
+        "protocol_version": { "$ref": "#/$defs/protocolVersion" },
+        "status": { "type": "string", "enum": ["result", "error", "timeout"] },
+        "cached": {
+          "description": "true when the response was served from the idempotency cache.",
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Worker output when status=result. Either the worker payload or a truncationEnvelope.",
+          "oneOf": [
+            { "type": "object" },
+            { "$ref": "#/$defs/truncationEnvelope" }
+          ]
+        },
+        "error": { "$ref": "#/$defs/taskError" },
+        "usage": { "$ref": "#/$defs/usage" }
+      }
+    },
+    "cancelParams": {
+      "type": "object",
+      "required": ["target_request_id"],
+      "properties": {
+        "target_request_id": { "$ref": "#/$defs/requestId" }
+      }
+    },
+    "cancelResult": {
+      "type": "object",
+      "required": ["cancelled", "state", "target_request_id"],
+      "properties": {
+        "cancelled": {
+          "description": "true when the target was still running and the cancellation token was set.",
+          "type": "boolean"
+        },
+        "state": { "type": "string", "enum": ["running", "finished"] },
+        "target_request_id": { "$ref": "#/$defs/requestId" }
+      }
+    },
+    "pingResult": {
+      "type": "object",
+      "required": ["pong", "worker_version", "uptime_ms", "active_tasks"],
+      "properties": {
+        "pong": { "const": true },
+        "worker_version": { "type": "string" },
+        "uptime_ms": { "type": "integer", "minimum": 0 },
+        "active_tasks": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "request": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "method"],
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/jsonrpc" },
+        "id": { "$ref": "#/$defs/requestId" },
+        "method": {
+          "type": "string",
+          "enum": ["initialize", "get_capabilities", "execute", "cancel", "ping"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": { "method": { "const": "initialize" }, "params": { "$ref": "#/$defs/initializeParams" } }
+        },
+        {
+          "properties": { "method": { "const": "get_capabilities" } }
+        },
+        {
+          "properties": { "method": { "const": "execute" }, "params": { "$ref": "#/$defs/executeParams" } }
+        },
+        {
+          "properties": { "method": { "const": "cancel" }, "params": { "$ref": "#/$defs/cancelParams" } }
+        },
+        {
+          "properties": { "method": { "const": "ping" } }
+        }
+      ]
+    },
+    "response": {
+      "type": "object",
+      "required": ["jsonrpc", "id"],
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/jsonrpc" },
+        "id": { "$ref": "#/$defs/requestId" },
+        "result": {
+          "oneOf": [
+            { "$ref": "#/$defs/initializeResult" },
+            { "$ref": "#/$defs/capabilitiesResult" },
+            { "$ref": "#/$defs/executeResult" },
+            { "$ref": "#/$defs/cancelResult" },
+            { "$ref": "#/$defs/pingResult" }
+          ]
+        },
+        "error": { "$ref": "#/$defs/protocolError" }
+      },
+      "oneOf": [
+        { "required": ["result"] },
+        { "required": ["error"] }
+      ]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ]
+}

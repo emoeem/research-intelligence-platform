@@ -1,0 +1,259 @@
+//! 统一审计事件流（MODULE_BOUNDARIES §8.1 audit-engine 行 + §8.2.4 旁路纪律）。
+//!
+//! 接口（§8.4）：
+//! - [`AuditEngine::emit`]：`Emit(AuditEvent)`，各模块唯一审计出口
+//! - [`AuditEngine::trace`]：`Trace(correlation_id)`，按关联 ID 回放事件链
+//!
+//! 旁路纪律（§8.2.4）：任何模块故障不得因审计写入失败而失败。
+//! [`AuditEngine::emit_best_effort`] 写入失败时进进程内缓冲（有界，丢最旧），
+//! 下次调用时自动重试；跨进程持久队列留后续里程碑。
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
+use database::{rusqlite, DbError, DbResult, Pool};
+use domain::audit::AuditEvent;
+use std::sync::Mutex;
+
+/// 缓冲上限（超过即丢最旧，旁路不反压业务）。
+pub const BUFFER_CAP: usize = 1024;
+
+/// 审计引擎。
+pub struct AuditEngine {
+    pool: Pool,
+    buffer: Mutex<Vec<AuditEvent>>,
+}
+
+/// 落库后的事件（含行 ID）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredAuditEvent {
+    /// audit_event 表自增 event_id。
+    pub event_id: i64,
+    /// 事件内容。
+    pub event: AuditEvent,
+}
+
+impl AuditEngine {
+    /// 用连接池构造引擎。
+    pub fn new(pool: Pool) -> Self {
+        Self {
+            pool,
+            buffer: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// `Emit(AuditEvent)`：写入 audit_event 表，返回行 ID。
+    pub fn emit(&self, event: AuditEvent) -> DbResult<i64> {
+        event
+            .validate()
+            .map_err(|e| DbError::Validation(e.to_string()))?;
+        self.insert(&event)
+    }
+
+    /// 旁路发射：先重试缓冲，再写当前事件；任何失败只缓冲、不向调用方报错。
+    ///
+    /// 返回 true 表示当前事件已落库，false 表示已入缓冲待重试。
+    pub fn emit_best_effort(&self, event: AuditEvent) -> bool {
+        if let Err(err) = event.validate() {
+            // 非法事件属于编程错误：记日志并丢弃，不缓冲（重试也不会变合法）。
+            eprintln!("audit-engine: dropped invalid event: {err}");
+            return false;
+        }
+        self.flush();
+        match self.insert(&event) {
+            Ok(_) => true,
+            Err(err) => {
+                eprintln!("audit-engine: buffering event after write failure: {err}");
+                self.push_to_buffer(event);
+                false
+            }
+        }
+    }
+
+    /// 重试缓冲中的事件，返回成功落库条数。
+    pub fn flush(&self) -> usize {
+        let drained: Vec<AuditEvent> = match self.buffer.lock() {
+            Ok(mut buf) => std::mem::take(&mut *buf),
+            Err(_) => return 0,
+        };
+        let mut flushed = 0;
+        let mut retry = Vec::new();
+        for ev in drained {
+            match self.insert(&ev) {
+                Ok(_) => flushed += 1,
+                Err(_) => retry.push(ev),
+            }
+        }
+        if !retry.is_empty() {
+            if let Ok(mut buf) = self.buffer.lock() {
+                // 未清空的新事件排在前，重试失败的保持在后，顺序近似保留。
+                for ev in retry {
+                    push_capped(&mut buf, ev, BUFFER_CAP);
+                }
+            }
+        }
+        flushed
+    }
+
+    /// 当前缓冲条数。
+    pub fn buffered(&self) -> usize {
+        self.buffer.lock().map(|b| b.len()).unwrap_or(0)
+    }
+
+    /// `Trace(correlation_id)`：按关联 ID 升序回放事件链。
+    pub fn trace(&self, correlation_id: &str) -> DbResult<Vec<StoredAuditEvent>> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT event_id, ts, actor, action, entity_type, entity_id, correlation_id,
+                    detail, permission_level, source_system, source_pk
+             FROM audit_event WHERE correlation_id = ?1 ORDER BY event_id ASC",
+        )?;
+        let rows = stmt.query_map([correlation_id], row_to_event)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// 入缓冲（有界，丢最旧）。锁中毒时丢弃事件（旁路不反压）。
+    fn push_to_buffer(&self, event: AuditEvent) {
+        if let Ok(mut buf) = self.buffer.lock() {
+            push_capped(&mut buf, event, BUFFER_CAP);
+        }
+    }
+
+    fn insert(&self, event: &AuditEvent) -> DbResult<i64> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            "INSERT INTO audit_event (ts, actor, action, entity_type, entity_id,
+                                      correlation_id, detail, permission_level,
+                                      source_system, source_pk, created_at, updated_at,
+                                      schema_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                     strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                     strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 1)",
+            rusqlite_params(event),
+        )
+        .map_err(DbError::Sqlite)?;
+        Ok(conn.last_insert_rowid())
+    }
+}
+
+fn rusqlite_params(e: &AuditEvent) -> [&dyn rusqlite::ToSql; 10] {
+    [
+        &e.ts,
+        &e.actor,
+        &e.action,
+        &e.entity_type,
+        &e.entity_id,
+        &e.correlation_id,
+        &e.detail,
+        &e.permission_level,
+        &e.source_system,
+        &e.source_pk,
+    ]
+}
+
+fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredAuditEvent> {
+    Ok(StoredAuditEvent {
+        event_id: row.get(0)?,
+        event: AuditEvent {
+            ts: row.get(1)?,
+            actor: row.get(2)?,
+            action: row.get(3)?,
+            entity_type: row.get(4)?,
+            entity_id: row.get(5)?,
+            correlation_id: row.get(6)?,
+            detail: row.get(7)?,
+            permission_level: row.get(8)?,
+            source_system: row.get(9)?,
+            source_pk: row.get(10)?,
+        },
+    })
+}
+
+fn push_capped(buf: &mut Vec<AuditEvent>, ev: AuditEvent, cap: usize) {
+    if buf.len() >= cap {
+        buf.remove(0);
+    }
+    buf.push(ev);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use database::{DbPath, PoolConfig};
+    use std::time::Duration;
+
+    fn engine_with_audit_table() -> AuditEngine {
+        let pool = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(1),
+        })
+        .unwrap();
+        pool.with_conn(|c| {
+            c.execute_batch(
+                "CREATE TABLE audit_event (
+                   event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   ts TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL,
+                   entity_type TEXT, entity_id TEXT, correlation_id TEXT, detail TEXT,
+                   permission_level TEXT, source_system TEXT, source_pk TEXT,
+                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                   schema_version INTEGER NOT NULL DEFAULT 1);",
+            )
+        })
+        .unwrap();
+        AuditEngine::new(pool)
+    }
+
+    #[test]
+    fn emit_and_trace_roundtrip() {
+        let engine = engine_with_audit_table();
+        let id = engine
+            .emit(
+                AuditEvent::new("resource-engine", "resource.resolved")
+                    .with_entity("resource", "gh:o/r")
+                    .with_correlation("erq-1"),
+            )
+            .unwrap();
+        assert!(id >= 1);
+        let chain = engine.trace("erq-1").unwrap();
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].event.action, "resource.resolved");
+        assert!(engine.trace("no-such").unwrap().is_empty());
+    }
+
+    #[test]
+    fn emit_rejects_invalid_event() {
+        let engine = engine_with_audit_table();
+        assert!(engine.emit(AuditEvent::new("", "a")).is_err());
+        assert!(engine.emit(AuditEvent::new("a", " ")).is_err());
+    }
+
+    #[test]
+    fn best_effort_buffers_then_flushes() {
+        let engine = engine_with_audit_table();
+        assert!(engine.emit_best_effort(AuditEvent::new("system", "x").with_correlation("c1")));
+        assert_eq!(engine.buffered(), 0);
+        // 非法事件被丢弃，不进缓冲。
+        assert!(!engine.emit_best_effort(AuditEvent::new("", "x")));
+        assert_eq!(engine.buffered(), 0);
+        assert_eq!(engine.flush(), 0);
+    }
+
+    #[test]
+    fn buffer_cap_drops_oldest() {
+        let mut buf: Vec<AuditEvent> = Vec::new();
+        for i in 0..(BUFFER_CAP + 10) {
+            push_capped(
+                &mut buf,
+                AuditEvent::new("a", format!("act-{i}")),
+                BUFFER_CAP,
+            );
+        }
+        assert_eq!(buf.len(), BUFFER_CAP);
+        assert_eq!(buf[0].action, "act-10", "oldest entries must be dropped");
+    }
+}
