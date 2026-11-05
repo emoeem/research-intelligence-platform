@@ -1,0 +1,6 @@
+probe-cargo/target/
+probe-cargo/vendor/
+legacy/eri/db/catalog.db*
+legacy/eri/cache/
+*.pyc
+__pycache__/
