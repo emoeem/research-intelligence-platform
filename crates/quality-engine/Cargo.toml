@@ -1,0 +1,17 @@
+[package]
+name = "quality-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "M4 数据治理引擎：Resource 生命周期状态机 + Review 候选队列（Propose/Decide）+ VERIFIED 人工守卫"
+
+[dependencies]
+database = { workspace = true }
+domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "rp-review"
+path = "src/bin/rp-review.rs"

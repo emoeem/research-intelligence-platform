@@ -1,0 +1,1633 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""RTIS —— Red Team Intelligence System 编排层（单文件 CLI，stdlib + pyyaml）
+
+设计前提（来自对本机现状的实测，不是假设）：
+  · 知识库内容层已完成：knowledge.db（poc 14664 条 / k_meta 15 条元数据 / k_event 225 条事件）；
+  · 知识检索唯一引擎是 dsh-purge-community/lib/redteam/rtis-bridge.js
+    （分词 + 组覆盖率门禁 + bm25 饱和打分 + 证据等级）；
+  · 工具面已有 redteam_poc_search / rtis_knowledge / redteam_poc_get / redteam_poc_use；
+  · 五个角色稿是 engagements/<id>/agents/<role>.md；
+  · 125 个技能是 skills/*.md（带 YAML frontmatter）。
+
+因此本层**只做加法**：
+  ① 任务状态机与上下文（此前完全没有）；
+  ② 知识门禁：把「先查库」从口头要求变成有审计记录的一步；
+  ③ 站型画像：多维、可解释、带反证；
+  ④ 工作流路由：按证据选分支，并能因新证据重路由；
+  ⑤ 角色交接协议：结构化，不再靠自由文本重复；
+  ⑥ 技能/工具注册表；
+  ⑦ 复盘（AAR）与回归测试。
+
+绝不修改：knowledge.db 的 poc / k_meta / hit_count / schema。唯一的写是 k_event（append-only 遥测）。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    sys.stderr.write("需要 pyyaml：pip install pyyaml\n")
+    raise
+
+# ── 路径 ────────────────────────────────────────────────────────────────────
+RTIS_ROOT = Path(os.environ.get("RTIS_ROOT", str(Path.home() / ".dsh/redteam/rtis")))
+REDTEAM_ROOT = RTIS_ROOT.parent
+KB_PATH = Path(os.environ.get("RTIS_KB", str(REDTEAM_ROOT / "knowledge.db")))
+KB_BRIDGE = RTIS_ROOT / "rtis_kb.mjs"
+SKILLS_DIR = Path(os.environ.get("RTIS_SKILLS", str(REDTEAM_ROOT / "skills")))
+ENGAGEMENTS_DIR = REDTEAM_ROOT / "engagements"
+REG_DIR = RTIS_ROOT / "data/registry"
+TASKS_DIR = RTIS_ROOT / "data/tasks"
+LOGS_DIR = RTIS_ROOT / "data/logs"
+REPORTS_DIR = RTIS_ROOT / "reports"
+TESTS_DIR = RTIS_ROOT / "tests"
+
+for d in (TASKS_DIR, LOGS_DIR, REPORTS_DIR, REG_DIR, TESTS_DIR):
+    d.mkdir(parents=True, exist_ok=True)
+
+# ── 状态机 ──────────────────────────────────────────────────────────────────
+STATES = [
+    "CREATED",
+    "AUTHORIZATION_REVIEW",
+    "ENVIRONMENT_PROFILING",
+    "LOCAL_KNOWLEDGE_RETRIEVAL",
+    "EXTERNAL_RESEARCH",
+    "WORKFLOW_PLANNING",
+    "AUTHORIZED_EXECUTION",
+    "VERIFICATION",
+    "REPORTING",
+    "POSTMORTEM",
+    "COMPLETED",
+]
+SIDE_STATES = ["WAITING_FOR_APPROVAL", "BLOCKED", "NEEDS_INFORMATION", "CANCELLED", "PARTIALLY_COMPLETED"]
+ALL_STATES = STATES + SIDE_STATES
+
+# 合法前进转移：严格线性前进 + 允许任意状态跳进旁路态
+FORWARD = {STATES[i]: STATES[i + 1] for i in range(len(STATES) - 1)}
+
+DIMENSIONS = [
+    "business_type",
+    "delivery_architecture",
+    "frontend_architecture",
+    "backend_architecture",
+    "api_architecture",
+    "response_architecture",
+    "identity_architecture",
+    "storage_architecture",
+    "environment_status",
+    "deployment_model",
+]
+
+# 查询扩展表：把用户口语/画像维度翻成知识库里真实存在的技术词
+QUERY_EXPANSION = {
+    "white-label-landing": ["白牌 落地页 站群", "hex2bin 页面生成", "landing 跳转 参数"],
+    "白牌站群": ["白牌 落地页 站群", "站群 跳转中枢", "favicon 反查"],
+    "营销落地页": ["落地页 生成器 参数", "hex2bin"],
+    "博彩包网": ["包网 盘口 entrance api", "白牌 包网 加密通道"],
+    "admin-backend": ["后台 入口 枚举", "管理后台 认证绕过"],
+    "管理后台": ["后台 入口 枚举", "后台 越权"],
+    "cdn-fronted": ["CDN 源站 IP 发现", "CloudFront 源站", "边缘 回源"],
+    "reverse-proxy": ["反向代理 路径 归一化", "前缀 白名单 绕过"],
+    "waf-fronted": ["WAF 绕过 编码", "统一 403 差分"],
+    "spa": ["SPA bundle 接口提取", "source map 还原"],
+    "server-rendered-hex2bin": ["hex2bin 归一化 diff", "参数 语义 分离"],
+    "miniprogram": ["小程序 wxapkg 解包", "小程序 签名 密钥"],
+    "encrypted-channel": ["加密通道 反推 key iv", "crypto_data 解密", "签名链 HMAC"],
+    "encrypted-response": ["响应加密 明文旁路", "加密响应 降级 重放"],
+    "binary-response": ["octet-stream 响应 处理"],
+    "file-stream": ["导出接口 越权 下载"],
+    "openapi-documented": ["swagger 未授权 接口"],
+    "object-storage": ["OSS bucket 未授权 列举"],
+    "jwt": ["JWT alg none 弱密钥 kid"],
+    "sa-token": ["sa-token JWT 伪造"],
+    "internal-reached": ["内网 网段 发现 gogo fscan", "域渗透 委派"],
+    "spring-boot": ["actuator 未授权 heapdump"],
+    "spring-cloud-gateway": ["Spring Cloud Gateway CVE", "网关 路由 绕过"],
+}
+
+# 六问知识遗漏检查（AAR 用）
+KNOWLEDGE_GAP_QUESTIONS = [
+    "本次相关知识是否已经存在于库中？",
+    "如果没有被检索到，是查询构造问题还是索引缺失？",
+    "如果检索到了，为什么没有被采用（rejected 理由是否成立）？",
+    "如果采用了，为什么没有解决问题（是知识错还是环境不同）？",
+    "是否存在已过时的旧知识被误用？",
+    "是否真正存在知识缺口（需要新增记录）？",
+]
+
+
+# ── 基础工具 ────────────────────────────────────────────────────────────────
+def now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def new_id(prefix: str = "rtis") -> str:
+    return f"{prefix}-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid() % 10000:04d}"
+
+
+def jload(path: Path, default: Any = None) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def jdump(path: Path, obj: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def yload(path: Path, default: Any = None) -> Any:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def log_event(task_id: str, kind: str, payload: dict | None = None) -> None:
+    """任务级审计日志（append-only jsonl）。与 k_event 分工：
+    k_event 记「知识层发生了什么」，这里记「编排层做了什么」。"""
+    p = LOGS_DIR / f"{task_id}.jsonl"
+    line = json.dumps({"at": now_iso(), "kind": kind, **(payload or {})}, ensure_ascii=False)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def out(obj: Any) -> None:
+    sys.stdout.write(json.dumps(obj, ensure_ascii=False, indent=2) + "\n")
+
+
+def die(msg: str, code: int = 2) -> None:
+    sys.stdout.write(json.dumps({"ok": False, "error": msg}, ensure_ascii=False) + "\n")
+    sys.exit(code)
+
+
+# ── 知识桥（复用 rtis-bridge.js，绝不复制算法）──────────────────────────────
+def kb(cmd: str, **kwargs) -> dict:
+    if not KB_BRIDGE.exists():
+        return {"ok": False, "error": f"知识桥不存在: {KB_BRIDGE}"}
+    payload = json.dumps({"cmd": cmd, **kwargs}, ensure_ascii=False)
+    try:
+        proc = subprocess.run(
+            ["node", str(KB_BRIDGE)],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            timeout=60,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"调用知识桥失败: {e}"}
+    raw = proc.stdout.decode("utf-8", "replace").strip()
+    if not raw:
+        return {"ok": False, "error": f"知识桥无输出（stderr={proc.stderr.decode('utf-8','replace')[:300]}）"}
+    try:
+        return json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "error": f"知识桥输出非 JSON: {raw[:300]}"}
+
+
+def kb_search(q: str, limit: int = 10, archetype: str = "", type_: str = "") -> dict:
+    r = kb("search", q=q, limit=limit, archetype=archetype, type=type_)
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("error"), "items": [], "tokens": []}
+    return r.get("result", {})
+
+
+def kb_event(run: str, event: str, kid: int | None = None, payload: dict | None = None) -> None:
+    kb("event", run=run, event=event, id=kid, payload=payload or {})
+
+
+# ── Task ────────────────────────────────────────────────────────────────────
+def task_path(task_id: str) -> Path:
+    return TASKS_DIR / f"{task_id}.json"
+
+
+def load_task(task_id: str) -> dict:
+    p = task_path(task_id)
+    if not p.exists():
+        die(f"任务不存在: {task_id}")
+    return jload(p)
+
+
+def save_task(task: dict) -> None:
+    task["updated_at"] = now_iso()
+    jdump(task_path(task["task"]["id"]), task)
+
+
+def blank_task(objective: str, target: str, task_type: str, authorized: list[str], excluded: list[str]) -> dict:
+    task_id = new_id("rtis")
+    return {
+        "task": {
+            "id": task_id,
+            "title": (objective[:60] + "…") if len(objective) > 60 else objective,
+            "objective": objective,
+            "task_type": task_type,
+            "target": target,
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "status": "CREATED",
+            "skipped_phases": [],
+            "status_history": [{"at": now_iso(), "state": "CREATED", "reason": "任务创建"}],
+        },
+        "authorization": {
+            "status": "unconfirmed" if not authorized else "declared",
+            "authorized_assets": authorized,
+            "excluded_assets": excluded,
+            "allowed_actions": [],
+            "approval_required": [],
+        },
+        "environment": {
+            "site_profile": {},
+            "technologies": [],
+            "architecture": {},
+            "observations": [],
+            "unknowns": [],
+        },
+        "knowledge": {
+            "search_status": "not_started",
+            "search_queries": [],
+            "matched_entries": [],
+            "selected_entries": [],
+            "rejected_entries": [],
+            "sufficiency": None,
+            "gates": [],
+        },
+        "planning": {
+            "selected_workflows": [],
+            "excluded_workflows": [],
+            "selected_roles": [],
+            "selected_skills": [],
+            "selected_tools": [],
+            "priorities": [],
+            "stop_conditions": [],
+        },
+        "execution": {
+            "current_phase": None,
+            "completed_phases": [],
+            "findings": [],
+            "evidence": [],
+            "handoffs": [],
+        },
+        "final": {
+            "verification_status": "not_started",
+            "report_status": "not_started",
+            "postmortem_status": "not_started",
+        },
+    }
+
+
+# ── 画像 ────────────────────────────────────────────────────────────────────
+def catalog() -> dict:
+    return yload(REG_DIR / "signal-catalog.yaml", {}) or {}
+
+
+def profile_set(task: dict, assignments: list[str], confidence: float, status: str, evidence: str) -> dict:
+    prof = task["environment"]["site_profile"]
+    changed = []
+    for a in assignments:
+        if "=" not in a:
+            die(f"维度赋值格式应为 dim=value[,value2]: {a}")
+        dim, val = a.split("=", 1)
+        dim = dim.strip()
+        if dim not in DIMENSIONS:
+            die(f"未知维度 {dim}；合法维度: {', '.join(DIMENSIONS)}")
+        values = [v.strip() for v in val.split(",") if v.strip()]
+        prev = prof.get(dim)
+        entry = {
+            "value": values if len(values) > 1 else values[0],
+            "status": status,
+            "confidence": confidence,
+            "evidence": ([prev.get("evidence", "")] if prev else []) + ([evidence] if evidence else []),
+            "alternatives": prev.get("alternatives", []) if prev else [],
+            "updated_at": now_iso(),
+        }
+        prof[dim] = entry
+        changed.append(dim)
+    task["environment"]["unknowns"] = [d for d in DIMENSIONS if d not in prof]
+    return {"changed": changed, "profile": prof}
+
+
+def profile_scan(task: dict, url: str, headers_text: str, body_text: str) -> dict:
+    """按 signal-catalog 对样本做正则匹配 → 更新画像候选值。只给候选，不定案。"""
+    cat = catalog()
+    signals = cat.get("signals", []) or []
+    hits = []
+    contrad = []
+    for sig in signals:
+        m = sig.get("match") or {}
+        any_mode = m.get("any", True)
+        results = []
+        for kind, sample in (("header", headers_text), ("body", body_text), ("url", url)):
+            for pat in m.get(f"{kind}_regex", []) or []:
+                try:
+                    results.append(bool(re.search(pat, sample or "")))
+                except re.error:
+                    results.append(False)
+        if not results:
+            continue
+        matched = any(results) if any_mode else all(results)
+        if not matched:
+            continue
+        strength = float(sig.get("strength", 0.5))
+        if sig.get("implies"):
+            hits.append({"id": sig["id"], "label": sig.get("label", ""), "strength": strength, "implies": sig["implies"]})
+        if sig.get("contradicts"):
+            contrad.append({"id": sig["id"], "strength": strength, "contradicts": sig["contradicts"]})
+
+    prof = task["environment"]["site_profile"]
+    applied = []
+    # 同一维度多条信号：confidence = 1 - Π(1-s)
+    per_dim: dict[str, list[float]] = {}
+    for h in hits:
+        for dim, val in h["implies"].items():
+            if dim not in DIMENSIONS:
+                continue
+            per_dim.setdefault(dim, []).append(h["strength"])
+            cur = prof.get(dim) or {}
+            vals = cur.get("value")
+            vals = vals if isinstance(vals, list) else ([vals] if vals else [])
+            newvals = val if isinstance(val, list) else [val]
+            for v in newvals:
+                if v not in vals:
+                    vals.append(v)
+            prof[dim] = {
+                "value": vals if len(vals) > 1 else vals[0],
+                "status": "confirmed" if cur.get("status") == "confirmed" else "candidate",
+                "confidence": round(cur.get("confidence") or 0.0, 3),
+                "evidence": list(dict.fromkeys((cur.get("evidence") or []) + [f"signal:{h['id']}"])),
+                "alternatives": cur.get("alternatives", []),
+                "updated_at": now_iso(),
+            }
+            applied.append(f"{dim}={v}<-{h['id']}")
+
+    for dim, strengths in per_dim.items():
+        c = 1.0
+        for s in strengths:
+            c *= (1.0 - s)
+        conf = round(1.0 - c, 3)
+        for cn in contrad:
+            if dim in cn["contradicts"]:
+                conf = round(conf * (1.0 - float(cn["strength"])), 3)
+        if prof.get(dim, {}).get("status") != "confirmed":
+            prof[dim]["confidence"] = conf
+
+    task["environment"]["observations"] = list(
+        dict.fromkeys((task["environment"].get("observations") or []) + [h["id"] for h in hits])
+    )
+    task["environment"]["unknowns"] = [d for d in DIMENSIONS if d not in prof]
+    return {
+        "signals_hit": hits,
+        "contradictions": contrad,
+        "applied": applied,
+        "unknown_dimensions": task["environment"]["unknowns"],
+    }
+
+
+def profile_explain(task: dict) -> dict:
+    prof = task["environment"]["site_profile"]
+    dims = {}
+    for d in DIMENSIONS:
+        e = prof.get(d)
+        if not e:
+            dims[d] = {"status": "unknown", "value": None, "confidence": 0.0}
+            continue
+        dims[d] = {
+            "value": e.get("value"),
+            "status": e.get("status"),
+            "confidence": e.get("confidence"),
+            "evidence": e.get("evidence", []),
+            "alternatives": e.get("alternatives", []),
+        }
+    return {
+        "dimensions": dims,
+        "unknown_dimensions": [d for d in DIMENSIONS if not prof.get(d)],
+        "observations": task["environment"].get("observations", []),
+        "summary": _profile_summary(prof),
+    }
+
+
+def _profile_summary(prof: dict) -> str:
+    parts = []
+    for d in DIMENSIONS:
+        e = prof.get(d)
+        if not e:
+            continue
+        v = e.get("value")
+        v = ",".join(v) if isinstance(v, list) else v
+        parts.append(f"{d}={v}({e.get('confidence', 0):.2f})")
+    return " | ".join(parts) if parts else "（尚无任何维度判定）"
+
+
+# ── 知识门禁 ────────────────────────────────────────────────────────────────
+def build_queries(task: dict, extra: list[str] | None = None) -> list[dict]:
+    """从任务 + 画像 + 信号 + 已选工作流生成查询组。每条自带来源，便于复盘归因。"""
+    qs: list[dict] = []
+
+    def add(q: str, origin: str) -> None:
+        q = (q or "").strip()
+        if not q or any(x["q"] == q for x in qs):
+            return
+        qs.append({"q": q, "origin": origin})
+
+    t = task["task"]
+    add(t["objective"], "objective")
+    add(t.get("target", ""), "target")
+
+    prof = task["environment"]["site_profile"]
+    for d, e in prof.items():
+        v = e.get("value")
+        vals = v if isinstance(v, list) else [v]
+        for one in vals:
+            if not one:
+                continue
+            add(str(one), f"dimension:{d}")
+            for exp in QUERY_EXPANSION.get(str(one), []):
+                add(exp, f"expand:{d}")
+
+    for sig in task["environment"].get("observations", []):
+        add(str(sig), f"signal:{sig}")
+
+    for wf in task["planning"].get("selected_workflows", []):
+        for q in wf.get("knowledge_queries", []) or []:
+            add(q, f"workflow:{wf.get('id')}")
+
+    for q in extra or []:
+        add(q, "manual")
+    return qs
+
+
+def _compact_query(q: str, n: int = 8) -> str:
+    """长句回退：整句被组覆盖率门禁拦掉时，切成更短的词组重查一次。
+    为什么需要：门禁要求词组 token 命中 ≥60%，一句 20 词的口语化 objective 几乎必然 0 命中，
+    而它里面的技术词元往往正是检索入口。这是"检索不到就收紧查询"，不是放宽门禁。
+    中文按 4 字滑窗切（2-gram 会让整句退化成噪声），英文/标识符整体保留。"""
+    toks: list[str] = []
+    for m in re.findall(r"[A-Za-z0-9_./+-]{2,}|[\u4e00-\u9fff]+", q):
+        if re.fullmatch(r"[\u4e00-\u9fff]+", m) and len(m) > 6:
+            toks.extend(m[i:i + 4] for i in range(0, min(len(m), 20) - 3, 4))
+        else:
+            toks.append(m)
+    return " ".join(toks[:n])
+
+
+def gate(task: dict, extra: list[str] | None = None, limit: int = 12, record_events: bool = True) -> dict:
+    task_id = task["task"]["id"]
+    queries = build_queries(task, extra)
+    merged: dict[int, dict] = {}
+    per_query = []
+
+    for q in queries:
+        r = kb_search(q["q"], limit=8)
+        fallback = False
+        if r.get("ok") and not (r.get("items") or []):
+            for k in (8, 4):
+                cq = _compact_query(q["q"], k)
+                if not cq or cq == q["q"]:
+                    continue
+                r2 = kb_search(cq, limit=8)
+                items2 = [i for i in (r2.get("items") or []) if float(i.get("score", 0)) >= 0.55]
+                if items2:
+                    r = {**r2, "items": items2}
+                    fallback = True
+                    break
+        if not r.get("ok"):
+            per_query.append({"q": q["q"], "origin": q["origin"], "ok": False, "error": r.get("error")})
+            continue
+        items = r.get("items", []) or []
+        per_query.append({
+            "q": q["q"],
+            "origin": q["origin"],
+            "ok": True,
+            "fallback": fallback,
+            "tokens": r.get("tokens", []),
+            "candidates": r.get("total_candidates", 0),
+            "returned": len(items),
+            "top": [{"id": i["id"], "score": round(float(i["score"]), 4), "title": i.get("title", "")[:80]} for i in items[:3]],
+        })
+        if record_events:
+            kb_event(task_id, "search", None, {"q": q["q"], "origin": q["origin"]})
+            if items:
+                kb_event(task_id, "returned", None, {"q": q["q"], "ids": [i["id"] for i in items[:20]]})
+        for i in items:
+            kid = int(i["id"])
+            prev = merged.get(kid)
+            if prev is None or float(i["score"]) > float(prev["score"]):
+                merged[kid] = {
+                    "id": kid,
+                    "code": i.get("code", ""),
+                    "title": i.get("title", ""),
+                    "kind": i.get("kind", ""),
+                    "category": i.get("category", ""),
+                    "component": i.get("component", ""),
+                    "verified": bool(i.get("verified")),
+                    "score": float(i.get("score", 0)),
+                    "rtis": i.get("rtis") or {},
+                    "matched_by": [q["origin"]] + [m for m in (prev or {}).get("matched_by", []) if m != q["origin"]],
+                }
+
+    ranked = sorted(merged.values(), key=lambda x: (-x["score"], not x["verified"]))[:limit]
+
+    # 站型直连检索（补「检索偏 CVE/组件、缺站型」的缺口）：
+    # 全文索引只覆盖 title/content，k_meta.archetypes 是结构化字段，必须单独查。
+    # 命中给固定基准分 0.62（结构与查询同权），verified 再 +0.08——不与全文分混排比较，只做补充候选。
+    archetype_hits = []
+    prof = task["environment"]["site_profile"]
+    seen_arch = set()
+    for dim, entry in prof.items():
+        vals = entry.get("value")
+        vals = vals if isinstance(vals, list) else [vals]
+        for v in vals:
+            if not v or str(v) in seen_arch or str(v) in ("unknown",):
+                continue
+            seen_arch.add(str(v))
+            r = kb("archetype", archetype=str(v), limit=20)
+            if not r.get("ok"):
+                continue
+            res = r.get("result") or {}
+            items = res.get("items") or []
+            if items:
+                archetype_hits.append({"archetype": str(v), "count": len(items)})
+            for it in items:
+                kid = int(it["id"])
+                sc = 0.62 + (0.08 if it.get("verified") else 0.0)
+                cur = merged.get(kid)
+                if cur is None:
+                    merged[kid] = {
+                        "id": kid,
+                        "code": it.get("code", ""),
+                        "title": it.get("title", ""),
+                        "kind": it.get("kind", ""),
+                        "category": it.get("category", ""),
+                        "component": it.get("component", ""),
+                        "verified": bool(it.get("verified")),
+                        "score": sc,
+                        "rtis": {"archetypes": [str(v)]},
+                        "matched_by": [f"archetype:{v}"],
+                    }
+                else:
+                    cur["matched_by"] = list(dict.fromkeys(cur["matched_by"] + [f"archetype:{v}"]))
+
+    ranked = sorted(merged.values(), key=lambda x: (-x["score"], not x["verified"]))[:limit]
+
+    # 反知识检查：只对前 5 条做，避免无谓开销
+    for item in ranked[:5]:
+        try:
+            neg = kb("negatives", key=item["code"])
+            if neg.get("ok"):
+                res = neg.get("result") or {}
+                items = res.get("items") or res.get("negatives") or []
+                item["negatives"] = items
+        except Exception:  # noqa: BLE001
+            pass
+
+    top_score = ranked[0]["score"] if ranked else 0.0
+    if len(ranked) >= 5 and top_score >= 0.45:
+        suff = "sufficient"
+    elif ranked:
+        suff = "partial"
+    else:
+        suff = "insufficient"
+
+    arche = {}
+    for it in ranked:
+        for a in (it.get("rtis") or {}).get("archetypes", []) or []:
+            arche[a] = arche.get(a, 0) + 1
+
+    gate_rec = {
+        "at": now_iso(),
+        "queries": [q["q"] for q in queries],
+        "query_count": len(queries),
+        "hits": len(ranked),
+        "top_score": round(top_score, 4),
+        "sufficiency": suff,
+        "archetypes": arche,
+        "external_research_needed": suff != "sufficient",
+        "per_query": per_query,
+    }
+
+    task["knowledge"]["search_status"] = "done"
+    task["knowledge"]["search_queries"] = [q["q"] for q in queries]
+    task["knowledge"]["matched_entries"] = [
+        {k: it[k] for k in ("id", "code", "title", "kind", "category", "verified", "score", "matched_by")}
+        for it in ranked
+    ]
+    task["knowledge"]["sufficiency"] = suff
+    task["knowledge"]["gates"].append(gate_rec)
+    task["knowledge"]["dossier"] = {
+        "generated_at": now_iso(),
+        "top": ranked,
+        "archetypes": arche,
+        "sufficiency": suff,
+    }
+    eri_review = _eri_external_review(task)
+    if eri_review is not None:
+        task["external_resource_review"] = eri_review
+        gate_rec["external_resource_review"] = {
+            "status": eri_review.get("status"),
+            "query_id": eri_review.get("query_id"),
+            "candidate_count": eri_review.get("candidate_count"),
+            "detailed_research_required": eri_review.get("detailed_research_required"),
+        }
+    log_event(task_id, "knowledge_gate", {"queries": len(queries), "hits": len(ranked), "sufficiency": suff})
+    return {"ok": True, "gate": gate_rec, "dossier": ranked}
+
+
+def _eri_external_review(task: dict):
+    """ERI P2 外部资源复查（可选增强，计划 §3.1：内部知识检索之后调用）。
+
+    ERI 侧不可用、超时或 RTIS_ERI=off 时静默返回 None，绝不影响知识门禁本身。
+    Resolver 为纯 SQL+规则，无 LLM、无网络。
+    """
+    if os.environ.get("RTIS_ERI", "on").lower() in ("0", "off", "false"):
+        return None
+    resolver = os.environ.get("RTIS_ERI_RESOLVER") or os.path.join(
+        os.path.expanduser("~"), "code", "pensting", "security-research-upgrade",
+        "eri", "eri_p2.py")
+    if not os.path.exists(resolver):
+        return None
+    tmp = None
+    try:
+        profile = (task.get("profile") or {})
+        payload = {
+            "task_id": task.get("task_id") or task.get("id"),
+            "objective": task.get("task", {}).get("objective") or task.get("objective") or "",
+            "keywords": (task.get("keywords") or [])[:8],
+            "profile": {"dims": profile.get("dims") or profile.get("dimensions") or {},
+                        "archetypes": profile.get("archetypes") or []},
+            "skills": (task.get("skills") or [])[:8],
+            "workflows": (task.get("workflows") or [])[:8],
+        }
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        out = subprocess.run(
+            [sys.executable, "-I", resolver, "bridge-gate", "--task-file", tmp],
+            capture_output=True, text=True, timeout=30)
+        data = json.loads(out.stdout or "{}")
+        return data.get("external_resource_review")
+    except Exception:
+        return None
+    finally:
+        if tmp and os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def knowledge_select(task: dict, ids: list[int], reason: str = "") -> dict:
+    task["knowledge"]["selected_entries"] = [
+        {"id": i, "at": now_iso(), "reason": reason} for i in ids
+    ]
+    for i in ids:
+        kb_event(task["task"]["id"], "selected", i, {"via": "rtis.gate.select"})
+    log_event(task["task"]["id"], "knowledge_select", {"ids": ids, "reason": reason})
+    return {"selected": ids}
+
+
+def knowledge_reject(task: dict, ids: list[int], reason: str) -> dict:
+    if not reason:
+        die("拒绝知识必须写理由（目标架构不匹配/版本不同/证据不足/已过期/超授权/不需要）")
+    cur = task["knowledge"].get("rejected_entries") or []
+    cur.extend({"id": i, "reason": reason, "at": now_iso()} for i in ids)
+    task["knowledge"]["rejected_entries"] = cur
+    for i in ids:
+        kb_event(task["task"]["id"], "rejected", i, {"reason": reason})
+    log_event(task["task"]["id"], "knowledge_reject", {"ids": ids, "reason": reason})
+    return {"rejected": ids, "reason": reason}
+
+
+def knowledge_apply(task: dict, ids: list[int], note: str = "") -> dict:
+    for i in ids:
+        kb_event(task["task"]["id"], "applied", i, {"note": note})
+    log_event(task["task"]["id"], "knowledge_apply", {"ids": ids, "note": note})
+    return {"applied": ids}
+
+
+# ── 工作流路由 ──────────────────────────────────────────────────────────────
+def registry() -> dict:
+    return yload(REG_DIR / "workflows.yaml", {}) or {}
+
+
+def route(task: dict) -> dict:
+    reg = registry()
+    wfs = reg.get("workflows", []) or []
+    prof = task["environment"]["site_profile"]
+    obs = set(task["environment"].get("observations", []))
+    text_probe = " ".join([
+        task["task"].get("objective", ""),
+        task["task"].get("target", ""),
+        _profile_summary(prof),
+    ])
+
+    selected, partial, excluded = [], [], []
+    for wf in wfs:
+        trig = wf.get("trigger") or {}
+        if trig.get("always"):
+            selected.append((wf, 999, ["always"]))
+            continue
+        score = 0
+        why: list[str] = []
+        for dim, vals in (trig.get("dimensions") or {}).items():
+            vals = vals if isinstance(vals, list) else [vals]
+            entry = prof.get(dim)
+            if not entry:
+                continue
+            have = entry.get("value")
+            have = have if isinstance(have, list) else [have]
+            if set(map(str, have)) & set(map(str, vals)):
+                score += 3
+                why.append(f"dim:{dim}")
+        for sig in trig.get("signals") or []:
+            if sig in obs:
+                score += 2
+                why.append(f"signal:{sig}")
+        for word in trig.get("business") or []:
+            if word and word.lower() in text_probe.lower():
+                score += 1
+                why.append(f"kw:{word}")
+
+        missing = [d for d in (wf.get("requires") or []) if not prof.get(d)]
+        if score == 0:
+            excluded.append({"id": wf["id"], "name": wf.get("name", ""), "reason": "无任何触发证据"})
+        elif missing:
+            partial.append({"id": wf["id"], "name": wf.get("name", ""), "score": score,
+                            "why": why, "missing_dimensions": missing,
+                            "reason": "有触发证据但关键维度未知，需先补信息"})
+        else:
+            selected.append((wf, score, why))
+
+    selected.sort(key=lambda x: -x[1])
+    sel = [
+        {
+            "id": wf["id"],
+            "name": wf.get("name", ""),
+            "score": score if score != 999 else None,
+            "why": why,
+            "phases": wf.get("phases", []),
+            "knowledge_queries": wf.get("knowledge_queries", []),
+            "related_skills": wf.get("related_skills", []),
+            "stop_conditions": wf.get("stop_conditions", []),
+            "excluded_activities": wf.get("excluded_activities", []),
+        }
+        for wf, score, why in selected
+    ]
+
+    roles: list[str] = []
+    skills: list[str] = []
+    stops: list[str] = []
+    for wf in sel:
+        for ph in wf.get("phases", []):
+            r = ph.get("role")
+            if r and r not in roles:
+                roles.append(r)
+        for s in wf.get("related_skills", []):
+            if s not in skills:
+                skills.append(s)
+        for s in wf.get("stop_conditions", []):
+            if s not in stops:
+                stops.append(s)
+
+    task["planning"]["selected_workflows"] = sel
+    task["planning"]["excluded_workflows"] = excluded
+    task["planning"]["partial_workflows"] = partial
+    task["planning"]["selected_roles"] = roles
+    task["planning"]["selected_skills"] = skills
+    task["planning"]["stop_conditions"] = stops
+    log_event(task["task"]["id"], "route", {"selected": [s["id"] for s in sel], "excluded": len(excluded), "partial": len(partial)})
+
+    return {
+        "ok": True,
+        "selected": [{"id": s["id"], "name": s["name"], "why": s["why"]} for s in sel],
+        "partial": partial,
+        "excluded": excluded,
+        "roles": roles,
+        "skills": skills,
+        "stop_conditions": stops,
+        "profile_summary": _profile_summary(prof),
+    }
+
+
+# ── 交接协议 ────────────────────────────────────────────────────────────────
+HANDOFF_FIELDS = [
+    "task_id", "role", "status", "input_summary", "environment_profile",
+    "knowledge_consulted", "related_skills", "actions_completed", "evidence",
+    "findings", "assumptions", "limitations", "unresolved_questions", "next_recommendation",
+]
+
+
+def handoff_create(task: dict, role: str, status: str, summary: str, findings: list[str],
+                   evidence: list[str], next_rec: str, limitations: list[str],
+                   assumptions: list[str], unresolved: list[str]) -> dict:
+    task_id = task["task"]["id"]
+    seq = len(task["execution"].get("handoffs") or []) + 1
+    rec = {
+        "handoff_seq": seq,
+        "at": now_iso(),
+        "task_id": task_id,
+        "role": role,
+        "status": status,
+        "input_summary": summary,
+        "environment_profile": _profile_summary(task["environment"]["site_profile"]),
+        "knowledge_consulted": [e.get("id") for e in task["knowledge"].get("selected_entries", [])],
+        "related_skills": task["planning"].get("selected_skills", []),
+        "actions_completed": [p.get("phase") for p in task["execution"].get("completed_phases", [])],
+        "evidence": evidence,
+        "findings": findings,
+        "assumptions": assumptions,
+        "limitations": limitations,
+        "unresolved_questions": unresolved,
+        "next_recommendation": next_rec,
+    }
+    d = TASKS_DIR / task_id / "handoffs"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{seq:02d}-{role}.yaml"
+    f.write_text(yaml.safe_dump(rec, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    task["execution"].setdefault("handoffs", []).append({"seq": seq, "role": role, "status": status, "path": str(f)})
+    for fnd in findings:
+        task["execution"].setdefault("findings", []).append({"at": now_iso(), "role": role, "finding": fnd})
+    log_event(task_id, "handoff", {"seq": seq, "role": role, "status": status})
+    return {"ok": True, "handoff": rec, "path": str(f)}
+
+
+def handoff_check(task: dict) -> dict:
+    """检查交接是否缺字段、是否有角色重复劳动（同一动作被两个角色做过）。"""
+    hs = task["execution"].get("handoffs", [])
+    problems = []
+    for h in hs:
+        f = Path(h["path"])
+        if not f.exists():
+            problems.append(f"交接文件丢失: {f}")
+            continue
+        data = yload(f, {}) or {}
+        miss = [k for k in HANDOFF_FIELDS if k not in data]
+        if miss:
+            problems.append(f"#{h['seq']} {h['role']} 缺字段: {', '.join(miss)}")
+        if not data.get("evidence") and data.get("status") in ("completed", "partial"):
+            problems.append(f"#{h['seq']} {h['role']} 声称 {data.get('status')} 但无 evidence")
+    acts: dict[str, list[str]] = {}
+    for h in hs:
+        data = yload(Path(h["path"]), {}) or {}
+        for a in data.get("actions_completed") or []:
+            acts.setdefault(str(a), []).append(h["role"])
+    dup = {a: r for a, r in acts.items() if len(r) > 1}
+    return {"handoffs": len(hs), "problems": problems, "duplicated_actions": dup, "ok": not problems}
+
+
+# ── 技能索引 / 推荐 ─────────────────────────────────────────────────────────
+def build_skill_index() -> dict:
+    items = []
+    for f in sorted(SKILLS_DIR.glob("*.md")):
+        try:
+            txt = f.read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            continue
+        meta: dict = {}
+        if txt.startswith("---"):
+            end = txt.find("\n---", 3)
+            if end > 0:
+                try:
+                    meta = yaml.safe_load(txt[3:end]) or {}
+                except Exception:  # noqa: BLE001
+                    meta = {}
+        items.append({
+            "skill_id": meta.get("name") or f.stem,
+            "file": str(f),
+            "role": meta.get("role") or "",
+            "enabled": meta.get("enabled", True),
+            "description": (meta.get("description") or "").strip(),
+            "when_to_use": (meta.get("whenToUse") or "").strip(),
+            "generator": meta.get("generator") or "",
+        })
+    idx = {"generated_at": now_iso(), "count": len(items), "skills": items}
+    jdump(REG_DIR / "skills-index.json", idx)
+    return idx
+
+
+def _probe_tokens(text: str) -> list[str]:
+    """任务特征词：英文/标识符整体保留，中文按 2-gram + 4 字滑窗切（两种粒度都试）。"""
+    toks: list[str] = []
+    for m in re.findall(r"[A-Za-z0-9_./+-]{3,}|[\u4e00-\u9fff]+", text or ""):
+        if re.fullmatch(r"[\u4e00-\u9fff]+", m):
+            if len(m) <= 4:
+                toks.append(m)
+            else:
+                toks.extend(m[i:i + 2] for i in range(len(m) - 1))
+                toks.extend(m[i:i + 4] for i in range(0, len(m) - 3, 2))
+        else:
+            toks.append(m.lower())
+    return list(dict.fromkeys(t for t in toks if t))
+
+
+def recommend_skills(task: dict, limit: int = 12) -> dict:
+    idx = jload(REG_DIR / "skills-index.json")
+    if not idx:
+        idx = build_skill_index()
+    prof = task["environment"]["site_profile"]
+    probe = " ".join([
+        task["task"].get("objective", ""),
+        task["task"].get("target", ""),
+        _profile_summary(prof),
+        " ".join(task["environment"].get("observations", [])),
+    ]).lower()
+
+    wf_skills = set(task["planning"].get("selected_skills", []))
+    scored = []
+    for s in idx["skills"]:
+        if s.get("enabled") is False:
+            continue
+        score = 0.0
+        why = []
+        if s["skill_id"] in wf_skills:
+            score += 5
+            why.append("workflow")
+        hay = (s["description"] + " " + s["when_to_use"] + " " + s["skill_id"]).lower()
+        # 中文必须切词：整段「白牌站群落地页」几乎不会原样出现在 description 里，
+        # 不切就永远 0 命中（实测过）。与 gate 的 _compact_query 用同一套切法。
+        for tok in _probe_tokens(probe):
+            if tok and tok in hay:
+                score += 0.6
+                why.append(f"kw:{tok}")
+        if s["role"] and s["role"] in ("recon", "vuln-scan", "exploit", "internal") and s["role"] in task["planning"].get("selected_roles", []):
+            score += 1.5
+            why.append(f"role:{s['role']}")
+        if score > 0:
+            scored.append({"skill_id": s["skill_id"], "role": s["role"], "score": round(score, 2),
+                           "why": sorted(set(why))[:6], "skill_md": s["file"]})
+    scored.sort(key=lambda x: -x["score"])
+    return {"ok": True, "count": len(scored), "items": scored[:limit], "index_size": idx["count"]}
+
+
+# ── 工具注册表 ──────────────────────────────────────────────────────────────
+def build_tool_registry() -> dict:
+    """登记「本机实际存在的工具」——存在性与权限靠探测，不靠声明。"""
+    cli_tools = [
+        ("nmap", "端口/服务扫描", ["nmap", "-h"]),
+        ("nuclei", "模板化漏洞扫描", ["nuclei", "-version"]),
+        ("fscan", "内网综合扫描", ["fscan", "-h"]),
+        ("gogo", "内网测绘", ["gogo", "-h"]),
+        ("suo5", "WebShell SOCKS5 隧道", ["suo5", "-h"]),
+        ("frpc", "frp 客户端", ["frpc", "-v"]),
+        ("chisel", "HTTP 隧道", ["chisel", "--version"]),
+        ("ffuf", "目录/参数爆破", ["ffuf", "-V"]),
+        ("sqlmap", "SQL 注入", ["sqlmap", "--version"]),
+        ("hashcat", "离线破解", ["hashcat", "--version"]),
+        ("subfinder", "子域枚举", ["subfinder", "-version"]),
+        ("pd-httpx", "HTTP 探活/指纹", ["pd-httpx", "-version"]),
+        ("frida", "动态 Hook", ["frida", "--version"]),
+        ("jadx", "APK 反编译", ["jadx", "--version"]),
+        ("node", "JS 运行时（知识桥/前端复现）", ["node", "-v"]),
+        ("python3", "脚本运行时", ["python3", "-V"]),
+    ]
+    items = []
+    for name, purpose, probe in cli_tools:
+        exists = shutil.which(name) is not None
+        version = ""
+        if exists:
+            try:
+                p = subprocess.run(probe, capture_output=True, timeout=8)
+                version = (p.stdout or p.stderr).decode("utf-8", "replace").strip().splitlines()[0][:80] if (p.stdout or p.stderr) else ""
+            except Exception:  # noqa: BLE001
+                version = "(probe failed)"
+        items.append({"name": name, "kind": "cli", "purpose": purpose, "installed": exists,
+                      "version": version, "readonly": True, "external": True})
+    # MCP / 内置工具面（知识层与编排层）
+    items.extend([
+        {"name": "rtis_kb（node 桥）", "kind": "mcp", "purpose": "知识检索/关系/反知识/事件",
+         "installed": KB_BRIDGE.exists(), "version": "", "readonly": False, "external": False},
+        {"name": "rtis.py", "kind": "cli", "purpose": "编排/画像/路由/复盘",
+         "installed": Path(__file__).exists(), "version": "1", "readonly": False, "external": False},
+        {"name": "knowledge.db", "kind": "datastore", "purpose": "POC 知识库（只读访问，事件 append）",
+         "installed": KB_PATH.exists(), "version": "", "readonly": True, "external": False},
+        {"name": "rtis_mcp.mjs", "kind": "mcp", "purpose": "zcode MCP 入口（含 RTIS 工具）",
+         "installed": (REDTEAM_ROOT / "scripts/rtis_mcp.mjs").exists(), "version": "", "readonly": False, "external": False},
+    ])
+    reg = {"generated_at": now_iso(), "items": items}
+    jdump(REG_DIR / "tools.json", reg)
+    return reg
+
+
+# ── 复盘 ────────────────────────────────────────────────────────────────────
+def aar(task: dict) -> dict:
+    tid = task["task"]["id"]
+    prof = task["environment"]["site_profile"]
+    hs = task["execution"].get("handoffs", [])
+    k = task["knowledge"]
+    applied = []
+    for g in k.get("gates", []):
+        pass
+    try:
+        tr = kb("trace", run=tid, limit=500)
+        events = (tr.get("result") or {}).get("items", []) if tr.get("ok") else []
+    except Exception:  # noqa: BLE001
+        events = []
+    cnt: dict[str, int] = {}
+    for e in events:
+        cnt[e.get("event", "?")] = cnt.get(e.get("event", "?"), 0) + 1
+
+    planned = [p.get("phase") for wf in task["planning"].get("selected_workflows", []) for p in wf.get("phases", [])]
+    done = [p.get("phase") for p in task["execution"].get("completed_phases", [])]
+
+    rec = {
+        "task_id": tid,
+        "generated_at": now_iso(),
+        "status": task["task"]["status"],
+        "site_profile": prof,
+        "selected_workflows": [w.get("id") for w in task["planning"].get("selected_workflows", [])],
+        "planned_phases": planned,
+        "actual_phases": done,
+        "phase_gap": [p for p in planned if p not in done],
+        "knowledge": {
+            "search_status": k.get("search_status"),
+            "sufficiency": k.get("sufficiency"),
+            "queries": len(k.get("search_queries") or []),
+            "matched": len(k.get("matched_entries") or []),
+            "selected": len(k.get("selected_entries") or []),
+            "rejected": len(k.get("rejected_entries") or []),
+            "events": cnt,
+            "telemetry_ok": bool(events),
+        },
+        "handoffs": len(hs),
+        "findings": len(task["execution"].get("findings") or []),
+        "gap_questions": KNOWLEDGE_GAP_QUESTIONS,
+        "knowledge_miss_hypothesis": _gap_hypothesis(k, events),
+        "improvement_candidates": _improvements(task, planned, done),
+        "regression_candidates": [f"复现 {tid} 的画像→门禁→路由链"],
+    }
+    task["final"]["postmortem_status"] = "done"
+    d = REPORTS_DIR / tid
+    d.mkdir(parents=True, exist_ok=True)
+    jdump(d / "aar.json", rec)
+    (d / "aar.md").write_text(_aar_markdown(rec), encoding="utf-8")
+    log_event(tid, "aar", {"phases_gap": len(rec["phase_gap"])})
+    return rec
+
+
+def _gap_hypothesis(k: dict, events: list) -> str:
+    if k.get("search_status") != "done":
+        return "未执行检索（流程缺陷：门禁未跑）"
+    if not k.get("matched_entries"):
+        return "检索执行了但零命中 ⇒ 可能真缺知识，或查询词与索引词表不匹配（先扩同义词再判断）"
+    if not k.get("selected_entries"):
+        return "命中但未选择 ⇒ 相关性够但未采用，需复核打分与人工判读"
+    if not any(e.get("event") == "applied" for e in events):
+        return "已选择但无 applied 事件 ⇒ 知识被打开却没落到动作（复用断裂）"
+    return "知识链完整（retrieved→opened→selected→applied）"
+
+
+def _improvements(task: dict, planned: list, done: list) -> list[str]:
+    out_: list[str] = []
+    if task["knowledge"].get("sufficiency") == "insufficient":
+        out_.append("该站型知识不足：候选新增 Case，但需用户授权后才写库")
+    if [p for p in planned if p not in done]:
+        out_.append(f"计划阶段未完成: {', '.join(p for p in planned if p not in done)}")
+    if not task["execution"].get("handoffs"):
+        out_.append("无结构化交接：执行结果无法被下一个角色直接消费")
+    return out_
+
+
+def _aar_markdown(rec: dict) -> str:
+    lines = [f"# AAR · {rec['task_id']}", "", f"- 状态：{rec['status']}", f"- 站型画像：{_profile_summary(rec['site_profile'])}",
+             f"- 工作流：{', '.join(rec['selected_workflows']) or '无'}", "", "## 阶段", ""]
+    lines.append(f"- 计划：{', '.join(rec['planned_phases']) or '无'}")
+    lines.append(f"- 实际：{', '.join(rec['actual_phases']) or '无'}")
+    lines.append(f"- 缺口：{', '.join(rec['phase_gap']) or '无'}")
+    lines += ["", "## 知识调用", "", f"```json\n{json.dumps(rec['knowledge'], ensure_ascii=False, indent=2)}\n```", ""]
+    lines.append(f"**遗漏假设**：{rec['knowledge_miss_hypothesis']}")
+    lines += ["", "## 改进候选", ""]
+    lines += [f"- {x}" for x in rec["improvement_candidates"]] or ["- 无"]
+    lines += ["", "## 六问（逐条回答后才允许提出新增知识）", ""]
+    lines += [f"{i+1}. {q}" for i, q in enumerate(rec["gap_questions"])]
+    return "\n".join(lines) + "\n"
+
+
+# ── 回归测试 ────────────────────────────────────────────────────────────────
+def run_tests(case: str = "") -> dict:
+    """回归用例：全部离线（本地样本 + 知识库），不访问任何目标。"""
+    results = []
+
+    def record(name, ok, detail, expect=""):
+        results.append({"name": name, "ok": bool(ok), "detail": detail, "expect": expect})
+
+    # T1 站型识别：用 openredir 真实样本
+    sample_dir = Path("/home/emo/code/pensting/openredir-landing/raw")
+    f = sample_dir / "T1_final.html"
+    if f.exists():
+        body = f.read_text(encoding="utf-8", errors="replace")[:200000]
+        t = blank_task("白牌站群落地页 hex2bin 参数分析", "https://example-landing.test/", "recon", ["example-landing.test"], [])
+        r = profile_scan(t, "https://example-landing.test/?_s=1", "", body)
+        values = [x for x in r["applied"]]
+        has_gen = any("hex2bin-page" in v for v in values)
+        has_biz = any("business_type=" in v for v in values)
+        record("T1 站型识别（真实样本）", has_gen and has_biz,
+               {"applied": values[:8], "signals": [h["id"] for h in r["signals_hit"]]},
+               "命中 hex2bin-page 并给出 business_type 候选")
+        # 不能单凭一个信号定案
+        conf = t["environment"]["site_profile"].get("business_type", {}).get("confidence", 0)
+        record("T1b 置信度不是 1.0（不允许单信号定案）", conf < 1.0, {"confidence": conf}, "< 1.0")
+    else:
+        record("T1 站型识别（真实样本）", False, f"样本缺失: {f}", "样本存在")
+
+    # T2 知识优先检索：真实调知识库
+    queries = ["hex2bin 落地页 参数 归一化", "_tpl_ 模板 语义", "站群跳转中枢", "CloudFront 源站 IP", "响应加密 明文旁路", "文件流 导出 越权", "swagger 未授权"]
+    hits = {}
+    for q in queries:
+        r = kb_search(q, limit=5)
+        hits[q] = [{"id": i["id"], "score": round(float(i["score"]), 3)} for i in (r.get("items") or [])]
+    covered = [q for q, v in hits.items() if v]
+    record("T2 知识优先检索（7 组特征查询）", len(covered) >= 5, {"covered": len(covered), "total": len(queries), "hits": hits},
+           "≥5 组有命中")
+
+    # T3 路由：白牌站型应选 WF-01，且不应选内网
+    if f.exists():
+        t2 = blank_task("白牌站群落地页", "https://example-landing.test/", "recon", [], [])
+        profile_scan(t2, "https://example-landing.test/?_s=1", "", f.read_text(encoding="utf-8", errors="replace")[:200000])
+        r2 = route(t2)
+        ids = [s["id"] for s in r2["selected"]]
+        record("T3 工作流路由（白牌 → WF-01）", "WF-01" in ids, {"selected": ids, "why": r2["selected"][:3]}, "含 WF-01")
+        record("T3b 未把内网工作流误选", "WF-12" not in ids, {"selected": ids}, "不含 WF-12")
+        record("T3c 有排除项与理由", len(r2["excluded"]) > 0, {"excluded": len(r2["excluded"])}, ">0")
+
+    # T4 知识调用审计
+    t3 = blank_task("审计事件链验证", "kb-audit-test", "recon", [], [])
+    g = gate(t3, extra=["hex2bin 参数 diff"], limit=5)
+    tr = kb("trace", run=t3["task"]["id"], limit=200)
+    ev = (tr.get("result") or {}).get("items", []) if tr.get("ok") else []
+    kinds = sorted({e.get("event") for e in ev})
+    record("T4 知识调用审计（search/returned 落事件）", ("search" in kinds and "returned" in kinds),
+           {"events": kinds, "count": len(ev), "hits": g["gate"]["hits"]}, "含 search 与 returned")
+
+    # T5 复盘
+    a = aar(t3)
+    record("T5 复盘生成（含六问与遗漏假设）", bool(a["gap_questions"]) and bool(a["knowledge_miss_hypothesis"]),
+           {"hypothesis": a["knowledge_miss_hypothesis"], "events": a["knowledge"]["events"]}, "六问非空")
+
+    # T6 交接协议
+    t4 = blank_task("交接测试", "x", "recon", [], [])
+    h = handoff_create(t4, "recon", "completed", "收集完成", ["资产 3 个"], ["asset#1"], "进 vuln-scan", [], [], [])
+    chk = handoff_check(t4)
+    record("T6 交接协议完整性", chk["ok"], {"problems": chk["problems"], "handoffs": chk["handoffs"]}, "无缺字段")
+
+    # T7 技能索引
+    idx = build_skill_index()
+    record("T7 技能索引", idx["count"] >= 120, {"count": idx["count"]}, "≥120")
+
+    # T8 工具注册表
+    tr2 = build_tool_registry()
+    installed = [i["name"] for i in tr2["items"] if i["installed"]]
+    record("T8 工具注册表探测", len(installed) >= 3, {"installed": installed[:10]}, "≥3 个可用")
+
+    # T9 状态机：跳阶段必须写理由；写了理由要记录被跳过的阶段
+    t9 = blank_task("状态机测试", "x", "recon", [], [])
+    save_task(t9)
+    tid9 = t9["task"]["id"]
+    r_no = subprocess.run([sys.executable, str(Path(__file__)), "task", "transition", tid9, "WORKFLOW_PLANNING"],
+                          capture_output=True, text=True, timeout=60)
+    ok_reject = '"ok": false' in r_no.stdout
+    r_yes = subprocess.run([sys.executable, str(Path(__file__)), "task", "transition", tid9, "WORKFLOW_PLANNING",
+                            "--reason", "回归测试：直接进入规划"],
+                           capture_output=True, text=True, timeout=60)
+    t9b = load_task(tid9)
+    skipped = [x["state"] for x in t9b["task"].get("skipped_phases", [])]
+    record("T9 跳阶段门禁（无理由拒绝 / 有理由记录 skipped）",
+           ok_reject and len(skipped) >= 3, {"rejected_without_reason": ok_reject, "skipped": skipped},
+           "拒绝无理由跳级且记录 skipped")
+
+    # T10 拒绝知识必须写理由
+    t10 = blank_task("拒绝理由测试", "x", "recon", [], [])
+    tid10 = t10["task"]["id"]
+    save_task(t10)
+    r_bad = subprocess.run([sys.executable, str(Path(__file__)), "knowledge", "reject", tid10, "--ids", "73"],
+                           capture_output=True, text=True, timeout=60)
+    ok_reject2 = '"ok": false' in r_bad.stdout
+    knowledge_reject(t10, [73], "版本不同")
+    record("T10 知识拒绝必须带理由", ok_reject2 and len(t10["knowledge"]["rejected_entries"]) == 1,
+           {"rejected_without_reason": ok_reject2, "entries": t10["knowledge"]["rejected_entries"]},
+           "无理由被拒 + 有理由入库")
+
+    # T11 角色稿同步覆盖（每个 engagement 六个角色都有 rtis 块）
+    total, with_block = 0, 0
+    for agents in ENGAGEMENTS_DIR.glob("*/agents"):
+        for f in agents.glob("*.md"):
+            total += 1
+            try:
+                if ROLE_MARK_BEGIN in f.read_text(encoding="utf-8"):
+                    with_block += 1
+            except Exception:  # noqa: BLE001
+                pass
+    record("T11 角色稿 RTIS 段覆盖", total > 0 and with_block == total,
+           {"files": total, "with_block": with_block}, "全部角色稿含 rtis 段")
+
+    # T12 工作流注册表结构完整性
+    reg = registry()
+    wfs = reg.get("workflows", []) or []
+    required = ["id", "name", "description", "trigger", "phases", "related_skills", "stop_conditions", "excluded_activities"]
+    bad = []
+    for wf in wfs:
+        miss = [k for k in required if not wf.get(k)]
+        if miss:
+            bad.append({"id": wf.get("id"), "missing": miss})
+    core = {"WF-00", "WF-01", "WF-02", "WF-03"}
+    have = {w.get("id") for w in wfs}
+    record("T12 工作流注册表（结构完整 + 四个核心工作流）",
+           len(wfs) >= 10 and not bad and core <= have,
+           {"workflows": len(wfs), "structural_problems": bad, "core_present": sorted(core & have)},
+           "≥10 条、无缺字段、含 WF-00/01/02/03")
+
+    # T13 全链路（离线）：new → profile → gate → route → handoff → aar
+    t13 = blank_task("全链路回归", "example.test", "recon", [], [])
+    save_task(t13)
+    profile_scan(t13, "https://example.test/?_s=1", "", 'document.write(hex2bin("3c"))')
+    g13 = gate(t13, limit=5)
+    r13 = route(t13)
+    h13 = handoff_create(t13, "recon", "completed", "全链路", ["画像+门禁+路由完成"], ["gate#1"], "进 vuln-scan", [], [], [])
+    a13 = aar(t13)
+    chain_ok = (g13["gate"]["hits"] > 0 and r13["selected"] and h13["ok"] and a13["task_id"] == t13["task"]["id"])
+    record("T13 全链路（画像→门禁→路由→交接→复盘）", chain_ok,
+           {"gate_hits": g13["gate"]["hits"], "workflows": [x["id"] for x in r13["selected"]],
+            "handoff": h13["ok"], "aar": a13["task_id"] == t13["task"]["id"]},
+           "五段全部产出")
+
+    # T14 技能推荐（要能按任务推出现实可用的技能，而不是空列表）
+    rec = recommend_skills(t13, limit=8) if "t13" in dir() else {"items": []}
+    top = [x["skill_id"] for x in rec.get("items", [])]
+    wf_linked = [x for x in rec.get("items", []) if "workflow" in x.get("why", [])]
+    record("T14 技能推荐（按任务打分）", len(top) >= 3 and len(wf_linked) >= 1,
+           {"top": top[:6], "workflow_linked": len(wf_linked)},
+           "≥3 条且至少 1 条来自工作流关联")
+
+    if case:
+        results = [r for r in results if case in r["name"]]
+    passed = sum(1 for r in results if r["ok"])
+    report = {"at": now_iso(), "total": len(results), "passed": passed, "failed": len(results) - passed, "results": results}
+    jdump(REPORTS_DIR / "test-report.json", report)
+    return report
+
+
+# ── 角色稿同步（让已有 engagement 也用上 RTIS 流程）─────────────────────────
+STORE_CORE = Path(os.environ.get(
+    "RTIS_STORE_CORE",
+    str(Path.home() / ".dsh/profiles/web/node_modules/dsh-purge-community/lib/redteam/store-core.js"),
+))
+ROLE_MARK_BEGIN = "<!-- rtis:begin（由 rtis.py sync-roles 维护，手改会被覆盖）-->"
+ROLE_MARK_END = "<!-- rtis:end -->"
+
+
+def _extract_role_block(heading: str) -> str:
+    """从 store-core.js 的模板字符串里取出 RTIS 段落（单一来源，避免两份文本漂移）。
+    结束边界必须用「反引号+逗号+换行」（JS 模板字面量的收尾），
+    不能用「换行+反引号」——模板内部每行都以 \\` 转义反引号开头，会一路吃到下一个模板，
+    实测那样会把 plan.md 写成 316KB（已发生过一次，靠 .bak-rtis 回滚）。"""
+    try:
+        txt = STORE_CORE.read_text(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        return ""
+    i = txt.find(heading)
+    if i < 0:
+        return ""
+    ends = [k for k in (
+        txt.find("`,\n", i), txt.find("`;\n", i), txt.find("`\n\n", i), txt.find("`\nconst", i),
+    ) if k > i]
+    if not ends:
+        return ""
+    block = txt[i:min(ends)].rstrip()
+    if len(block) > 3000:  # 提取跑偏的硬保护：宁可不同步，也不能写坏角色稿
+        return ""
+    return block.replace("\\`", "`")
+
+
+def sync_roles(apply: bool = True) -> dict:
+    exec_block = _extract_role_block("## RTIS 强制流程（编排层，不是建议）")
+    lead_block = _extract_role_block("## RTIS 编排（你的第一职责，先建任务再派活）")
+    if not exec_block and not lead_block:
+        return {"ok": False, "error": f"未能从 {STORE_CORE} 提取 RTIS 段"}
+    changed, unchanged, skipped = [], [], []
+    for agents in sorted(ENGAGEMENTS_DIR.glob("*/agents")):
+        for f in sorted(agents.glob("*.md")):
+            role = f.stem
+            block = lead_block if role == "plan" else exec_block
+            if not block:
+                skipped.append(str(f))
+                continue
+            txt = f.read_text(encoding="utf-8")
+            payload = f"{ROLE_MARK_BEGIN}\n{block}\n{ROLE_MARK_END}\n"
+            if ROLE_MARK_BEGIN in txt and ROLE_MARK_END in txt:
+                head, rest = txt.split(ROLE_MARK_BEGIN, 1)
+                _, tail = rest.split(ROLE_MARK_END, 1)
+                new = head + payload + tail.lstrip("\n")
+            else:
+                new = txt.rstrip("\n") + "\n\n" + payload
+            if new == txt:
+                unchanged.append(str(f))
+                continue
+            if apply:
+                bak = f.with_suffix(f.suffix + ".bak-rtis")
+                if not bak.exists():
+                    bak.write_text(txt, encoding="utf-8")
+                f.write_text(new, encoding="utf-8")
+            changed.append(str(f))
+    return {"ok": True, "applied": apply, "changed": len(changed), "unchanged": len(unchanged),
+            "skipped": len(skipped), "files": changed[:5], "block_chars": len(exec_block)}
+
+
+def outstanding(task: dict) -> dict:
+    """「还剩什么没做」——给下一个角色看的，不是给用户看的。"""
+    tid = task["task"]["id"]
+    hs = task["execution"].get("handoffs", [])
+    last_by_role: dict[str, dict] = {}
+    for h in hs:
+        f = Path(h["path"])
+        data = yload(f, {}) or {}
+        last_by_role[h["role"]] = {
+            "seq": h["seq"], "status": data.get("status"),
+            "at": data.get("at"), "findings": len(data.get("findings") or []),
+            "next": data.get("next_recommendation", ""),
+        }
+    planned = []
+    for wf in task["planning"].get("selected_workflows", []):
+        for ph in wf.get("phases", []):
+            planned.append({"workflow": wf.get("id"), "phase": ph.get("phase"), "role": ph.get("role")})
+    done_phases = {p.get("phase") for p in task["execution"].get("completed_phases", [])}
+    remaining = [p for p in planned if p["phase"] not in done_phases]
+    gates = task["knowledge"].get("gates") or []
+    return {
+        "task_id": tid,
+        "status": task["task"]["status"],
+        "knowledge_gate": {
+            "done": task["knowledge"].get("search_status") == "done",
+            "sufficiency": task["knowledge"].get("sufficiency"),
+            "gates": len(gates),
+            "selected": len(task["knowledge"].get("selected_entries") or []),
+            "rejected": len(task["knowledge"].get("rejected_entries") or []),
+        },
+        "profile_dimensions_set": len(task["environment"].get("site_profile") or {}),
+        "workflows": [w.get("id") for w in task["planning"].get("selected_workflows", [])],
+        "roles_done": last_by_role,
+        "phases_remaining": remaining[:20],
+        "handoff_problems": handoff_check(task)["problems"],
+        "duplicated_actions": handoff_check(task)["duplicated_actions"],
+        "next_suggestion": _next_suggestion(task, remaining),
+    }
+
+
+def _next_suggestion(task: dict, remaining: list) -> str:
+    if task["knowledge"].get("search_status") != "done":
+        return "先跑 gate（知识门禁未执行）"
+    if not task["planning"].get("selected_workflows"):
+        return "跑 route（还没有工作流计划）"
+    if remaining:
+        return f"下一步：{remaining[0]['role']} 执行 {remaining[0]['workflow']}/{remaining[0]['phase']}"
+    return "阶段已走完，跑 aar 收尾"
+
+
+# ── CLI ─────────────────────────────────────────────────────────────────────
+def cmd_task(args) -> None:
+    if args.task_cmd == "new":
+        authorized = [x for x in (args.authorized or "").split(",") if x]
+        excluded = [x for x in (args.excluded or "").split(",") if x]
+        t = blank_task(args.objective, args.target or "", args.type, authorized, excluded)
+        save_task(t)
+        log_event(t["task"]["id"], "task_new", {"objective": args.objective})
+        out({"ok": True, "task_id": t["task"]["id"], "status": "CREATED",
+             "next": "rtis.py task transition <id> AUTHORIZATION_REVIEW → profile scan → gate"})
+    elif args.task_cmd == "list":
+        rows = []
+        for p in sorted(TASKS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+            t = jload(p, {})
+            rows.append({"task_id": t.get("task", {}).get("id"), "status": t.get("task", {}).get("status"),
+                         "objective": (t.get("task", {}).get("objective") or "")[:60],
+                         "sufficiency": t.get("knowledge", {}).get("sufficiency"),
+                         "workflows": [w.get("id") for w in t.get("planning", {}).get("selected_workflows", [])]})
+        out({"ok": True, "count": len(rows), "tasks": rows[:50]})
+    elif args.task_cmd == "show":
+        t = load_task(args.task_id)
+        out({"ok": True, "task": t})
+    elif args.task_cmd == "transition":
+        t = load_task(args.task_id)
+        cur = t["task"]["status"]
+        target = args.state.upper()
+        if target not in ALL_STATES:
+            die(f"未知状态 {target}；合法状态: {', '.join(ALL_STATES)}")
+        skipped = []
+        if target in SIDE_STATES:
+            pass
+        elif FORWARD.get(cur) == target:
+            pass
+        else:
+            # 允许跨阶段前进，但必须写原因并记录被跳过的阶段
+            if not args.reason:
+                die(f"从 {cur} 到 {target} 不是相邻前进，必须用 --reason 说明理由")
+            try:
+                i, j = STATES.index(cur), STATES.index(target)
+            except ValueError:
+                die(f"状态 {cur} 不在主链上，先回到主链再前进（用 --reason）")
+            if j < i:
+                die(f"不允许回退 {cur} → {target}（需要重开任务或记录为 BLOCKED）")
+            skipped = STATES[i + 1:j]
+        t["task"]["status"] = target
+        t["task"]["status_history"].append({"at": now_iso(), "state": target, "reason": args.reason or "",
+                                            "skipped": skipped})
+        if skipped:
+            t["task"]["skipped_phases"].extend([{"state": s, "reason": args.reason, "at": now_iso()} for s in skipped])
+        save_task(t)
+        log_event(t["task"]["id"], "transition", {"from": cur, "to": target, "skipped": skipped})
+        out({"ok": True, "from": cur, "to": target, "skipped": skipped})
+
+
+def cmd_profile(args) -> None:
+    t = load_task(args.task_id)
+    if args.profile_cmd == "set":
+        r = profile_set(t, args.assignments, args.confidence, args.status, args.evidence or "")
+        save_task(t)
+        log_event(t["task"]["id"], "profile_set", {"changed": r["changed"]})
+        out({"ok": True, **{k: r[k] for k in ("changed",)}, "profile": profile_explain(t)})
+    elif args.profile_cmd == "scan":
+        headers = Path(args.headers).read_text(encoding="utf-8", errors="replace") if getattr(args, "headers", "") else ""
+        body = Path(args.body).read_text(encoding="utf-8", errors="replace") if getattr(args, "body", "") else ""
+        headers = headers or getattr(args, "headers_text", "") or ""
+        body = body or getattr(args, "body_text", "") or ""
+        r = profile_scan(t, args.url or "", headers, body)
+        save_task(t)
+        log_event(t["task"]["id"], "profile_scan", {"signals": [h["id"] for h in r["signals_hit"]]})
+        out({"ok": True, **r, "profile": profile_explain(t)})
+    elif args.profile_cmd == "show":
+        out({"ok": True, **profile_explain(t)})
+
+
+def cmd_gate(args) -> None:
+    t = load_task(args.task_id)
+    r = gate(t, extra=args.extra, limit=args.limit, record_events=not args.no_events)
+    save_task(t)
+    out({"ok": True, "gate": r["gate"],
+         "top": [{k: it[k] for k in ("id", "title", "score", "verified", "category")} for it in r["dossier"]],
+         "next": "rtis.py knowledge select/reject → route"})
+
+
+def cmd_knowledge(args) -> None:
+    t = load_task(args.task_id)
+    ids = [int(x) for x in (args.ids or "").split(",") if x.strip()]
+    if args.knowledge_cmd == "select":
+        out({"ok": True, **knowledge_select(t, ids, args.reason or "")})
+    elif args.knowledge_cmd == "reject":
+        out({"ok": True, **knowledge_reject(t, ids, args.reason or "")})
+    elif args.knowledge_cmd == "apply":
+        out({"ok": True, **knowledge_apply(t, ids, args.reason or "")})
+    save_task(t)
+
+
+def cmd_route(args) -> None:
+    t = load_task(args.task_id)
+    r = route(t)
+    save_task(t)
+    out(r)
+
+
+def cmd_handoff(args) -> None:
+    t = load_task(args.task_id)
+    if args.handoff_cmd == "new":
+        r = handoff_create(t, args.role, args.status, args.summary or "",
+                           args.findings or [], args.evidence or [], args.next or "", [], [], [])
+    else:
+        r = handoff_check(t)
+    save_task(t)
+    out({"ok": True, **r})
+
+
+def cmd_skills(args) -> None:
+    if args.skills_cmd == "index":
+        out({"ok": True, **{k: build_skill_index()[k] for k in ("count", "generated_at")}})
+    else:
+        t = load_task(args.task_id)
+        out(recommend_skills(t, limit=args.limit))
+
+
+def cmd_tools(args) -> None:
+    reg = build_tool_registry() if args.tools_cmd == "check" else (jload(REG_DIR / "tools.json") or build_tool_registry())
+    out({"ok": True, **reg})
+
+
+def cmd_aar(args) -> None:
+    t = load_task(args.task_id)
+    r = aar(t)
+    save_task(t)
+    out({"ok": True, **r})
+
+
+def cmd_test(args) -> None:
+    r = run_tests(args.case or "")
+    out({"ok": r["failed"] == 0, **r})
+
+
+def cmd_status(args) -> None:
+    tasks = list(TASKS_DIR.glob("*.json"))
+    kbstat = kb("stats")
+    k = (kbstat.get("result") or {}) if kbstat.get("ok") else {"error": kbstat.get("error")}
+    out({"ok": True,
+         "rtis_root": str(RTIS_ROOT),
+         "tasks": len(tasks),
+         "knowledge": {
+             "available": k.get("available"),
+             "by_type": k.get("by_type"),
+             "by_level": k.get("by_level"),
+             "by_lifecycle": k.get("by_lifecycle"),
+             "negatives": k.get("negatives"),
+             "relations": k.get("relations"),
+             "events": k.get("events"),
+             "orphans": k.get("orphans"),
+         } if kbstat.get("ok") else k,
+         "registry": {"workflows": len((registry().get("workflows") or [])),
+                      "signals": len((catalog().get("signals") or [])),
+                      "skills_index": (jload(REG_DIR / "skills-index.json") or {}).get("count"),
+                      "tools": len((jload(REG_DIR / "tools.json") or {}).get("items", []))}})
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(prog="rtis.py", description="RTIS 编排层：任务/画像/知识门禁/路由/交接/复盘")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    st = sub.add_parser("task", help="任务状态机")
+    sts = st.add_subparsers(dest="task_cmd", required=True)
+    a = sts.add_parser("new")
+    a.add_argument("--objective", required=True)
+    a.add_argument("--target", default="")
+    a.add_argument("--type", default="recon", choices=["recon", "vuln", "exploit", "internal", "full"])
+    a.add_argument("--authorized", default="")
+    a.add_argument("--excluded", default="")
+    sts.add_parser("list")
+    a = sts.add_parser("show"); a.add_argument("task_id")
+    a = sts.add_parser("transition"); a.add_argument("task_id"); a.add_argument("state"); a.add_argument("--reason", default="")
+
+    sp = sub.add_parser("profile", help="站型画像")
+    sps = sp.add_subparsers(dest="profile_cmd", required=True)
+    a = sps.add_parser("set"); a.add_argument("task_id"); a.add_argument("assignments", nargs="+")
+    a.add_argument("--confidence", type=float, default=1.0); a.add_argument("--status", default="confirmed",
+                                                                            choices=["confirmed", "candidate"])
+    a.add_argument("--evidence", default="")
+    a = sps.add_parser("scan"); a.add_argument("task_id"); a.add_argument("--url", default="")
+    a.add_argument("--headers", default=""); a.add_argument("--body", default="")
+    a.add_argument("--headers-text", default=""); a.add_argument("--body-text", default="")
+    a = sps.add_parser("show"); a.add_argument("task_id")
+
+    a = sub.add_parser("gate", help="强制知识检索门禁")
+    a.add_argument("task_id"); a.add_argument("--extra", nargs="*"); a.add_argument("--limit", type=int, default=12)
+    a.add_argument("--no-events", action="store_true")
+
+    sk = sub.add_parser("knowledge", help="选择/拒绝/采用知识")
+    sks = sk.add_subparsers(dest="knowledge_cmd", required=True)
+    for name in ("select", "reject", "apply"):
+        a = sks.add_parser(name); a.add_argument("task_id"); a.add_argument("--ids", required=True); a.add_argument("--reason", default="")
+
+    a = sub.add_parser("route", help="工作流路由"); a.add_argument("task_id")
+
+    sh = sub.add_parser("handoff", help="角色交接")
+    shs = sh.add_subparsers(dest="handoff_cmd", required=True)
+    a = shs.add_parser("new"); a.add_argument("task_id")
+    a.add_argument("--role", required=True, choices=["recon", "assess", "vuln-scan", "exploit", "internal", "plan"])
+    a.add_argument("--status", required=True, choices=["completed", "partial", "blocked", "failed"])
+    a.add_argument("--summary", default=""); a.add_argument("--findings", nargs="*")
+    a.add_argument("--evidence", nargs="*"); a.add_argument("--next", default="")
+    a = shs.add_parser("check"); a.add_argument("task_id")
+
+    ss = sub.add_parser("skills", help="技能索引/推荐")
+    sss = ss.add_subparsers(dest="skills_cmd", required=True)
+    sss.add_parser("index")
+    a = sss.add_parser("recommend"); a.add_argument("task_id"); a.add_argument("--limit", type=int, default=12)
+
+    s2 = sub.add_parser("tools", help="工具注册表")
+    s2s = s2.add_subparsers(dest="tools_cmd", required=True)
+    s2s.add_parser("check"); s2s.add_parser("list")
+
+    a = sub.add_parser("aar", help="复盘"); a.add_argument("task_id")
+    a = sub.add_parser("outstanding", help="还剩什么没做（给下一个角色）"); a.add_argument("task_id")
+    a = sub.add_parser("sync-roles", help="把 RTIS 流程段同步进已有 engagement 的角色稿")
+    a.add_argument("--dry-run", action="store_true")
+    a = sub.add_parser("test", help="离线回归"); a.add_argument("--case", default="")
+    sub.add_parser("status", help="总览")
+
+    args = p.parse_args()
+    {
+        "task": cmd_task, "profile": cmd_profile, "gate": cmd_gate, "knowledge": cmd_knowledge,
+        "route": cmd_route, "handoff": cmd_handoff, "skills": cmd_skills, "tools": cmd_tools,
+        "aar": cmd_aar, "test": cmd_test, "status": cmd_status,
+        "outstanding": lambda a: out({"ok": True, **outstanding(load_task(a.task_id))}),
+        "sync-roles": lambda a: out(sync_roles(apply=not a.dry_run)),
+    }[args.cmd](args)
+
+
+if __name__ == "__main__":
+    main()

@@ -5,6 +5,8 @@ members = [
     "crates/database",
     "crates/audit-engine",
     "crates/resource-engine",
+    "crates/search-engine",
+    "crates/quality-engine",
     "tests",
 ]
 
@@ -25,6 +27,8 @@ domain = { path = "crates/domain" }
 database = { path = "crates/database" }
 audit-engine = { path = "crates/audit-engine" }
 resource-engine = { path = "crates/resource-engine" }
+search-engine = { path = "crates/search-engine" }
+quality-engine = { path = "crates/quality-engine" }
 
 [profile.release]
 # 商业化基线：体积与 panic 行为显式声明

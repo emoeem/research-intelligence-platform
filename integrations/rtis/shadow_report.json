@@ -1,0 +1,209 @@
+{
+  "generated_at": "2026-11-05T19:43:27Z",
+  "queries": 3,
+  "expected_diffs": 10,
+  "anomalies": 0,
+  "verdict": "all_diffs_explained",
+  "results": [
+    {
+      "query": "落地页（白牌站群）",
+      "task_id": "shadow-m5-landing",
+      "legacy_status": "ok",
+      "rp_status": "no_match",
+      "legacy_candidates": 1,
+      "rp_candidates": 0,
+      "legacy_recommended": [],
+      "rp_recommended": [],
+      "diffs": [
+        {
+          "field": "matched_ids",
+          "legacy_only": [
+            "gh:hacker0x01/hacker101"
+          ],
+          "rp_only": []
+        },
+        {
+          "field": "status",
+          "legacy": "ok",
+          "rp": "no_match"
+        },
+        {
+          "field": "candidate_count",
+          "legacy": 1,
+          "rp": 0
+        },
+        {
+          "field": "detailed_research_required",
+          "legacy": true,
+          "rp": false
+        },
+        {
+          "field": "capability_gaps",
+          "legacy_count": 1,
+          "rp_count": 0
+        },
+        {
+          "field": "reason",
+          "legacy": "存在未映射的任务相关资源，需按需深读",
+          "rp": "内部能力已覆盖或无显著相关资源"
+        }
+      ],
+      "expected": [
+        {
+          "field": "matched_ids",
+          "legacy_only": [
+            "gh:hacker0x01/hacker101"
+          ],
+          "rp_only": [],
+          "why": "词元 blob 组成不同(platform: name+description+url)与权重简化"
+        },
+        {
+          "field": "status",
+          "legacy": "ok",
+          "rp": "no_match",
+          "why": "命中集差异（同上），no_match vs ok"
+        },
+        {
+          "field": "candidate_count",
+          "legacy": 1,
+          "rp": 0,
+          "why": "命中集差异：platform 缺 topics 轴、缺 CJK 桥、权重两轴(0.6/0.4)简化"
+        },
+        {
+          "field": "detailed_research_required",
+          "legacy": true,
+          "rp": false,
+          "why": "capability_gaps 恒空所致"
+        },
+        {
+          "field": "capability_gaps",
+          "legacy_count": 1,
+          "rp_count": 0,
+          "why": "platform 无 skill_mappings 表，恒空 -> detailed_research_required 恒 false"
+        },
+        {
+          "field": "reason",
+          "legacy": "存在未映射的任务相关资源，需按需深读",
+          "rp": "内部能力已覆盖或无显著相关资源",
+          "why": "capability_gaps 联动文案"
+        }
+      ],
+      "anomaly": []
+    },
+    {
+      "query": "api security",
+      "task_id": "shadow-m5-api",
+      "legacy_status": "ok",
+      "rp_status": "ok",
+      "legacy_candidates": 5,
+      "rp_candidates": 5,
+      "legacy_recommended": [
+        "gh:shieldfy/api-security-checklist",
+        "gh:swisskyrepo/payloadsallthethings",
+        "gh:the-art-of-hacking/h4cker",
+        "gh:rmusser01/infosec_reference",
+        "gh:trickest/cve"
+      ],
+      "rp_recommended": [],
+      "diffs": [
+        {
+          "field": "matched_ids",
+          "legacy_only": [
+            "gh:the-art-of-hacking/h4cker",
+            "gh:trickest/cve"
+          ],
+          "rp_only": [
+            "gh:danielmiessler/seclists",
+            "gh:infoslack/awesome-web-hacking"
+          ]
+        },
+        {
+          "field": "capability_gaps",
+          "legacy_count": 5,
+          "rp_count": 5
+        }
+      ],
+      "expected": [
+        {
+          "field": "matched_ids",
+          "legacy_only": [
+            "gh:the-art-of-hacking/h4cker",
+            "gh:trickest/cve"
+          ],
+          "rp_only": [
+            "gh:danielmiessler/seclists",
+            "gh:infoslack/awesome-web-hacking"
+          ],
+          "why": "词元 blob 组成不同(platform: name+description+url)与权重简化"
+        },
+        {
+          "field": "capability_gaps",
+          "legacy_count": 5,
+          "rp_count": 5,
+          "why": "platform 无 skill_mappings 表，恒空 -> detailed_research_required 恒 false"
+        }
+      ],
+      "anomaly": []
+    },
+    {
+      "query": "android",
+      "task_id": "shadow-m5-android",
+      "legacy_status": "ok",
+      "rp_status": "ok",
+      "legacy_candidates": 5,
+      "rp_candidates": 5,
+      "legacy_recommended": [
+        "gh:swisskyrepo/payloadsallthethings",
+        "gh:joe-b-security/awesome-prompt-injection"
+      ],
+      "rp_recommended": [],
+      "diffs": [
+        {
+          "field": "matched_ids",
+          "legacy_only": [
+            "gh:bst04/cybersources",
+            "gh:hacker0x01/hacker101",
+            "gh:infosecb/awesome-detection-engineering",
+            "gh:joe-b-security/awesome-prompt-injection"
+          ],
+          "rp_only": [
+            "gh:ashishb/android-security-awesome",
+            "gh:danielmiessler/seclists",
+            "gh:infoslack/awesome-web-hacking",
+            "gh:rmusser01/infosec_reference"
+          ]
+        },
+        {
+          "field": "capability_gaps",
+          "legacy_count": 5,
+          "rp_count": 5
+        }
+      ],
+      "expected": [
+        {
+          "field": "matched_ids",
+          "legacy_only": [
+            "gh:bst04/cybersources",
+            "gh:hacker0x01/hacker101",
+            "gh:infosecb/awesome-detection-engineering",
+            "gh:joe-b-security/awesome-prompt-injection"
+          ],
+          "rp_only": [
+            "gh:ashishb/android-security-awesome",
+            "gh:danielmiessler/seclists",
+            "gh:infoslack/awesome-web-hacking",
+            "gh:rmusser01/infosec_reference"
+          ],
+          "why": "词元 blob 组成不同(platform: name+description+url)与权重简化"
+        },
+        {
+          "field": "capability_gaps",
+          "legacy_count": 5,
+          "rp_count": 5,
+          "why": "platform 无 skill_mappings 表，恒空 -> detailed_research_required 恒 false"
+        }
+      ],
+      "anomaly": []
+    }
+  ]
+}

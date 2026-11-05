@@ -1,0 +1,9 @@
+{"at": "2026-11-05T19:41:34Z", "mode": "rp", "resolver_used": "rp", "status": "ok", "elapsed_ms": 4.0, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:41:34Z", "mode": "legacy", "resolver_used": "legacy", "status": "ok", "elapsed_ms": 93.9, "attempts": [{"path": "legacy", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:41:34Z", "mode": "auto", "resolver_used": "rp", "status": "ok", "elapsed_ms": 4.8, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:42:27Z", "mode": "auto", "resolver_used": "rp", "status": "no_match", "elapsed_ms": 3.3, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:43:27Z", "mode": "rp", "resolver_used": "rp", "status": "no_match", "elapsed_ms": 3.2, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:43:27Z", "mode": "rp", "resolver_used": "rp", "status": "ok", "elapsed_ms": 3.8, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:43:27Z", "mode": "rp", "resolver_used": "rp", "status": "ok", "elapsed_ms": 4.5, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:44:45Z", "mode": "auto", "resolver_used": "rp", "status": "no_match", "elapsed_ms": 3.5, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-05T19:45:06Z", "mode": "auto", "resolver_used": "rp", "status": "no_match", "elapsed_ms": 3.3, "attempts": [{"path": "rp", "ok": true, "error": null}]}

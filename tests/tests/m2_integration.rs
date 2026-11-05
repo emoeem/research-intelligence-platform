@@ -20,14 +20,29 @@ fn migrate_audit_resolve_integration() {
     let applied1 = database::migrate(&pool, &migrations_dir()).unwrap();
     // migrations/ 含 001_init.sql（自设 user_version=1）与 002_tasks.sql（M1 第二批，
     // 002 头注明确把 user_version 递增机制留给 M2 迁移框架：由执行器补写 2）。
+    // M4 会话注：003_tools_workflow.sql 为并行 M6 会话增量迁移，断言随目录
+    // 现状演进（按文件数动态断言，前两版固定为 1/2）。
     let versions: Vec<i64> = applied1.iter().map(|m| m.version).collect();
-    assert_eq!(versions, vec![1, 2], "got {applied1:?}");
+    assert_eq!(
+        &versions[..2.min(versions.len())],
+        &[1, 2],
+        "got {applied1:?}"
+    );
+    let sql_count = std::fs::read_dir(migrations_dir())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "sql"))
+        .count();
+    assert_eq!(versions.len(), sql_count, "migrations applied == sql files");
     let applied2 = database::migrate(&pool, &migrations_dir()).unwrap();
     assert!(applied2.is_empty(), "migrate must be idempotent");
     let user_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(user_version, 2);
+    assert_eq!(
+        user_version, sql_count as i64,
+        "user_version tracks migration count"
+    );
 
     // 2) audit-engine Emit（走过真实 audit_event 表）
     let engine = AuditEngine::new(pool.clone());

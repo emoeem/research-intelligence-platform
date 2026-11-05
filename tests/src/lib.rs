@@ -171,3 +171,32 @@ pub fn run_rust_resolve(keywords: &[&str]) -> resource_engine::ResolveResult {
     q.limit = LIMIT;
     resource_engine::ResourceRepository::resolve(&repo, &q).expect("rust resolve")
 }
+
+/// M4：在临时目录构建 search-engine 派生索引（platform dryrun 库 + catalog
+/// 副本 topics 折叠），返回索引库路径。catalog 用 sqlite backup 副本（生产库
+/// 零写入，与 M2 parity 同纪律）。
+pub fn build_search_index(tmp_dir: &Path) -> PathBuf {
+    let catalog_copy = snapshot_catalog(tmp_dir);
+    let index_db = tmp_dir.join("platform-search.db");
+    let platform = database::Pool::open(database::PoolConfig::readonly_file(platform_db()))
+        .expect("open platform dryrun db");
+    let catalog = database::Pool::open(database::PoolConfig::readonly_file(&catalog_copy))
+        .expect("open catalog snapshot");
+    let index = database::Pool::open(database::PoolConfig::writable_file(&index_db))
+        .expect("open index db");
+    let report = search_engine::SearchIndex::rebuild(&platform, &catalog, &index)
+        .expect("build search index");
+    assert_eq!(report.doc_count, 81, "real dryrun corpus is 81 resources");
+    assert_eq!(report.fts_rows, report.doc_count);
+    index_db
+}
+
+/// M4：对已构建索引库执行 search-engine 混合检索。
+pub fn run_rust_search(index_db: &Path, keywords: &[&str]) -> search_engine::Hits {
+    let pool =
+        database::Pool::open(database::PoolConfig::readonly_file(index_db)).expect("open index db");
+    let engine = search_engine::SearchEngine::new(pool);
+    let mut q = search_engine::SearchQuery::new(keywords.iter().map(|s| s.to_string()).collect());
+    q.limit = LIMIT;
+    engine.search(&q).expect("rust search")
+}
