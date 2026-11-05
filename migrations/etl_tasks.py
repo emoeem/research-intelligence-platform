@@ -36,7 +36,9 @@ ETL_VERSION = "1.0.0"
 
 MIG_DIR = Path(__file__).resolve().parent
 
-SRC_TASKS_DIR = Path("/home/emo/.dsh/redteam/rtis/data/tasks")
+# 源快照锁定（M8）：快照目录存在时对冻结副本执行（计划 §6.3）。
+_SNAP = Path(__file__).resolve().parent / "sources-snapshot"
+SRC_TASKS_DIR = (_SNAP / "tasks") if (_SNAP / "tasks").is_dir() else Path("/home/emo/.dsh/redteam/rtis/data/tasks")
 TARGET_DB = MIG_DIR / "platform-dryrun.db"
 SCHEMA_002_SQL = MIG_DIR / "002_tasks.sql"
 

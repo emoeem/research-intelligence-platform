@@ -1,0 +1,1001 @@
+{
+  "task": {
+    "id": "rtis-20261103-025642-8960",
+    "title": "手工测试 iframes.airbnbpayments.com 支付卡 iframe（origin 参数、frame-a…",
+    "objective": "手工测试 iframes.airbnbpayments.com 支付卡 iframe（origin 参数、frame-ancestors、postMessage、deploy hash 旧版本、dev 对端差分），按 16 项清单出 finding 或 exhaust 结论",
+    "task_type": "vuln",
+    "target": "https://iframes.airbnbpayments.com/3b2d37b3518f41ce3d98618e2e7cd9f0cfda1452/iframe_v2.html",
+    "created_at": "2026-11-03T02:56:42+08:00",
+    "updated_at": "2026-11-03T02:56:42+08:00",
+    "status": "COMPLETED",
+    "skipped_phases": [
+      {
+        "state": "ENVIRONMENT_PROFILING",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "LOCAL_KNOWLEDGE_RETRIEVAL",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "EXTERNAL_RESEARCH",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "WORKFLOW_PLANNING",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "AUTHORIZED_EXECUTION",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "VERIFICATION",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "REPORTING",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      },
+      {
+        "state": "POSTMORTEM",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "at": "2026-11-03T03:14:22+08:00"
+      }
+    ],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:42+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T03:11:34+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "目标 *.airbnbpayments.com 在 HackerOne airbnb 范围（scope.json 行 19 / SCOPE.md:43），本轮只做只读 GET 与本地复现，不触碰用户数据",
+        "skipped": []
+      },
+      {
+        "at": "2026-11-03T03:14:22+08:00",
+        "state": "COMPLETED",
+        "reason": "handoff + aar 完成，finding-01 与 exhaust 落盘，知识库回填 900017",
+        "skipped": [
+          "ENVIRONMENT_PROFILING",
+          "LOCAL_KNOWLEDGE_RETRIEVAL",
+          "EXTERNAL_RESEARCH",
+          "WORKFLOW_PLANNING",
+          "AUTHORIZED_EXECUTION",
+          "VERIFICATION",
+          "REPORTING",
+          "POSTMORTEM"
+        ]
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "*.airbnbpayments.com (HackerOne airbnb",
+      " scope.json 行 \"*.airbnbpayments.com\")"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "delivery_architecture": {
+        "value": "cdn-fronted",
+        "status": "candidate",
+        "confidence": 0.9,
+        "evidence": [
+          "signal:cloudfront"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:11:37+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "cloudfront"
+    ],
+    "unknowns": [
+      "business_type",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "手工测试 iframes.airbnbpayments.com 支付卡 iframe（origin 参数、frame-ancestors、postMessage、deploy hash 旧版本、dev 对端差分），按 16 项清单出 finding 或 exhaust 结论",
+      "https://iframes.airbnbpayments.com/3b2d37b3518f41ce3d98618e2e7cd9f0cfda1452/iframe_v2.html",
+      "cdn-fronted",
+      "CDN 源站 IP 发现",
+      "CloudFront 源站",
+      "边缘 回源",
+      "cloudfront"
+    ],
+    "matched_entries": [
+      {
+        "id": 22,
+        "code": "按-sni-http-host-分流的透明代理绕过-tcp-分段拆解请求头强制按-ip-直连-cdn-源站直连通用手法",
+        "title": "按 SNI/HTTP-Host 分流的透明代理绕过：TCP 分段拆解请求头强制按 IP 直连（CDN 源站直连通用手法）",
+        "kind": "script",
+        "category": "tunnel",
+        "verified": true,
+        "score": 0.6525,
+        "matched_by": [
+          "expand:delivery_architecture"
+        ]
+      },
+      {
+        "id": 59651,
+        "code": "x-forwarded-for-注释逃逸-文档首部任意-js-执行-落地页站群-开放重定向原语",
+        "title": "X-Forwarded-For 注释逃逸 → 文档首部任意 JS 执行（落地页站群，开放重定向原语）",
+        "kind": "poc",
+        "category": "other",
+        "verified": true,
+        "score": 0.59,
+        "matched_by": [
+          "expand:delivery_architecture"
+        ]
+      },
+      {
+        "id": 59654,
+        "code": "springdoc-openapi-泄露源站-nlb-cdn-绕过-零鉴权端点盘点",
+        "title": "Springdoc OpenAPI 泄露源站 NLB → CDN 绕过 + 零鉴权端点盘点",
+        "kind": "script",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.5775,
+        "matched_by": [
+          "expand:delivery_architecture",
+          "archetype:cdn-fronted"
+        ]
+      },
+      {
+        "id": 56,
+        "code": "前置分发器前缀白名单绕过-entrance-..-直连裸源站-cdn-绕过",
+        "title": "前置分发器前缀白名单绕过：/entrance/../ 直连裸源站（CDN 绕过）",
+        "kind": "poc",
+        "category": "auth-bypass",
+        "verified": true,
+        "score": 0.5739,
+        "matched_by": [
+          "expand:delivery_architecture"
+        ]
+      },
+      {
+        "id": 75,
+        "code": "站群跳转中枢-前缀-lt-id-gt-lt-code-gt-探测法-id-定-host-code-入落地页-js-串-含开放重定向否证口径",
+        "title": "站群跳转中枢 /前缀/&lt;id&gt;/&lt;code&gt; 探测法：id 定 host、code 入落地页 JS 串（含开放重定向否证口径）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.5456,
+        "matched_by": [
+          "expand:delivery_architecture"
+        ]
+      },
+      {
+        "id": 59653,
+        "code": "对象存储分发链可替换性-5-分钟判别法-形态-列目录-匿名写-是否实时打包",
+        "title": "对象存储分发链可替换性 5 分钟判别法（形态/列目录/匿名写/是否实时打包）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.5456,
+        "matched_by": [
+          "expand:delivery_architecture"
+        ]
+      },
+      {
+        "id": 900002,
+        "code": "rule-edge-vs-origin",
+        "title": "边缘 / 前置分发器 / 源站 三分类判别（含 ETag 反例）",
+        "kind": "rule",
+        "category": "info-leak",
+        "verified": false,
+        "score": 0.5433,
+        "matched_by": [
+          "expand:delivery_architecture",
+          "archetype:cdn-fronted"
+        ]
+      },
+      {
+        "id": 39,
+        "code": "gin-debug-pprof-内网门禁可绕过性快速判定法-xff-oracle-前端严格度",
+        "title": "gin /debug/pprof 内网门禁可绕过性快速判定法（XFF oracle + 前端严格度）",
+        "kind": "poc",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.5346,
+        "matched_by": [
+          "expand:delivery_architecture"
+        ]
+      },
+      {
+        "id": 2814,
+        "code": "nuclei-cloudfront-compress-object",
+        "title": "CloudFront Compress Objects Automatically",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4808,
+        "matched_by": [
+          "signal:cloudfront"
+        ]
+      },
+      {
+        "id": 2815,
+        "code": "nuclei-cloudfront-custom-certificates",
+        "title": "Cloudfront Custom SSL/TLS Certificates - In Use",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4808,
+        "matched_by": [
+          "signal:cloudfront"
+        ]
+      }
+    ],
+    "selected_entries": [
+      {
+        "id": 900002,
+        "at": "2026-11-03T03:11:48+08:00",
+        "reason": "900002（ETag 不能证明源站）用于约束本次对旧部署 ETag 一致的解读；59653（对象存储可替换性判别）用于确认桶根 403/私有 ACL 的判定口径（写探针按任务约束不执行）"
+      },
+      {
+        "id": 59653,
+        "at": "2026-11-03T03:11:48+08:00",
+        "reason": "900002（ETag 不能证明源站）用于约束本次对旧部署 ETag 一致的解读；59653（对象存储可替换性判别）用于确认桶根 403/私有 ACL 的判定口径（写探针按任务约束不执行）"
+      }
+    ],
+    "rejected_entries": [
+      {
+        "id": 22,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 56,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 59651,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 59654,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 75,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 39,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 2814,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      },
+      {
+        "id": 2815,
+        "reason": "22/56 需已知源站 IP 或可绕的前置分发器；本目标 CloudFront→私有 S3，S3 直连在 TLS 阶段即失败，无 IP 可打。59651/75 是落地页站群跳转中枢手法，与静态卡 iframe 无关。59654 需 Springdoc/OpenAPI 面。39 需 gin pprof。2814/2815 是无需执行的 nuclei 信息模板，且 automated_scanning=unknown 不跑扫描器。",
+        "at": "2026-11-03T03:11:48+08:00"
+      }
+    ],
+    "sufficiency": "sufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:11:39+08:00",
+        "queries": [
+          "手工测试 iframes.airbnbpayments.com 支付卡 iframe（origin 参数、frame-ancestors、postMessage、deploy hash 旧版本、dev 对端差分），按 16 项清单出 finding 或 exhaust 结论",
+          "https://iframes.airbnbpayments.com/3b2d37b3518f41ce3d98618e2e7cd9f0cfda1452/iframe_v2.html",
+          "cdn-fronted",
+          "CDN 源站 IP 发现",
+          "CloudFront 源站",
+          "边缘 回源",
+          "cloudfront"
+        ],
+        "query_count": 7,
+        "hits": 10,
+        "top_score": 0.6525,
+        "sufficiency": "sufficient",
+        "archetypes": {
+          "cdn-fronted": 2,
+          "openapi-exposed": 1,
+          "white-label-landing": 1
+        },
+        "external_research_needed": false,
+        "per_query": [
+          {
+            "q": "手工测试 iframes.airbnbpayments.com 支付卡 iframe（origin 参数、frame-ancestors、postMessage、deploy hash 旧版本、dev 对端差分），按 16 项清单出 finding 或 exhaust 结论",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "iframes",
+              "airbnbpayments",
+              "com",
+              "iframe",
+              "origin",
+              "frame-ancestors",
+              "frame",
+              "ancestors",
+              "postmessage",
+              "deploy",
+              "hash",
+              "dev",
+              "16",
+              "finding",
+              "exhaust",
+              "手工",
+              "工测",
+              "测试",
+              "支付",
+              "付卡",
+              "参数",
+              "旧版",
+              "版本",
+              "对端",
+              "端差",
+              "差分",
+              "按",
+              "项清",
+              "清单",
+              "单出",
+              "或",
+              "结论"
+            ],
+            "candidates": 862,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "https://iframes.airbnbpayments.com/3b2d37b3518f41ce3d98618e2e7cd9f0cfda1452/iframe_v2.html",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "https",
+              "iframes",
+              "airbnbpayments",
+              "com",
+              "3b2d37b3518f41ce3d98618e2e7cd9f0cfda1452",
+              "iframe_v2",
+              "iframe",
+              "v2",
+              "html"
+            ],
+            "candidates": 808,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "cdn-fronted",
+            "origin": "dimension:delivery_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "cdn-fronted",
+              "cdn",
+              "fronted"
+            ],
+            "candidates": 45,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "CDN 源站 IP 发现",
+            "origin": "expand:delivery_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "cdn",
+              "ip",
+              "源站",
+              "发现"
+            ],
+            "candidates": 439,
+            "returned": 6,
+            "top": [
+              {
+                "id": 22,
+                "score": 0.5975,
+                "title": "按 SNI/HTTP-Host 分流的透明代理绕过：TCP 分段拆解请求头强制按 IP 直连（CDN 源站直连通用手法）"
+              },
+              {
+                "id": 59654,
+                "score": 0.5775,
+                "title": "Springdoc OpenAPI 泄露源站 NLB → CDN 绕过 + 零鉴权端点盘点"
+              },
+              {
+                "id": 56,
+                "score": 0.5739,
+                "title": "前置分发器前缀白名单绕过：/entrance/../ 直连裸源站（CDN 绕过）"
+              }
+            ]
+          },
+          {
+            "q": "CloudFront 源站",
+            "origin": "expand:delivery_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "cloudfront",
+              "源站"
+            ],
+            "candidates": 22,
+            "returned": 5,
+            "top": [
+              {
+                "id": 22,
+                "score": 0.6525,
+                "title": "按 SNI/HTTP-Host 分流的透明代理绕过：TCP 分段拆解请求头强制按 IP 直连（CDN 源站直连通用手法）"
+              },
+              {
+                "id": 59651,
+                "score": 0.59,
+                "title": "X-Forwarded-For 注释逃逸 → 文档首部任意 JS 执行（落地页站群，开放重定向原语）"
+              },
+              {
+                "id": 75,
+                "score": 0.5456,
+                "title": "站群跳转中枢 /前缀/&lt;id&gt;/&lt;code&gt; 探测法：id 定 host、code 入落地页 JS 串（含开放重定向否证口径）"
+              }
+            ]
+          },
+          {
+            "q": "边缘 回源",
+            "origin": "expand:delivery_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "边缘",
+              "回源"
+            ],
+            "candidates": 5,
+            "returned": 1,
+            "top": [
+              {
+                "id": 900002,
+                "score": 0.5067,
+                "title": "边缘 / 前置分发器 / 源站 三分类判别（含 ETag 反例）"
+              }
+            ]
+          },
+          {
+            "q": "cloudfront",
+            "origin": "signal:cloudfront",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "cloudfront"
+            ],
+            "candidates": 19,
+            "returned": 8,
+            "top": [
+              {
+                "id": 22,
+                "score": 0.515,
+                "title": "按 SNI/HTTP-Host 分流的透明代理绕过：TCP 分段拆解请求头强制按 IP 直连（CDN 源站直连通用手法）"
+              },
+              {
+                "id": 59651,
+                "score": 0.515,
+                "title": "X-Forwarded-For 注释逃逸 → 文档首部任意 JS 执行（落地页站群，开放重定向原语）"
+              },
+              {
+                "id": 59653,
+                "score": 0.515,
+                "title": "对象存储分发链可替换性 5 分钟判别法（形态/列目录/匿名写/是否实时打包）"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:11:39+08:00",
+      "top": [
+        {
+          "id": 22,
+          "code": "按-sni-http-host-分流的透明代理绕过-tcp-分段拆解请求头强制按-ip-直连-cdn-源站直连通用手法",
+          "title": "按 SNI/HTTP-Host 分流的透明代理绕过：TCP 分段拆解请求头强制按 IP 直连（CDN 源站直连通用手法）",
+          "kind": "script",
+          "category": "tunnel",
+          "component": "通用：透明代理 / sing-box / Clash / Passwall / Cloudflare / CloudFront / AWS ALB",
+          "verified": true,
+          "score": 0.6525,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 59651,
+          "code": "x-forwarded-for-注释逃逸-文档首部任意-js-执行-落地页站群-开放重定向原语",
+          "title": "X-Forwarded-For 注释逃逸 → 文档首部任意 JS 执行（落地页站群，开放重定向原语）",
+          "kind": "poc",
+          "category": "other",
+          "component": "落地页站群 landing-sdk（appId YC-155 等）/ nginx + CloudFront",
+          "verified": true,
+          "score": 0.59,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 59654,
+          "code": "springdoc-openapi-泄露源站-nlb-cdn-绕过-零鉴权端点盘点",
+          "title": "Springdoc OpenAPI 泄露源站 NLB → CDN 绕过 + 零鉴权端点盘点",
+          "kind": "script",
+          "category": "info-leak",
+          "component": "Springdoc / Spring Boot 微服务（站群反代前缀）",
+          "verified": true,
+          "score": 0.5775,
+          "rtis": {
+            "known": true,
+            "type": "Case",
+            "evidence_level": "K3",
+            "lifecycle": "Field-validated",
+            "archetypes": [
+              "cdn-fronted",
+              "openapi-exposed"
+            ],
+            "technology_tags": [
+              "springdoc",
+              "nlb"
+            ],
+            "method_tags": [
+              "cdn-bypass",
+              "unauth-inventory"
+            ],
+            "basis": "poc.verified=1+verified_note",
+            "has_negative": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture",
+            "archetype:cdn-fronted"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 56,
+          "code": "前置分发器前缀白名单绕过-entrance-..-直连裸源站-cdn-绕过",
+          "title": "前置分发器前缀白名单绕过：/entrance/../ 直连裸源站（CDN 绕过）",
+          "kind": "poc",
+          "category": "auth-bypass",
+          "component": "CK6u06Vu4 前置分发器 / 包网 CDN 入口层",
+          "verified": true,
+          "score": 0.5739,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 75,
+          "code": "站群跳转中枢-前缀-lt-id-gt-lt-code-gt-探测法-id-定-host-code-入落地页-js-串-含开放重定向否证口径",
+          "title": "站群跳转中枢 /前缀/&lt;id&gt;/&lt;code&gt; 探测法：id 定 host、code 入落地页 JS 串（含开放重定向否证口径）",
+          "kind": "script",
+          "category": "other",
+          "component": "站群跳转中枢（/前缀/&lt;id&gt;/&lt;code&gt;）+ LandingSDK 落地页（YC-* 模板，hex2bin 混淆）",
+          "verified": true,
+          "score": 0.5456,
+          "rtis": {
+            "known": true,
+            "type": "Method",
+            "evidence_level": "K3",
+            "lifecycle": "Field-validated",
+            "archetypes": [
+              "white-label-landing"
+            ],
+            "technology_tags": [
+              "站群",
+              "跳转中枢"
+            ],
+            "method_tags": [
+              "path-enumeration"
+            ],
+            "basis": "poc.verified=1+verified_note",
+            "has_negative": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 59653,
+          "code": "对象存储分发链可替换性-5-分钟判别法-形态-列目录-匿名写-是否实时打包",
+          "title": "对象存储分发链可替换性 5 分钟判别法（形态/列目录/匿名写/是否实时打包）",
+          "kind": "script",
+          "category": "other",
+          "component": "CloudFront + S3 / 网宿 WCS APK 分发链",
+          "verified": true,
+          "score": 0.5456,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture"
+          ]
+        },
+        {
+          "id": 900002,
+          "code": "rule-edge-vs-origin",
+          "title": "边缘 / 前置分发器 / 源站 三分类判别（含 ETag 反例）",
+          "kind": "rule",
+          "category": "info-leak",
+          "component": "RTIS 本地规则",
+          "verified": false,
+          "score": 0.5433,
+          "rtis": {
+            "known": true,
+            "type": "Rule",
+            "evidence_level": "K3",
+            "lifecycle": "Lab-validated",
+            "archetypes": [
+              "cdn-fronted"
+            ],
+            "technology_tags": [
+              "CDN",
+              "源站识别",
+              "CloudFront",
+              "证据分级",
+              "误判防护"
+            ],
+            "method_tags": [
+              "CDN",
+              "源站识别",
+              "CloudFront",
+              "证据分级",
+              "误判防护"
+            ],
+            "basis": "local_rule(L4):rule-edge-vs-origin.md",
+            "has_negative": true
+          },
+          "matched_by": [
+            "expand:delivery_architecture",
+            "archetype:cdn-fronted"
+          ]
+        },
+        {
+          "id": 39,
+          "code": "gin-debug-pprof-内网门禁可绕过性快速判定法-xff-oracle-前端严格度",
+          "title": "gin /debug/pprof 内网门禁可绕过性快速判定法（XFF oracle + 前端严格度）",
+          "kind": "poc",
+          "category": "info-leak",
+          "component": null,
+          "verified": true,
+          "score": 0.5346,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:delivery_architecture"
+          ]
+        },
+        {
+          "id": 2814,
+          "code": "nuclei-cloudfront-compress-object",
+          "title": "CloudFront Compress Objects Automatically",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4808,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:cloudfront"
+          ]
+        },
+        {
+          "id": 2815,
+          "code": "nuclei-cloudfront-custom-certificates",
+          "title": "Cloudfront Custom SSL/TLS Certificates - In Use",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4808,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:cloudfront"
+          ]
+        }
+      ],
+      "archetypes": {
+        "cdn-fronted": 2,
+        "openapi-exposed": 1,
+        "white-label-landing": 1
+      },
+      "sufficiency": "sufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "score": 6,
+        "why": [
+          "dim:delivery_architecture",
+          "signal:cloudfront",
+          "kw:CDN"
+        ],
+        "phases": [
+          {
+            "phase": "edge",
+            "role": "recon",
+            "action": "边缘指纹与源站线索",
+            "output": "边缘/源站判定"
+          },
+          {
+            "phase": "bypass",
+            "role": "vuln-scan",
+            "action": "前缀/路径/Host 绕过探测",
+            "output": "绕过矩阵"
+          },
+          {
+            "phase": "decrypt",
+            "role": "vuln-scan",
+            "action": "加密层性质判定（传输 vs 应用）",
+            "output": "结论"
+          },
+          {
+            "phase": "verify",
+            "role": "exploit",
+            "action": "授权内只读验证",
+            "output": "证据"
+          }
+        ],
+        "knowledge_queries": [
+          "CDN 源站 IP 发现 历史 DNS 证书",
+          "前置分发器 前缀白名单 绕过 裸源站",
+          "响应加密 明文旁路 降级",
+          "application/octet-stream 响应 处理"
+        ],
+        "related_skills": [
+          "asset-correlation",
+          "hunt-cache-poison",
+          "unauth-path-key-hunt",
+          "api-protocol-security"
+        ],
+        "stop_conditions": [
+          "源站判定为不可直连且无替代通道",
+          "加密判定为传输层（不可绕）⇒ 转去 WF-02 找应用层面"
+        ],
+        "excluded_activities": [
+          "对 CDN 做缓存投毒实测（仅静态分析）",
+          "大流量压测"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing",
+      "asset-correlation",
+      "hunt-cache-poison",
+      "unauth-path-key-hunt",
+      "api-protocol-security"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产",
+      "源站判定为不可直连且无替代通道",
+      "加密判定为传输层（不可绕）⇒ 转去 WF-02 找应用层面"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:14:04+08:00",
+        "role": "vuln-scan",
+        "finding": "iframes.airbnbpayments.com 的卡表单 iframe 用 URL 参数 origin 作为 postMessage 的 targetOrigin 和入站 origin 校验依据；白名单校验（module 303）的返回值在 module 726 被丢弃，且正则 \\a 未转义成 \\.（evilairbnb.com 判为合法）"
+      },
+      {
+        "at": "2026-11-03T03:14:04+08:00",
+        "role": "vuln-scan",
+        "finding": "Chromium 实测：第三方源（127.0.0.1:8099）可嵌入真实卡 iframe 并收到 iframeReady/changeHeight，且发送 ccFieldsHideChange 后 1ms 收到 changeHeight，证明双向控制；origin 参数改为 www.airbnb.com 时 0 条消息（负对照）；origin=* 时仍向任意父页面广播"
+      },
+      {
+        "at": "2026-11-03T03:14:04+08:00",
+        "role": "vuln-scan",
+        "finding": "tokenizeResponse 的载荷包含 bin(前6)/bin8(前8)/lastFour/有效期/nonce/csePayload/digitalRiverEncryptedToken；clientToken/merchantId 完全由父窗口消息注入"
+      },
+      {
+        "at": "2026-11-03T03:14:04+08:00",
+        "role": "vuln-scan",
+        "finding": "响应无 X-Frame-Options / CSP frame-ancestors（政策把 CSP 弱项列为不收，只作利用条件）"
+      },
+      {
+        "at": "2026-11-03T03:14:04+08:00",
+        "role": "vuln-scan",
+        "finding": "S3 桶私有：根 403，8 条常见泄露路径与 .map/asset-manifest/manifest/package.json 全 403；S3 直连因证书 SAN 不匹配失败；未做 PUT 探针（任务约束禁止写入）"
+      },
+      {
+        "at": "2026-11-03T03:14:04+08:00",
+        "role": "vuln-scan",
+        "finding": "旧部署目录（2021-03-02、2021-05-06）仍在线且 ETag 相同（443eb948…），仅公开静态对象残留"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025642-8960/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:14:22+08:00"
+}

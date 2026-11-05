@@ -1,0 +1,14 @@
+target/
+probe-cargo/
+legacy/
+docs/
+.git/
+.gitignore
+Containerfile
+.containerignore
+migrations/quarantine/
+migrations/*.json
+migrations/*.jsonl
+migrations/*.md
+migrations/verify.py
+migrations/etl_dryrun.py

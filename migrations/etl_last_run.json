@@ -1,34 +1,34 @@
 {
   "content_digests": {
     "audit_event": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "entity_alias": "02255a225f3fe2346569c2da657c303351d5380a9154e298672300b7ef492279",
+    "entity_alias": "8948c9ea84fbb6c606b627f576544215e1f59e753db9ac7e331e3d8d2a972dac",
     "evidence": "bd848fb49d0e240720d5f5a31c98ebc3cd47c36c097c71b732e9628be6cb2e23",
     "knowledge": "17eb79836843bea40096afb87ac90d4469ab964bed9456fdc6f4dd1d10a9058b",
-    "research_task": "5ee5858013091f5c9a862aa5cefb3315f1af8b111d1f93437b5cf507473401f9",
+    "research_task": "23a8837ebd4d7622608ec501eadc3f8ca923813c25c3a24a388bd18e3eb47274",
     "resource": "2e1d4f23459e3501f53dedc59f15439a7f1f9911ba71935802ba20d09e083e86",
     "resource_source": "bc7f225022b2dca3585631e2e885461032fa25ee685da390b64225de05147053",
     "review": "9d105ce9015e8e6c95955cae1c3ea0d5989349e8c23e4394fb684e76ebbb6988",
-    "skill": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "tool": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "tool_version": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "skill": "0dcbd463fb7147924d7fe77cccf9e427ec996b4b1862ba698ae83177d8bc711e",
+    "tool": "60bead2b3fb2ee77dbeb926c0d91617984c1eaea753b7376be176fdef1176f5f",
+    "tool_version": "9c10abbb0f5ac0b61958031e792ecb2c8c95f9c16f13f8a7c03799df69075fe4"
   },
   "etl_version": "1.1.0",
-  "finished_at": "2026-11-05T18:22:01Z",
+  "finished_at": "2026-11-05T19:52:51Z",
   "fk_violations": 0,
   "row_counts": {
     "audit_event": 0,
-    "entity_alias": 431,
+    "entity_alias": 596,
     "evidence": 23,
     "knowledge": 46,
-    "research_task": 35,
+    "research_task": 42,
     "resource": 81,
     "resource_source": 81,
     "review": 165,
-    "skill": 0,
-    "tool": 0,
-    "tool_version": 0
+    "skill": 125,
+    "tool": 20,
+    "tool_version": 20
   },
-  "started_at": "2026-11-05T18:22:01Z",
+  "started_at": "2026-11-05T19:52:51Z",
   "stats": {
     "alias_inserted": 0,
     "alias_skipped_existing": 373,
@@ -45,18 +45,19 @@
     "resource": 81,
     "resource_source": 81,
     "review": 165,
-    "rtis_task_json_count": 35,
+    "rtis_task_json_count": 42,
     "rtis_task_parse_errors": [],
     "rtis_task_state_distribution": {
       "AUTHORIZATION_REVIEW": 7,
       "AUTHORIZED_EXECUTION": 1,
       "COMPLETED": 2,
-      "CREATED": 24,
-      "LOCAL_KNOWLEDGE_RETRIEVAL": 1
+      "CREATED": 28,
+      "LOCAL_KNOWLEDGE_RETRIEVAL": 1,
+      "WORKFLOW_PLANNING": 3
     },
     "rtis_task_type_distribution": {
       "full": 6,
-      "recon": 12,
+      "recon": 19,
       "vuln": 17
     }
   },

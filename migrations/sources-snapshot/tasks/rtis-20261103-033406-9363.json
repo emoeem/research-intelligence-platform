@@ -1,0 +1,638 @@
+{
+  "task": {
+    "id": "rtis-20261103-033406-9363",
+    "title": "第二轮漏洞猎手：仅做客户端/CORS/开放重定向/缓存协议层，目标 fcrm.duxiaoman.com，速率<=1re…",
+    "objective": "第二轮漏洞猎手：仅做客户端/CORS/开放重定向/缓存协议层，目标 fcrm.duxiaoman.com，速率<=1req/s，最多2条finding",
+    "task_type": "vuln",
+    "target": "fcrm.duxiaoman.com",
+    "created_at": "2026-11-03T03:34:06+08:00",
+    "updated_at": "2026-11-03T03:34:06+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T03:34:06+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T03:34:15+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "DXMSRC scope.json 明确列出 duxiaoman.com 全域名；用户指令确认只测 in-scope 且 fcrm.duxiaoman.com 在第一轮已被测试并记录",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "fcrm.duxiaoman.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "business_type": {
+        "value": "admin-backend",
+        "status": "candidate",
+        "confidence": 0.5,
+        "evidence": [
+          "signal:admin-login-page"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:34:18+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "admin-login-page"
+    ],
+    "unknowns": [
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "第二轮漏洞猎手：仅做客户端/CORS/开放重定向/缓存协议层，目标 fcrm.duxiaoman.com，速率<=1req/s，最多2条finding",
+      "fcrm.duxiaoman.com",
+      "admin-backend",
+      "后台 入口 枚举",
+      "管理后台 认证绕过",
+      "admin-login-page"
+    ],
+    "matched_entries": [
+      {
+        "id": 11,
+        "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+        "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.6067,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 50,
+        "code": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+        "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）",
+        "kind": "poc",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.5204,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 10372,
+        "code": "nuclei-sicom-mgrng-login",
+        "title": "Sicom MGRNG - Administrative Login Found",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4208,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 5503,
+        "code": "nuclei-CVE-2020-11441",
+        "title": "phpMyAdmin 5.0.2 - CRLF Injection",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 6954,
+        "code": "nuclei-CVE-2023-1893",
+        "title": "Login Configurator <=2.1 - Cross-Site Scripting",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 10277,
+        "code": "nuclei-reportico-admin-panel",
+        "title": "Reportico Administration Page - Detect",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 712,
+        "code": "src-hunter-web-ws-auth-bypass",
+        "title": "WebSocket认证与授权绕过",
+        "kind": "payload",
+        "category": "websocket",
+        "verified": false,
+        "score": 0.408,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 9450,
+        "code": "nuclei-checkmate-panel",
+        "title": "Checkmate Login Panel - Detect",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4025,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 10803,
+        "code": "nuclei-openwrt-luci-panel",
+        "title": "Opentwrt luCI - Admin Login Page",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4025,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 705,
+        "code": "src-hunter-web-proto-nosql-injection",
+        "title": "原型链污染结合NoSQL注入",
+        "kind": "payload",
+        "category": "other",
+        "verified": false,
+        "score": 0.3895,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 6880,
+        "code": "nuclei-CVE-2022-46071",
+        "title": "Helmet Store Showroom v1.0 - SQL Injection",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.375,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "sufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:34:23+08:00",
+        "queries": [
+          "第二轮漏洞猎手：仅做客户端/CORS/开放重定向/缓存协议层，目标 fcrm.duxiaoman.com，速率<=1req/s，最多2条finding",
+          "fcrm.duxiaoman.com",
+          "admin-backend",
+          "后台 入口 枚举",
+          "管理后台 认证绕过",
+          "admin-login-page"
+        ],
+        "query_count": 6,
+        "hits": 11,
+        "top_score": 0.6067,
+        "sufficiency": "sufficient",
+        "archetypes": {},
+        "external_research_needed": false,
+        "per_query": [
+          {
+            "q": "第二轮漏洞猎手：仅做客户端/CORS/开放重定向/缓存协议层，目标 fcrm.duxiaoman.com，速率<=1req/s，最多2条finding",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "cors",
+              "fcrm",
+              "duxiaoman",
+              "com",
+              "1req",
+              "finding",
+              "第二",
+              "二轮",
+              "轮漏",
+              "漏洞",
+              "洞猎",
+              "猎手",
+              "仅做",
+              "做客",
+              "客户",
+              "户端",
+              "开放",
+              "放重",
+              "重定",
+              "定向",
+              "缓存",
+              "存协",
+              "协议",
+              "议层",
+              "目标",
+              "速率",
+              "最多",
+              "条"
+            ],
+            "candidates": 627,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "fcrm.duxiaoman.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "fcrm",
+              "duxiaoman",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "admin-backend",
+            "origin": "dimension:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "admin-backend",
+              "admin",
+              "backend"
+            ],
+            "candidates": 450,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "后台 入口 枚举",
+            "origin": "expand:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "后台",
+              "入口",
+              "枚举"
+            ],
+            "candidates": 39,
+            "returned": 1,
+            "top": [
+              {
+                "id": 11,
+                "score": 0.6067,
+                "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）"
+              }
+            ]
+          },
+          {
+            "q": "管理后台 认证绕过",
+            "origin": "expand:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "管理",
+              "理后",
+              "后台",
+              "认证",
+              "证绕",
+              "绕过"
+            ],
+            "candidates": 121,
+            "returned": 3,
+            "top": [
+              {
+                "id": 50,
+                "score": 0.5204,
+                "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）"
+              },
+              {
+                "id": 712,
+                "score": 0.408,
+                "title": "WebSocket认证与授权绕过"
+              },
+              {
+                "id": 705,
+                "score": 0.3895,
+                "title": "原型链污染结合NoSQL注入"
+              }
+            ]
+          },
+          {
+            "q": "admin-login-page",
+            "origin": "signal:admin-login-page",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "admin-login-page",
+              "admin",
+              "login",
+              "page"
+            ],
+            "candidates": 1082,
+            "returned": 7,
+            "top": [
+              {
+                "id": 10372,
+                "score": 0.4208,
+                "title": "Sicom MGRNG - Administrative Login Found"
+              },
+              {
+                "id": 5503,
+                "score": 0.4154,
+                "title": "phpMyAdmin 5.0.2 - CRLF Injection"
+              },
+              {
+                "id": 6954,
+                "score": 0.4154,
+                "title": "Login Configurator <=2.1 - Cross-Site Scripting"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:34:23+08:00",
+      "top": [
+        {
+          "id": 11,
+          "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+          "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+          "kind": "script",
+          "category": "other",
+          "component": "婚介/婚恋行业目标池",
+          "verified": true,
+          "score": 0.6067,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 50,
+          "code": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+          "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）",
+          "kind": "poc",
+          "category": "info-leak",
+          "component": "FLUX WMS（富勒仓储管理系统）",
+          "verified": true,
+          "score": 0.5204,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 10372,
+          "code": "nuclei-sicom-mgrng-login",
+          "title": "Sicom MGRNG - Administrative Login Found",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4208,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 5503,
+          "code": "nuclei-CVE-2020-11441",
+          "title": "phpMyAdmin 5.0.2 - CRLF Injection",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "phpmyadmin:phpmyadmin",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 6954,
+          "code": "nuclei-CVE-2023-1893",
+          "title": "Login Configurator <=2.1 - Cross-Site Scripting",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "login_configurator_project:login_configurator",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 10277,
+          "code": "nuclei-reportico-admin-panel",
+          "title": "Reportico Administration Page - Detect",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "reportico:reportico",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 712,
+          "code": "src-hunter-web-ws-auth-bypass",
+          "title": "WebSocket认证与授权绕过",
+          "kind": "payload",
+          "category": "websocket",
+          "component": "认证绕过",
+          "verified": false,
+          "score": 0.408,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ]
+        },
+        {
+          "id": 9450,
+          "code": "nuclei-checkmate-panel",
+          "title": "Checkmate Login Panel - Detect",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4025,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 10803,
+          "code": "nuclei-openwrt-luci-panel",
+          "title": "Opentwrt luCI - Admin Login Page",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "x-wrt:luci",
+          "verified": false,
+          "score": 0.4025,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 705,
+          "code": "src-hunter-web-proto-nosql-injection",
+          "title": "原型链污染结合NoSQL注入",
+          "kind": "payload",
+          "category": "other",
+          "component": "组合利用",
+          "verified": false,
+          "score": 0.3895,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ]
+        },
+        {
+          "id": 6880,
+          "code": "nuclei-CVE-2022-46071",
+          "title": "Helmet Store Showroom v1.0 - SQL Injection",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "helmet_store_showroom_site_project:helmet_store_showroom_site",
+          "verified": false,
+          "score": 0.375,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "sufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "CORS：/sop/api/getcsrftoken、/sop/api/gettooldetection、/sop/api/descryptdata 在 4 种 Origin（含 null、子域后缀）及正确签名签发 token 场景下均无任何 Access-Control-* 头"
+      },
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "开放重定向：/ecif/index?fromu= 三跳链已跑完，UC 对 u 做主机校验（非法主机/前缀绕过/CRLF 全部回落默认路径），fcrm /access/login 完全忽略 fromu，链路终止于登录页，不可利用"
+      },
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "客户端：16 个跳转参数 × /access/login 与 /sop/error 零反射；归一连数字后 /access/login 响应逐字节相同；无 postMessage 监听、无 URL 驱动的 DOM sink"
+      },
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "/v3Jump.html 存在 parent[callback](config) 弱 gadget，但无可达同源父窗口+危险全局函数组合，iface URL 由 util.js 硬编码，链条断开"
+      },
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "缓存：无 Age/X-Cache/Via/Cache-Control；同一静态文件两次 ETag/Last-Modified 不同，未命中共享缓存；缓存欺骗返回 302 错误页"
+      },
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "协议：HTTP/1.0 无 Host、absolute-form 被 BFE 500；重复 CL 400；CL.TE/TE.CL 单响应无 desync；TRACE/OPTIONS * 405；TLS 1.2 正常"
+      },
+      {
+        "at": "2026-11-03T03:48:36+08:00",
+        "role": "vuln-scan",
+        "finding": "认证链路存在 HTTPS→HTTP 降级（uc 回跳 Location 为 http://fcrm...），但因 SCOPE 排除安全响应头/基线类，且未登录面无 fcrm 自有 Cookie 明文传输，不计 finding"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-033406-9363/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:48:40+08:00"
+}

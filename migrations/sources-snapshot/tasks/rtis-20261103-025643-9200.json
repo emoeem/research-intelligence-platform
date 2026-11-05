@@ -1,0 +1,411 @@
+{
+  "task": {
+    "id": "rtis-20261103-025643-9200",
+    "title": "对 www.hoteltonight-test.com（Airbnb Bug Bounty, Lower Impact …",
+    "objective": "对 www.hoteltonight-test.com（Airbnb Bug Bounty, Lower Impact Scope, HotelTonight 测试环境）做只读手工渗透，按 16 项穷尽清单推进，优先未授权面/信息泄露/默认口令/已知 CVE/IDOR；产出 ≤3 条带完整请求响应的 finding 或空结果说明",
+    "task_type": "vuln",
+    "target": "https://www.hoteltonight-test.com/",
+    "created_at": "2026-11-03T02:56:43+08:00",
+    "updated_at": "2026-11-03T02:56:43+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:43+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "www.hoteltonight-test.com",
+      " api.hoteltonight-test.com",
+      " places.hoteltonight-test.com (*.hoteltonight-test.com in-scope per HackerOne Airbnb policy scope)"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 www.hoteltonight-test.com（Airbnb Bug Bounty, Lower Impact Scope, HotelTonight 测试环境）做只读手工渗透，按 16 项穷尽清单推进，优先未授权面/信息泄露/默认口令/已知 CVE/IDOR；产出 ≤3 条带完整请求响应的 finding 或空结果说明",
+      "https://www.hoteltonight-test.com/"
+    ],
+    "matched_entries": [
+      {
+        "id": 10,
+        "code": "世纪佳缘-花千树-_t-签名离线伪造-cpi.jiayuan.com-fam-未授权访问",
+        "title": "世纪佳缘·花千树 _t 签名离线伪造（cpi.jiayuan.com fam/* 未授权访问）",
+        "kind": "poc",
+        "category": "auth-bypass",
+        "verified": true,
+        "score": 0.5204,
+        "matched_by": [
+          "target"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [
+      {
+        "id": 10,
+        "reason": "命中项为「世纪佳缘 _t 签名离线伪造」，与 HotelTonight/Airbnb 技术栈无任何关系（仅因 URL token 撞词），不具备可迁移性",
+        "at": "2026-11-03T03:16:45+08:00"
+      }
+    ],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-03T03:14:17+08:00",
+        "queries": [
+          "对 www.hoteltonight-test.com（Airbnb Bug Bounty, Lower Impact Scope, HotelTonight 测试环境）做只读手工渗透，按 16 项穷尽清单推进，优先未授权面/信息泄露/默认口令/已知 CVE/IDOR；产出 ≤3 条带完整请求响应的 finding 或空结果说明",
+          "https://www.hoteltonight-test.com/"
+        ],
+        "query_count": 2,
+        "hits": 1,
+        "top_score": 0.5204,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 www.hoteltonight-test.com（Airbnb Bug Bounty, Lower Impact Scope, HotelTonight 测试环境）做只读手工渗透，按 16 项穷尽清单推进，优先未授权面/信息泄露/默认口令/已知 CVE/IDOR；产出 ≤3 条带完整请求响应的 finding 或空结果说明",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "www",
+              "hoteltonight-test",
+              "hoteltonight",
+              "test",
+              "com",
+              "airbnb",
+              "bug",
+              "bounty",
+              "lower",
+              "impact",
+              "scope",
+              "16",
+              "cve",
+              "idor",
+              "finding",
+              "对",
+              "测试",
+              "试环",
+              "环境",
+              "做只",
+              "只读",
+              "读手",
+              "手工",
+              "工渗",
+              "渗透",
+              "按",
+              "项穷",
+              "穷尽",
+              "尽清",
+              "清单",
+              "单推",
+              "推进",
+              "优先",
+              "先未",
+              "未授",
+              "授权",
+              "权面",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "产出",
+              "条带",
+              "带完",
+              "完整",
+              "整请",
+              "请求",
+              "求响",
+              "响应",
+              "应的",
+              "或空",
+              "空结",
+              "结果",
+              "果说",
+              "说明"
+            ],
+            "candidates": 800,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "https://www.hoteltonight-test.com/",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "https",
+              "www",
+              "hoteltonight-test",
+              "hoteltonight",
+              "test",
+              "com"
+            ],
+            "candidates": 876,
+            "returned": 1,
+            "top": [
+              {
+                "id": 10,
+                "score": 0.5204,
+                "title": "世纪佳缘·花千树 _t 签名离线伪造（cpi.jiayuan.com fam/* 未授权访问）"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:14:17+08:00",
+      "top": [
+        {
+          "id": 10,
+          "code": "世纪佳缘-花千树-_t-签名离线伪造-cpi.jiayuan.com-fam-未授权访问",
+          "title": "世纪佳缘·花千树 _t 签名离线伪造（cpi.jiayuan.com fam/* 未授权访问）",
+          "kind": "poc",
+          "category": "auth-bypass",
+          "component": "世纪佳缘·花千树VIP 小程序 / fam 网关",
+          "verified": true,
+          "score": 0.5204,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "未授权面：10 条客户/订单/支付类路由全部 401，公开面（mobile_config/active_help/discover/hotels）为设计公开，无数据泄漏"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "X-App-Device（_sdid）是设备级匿名凭据：/v4/trips 与 /v6/favorites 可换数据，但 UUIDv4 不可猜、未知设备返回空默认态；对 /v6/bookings、/v3/guests、/v4/credits 无效"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "/v4/customers/get_link?email= 未授权返回含客户 UUID 的 auth_send_url，PUT 该 URL 无鉴权即触发发信；属政策排除的账号 oracle，且未取得任何用户数据"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "X-Forwarded-For 反射进内联 JSON 但被 \\u003C/\\u002F 转义，且三次请求 x-cache 全 MISS（含 gzip），无 XSS、无缓存投毒"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "CORS 不反射 Origin；CSP 为 report-only 但 XFO sameorigin 生效；CSRF 因 Authorization 头鉴权天然免疫"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "源码面：web-assets 的 .map 200 但无 sourcesContent；/.git、/.env 被 SigWAF 406 拦截；api 的 /rails/info、/sidekiq、/metrics 全 404"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "建号被服务端手机号校验阻塞（4155550100 判无效，纯邮箱 422），越权(IDOR)与业务逻辑两项未测；未尝试绕过手机号校验（会触发对第三方发短信）"
+      },
+      {
+        "at": "2026-11-03T03:16:52+08:00",
+        "role": "vuln-scan",
+        "finding": "协议层：X-Forwarded-Host 不反射、X-Original-URL / X-Rewrite-URL 无效、X-Site-Version 路径穿越无效、10 个 CT 分支子域全 NXDOMAIN 无接管面"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025643-9200/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:16:54+08:00"
+}

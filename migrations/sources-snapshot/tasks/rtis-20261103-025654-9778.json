@@ -1,0 +1,207 @@
+{
+  "task": {
+    "id": "rtis-20261103-025654-9778",
+    "title": "对 pdms.ys7.com 做手工穷尽测试（16 项清单），优先未授权面/信息泄露/默认口令/已知 CVE/IDOR，…",
+    "objective": "对 pdms.ys7.com 做手工穷尽测试（16 项清单），优先未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整请求响应证据的 finding",
+    "task_type": "full",
+    "target": "pdms.ys7.com",
+    "created_at": "2026-11-03T02:56:54+08:00",
+    "updated_at": "2026-11-03T02:56:54+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:54+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "ys7.com 子域名（萤石 YSRC 范围：ys7.com 主域名含子域名）"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 pdms.ys7.com 做手工穷尽测试（16 项清单），优先未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整请求响应证据的 finding",
+      "pdms.ys7.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T02:59:51+08:00",
+        "queries": [
+          "对 pdms.ys7.com 做手工穷尽测试（16 项清单），优先未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整请求响应证据的 finding",
+          "pdms.ys7.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 pdms.ys7.com 做手工穷尽测试（16 项清单），优先未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整请求响应证据的 finding",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "pdms",
+              "ys7",
+              "com",
+              "16",
+              "cve",
+              "idor",
+              "finding",
+              "对",
+              "做手",
+              "手工",
+              "工穷",
+              "穷尽",
+              "尽测",
+              "测试",
+              "项清",
+              "清单",
+              "优先",
+              "先未",
+              "未授",
+              "授权",
+              "权面",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "产出",
+              "出最",
+              "最多",
+              "条带",
+              "带完",
+              "完整",
+              "整请",
+              "请求",
+              "求响",
+              "响应",
+              "应证",
+              "证据",
+              "据的"
+            ],
+            "candidates": 1133,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "pdms.ys7.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "pdms",
+              "ys7",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:59:51+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:08:52+08:00",
+        "role": "vuln-scan",
+        "finding": "无业务端点：60+ 路径（actuator/swagger/druid/.git/.env/login/api*/prod-api*）全部 404，404 body 逐路径回显 path，证明路由被真实求值而非 catch-all 桩"
+      },
+      {
+        "at": "2026-11-03T03:08:52+08:00",
+        "role": "vuln-scan",
+        "finding": "唯一非 404 为 /error：HTTP 500 + 自定义 {\"status\":999,\"error\":\"None\"}，无栈信息无敏感数据，不构成泄露"
+      },
+      {
+        "at": "2026-11-03T03:08:52+08:00",
+        "role": "vuln-scan",
+        "finding": "CORS 预检对 Origin: https://evil.example 返回 403 Invalid CORS request，未反射 Origin，非漏洞"
+      },
+      {
+        "at": "2026-11-03T03:08:52+08:00",
+        "role": "vuln-scan",
+        "finding": "TRACE 返回 405；nginx 400 页与 Tomcat 404 页均不带版本号（server_tokens off）"
+      },
+      {
+        "at": "2026-11-03T03:08:52+08:00",
+        "role": "vuln-scan",
+        "finding": "两区域节点 pdms-sq(60.190.232.64) 与 pdms-xy(115.238.23.68) 的 :80 返回逐字节相同的 Tomcat 占位页；pdms-xy:443 TCP 被过滤"
+      },
+      {
+        "at": "2026-11-03T03:08:52+08:00",
+        "role": "vuln-scan",
+        "finding": "早期「特定路径超时」经 --resolve 钉死单 IP 复测证明是 DNS 多节点漂移假象，非 WAF 路径拦截"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025654-9778/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:09:01+08:00"
+}

@@ -1,0 +1,360 @@
+{
+  "task": {
+    "id": "rtis-20261103-023617-7979",
+    "title": "对 DXMSRC 24 个 in-scope 域名做纯被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出…",
+    "objective": "对 DXMSRC 24 个 in-scope 域名做纯被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出目标池并按漏洞可能性排序，选出最多 2 个优先目标",
+    "task_type": "recon",
+    "target": "duxiaoman.com 等 24 个 DXMSRC in-scope 域名",
+    "created_at": "2026-11-03T02:36:17+08:00",
+    "updated_at": "2026-11-03T02:36:17+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:36:17+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "unconfirmed",
+    "authorized_assets": [],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 DXMSRC 24 个 in-scope 域名做纯被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出目标池并按漏洞可能性排序，选出最多 2 个优先目标",
+      "duxiaoman.com 等 24 个 DXMSRC in-scope 域名"
+    ],
+    "matched_entries": [
+      {
+        "id": 81,
+        "code": "crypto_data-加密网关判定法-公钥是否参与加密-合法容器-vs-随机噪声对照-通道旁路清单",
+        "title": "crypto_data 加密网关判定法：公钥是否参与加密（合法容器 vs 随机噪声对照）+ 通道旁路清单",
+        "kind": "script",
+        "category": "auth-bypass",
+        "verified": true,
+        "score": 0.5608,
+        "matched_by": [
+          "objective"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [
+      {
+        "id": 81,
+        "reason": "命中项是「小程序 crypto_data 加密网关判定法（公钥是否参与加密）」，面向 qingteng/afunapp 的 wxencryptversion + crypto_data 通道；本轮是纯被动域名测绘，目标（loan/fcrm/dxmpay）未见 crypto_data 网关特征，方法不适用。留作后续若在 App/小程序 侧接口看到 crypto_data 参数时再用。",
+        "at": "2026-11-03T02:54:22+08:00"
+      }
+    ],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-03T02:42:55+08:00",
+        "queries": [
+          "对 DXMSRC 24 个 in-scope 域名做纯被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出目标池并按漏洞可能性排序，选出最多 2 个优先目标",
+          "duxiaoman.com 等 24 个 DXMSRC in-scope 域名"
+        ],
+        "query_count": 2,
+        "hits": 1,
+        "top_score": 0.5608,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 DXMSRC 24 个 in-scope 域名做纯被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出目标池并按漏洞可能性排序，选出最多 2 个优先目标",
+            "origin": "objective",
+            "ok": true,
+            "fallback": true,
+            "tokens": [
+              "dxmsrc",
+              "24",
+              "对",
+              "个"
+            ],
+            "candidates": 510,
+            "returned": 1,
+            "top": [
+              {
+                "id": 81,
+                "score": 0.5608,
+                "title": "crypto_data 加密网关判定法：公钥是否参与加密（合法容器 vs 随机噪声对照）+ 通道旁路清单"
+              }
+            ]
+          },
+          {
+            "q": "duxiaoman.com 等 24 个 DXMSRC in-scope 域名",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "duxiaoman",
+              "com",
+              "24",
+              "dxmsrc",
+              "in-scope",
+              "in",
+              "scope",
+              "等",
+              "个",
+              "域名"
+            ],
+            "candidates": 1136,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:42:55+08:00",
+      "top": [
+        {
+          "id": 81,
+          "code": "crypto_data-加密网关判定法-公钥是否参与加密-合法容器-vs-随机噪声对照-通道旁路清单",
+          "title": "crypto_data 加密网关判定法：公钥是否参与加密（合法容器 vs 随机噪声对照）+ 通道旁路清单",
+          "kind": "script",
+          "category": "auth-bypass",
+          "component": "小程序/App 自定义加密网关（crypto_data + sign + wxencryptversion，青藤之恋系 afunapp 通道）",
+          "verified": true,
+          "score": 0.5608,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "objective"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产"
+    ],
+    "partial_workflows": [
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "score": 1,
+        "why": [
+          "kw:域"
+        ],
+        "missing_dimensions": [
+          "environment_status"
+        ],
+        "reason": "有触发证据但关键维度未知，需先补信息"
+      }
+    ]
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "24 个 in-scope apex 全部有存活资产，共 509 主机名 / 295 可解析 / 259 有 HTTP 响应"
+      },
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "P1 loan.duxiaoman.com（度小满开放平台，机构自助后台）：公开 JS 泄露 192 条 /jloanop/* 接口，含 19 条 permission/* 权限管理接口与 tools/decryptData；2 条 query 接口未登录返回业务级 errorCode 2003"
+      },
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "P2 fcrm.duxiaoman.com（度小满金融中台管理系统）：2019 年 jQuery 后台，jquery.fileupload + JQuery.md5，登录 JS 泄露 4 条 /bshop/access/* 企业注册/验码接口；规则禁止对后台使用扫描器，只能手工只读"
+      },
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "P3 vip.dxmpay.com（支付商户前台，Apache + Vue2.5 + SM 国密），路由 /user/0/login/0、/user/0/get_pass/0"
+      },
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "27 台 test/pre/dev 主机直接暴露（alltest.dxmpay.com、pre.dxmpay.com、qatest.dxmpay.com 等），其中 10 台 5xx"
+      },
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "UC 侧 JS 引用 *.duxiaoman-int.com（uc-dev/uc-token-dev/neisou），不在 24 域名内，已排除出目标池"
+      },
+      {
+        "at": "2026-11-03T02:54:31+08:00",
+        "role": "recon",
+        "finding": "crt.sh 对本品覆盖极低（泛域名证书），子域主要靠被动 DNS 聚合"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-023617-7979/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T02:54:32+08:00"
+}

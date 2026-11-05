@@ -1,0 +1,197 @@
+{
+  "task": {
+    "id": "rtis-20261103-025637-8338",
+    "title": "对 loan.duxiaoman.com 做手工单请求级漏洞挖掘（DXMSRC in-scope），优先未授权面/信息泄…",
+    "objective": "对 loan.duxiaoman.com 做手工单请求级漏洞挖掘（DXMSRC in-scope），优先未授权面/信息泄露/默认口令/已知CVE/IDOR；automated_scanning=restricted，不跑批量扫描器；速率≤1req/s；最多3条finding",
+    "task_type": "vuln",
+    "target": "loan.duxiaoman.com",
+    "created_at": "2026-11-03T02:56:37+08:00",
+    "updated_at": "2026-11-03T02:56:37+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:37+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "duxiaoman.com（DXMSRC 公开 SRC 范围）"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 loan.duxiaoman.com 做手工单请求级漏洞挖掘（DXMSRC in-scope），优先未授权面/信息泄露/默认口令/已知CVE/IDOR；automated_scanning=restricted，不跑批量扫描器；速率≤1req/s；最多3条finding",
+      "loan.duxiaoman.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:06:54+08:00",
+        "queries": [
+          "对 loan.duxiaoman.com 做手工单请求级漏洞挖掘（DXMSRC in-scope），优先未授权面/信息泄露/默认口令/已知CVE/IDOR；automated_scanning=restricted，不跑批量扫描器；速率≤1req/s；最多3条finding",
+          "loan.duxiaoman.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 loan.duxiaoman.com 做手工单请求级漏洞挖掘（DXMSRC in-scope），优先未授权面/信息泄露/默认口令/已知CVE/IDOR；automated_scanning=restricted，不跑批量扫描器；速率≤1req/s；最多3条finding",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "loan",
+              "duxiaoman",
+              "com",
+              "dxmsrc",
+              "in-scope",
+              "in",
+              "scope",
+              "cve",
+              "idor",
+              "automated_scanning",
+              "automated",
+              "scanning",
+              "restricted",
+              "1req",
+              "finding",
+              "对",
+              "做手",
+              "手工",
+              "工单",
+              "单请",
+              "请求",
+              "求级",
+              "级漏",
+              "漏洞",
+              "洞挖",
+              "挖掘",
+              "优先",
+              "先未",
+              "未授",
+              "授权",
+              "权面",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "不跑",
+              "跑批",
+              "批量",
+              "量扫",
+              "扫描",
+              "描器",
+              "速率",
+              "最多",
+              "条"
+            ],
+            "candidates": 1123,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "loan.duxiaoman.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "loan",
+              "duxiaoman",
+              "com"
+            ],
+            "candidates": 403,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:06:54+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:07:51+08:00",
+        "role": "vuln-scan",
+        "finding": "主站 7 个 /jloanop 端点无凭证重放全部被拒（errorCode 2003），路径规范化/5 类转发头/castk/伪造 CAS cookie/alg=none JWT 均未突破"
+      },
+      {
+        "at": "2026-11-03T03:07:51+08:00",
+        "role": "vuln-scan",
+        "finding": "生产 bundle 硬编码测试环境 unionjointtest.duxiaoman.com（助贷联调平台），其 /jointApi 网关重写为 /joint，12 个高敏业务端点未授权 403，仅 /actuator/health 放行"
+      },
+      {
+        "at": "2026-11-03T03:07:51+08:00",
+        "role": "vuln-scan",
+        "finding": "生产 bundle 无硬编码密钥、无 sourcemap；246+306 条接口清单已提取"
+      },
+      {
+        "at": "2026-11-03T03:07:51+08:00",
+        "role": "vuln-scan",
+        "finding": "测试环境登录无用户枚举（统一 401），admin 账号被禁用；/auth/initialize 已初始化保护，探针未创建账号"
+      },
+      {
+        "at": "2026-11-03T03:07:51+08:00",
+        "role": "vuln-scan",
+        "finding": "测试环境登录 SQLi 差分无布尔差异/无报错，经典 payload 触发空 200（疑上游过滤）"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025637-8338/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:07:54+08:00"
+}

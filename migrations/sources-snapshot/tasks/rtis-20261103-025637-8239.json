@@ -1,0 +1,800 @@
+{
+  "task": {
+    "id": "rtis-20261103-025637-8239",
+    "title": "对 gcsm.oppoit.com 做手工穷尽测试（16 项清单），优先未授权/信息泄露/默认口令/已知CVE/IDOR…",
+    "objective": "对 gcsm.oppoit.com 做手工穷尽测试（16 项清单），优先未授权/信息泄露/默认口令/已知CVE/IDOR，产出≤3条有完整证据的 finding",
+    "task_type": "vuln",
+    "target": "gcsm.oppoit.com",
+    "created_at": "2026-11-03T02:56:37+08:00",
+    "updated_at": "2026-11-03T02:56:37+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:37+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "gcsm.oppoit.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "business_type": {
+        "value": "admin-backend",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [
+          [
+            "signal:admin-login-page"
+          ]
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "frontend_architecture": {
+        "value": "spa-vue2-webpack",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "backend_architecture": {
+        "value": "java-tomcat",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "api_architecture": {
+        "value": "rest-api-gateway",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "delivery_architecture": {
+        "value": "object-storage-static",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "identity_architecture": {
+        "value": "oauth2-sso",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "storage_architecture": {
+        "value": "s3-compatible",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "response_architecture": {
+        "value": "json",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      },
+      "deployment_model": {
+        "value": "public-cloud",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:08:35+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "admin-login-page"
+    ],
+    "unknowns": [
+      "environment_status"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 gcsm.oppoit.com 做手工穷尽测试（16 项清单），优先未授权/信息泄露/默认口令/已知CVE/IDOR，产出≤3条有完整证据的 finding",
+      "gcsm.oppoit.com",
+      "admin-backend",
+      "后台 入口 枚举",
+      "管理后台 认证绕过",
+      "admin-login-page"
+    ],
+    "matched_entries": [
+      {
+        "id": 11,
+        "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+        "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.6067,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 50,
+        "code": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+        "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）",
+        "kind": "poc",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.5204,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 10372,
+        "code": "nuclei-sicom-mgrng-login",
+        "title": "Sicom MGRNG - Administrative Login Found",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4208,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 5503,
+        "code": "nuclei-CVE-2020-11441",
+        "title": "phpMyAdmin 5.0.2 - CRLF Injection",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 6954,
+        "code": "nuclei-CVE-2023-1893",
+        "title": "Login Configurator <=2.1 - Cross-Site Scripting",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 10277,
+        "code": "nuclei-reportico-admin-panel",
+        "title": "Reportico Administration Page - Detect",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 712,
+        "code": "src-hunter-web-ws-auth-bypass",
+        "title": "WebSocket认证与授权绕过",
+        "kind": "payload",
+        "category": "websocket",
+        "verified": false,
+        "score": 0.408,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 9450,
+        "code": "nuclei-checkmate-panel",
+        "title": "Checkmate Login Panel - Detect",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4025,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      }
+    ],
+    "selected_entries": [
+      {
+        "id": 75,
+        "at": "2026-11-03T03:08:26+08:00",
+        "reason": "采用其「开放重定向否证口径」：先判 Location host 是否可由输入改变，再看参数是否只被透传。据此确认 gcsm 网关的 Location host(sso.myoas.com) 不可变，变的是 OAuth 的 redirect_uri/state 参数 → 归类为参数注入而非本站开放重定向。"
+      }
+    ],
+    "rejected_entries": [],
+    "sufficiency": "sufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:06:13+08:00",
+        "queries": [
+          "对 gcsm.oppoit.com 做手工穷尽测试（16 项清单），优先未授权/信息泄露/默认口令/已知CVE/IDOR，产出≤3条有完整证据的 finding",
+          "gcsm.oppoit.com",
+          "admin-backend",
+          "后台 入口 枚举",
+          "管理后台 认证绕过",
+          "admin-login-page"
+        ],
+        "query_count": 6,
+        "hits": 8,
+        "top_score": 0.6067,
+        "sufficiency": "sufficient",
+        "archetypes": {},
+        "external_research_needed": false,
+        "per_query": [
+          {
+            "q": "对 gcsm.oppoit.com 做手工穷尽测试（16 项清单），优先未授权/信息泄露/默认口令/已知CVE/IDOR，产出≤3条有完整证据的 finding",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "gcsm",
+              "oppoit",
+              "com",
+              "16",
+              "cve",
+              "idor",
+              "finding",
+              "对",
+              "做手",
+              "手工",
+              "工穷",
+              "穷尽",
+              "尽测",
+              "测试",
+              "项清",
+              "清单",
+              "优先",
+              "先未",
+              "未授",
+              "授权",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "产出",
+              "条有",
+              "有完",
+              "完整",
+              "整证",
+              "证据",
+              "据的"
+            ],
+            "candidates": 1133,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "gcsm.oppoit.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "gcsm",
+              "oppoit",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "admin-backend",
+            "origin": "dimension:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "admin-backend",
+              "admin",
+              "backend"
+            ],
+            "candidates": 450,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "后台 入口 枚举",
+            "origin": "expand:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "后台",
+              "入口",
+              "枚举"
+            ],
+            "candidates": 39,
+            "returned": 1,
+            "top": [
+              {
+                "id": 11,
+                "score": 0.6067,
+                "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）"
+              }
+            ]
+          },
+          {
+            "q": "管理后台 认证绕过",
+            "origin": "expand:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "管理",
+              "理后",
+              "后台",
+              "认证",
+              "证绕",
+              "绕过"
+            ],
+            "candidates": 120,
+            "returned": 3,
+            "top": [
+              {
+                "id": 50,
+                "score": 0.5204,
+                "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）"
+              },
+              {
+                "id": 712,
+                "score": 0.408,
+                "title": "WebSocket认证与授权绕过"
+              },
+              {
+                "id": 705,
+                "score": 0.3895,
+                "title": "原型链污染结合NoSQL注入"
+              }
+            ]
+          },
+          {
+            "q": "admin-login-page",
+            "origin": "signal:admin-login-page",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "admin-login-page",
+              "admin",
+              "login",
+              "page"
+            ],
+            "candidates": 1082,
+            "returned": 7,
+            "top": [
+              {
+                "id": 10372,
+                "score": 0.4208,
+                "title": "Sicom MGRNG - Administrative Login Found"
+              },
+              {
+                "id": 5503,
+                "score": 0.4154,
+                "title": "phpMyAdmin 5.0.2 - CRLF Injection"
+              },
+              {
+                "id": 6954,
+                "score": 0.4154,
+                "title": "Login Configurator <=2.1 - Cross-Site Scripting"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:06:13+08:00",
+      "top": [
+        {
+          "id": 11,
+          "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+          "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+          "kind": "script",
+          "category": "other",
+          "component": "婚介/婚恋行业目标池",
+          "verified": true,
+          "score": 0.6067,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 50,
+          "code": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+          "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）",
+          "kind": "poc",
+          "category": "info-leak",
+          "component": "FLUX WMS（富勒仓储管理系统）",
+          "verified": true,
+          "score": 0.5204,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 10372,
+          "code": "nuclei-sicom-mgrng-login",
+          "title": "Sicom MGRNG - Administrative Login Found",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4208,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 5503,
+          "code": "nuclei-CVE-2020-11441",
+          "title": "phpMyAdmin 5.0.2 - CRLF Injection",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "phpmyadmin:phpmyadmin",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 6954,
+          "code": "nuclei-CVE-2023-1893",
+          "title": "Login Configurator <=2.1 - Cross-Site Scripting",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "login_configurator_project:login_configurator",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 10277,
+          "code": "nuclei-reportico-admin-panel",
+          "title": "Reportico Administration Page - Detect",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "reportico:reportico",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 712,
+          "code": "src-hunter-web-ws-auth-bypass",
+          "title": "WebSocket认证与授权绕过",
+          "kind": "payload",
+          "category": "websocket",
+          "component": "认证绕过",
+          "verified": false,
+          "score": 0.408,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ]
+        },
+        {
+          "id": 9450,
+          "code": "nuclei-checkmate-panel",
+          "title": "Checkmate Login Panel - Detect",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4025,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "sufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "score": 6,
+        "why": [
+          "dim:business_type",
+          "signal:admin-login-page",
+          "kw:admin"
+        ],
+        "phases": [
+          {
+            "phase": "enum",
+            "role": "recon",
+            "action": "入口与指纹",
+            "output": "入口清单"
+          },
+          {
+            "phase": "auth",
+            "role": "vuln-scan",
+            "action": "认证面测试（限速）",
+            "output": "结论"
+          },
+          {
+            "phase": "verify",
+            "role": "exploit",
+            "action": "授权内登录验证",
+            "output": "证据"
+          }
+        ],
+        "knowledge_queries": [
+          "后台 入口 枚举 默认口令",
+          "认证绕过 路径穿越 分号 matrix",
+          "前后台 token 混用 越权"
+        ],
+        "related_skills": [
+          "dir-bruteforce",
+          "auth-access-control",
+          "cn-fingerprint",
+          "hunt-springboot"
+        ],
+        "stop_conditions": [
+          "口令尝试达到 5 次即停（防锁定）"
+        ],
+        "excluded_activities": [
+          "口令爆破",
+          "修改后台配置"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing",
+      "dir-bruteforce",
+      "auth-access-control",
+      "cn-fingerprint",
+      "hunt-springboot"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产",
+      "口令尝试达到 5 次即停（防锁定）"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "401 处理器：X-Forwarded-Host/Referer 反射进 sso.myoas.com authorize 的 redirect_uri 与 state，无白名单（low，端到端未证）"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "对照：/portal/api/v1/sso/logout 的 service 参数写死，证明上述为注入而非固定配置"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "全部 /portal/api/** 未认证请求统一 401，鉴权先于路由 → 无法做接口枚举；仅 /portal/api/health 与 /v1/sso/callback 白名单"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "WAF 对 .git/.env/.bak/actuator/swagger/druid 一律 412，单编码/大小写/分号变形均被拦"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "CORS 反射任意 Origin 但无 Access-Control-Allow-Credentials，业务走 X-GCSM-Token 自定义头 → 无实际危害"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "X-GCSM-Temp-Token 为独立鉴权分支，任意值均返回 GL0001 expired，无格式 oracle，不可伪造"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "前端 9 个 bundle(13.3MB)/340 条 API/797 条路由，零硬编码密钥，sourcemap 404"
+      },
+      {
+        "at": "2026-11-03T03:08:49+08:00",
+        "role": "vuln-scan",
+        "finding": "静态 404 泄露内部桶名与前缀 columbus-online-file-repo/baymax-go-static-front/...（按 OSRC 排除项不提交）"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025637-8239/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:09:03+08:00"
+}

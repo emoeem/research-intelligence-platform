@@ -1,0 +1,3 @@
+[*] gogo: , 2026-11-06 03:18.38
+[warn] compile operators for nginx: could not compile regex: (?x)nginx\/(\d+\.\d+\.\d+) 
+[+] resources type=fingerprints source=fingerprinthub web=3138 , 2026-11-06 03:18.38

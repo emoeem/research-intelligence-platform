@@ -1,0 +1,632 @@
+{
+  "task": {
+    "id": "rtis-20261103-083238-9984",
+    "title": "独立复核 5 条 SRC finding 的真实性与有效性：Airbnb postMessage、EZVIZ 明文登录/…",
+    "objective": "独立复核 5 条 SRC finding 的真实性与有效性：Airbnb postMessage、EZVIZ 明文登录/JSP 泄露/Host 注入、OPPO 401 redirect_uri 注入",
+    "task_type": "vuln",
+    "target": "iframes.airbnbpayments.com, oauth.ezvizlife.com, gcsm.oppoit.com",
+    "created_at": "2026-11-03T08:32:38+08:00",
+    "updated_at": "2026-11-03T08:32:38+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T08:32:38+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T08:32:43+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "SRC 公开范围复核；只读重放已有证据，不新增攻击面",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "Airbnb HackerOne 公开范围 *.airbnbpayments.com；YSRC ezvizlife.com 主域名及子域；OSRC gcsm.oppoit.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "business_type": {
+        "value": "admin-backend",
+        "status": "candidate",
+        "confidence": 0.5,
+        "evidence": [
+          "signal:admin-login-page"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T08:33:02+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "admin-login-page"
+    ],
+    "unknowns": [
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "独立复核 5 条 SRC finding 的真实性与有效性：Airbnb postMessage、EZVIZ 明文登录/JSP 泄露/Host 注入、OPPO 401 redirect_uri 注入",
+      "iframes.airbnbpayments.com, oauth.ezvizlife.com, gcsm.oppoit.com",
+      "admin-backend",
+      "后台 入口 枚举",
+      "管理后台 认证绕过",
+      "admin-login-page"
+    ],
+    "matched_entries": [
+      {
+        "id": 11,
+        "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+        "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.6067,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 50,
+        "code": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+        "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）",
+        "kind": "poc",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.5204,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 10372,
+        "code": "nuclei-sicom-mgrng-login",
+        "title": "Sicom MGRNG - Administrative Login Found",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4208,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 5503,
+        "code": "nuclei-CVE-2020-11441",
+        "title": "phpMyAdmin 5.0.2 - CRLF Injection",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 6954,
+        "code": "nuclei-CVE-2023-1893",
+        "title": "Login Configurator <=2.1 - Cross-Site Scripting",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 10277,
+        "code": "nuclei-reportico-admin-panel",
+        "title": "Reportico Administration Page - Detect",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4154,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 712,
+        "code": "src-hunter-web-ws-auth-bypass",
+        "title": "WebSocket认证与授权绕过",
+        "kind": "payload",
+        "category": "websocket",
+        "verified": false,
+        "score": 0.408,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 9450,
+        "code": "nuclei-checkmate-panel",
+        "title": "Checkmate Login Panel - Detect",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4025,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 10803,
+        "code": "nuclei-openwrt-luci-panel",
+        "title": "Opentwrt luCI - Admin Login Page",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.4025,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      },
+      {
+        "id": 705,
+        "code": "src-hunter-web-proto-nosql-injection",
+        "title": "原型链污染结合NoSQL注入",
+        "kind": "payload",
+        "category": "other",
+        "verified": false,
+        "score": 0.3895,
+        "matched_by": [
+          "expand:business_type"
+        ]
+      },
+      {
+        "id": 6880,
+        "code": "nuclei-CVE-2022-46071",
+        "title": "Helmet Store Showroom v1.0 - SQL Injection",
+        "kind": "template",
+        "category": "nuclei",
+        "verified": false,
+        "score": 0.375,
+        "matched_by": [
+          "signal:admin-login-page"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "sufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T08:33:09+08:00",
+        "queries": [
+          "独立复核 5 条 SRC finding 的真实性与有效性：Airbnb postMessage、EZVIZ 明文登录/JSP 泄露/Host 注入、OPPO 401 redirect_uri 注入",
+          "iframes.airbnbpayments.com, oauth.ezvizlife.com, gcsm.oppoit.com",
+          "admin-backend",
+          "后台 入口 枚举",
+          "管理后台 认证绕过",
+          "admin-login-page"
+        ],
+        "query_count": 6,
+        "hits": 11,
+        "top_score": 0.6067,
+        "sufficiency": "sufficient",
+        "archetypes": {},
+        "external_research_needed": false,
+        "per_query": [
+          {
+            "q": "独立复核 5 条 SRC finding 的真实性与有效性：Airbnb postMessage、EZVIZ 明文登录/JSP 泄露/Host 注入、OPPO 401 redirect_uri 注入",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "src",
+              "finding",
+              "airbnb",
+              "postmessage",
+              "ezviz",
+              "jsp",
+              "host",
+              "oppo",
+              "401",
+              "redirect_uri",
+              "redirect",
+              "uri",
+              "独立",
+              "立复",
+              "复核",
+              "条",
+              "的真",
+              "真实",
+              "实性",
+              "性与",
+              "与有",
+              "有效",
+              "效性",
+              "明文",
+              "文登",
+              "登录",
+              "泄露",
+              "注入"
+            ],
+            "candidates": 1011,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "iframes.airbnbpayments.com, oauth.ezvizlife.com, gcsm.oppoit.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "iframes",
+              "airbnbpayments",
+              "com",
+              "oauth",
+              "ezvizlife",
+              "gcsm",
+              "oppoit"
+            ],
+            "candidates": 451,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "admin-backend",
+            "origin": "dimension:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "admin-backend",
+              "admin",
+              "backend"
+            ],
+            "candidates": 450,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "后台 入口 枚举",
+            "origin": "expand:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "后台",
+              "入口",
+              "枚举"
+            ],
+            "candidates": 39,
+            "returned": 1,
+            "top": [
+              {
+                "id": 11,
+                "score": 0.6067,
+                "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）"
+              }
+            ]
+          },
+          {
+            "q": "管理后台 认证绕过",
+            "origin": "expand:business_type",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "管理",
+              "理后",
+              "后台",
+              "认证",
+              "证绕",
+              "绕过"
+            ],
+            "candidates": 122,
+            "returned": 3,
+            "top": [
+              {
+                "id": 50,
+                "score": 0.5204,
+                "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）"
+              },
+              {
+                "id": 712,
+                "score": 0.408,
+                "title": "WebSocket认证与授权绕过"
+              },
+              {
+                "id": 705,
+                "score": 0.3895,
+                "title": "原型链污染结合NoSQL注入"
+              }
+            ]
+          },
+          {
+            "q": "admin-login-page",
+            "origin": "signal:admin-login-page",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "admin-login-page",
+              "admin",
+              "login",
+              "page"
+            ],
+            "candidates": 1082,
+            "returned": 7,
+            "top": [
+              {
+                "id": 10372,
+                "score": 0.4208,
+                "title": "Sicom MGRNG - Administrative Login Found"
+              },
+              {
+                "id": 5503,
+                "score": 0.4154,
+                "title": "phpMyAdmin 5.0.2 - CRLF Injection"
+              },
+              {
+                "id": 6954,
+                "score": 0.4154,
+                "title": "Login Configurator <=2.1 - Cross-Site Scripting"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T08:33:09+08:00",
+      "top": [
+        {
+          "id": 11,
+          "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+          "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+          "kind": "script",
+          "category": "other",
+          "component": "婚介/婚恋行业目标池",
+          "verified": true,
+          "score": 0.6067,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 50,
+          "code": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+          "title": "FLUX WMS 识别与未授权面探测（Actuator/SAML/文件读取路径/登录裸RSA）",
+          "kind": "poc",
+          "category": "info-leak",
+          "component": "FLUX WMS（富勒仓储管理系统）",
+          "verified": true,
+          "score": 0.5204,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 10372,
+          "code": "nuclei-sicom-mgrng-login",
+          "title": "Sicom MGRNG - Administrative Login Found",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4208,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 5503,
+          "code": "nuclei-CVE-2020-11441",
+          "title": "phpMyAdmin 5.0.2 - CRLF Injection",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "phpmyadmin:phpmyadmin",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 6954,
+          "code": "nuclei-CVE-2023-1893",
+          "title": "Login Configurator <=2.1 - Cross-Site Scripting",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "login_configurator_project:login_configurator",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 10277,
+          "code": "nuclei-reportico-admin-panel",
+          "title": "Reportico Administration Page - Detect",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "reportico:reportico",
+          "verified": false,
+          "score": 0.4154,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 712,
+          "code": "src-hunter-web-ws-auth-bypass",
+          "title": "WebSocket认证与授权绕过",
+          "kind": "payload",
+          "category": "websocket",
+          "component": "认证绕过",
+          "verified": false,
+          "score": 0.408,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ]
+        },
+        {
+          "id": 9450,
+          "code": "nuclei-checkmate-panel",
+          "title": "Checkmate Login Panel - Detect",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "",
+          "verified": false,
+          "score": 0.4025,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 10803,
+          "code": "nuclei-openwrt-luci-panel",
+          "title": "Opentwrt luCI - Admin Login Page",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "x-wrt:luci",
+          "verified": false,
+          "score": 0.4025,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        },
+        {
+          "id": 705,
+          "code": "src-hunter-web-proto-nosql-injection",
+          "title": "原型链污染结合NoSQL注入",
+          "kind": "payload",
+          "category": "other",
+          "component": "组合利用",
+          "verified": false,
+          "score": 0.3895,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:business_type"
+          ]
+        },
+        {
+          "id": 6880,
+          "code": "nuclei-CVE-2022-46071",
+          "title": "Helmet Store Showroom v1.0 - SQL Injection",
+          "kind": "template",
+          "category": "nuclei",
+          "component": "helmet_store_showroom_site_project:helmet_store_showroom_site",
+          "verified": false,
+          "score": 0.375,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "signal:admin-login-page"
+          ]
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "sufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T08:39:13+08:00",
+        "role": "vuln-scan",
+        "finding": "Airbnb iframes.airbnbpayments.com postMessage 信任边界：真实，浏览器正例/负对照已复核；clientToken→nonce 链未证，建议 Medium–High。"
+      },
+      {
+        "at": "2026-11-03T08:39:13+08:00",
+        "role": "vuln-scan",
+        "finding": "EZVIZ oauth.ezvizlife.com 明文 HTTP 登录：真实，80 端口 200/4043，POST 302，login.js 提交 MD5；需网络位置，建议 Medium/Low。"
+      },
+      {
+        "at": "2026-11-03T08:39:13+08:00",
+        "role": "vuln-scan",
+        "finding": "EZVIZ oauth.ezvizlife.com JSP 源码/堆栈泄露：真实，500 + login.jsp 行号 + ELException；低危。"
+      },
+      {
+        "at": "2026-11-03T08:39:13+08:00",
+        "role": "vuln-scan",
+        "finding": "EZVIZ oauth.ezvizlife.com Host 头注入：真实，302 到 evil.example/login.jsp；浏览器不能设置 Host，偏低/信息级。"
+      },
+      {
+        "at": "2026-11-03T08:39:13+08:00",
+        "role": "vuln-scan",
+        "finding": "OPPO gcsm.oppoit.com 401 redirect_uri/state 注入：真实，KB #900015 完全匹配且 verified；401 不跟随、IdP 未测、增量风险≈0，低/可能不记分。"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-083238-9984/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T08:39:17+08:00"
+}

@@ -1,0 +1,185 @@
+{
+  "generated_at": "2026-11-06T03:45:07+08:00",
+  "items": [
+    {
+      "name": "nmap",
+      "kind": "cli",
+      "purpose": "端口/服务扫描",
+      "installed": true,
+      "version": "Nmap 7.993 ( https://nmap.org )",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "nuclei",
+      "kind": "cli",
+      "purpose": "模板化漏洞扫描",
+      "installed": true,
+      "version": "[\u001b[34mINF\u001b[0m] Nuclei Engine Version: v3.11.1",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "fscan",
+      "kind": "cli",
+      "purpose": "内网综合扫描",
+      "installed": true,
+      "version": "flag needs an argument: -h",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "gogo",
+      "kind": "cli",
+      "purpose": "内网测绘",
+      "installed": false,
+      "version": "",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "suo5",
+      "kind": "cli",
+      "purpose": "WebShell SOCKS5 隧道",
+      "installed": true,
+      "version": "NAME:",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "frpc",
+      "kind": "cli",
+      "purpose": "frp 客户端",
+      "installed": true,
+      "version": "0.72.0",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "chisel",
+      "kind": "cli",
+      "purpose": "HTTP 隧道",
+      "installed": true,
+      "version": "v1.13.0",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "ffuf",
+      "kind": "cli",
+      "purpose": "目录/参数爆破",
+      "installed": true,
+      "version": "ffuf version: git-20260926-8d65e037",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "sqlmap",
+      "kind": "cli",
+      "purpose": "SQL 注入",
+      "installed": true,
+      "version": "1.10.10#stable",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "hashcat",
+      "kind": "cli",
+      "purpose": "离线破解",
+      "installed": true,
+      "version": "v8.0.0",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "subfinder",
+      "kind": "cli",
+      "purpose": "子域枚举",
+      "installed": true,
+      "version": "[\u001b[34mINF\u001b[0m] Current Version: v2.17.0",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "pd-httpx",
+      "kind": "cli",
+      "purpose": "HTTP 探活/指纹",
+      "installed": false,
+      "version": "",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "frida",
+      "kind": "cli",
+      "purpose": "动态 Hook",
+      "installed": true,
+      "version": "17.24.3",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "jadx",
+      "kind": "cli",
+      "purpose": "APK 反编译",
+      "installed": true,
+      "version": "1.5.6",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "node",
+      "kind": "cli",
+      "purpose": "JS 运行时（知识桥/前端复现）",
+      "installed": true,
+      "version": "v24.22.2",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "python3",
+      "kind": "cli",
+      "purpose": "脚本运行时",
+      "installed": true,
+      "version": "Python 3.14.9",
+      "readonly": true,
+      "external": true
+    },
+    {
+      "name": "rtis_kb（node 桥）",
+      "kind": "mcp",
+      "purpose": "知识检索/关系/反知识/事件",
+      "installed": true,
+      "version": "",
+      "readonly": false,
+      "external": false
+    },
+    {
+      "name": "rtis.py",
+      "kind": "cli",
+      "purpose": "编排/画像/路由/复盘",
+      "installed": true,
+      "version": "1",
+      "readonly": false,
+      "external": false
+    },
+    {
+      "name": "knowledge.db",
+      "kind": "datastore",
+      "purpose": "POC 知识库（只读访问，事件 append）",
+      "installed": true,
+      "version": "",
+      "readonly": true,
+      "external": false
+    },
+    {
+      "name": "rtis_mcp.mjs",
+      "kind": "mcp",
+      "purpose": "zcode MCP 入口（含 RTIS 工具）",
+      "installed": true,
+      "version": "",
+      "readonly": false,
+      "external": false
+    }
+  ]
+}

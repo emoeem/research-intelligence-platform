@@ -1,0 +1,306 @@
+{
+  "task": {
+    "id": "rtis-20261104-105733-0867",
+    "title": "对 LOVE-SITE-SURFACE-2026-11-03 候选清单中的婚恋/交友站点做授权范围内的外网渗透测试：指纹…",
+    "objective": "对 LOVE-SITE-SURFACE-2026-11-03 候选清单中的婚恋/交友站点做授权范围内的外网渗透测试：指纹复核、资产/接口发现、常见 Web 漏洞验证（越权/注入/XSS/上传/逻辑缺陷），产出可复现证据与报告。",
+    "task_type": "full",
+    "target": "zhenai.com, jiayuan.com, baihe.com, 11yinyuan.com, 520.wanghongniang.com, jxly168.cn, matchmakervip.com",
+    "created_at": "2026-11-04T10:57:33+08:00",
+    "updated_at": "2026-11-04T10:57:33+08:00",
+    "status": "COMPLETED",
+    "skipped_phases": [
+      {
+        "state": "ENVIRONMENT_PROFILING",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "LOCAL_KNOWLEDGE_RETRIEVAL",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "EXTERNAL_RESEARCH",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "WORKFLOW_PLANNING",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "AUTHORIZED_EXECUTION",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "VERIFICATION",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "REPORTING",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      },
+      {
+        "state": "POSTMORTEM",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "at": "2026-11-04T11:14:21+08:00"
+      }
+    ],
+    "status_history": [
+      {
+        "at": "2026-11-04T10:57:33+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-04T10:57:37+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "目标落在已建 engagement：婚恋交友小站候选池 / 婚恋交友站点测绘-2026-11；珍爱/佳缘/一线姻缘另在婚恋交友小程序安全评估范围内",
+        "skipped": []
+      },
+      {
+        "at": "2026-11-04T11:14:21+08:00",
+        "state": "COMPLETED",
+        "reason": "测试、报告、POC 回填、handoff、aar 均已完成",
+        "skipped": [
+          "ENVIRONMENT_PROFILING",
+          "LOCAL_KNOWLEDGE_RETRIEVAL",
+          "EXTERNAL_RESEARCH",
+          "WORKFLOW_PLANNING",
+          "AUTHORIZED_EXECUTION",
+          "VERIFICATION",
+          "REPORTING",
+          "POSTMORTEM"
+        ]
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "婚恋交友小站候选池",
+      " 婚恋交友站点测绘-2026-11",
+      " 婚恋交友小程序安全评估（珍爱/佳缘/牵手/我主良缘/一伴/伊对/一线姻缘）"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 LOVE-SITE-SURFACE-2026-11-03 候选清单中的婚恋/交友站点做授权范围内的外网渗透测试：指纹复核、资产/接口发现、常见 Web 漏洞验证（越权/注入/XSS/上传/逻辑缺陷），产出可复现证据与报告。",
+      "zhenai.com, jiayuan.com, baihe.com, 11yinyuan.com, 520.wanghongniang.com, jxly168.cn, matchmakervip.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-04T10:58:51+08:00",
+        "queries": [
+          "对 LOVE-SITE-SURFACE-2026-11-03 候选清单中的婚恋/交友站点做授权范围内的外网渗透测试：指纹复核、资产/接口发现、常见 Web 漏洞验证（越权/注入/XSS/上传/逻辑缺陷），产出可复现证据与报告。",
+          "zhenai.com, jiayuan.com, baihe.com, 11yinyuan.com, 520.wanghongniang.com, jxly168.cn, matchmakervip.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 LOVE-SITE-SURFACE-2026-11-03 候选清单中的婚恋/交友站点做授权范围内的外网渗透测试：指纹复核、资产/接口发现、常见 Web 漏洞验证（越权/注入/XSS/上传/逻辑缺陷），产出可复现证据与报告。",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "love-site-surface-2026-11-03",
+              "love",
+              "site",
+              "surface",
+              "2026",
+              "11",
+              "03",
+              "web",
+              "xss",
+              "对",
+              "候选",
+              "选清",
+              "清单",
+              "单中",
+              "中的",
+              "的婚",
+              "婚恋",
+              "交友",
+              "友站",
+              "站点",
+              "点做",
+              "做授",
+              "授权",
+              "权范",
+              "范围",
+              "围内",
+              "内的",
+              "的外",
+              "外网",
+              "网渗",
+              "渗透",
+              "透测",
+              "测试",
+              "指纹",
+              "纹复",
+              "复核",
+              "资产",
+              "接口",
+              "口发",
+              "发现",
+              "常见",
+              "漏洞",
+              "洞验",
+              "验证",
+              "越权",
+              "注入",
+              "上传",
+              "逻辑",
+              "辑缺",
+              "缺陷",
+              "产出",
+              "出可",
+              "可复",
+              "复现",
+              "现证",
+              "证据",
+              "据与",
+              "与报",
+              "报告"
+            ],
+            "candidates": 848,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "zhenai.com, jiayuan.com, baihe.com, 11yinyuan.com, 520.wanghongniang.com, jxly168.cn, matchmakervip.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "zhenai",
+              "com",
+              "jiayuan",
+              "baihe",
+              "11yinyuan",
+              "520",
+              "wanghongniang",
+              "jxly168",
+              "cn",
+              "matchmakervip"
+            ],
+            "candidates": 493,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-04T10:58:51+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "520.wanghongniang.com：_blur→_b 可直取 900x1200 清晰原图（148,955B），无鉴权"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "www.jxly168.cn：_s→_b 可直取相册原图（43,267B / PNG 239,823B），无鉴权"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "www.11yinyuan.com：seoGetUserList 未授权返回 10,000 条/2000 页/60 字段"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "www.11yinyuan.com：checkPhoneOrCodeIsExist 未授权判断手机号是否注册（1003 vs 200）"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "www.11yinyuan.com：旧 getUserById 明文手机号越权已返回 19003（已收口）"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "api.zhenai.com：/api/seed/ 穿透 EdgeOne 返回应用 JSON；随机路径 428"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "napi.jiayuan.com：支付接口 token 强校验（100 token failure）"
+      },
+      {
+        "at": "2026-11-04T11:14:14+08:00",
+        "role": "vuln-scan",
+        "finding": "baihe.com：SPA catch-all，api.baihe.com 无解析；matchmakervip 仅 HTTP 静态企业站"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261104-105733-0867/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-04T11:14:21+08:00"
+}

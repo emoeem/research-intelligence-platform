@@ -1,0 +1,324 @@
+{
+  "task": {
+    "id": "rtis-20261104-005632-0669",
+    "title": "婚恋/交友 Web 站信息暴露面候选清单：只做发现与单点验证，产出候选表（域名/站型/暴露面/验证命令/结论），供后续授…",
+    "objective": "婚恋/交友 Web 站信息暴露面候选清单：只做发现与单点验证，产出候选表（域名/站型/暴露面/验证命令/结论），供后续授权范围内深测",
+    "task_type": "recon",
+    "target": "婚恋/相亲/交友活动报名类站点（候选域名动态收集）",
+    "created_at": "2026-11-04T00:56:32+08:00",
+    "updated_at": "2026-11-04T00:56:32+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-04T00:56:32+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-04T00:56:55+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "外网公开面被动收集 + 轻量指纹，红线已在新任务 authorized 字段声明；深测留待授权与账号",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "外网公开面发现；每域名 ≤10 请求、串行间隔 ≥2s、不批量注册、不提交真实数据、不遍历 ID（最多 2 个相邻）、不落真实用户值"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "婚恋/交友 Web 站信息暴露面候选清单：只做发现与单点验证，产出候选表（域名/站型/暴露面/验证命令/结论），供后续授权范围内深测",
+      "婚恋/相亲/交友活动报名类站点（候选域名动态收集）"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-04T00:57:25+08:00",
+        "queries": [
+          "婚恋/交友 Web 站信息暴露面候选清单：只做发现与单点验证，产出候选表（域名/站型/暴露面/验证命令/结论），供后续授权范围内深测",
+          "婚恋/相亲/交友活动报名类站点（候选域名动态收集）"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "婚恋/交友 Web 站信息暴露面候选清单：只做发现与单点验证，产出候选表（域名/站型/暴露面/验证命令/结论），供后续授权范围内深测",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "web",
+              "婚恋",
+              "交友",
+              "站信",
+              "信息",
+              "息暴",
+              "暴露",
+              "露面",
+              "面候",
+              "候选",
+              "选清",
+              "清单",
+              "只做",
+              "做发",
+              "发现",
+              "现与",
+              "与单",
+              "单点",
+              "点验",
+              "验证",
+              "产出",
+              "出候",
+              "选表",
+              "域名",
+              "站型",
+              "证命",
+              "命令",
+              "结论",
+              "供后",
+              "后续",
+              "续授",
+              "授权",
+              "权范",
+              "范围",
+              "围内",
+              "内深",
+              "深测"
+            ],
+            "candidates": 503,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "婚恋/相亲/交友活动报名类站点（候选域名动态收集）",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "婚恋",
+              "相亲",
+              "交友",
+              "友活",
+              "活动",
+              "动报",
+              "报名",
+              "名类",
+              "类站",
+              "站点",
+              "候选",
+              "选域",
+              "域名",
+              "名动",
+              "动态",
+              "态收",
+              "收集"
+            ],
+            "candidates": 62,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-04T00:57:25+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产"
+    ],
+    "partial_workflows": [
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "score": 1,
+        "why": [
+          "kw:域"
+        ],
+        "missing_dimensions": [
+          "environment_status"
+        ],
+        "reason": "有触发证据但关键维度未知，需先补信息"
+      }
+    ]
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-04T01:02:59+08:00",
+        "role": "recon",
+        "finding": "候选表 10 项：3 个头部平台（高价值，需授权+账号），2 个红娘/婚恋站（高价值：11yinyuan、wanghongniang），1 个中价值（jxly168），4 个待解析/待复核"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261104-005632-0669/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-04T01:03:02+08:00"
+}

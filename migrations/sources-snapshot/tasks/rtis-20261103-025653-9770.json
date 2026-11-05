@@ -1,0 +1,450 @@
+{
+  "task": {
+    "id": "rtis-20261103-025653-9770",
+    "title": "手工单请求测试 oauth.ezvizlife.com（Spring Security OAuth2 样例部署）未授权面…",
+    "objective": "手工单请求测试 oauth.ezvizlife.com（Spring Security OAuth2 样例部署）未授权面/信息泄露/默认口令/已知CVE/IDOR，出 finding 或写穷尽说明",
+    "task_type": "vuln",
+    "target": "oauth.ezvizlife.com",
+    "created_at": "2026-11-03T02:56:53+08:00",
+    "updated_at": "2026-11-03T02:56:53+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:53+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "ezvizlife.com（YSRC in-scope，见 SCOPE.md 第1节）"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "手工单请求测试 oauth.ezvizlife.com（Spring Security OAuth2 样例部署）未授权面/信息泄露/默认口令/已知CVE/IDOR，出 finding 或写穷尽说明",
+      "oauth.ezvizlife.com"
+    ],
+    "matched_entries": [
+      {
+        "id": 470,
+        "code": "patt-oauth-misconfiguration-grabbing-oauth-token-via-redirect-uri",
+        "title": "OAuth Misconfiguration — Grabbing OAuth Token via redirect_uri",
+        "kind": "payload",
+        "category": "auth-bypass",
+        "verified": false,
+        "score": 0.375,
+        "matched_by": [
+          "target"
+        ]
+      },
+      {
+        "id": 471,
+        "code": "patt-oauth-misconfiguration-executing-xss-via-redirect-uri",
+        "title": "OAuth Misconfiguration — Executing XSS via redirect_uri",
+        "kind": "payload",
+        "category": "auth-bypass",
+        "verified": false,
+        "score": 0.375,
+        "matched_by": [
+          "target"
+        ]
+      },
+      {
+        "id": 671,
+        "code": "src-hunter-web-auth-oauth",
+        "title": "OAuth漏洞",
+        "kind": "payload",
+        "category": "auth-bypass",
+        "verified": false,
+        "score": 0.375,
+        "matched_by": [
+          "target"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [
+      {
+        "id": 470,
+        "reason": "3 条均为 /oauth/authorize 的 redirect_uri 投递模式；本目标该端点在最外层过滤器即 302 → login.jsp，未认证请求根本无法到达 redirect_uri 校验点，本轮无账号无法投递，故不采用（已在 exhaust.md「未测项」登记）",
+        "at": "2026-11-03T03:12:47+08:00"
+      },
+      {
+        "id": 471,
+        "reason": "3 条均为 /oauth/authorize 的 redirect_uri 投递模式；本目标该端点在最外层过滤器即 302 → login.jsp，未认证请求根本无法到达 redirect_uri 校验点，本轮无账号无法投递，故不采用（已在 exhaust.md「未测项」登记）",
+        "at": "2026-11-03T03:12:47+08:00"
+      },
+      {
+        "id": 671,
+        "reason": "3 条均为 /oauth/authorize 的 redirect_uri 投递模式；本目标该端点在最外层过滤器即 302 → login.jsp，未认证请求根本无法到达 redirect_uri 校验点，本轮无账号无法投递，故不采用（已在 exhaust.md「未测项」登记）",
+        "at": "2026-11-03T03:12:47+08:00"
+      }
+    ],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-03T02:56:59+08:00",
+        "queries": [
+          "手工单请求测试 oauth.ezvizlife.com（Spring Security OAuth2 样例部署）未授权面/信息泄露/默认口令/已知CVE/IDOR，出 finding 或写穷尽说明",
+          "oauth.ezvizlife.com"
+        ],
+        "query_count": 2,
+        "hits": 3,
+        "top_score": 0.375,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "手工单请求测试 oauth.ezvizlife.com（Spring Security OAuth2 样例部署）未授权面/信息泄露/默认口令/已知CVE/IDOR，出 finding 或写穷尽说明",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "oauth",
+              "ezvizlife",
+              "com",
+              "spring",
+              "security",
+              "oauth2",
+              "cve",
+              "idor",
+              "finding",
+              "手工",
+              "工单",
+              "单请",
+              "请求",
+              "求测",
+              "测试",
+              "样例",
+              "例部",
+              "部署",
+              "未授",
+              "授权",
+              "权面",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "出",
+              "或写",
+              "写穷",
+              "穷尽",
+              "尽说",
+              "说明"
+            ],
+            "candidates": 805,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "oauth.ezvizlife.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "oauth",
+              "ezvizlife",
+              "com"
+            ],
+            "candidates": 450,
+            "returned": 3,
+            "top": [
+              {
+                "id": 470,
+                "score": 0.375,
+                "title": "OAuth Misconfiguration — Grabbing OAuth Token via redirect_uri"
+              },
+              {
+                "id": 471,
+                "score": 0.375,
+                "title": "OAuth Misconfiguration — Executing XSS via redirect_uri"
+              },
+              {
+                "id": 671,
+                "score": 0.375,
+                "title": "OAuth漏洞"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:56:59+08:00",
+      "top": [
+        {
+          "id": 470,
+          "code": "patt-oauth-misconfiguration-grabbing-oauth-token-via-redirect-uri",
+          "title": "OAuth Misconfiguration — Grabbing OAuth Token via redirect_uri",
+          "kind": "payload",
+          "category": "auth-bypass",
+          "component": "OAuth Misconfiguration",
+          "verified": false,
+          "score": 0.375,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 471,
+          "code": "patt-oauth-misconfiguration-executing-xss-via-redirect-uri",
+          "title": "OAuth Misconfiguration — Executing XSS via redirect_uri",
+          "kind": "payload",
+          "category": "auth-bypass",
+          "component": "OAuth Misconfiguration",
+          "verified": false,
+          "score": 0.375,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 671,
+          "code": "src-hunter-web-auth-oauth",
+          "title": "OAuth漏洞",
+          "kind": "payload",
+          "category": "auth-bypass",
+          "component": "OAuth",
+          "verified": false,
+          "score": 0.375,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:12:52+08:00",
+        "role": "vuln-scan",
+        "finding": "V1 中危：80 端口明文 HTTP 完整提供登录页并处理凭据 POST（302 authentication_error=1），未做 301 跳转；客户端 MD5 提交使截获值可直接重放"
+      },
+      {
+        "at": "2026-11-03T03:12:52+08:00",
+        "role": "vuln-scan",
+        "finding": "V2 低危：GET /login.jsp 无 Cookie 触发 500，Tomcat 错误页打印 login.jsp 22-28 行源码；authentication_error=非数字打印 109-115 行 + 完整堆栈 + 内部类 com.hikvision.oauth2.web.filter.CustomSecurityContextPersistenceFilter"
+      },
+      {
+        "at": "2026-11-03T03:12:52+08:00",
+        "role": "vuln-scan",
+        "finding": "V3 低危：Host: evil.example 使 /oauth/authorize 与 /oauth/token_key 的 302 Location 变为 https://evil.example/login.jsp（无 Host 白名单，无缓存头）"
+      },
+      {
+        "at": "2026-11-03T03:12:52+08:00",
+        "role": "vuln-scan",
+        "finding": "未授权面为零：/oauth/token 强制 client 认证，/oauth/authorize、check_token、token_key、confirm_access 全部 302 login.jsp；/api/* /actuator 404"
+      },
+      {
+        "at": "2026-11-03T03:12:52+08:00",
+        "role": "vuln-scan",
+        "finding": "Druid 不可达：/druid/* nginx 403；/%64ruid/* 编码绕过只得到自定义 JSON 与 302，取不到会话数据"
+      },
+      {
+        "at": "2026-11-03T03:12:52+08:00",
+        "role": "vuln-scan",
+        "finding": "无 XSS / 无 CORS / 无 SQLi 信号 / CRLF 被 Tomcat LegacyCookieProcessor 拦截 / TRACE 405"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025653-9770/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:12:55+08:00"
+}

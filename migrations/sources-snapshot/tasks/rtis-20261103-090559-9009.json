@@ -1,0 +1,194 @@
+{
+  "task": {
+    "id": "rtis-20261103-090559-9009",
+    "title": "补全 RTIS 红队知识库：为 2026-11-03 五条 finding 建立知识层、反知识、关系边；新增 SRC 范…",
+    "objective": "补全 RTIS 红队知识库：为 2026-11-03 五条 finding 建立知识层、反知识、关系边；新增 SRC 范围闸门等 7 条通用知识；体检并修复结构缺陷",
+    "task_type": "vuln",
+    "target": "/home/emo/.dsh/redteam/knowledge.db",
+    "created_at": "2026-11-03T09:05:59+08:00",
+    "updated_at": "2026-11-03T09:05:59+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T09:05:59+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "本地知识库 /home/emo/.dsh/redteam/knowledge.db（本机资产）"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "补全 RTIS 红队知识库：为 2026-11-03 五条 finding 建立知识层、反知识、关系边；新增 SRC 范围闸门等 7 条通用知识；体检并修复结构缺陷",
+      "/home/emo/.dsh/redteam/knowledge.db"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T09:06:01+08:00",
+        "queries": [
+          "补全 RTIS 红队知识库：为 2026-11-03 五条 finding 建立知识层、反知识、关系边；新增 SRC 范围闸门等 7 条通用知识；体检并修复结构缺陷",
+          "/home/emo/.dsh/redteam/knowledge.db"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "补全 RTIS 红队知识库：为 2026-11-03 五条 finding 建立知识层、反知识、关系边；新增 SRC 范围闸门等 7 条通用知识；体检并修复结构缺陷",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "rtis",
+              "2026-11-03",
+              "2026",
+              "11",
+              "03",
+              "finding",
+              "src",
+              "补全",
+              "红队",
+              "队知",
+              "知识",
+              "识库",
+              "为",
+              "五条",
+              "建立",
+              "立知",
+              "识层",
+              "反知",
+              "关系",
+              "系边",
+              "新增",
+              "范围",
+              "围闸",
+              "闸门",
+              "门等",
+              "条通",
+              "通用",
+              "用知",
+              "体检",
+              "检并",
+              "并修",
+              "修复",
+              "复结",
+              "结构",
+              "构缺",
+              "缺陷"
+            ],
+            "candidates": 839,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "/home/emo/.dsh/redteam/knowledge.db",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "home",
+              "emo",
+              "dsh",
+              "redteam",
+              "knowledge",
+              "db"
+            ],
+            "candidates": 868,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T09:06:01+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T09:06:22+08:00",
+        "role": "exploit",
+        "finding": "知识层 15→28（Rule 12 / Method 9 / Case 7），反知识 5→17，关系边 19→34"
+      },
+      {
+        "at": "2026-11-03T09:06:22+08:00",
+        "role": "exploit",
+        "finding": "新增 7 条知识条目 900024-900030：SRC 范围闸门、postMessage 审计法、401 注入上限、明文登录定级、源码泄露定级、EZVIZ 三连案例、9 家 SRC 登记表"
+      },
+      {
+        "at": "2026-11-03T09:06:22+08:00",
+        "role": "exploit",
+        "finding": "5 条 finding（900015/900020-900023）全部补 k_meta + 反知识 + 关系边，known 从 false 变 true"
+      },
+      {
+        "at": "2026-11-03T09:06:22+08:00",
+        "role": "exploit",
+        "finding": "去重：900017 改为「方法配套脚本」、900020 改为「案例」，用 derived_from 连接"
+      },
+      {
+        "at": "2026-11-03T09:06:22+08:00",
+        "role": "exploit",
+        "finding": "5 条曾 0 结果的查询现全部命中；MCP 与 CLI 输出一致"
+      },
+      {
+        "at": "2026-11-03T09:06:22+08:00",
+        "role": "exploit",
+        "finding": "K4=0 不是缺陷：库内 L4→K3 是既定映射，已把新条目对齐"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "exploit",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-090559-9009/handoffs/01-exploit.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T09:06:22+08:00"
+}

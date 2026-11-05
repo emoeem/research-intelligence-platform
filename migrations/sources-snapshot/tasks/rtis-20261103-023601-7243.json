@@ -1,0 +1,187 @@
+{
+  "task": {
+    "id": "rtis-20261103-023601-7243",
+    "title": "被动测绘萤石 YSRC 资产面（*.ys7.com / *.ezvizlife.com / *.ezviz7.com）：…",
+    "objective": "被动测绘萤石 YSRC 资产面（*.ys7.com / *.ezvizlife.com / *.ezviz7.com）：CT/证书、DNS、公开URL、HTTP指纹，产出 target 优先级榜",
+    "task_type": "recon",
+    "target": "ys7.com,ezvizlife.com,ezviz7.com",
+    "created_at": "2026-11-03T02:36:01+08:00",
+    "updated_at": "2026-11-03T02:36:01+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:36:01+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "ys7.com（含子域名）",
+      "ezvizlife.com（含子域名）",
+      "ezviz7.com（含子域名）"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "被动测绘萤石 YSRC 资产面（*.ys7.com / *.ezvizlife.com / *.ezviz7.com）：CT/证书、DNS、公开URL、HTTP指纹，产出 target 优先级榜",
+      "ys7.com,ezvizlife.com,ezviz7.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T02:36:08+08:00",
+        "queries": [
+          "被动测绘萤石 YSRC 资产面（*.ys7.com / *.ezvizlife.com / *.ezviz7.com）：CT/证书、DNS、公开URL、HTTP指纹，产出 target 优先级榜",
+          "ys7.com,ezvizlife.com,ezviz7.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "被动测绘萤石 YSRC 资产面（*.ys7.com / *.ezvizlife.com / *.ezviz7.com）：CT/证书、DNS、公开URL、HTTP指纹，产出 target 优先级榜",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "ysrc",
+              "ys7",
+              "com",
+              "ezvizlife",
+              "ezviz7",
+              "ct",
+              "dns",
+              "url",
+              "http",
+              "target",
+              "被动",
+              "动测",
+              "测绘",
+              "绘萤",
+              "萤石",
+              "资产",
+              "产面",
+              "证书",
+              "公开",
+              "指纹",
+              "产出",
+              "优先",
+              "先级",
+              "级榜"
+            ],
+            "candidates": 818,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "ys7.com,ezvizlife.com,ezviz7.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "ys7",
+              "com",
+              "ezvizlife",
+              "ezviz7"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:36:08+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "oauth.ezvizlife.com 首页为 spring-security-oauth2 官方 sample 原样页（<h2>Spring Security&Oauth2 is work!</h2> + /resources/bootstrap.min.css + OAUTHSESSIONID），同款页出现在 usifttt/euifttt/sgpifttt/saifttt/euskill/iot 等国际 OAuth 网关节点"
+      },
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "pdms.ys7.com 返回 Spring Boot 默认错误 JSON，CNAME 链 pdms.ys7.com→pdms-sq.ys7.com(60.190.232.64) 不经 waf.ys7.com；/actuator 与 /actuator/health 均 404"
+      },
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "test12open.ys7.com 为 403 静态页，ETag 652ccaa3 对应 mtime 2023-10-16，WAF 返回自定义 418"
+      },
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "open.ezvizlife.com / isgpopen / isaopen / alisgpopen / usopennginx-sahw 同栈 EZVIZ Cloud Developer Platform（Next.js+AntD+Node）分散 SG/EU/SA/US 多区域"
+      },
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "store.ys7.com 与 pb* 族（PHP + openRASP）302 到 auth.ys7.com/auth?u=<密文>&s=<签名>&c=<n>&returnUrl=…，returnUrl 可控"
+      },
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "10 条公网 DNS 记录指向 RFC1918（ecadmin-api 10.1.27.101、yscas 10.97.133.1、ysportal 10.97.133.2、harbor2 10.97.200.238 等）"
+      },
+      {
+        "at": "2026-11-03T02:48:43+08:00",
+        "role": "recon",
+        "finding": "*.qcos-hik.ys7.com 为通配解析（任意标签→183.136.184.210），subfinder 265 条为其噪声；ezviz7.com 被动源被通配证书 SAN 拼接污染 20747 行，判为废弃域"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-023601-7243/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T02:48:43+08:00"
+}

@@ -1,0 +1,416 @@
+{
+  "task": {
+    "id": "rtis-20261103-033405-9031",
+    "title": "第二轮补测 pdms.ys7.com：只做客户端安全、CORS、开放重定向、缓存/协议层，产出最多 2 条可复现 fin…",
+    "objective": "第二轮补测 pdms.ys7.com：只做客户端安全、CORS、开放重定向、缓存/协议层，产出最多 2 条可复现 finding",
+    "task_type": "vuln",
+    "target": "pdms.ys7.com",
+    "created_at": "2026-11-03T03:34:05+08:00",
+    "updated_at": "2026-11-03T03:34:05+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T03:34:05+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "pdms.ys7.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "第二轮补测 pdms.ys7.com：只做客户端安全、CORS、开放重定向、缓存/协议层，产出最多 2 条可复现 finding",
+      "pdms.ys7.com"
+    ],
+    "matched_entries": [
+      {
+        "id": 900016,
+        "code": "rule-dns-multinode-path-timeout-false-positive",
+        "title": "同一主机名多节点 DNS 漂移：路径级超时的假阳性判别",
+        "kind": "rule",
+        "category": "other",
+        "verified": true,
+        "score": 0.57,
+        "matched_by": [
+          "target"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-03T03:34:18+08:00",
+        "queries": [
+          "第二轮补测 pdms.ys7.com：只做客户端安全、CORS、开放重定向、缓存/协议层，产出最多 2 条可复现 finding",
+          "pdms.ys7.com"
+        ],
+        "query_count": 2,
+        "hits": 1,
+        "top_score": 0.57,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "第二轮补测 pdms.ys7.com：只做客户端安全、CORS、开放重定向、缓存/协议层，产出最多 2 条可复现 finding",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "pdms",
+              "ys7",
+              "com",
+              "cors",
+              "finding",
+              "第二",
+              "二轮",
+              "轮补",
+              "补测",
+              "只做",
+              "做客",
+              "客户",
+              "户端",
+              "端安",
+              "安全",
+              "开放",
+              "放重",
+              "重定",
+              "定向",
+              "缓存",
+              "协议",
+              "议层",
+              "产出",
+              "出最",
+              "最多",
+              "条可",
+              "可复",
+              "复现"
+            ],
+            "candidates": 497,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "pdms.ys7.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "pdms",
+              "ys7",
+              "com"
+            ],
+            "candidates": 401,
+            "returned": 1,
+            "top": [
+              {
+                "id": 900016,
+                "score": 0.57,
+                "title": "同一主机名多节点 DNS 漂移：路径级超时的假阳性判别"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:34:18+08:00",
+      "top": [
+        {
+          "id": 900016,
+          "code": "rule-dns-multinode-path-timeout-false-positive",
+          "title": "同一主机名多节点 DNS 漂移：路径级超时的假阳性判别",
+          "kind": "rule",
+          "category": "other",
+          "component": "DNS 多节点 / 负载轮询",
+          "verified": true,
+          "score": 0.57,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "score": 1,
+        "why": [
+          "kw:客户端"
+        ],
+        "phases": [
+          {
+            "phase": "static",
+            "role": "recon",
+            "action": "解包与静态提取",
+            "output": "产物"
+          },
+          {
+            "phase": "dynamic",
+            "role": "vuln-scan",
+            "action": "动态 Hook 验证",
+            "output": "结论"
+          }
+        ],
+        "knowledge_queries": [
+          "APK 加固 脱壳",
+          "硬编码 appkey 签名 提取"
+        ],
+        "related_skills": [
+          "apk-reversing",
+          "android-security-audit",
+          "apk-reverse"
+        ],
+        "stop_conditions": [
+          "壳无法脱且无替代静态面"
+        ],
+        "excluded_activities": [
+          "重打包分发"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing",
+      "apk-reversing",
+      "android-security-audit",
+      "apk-reverse"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产",
+      "壳无法脱且无替代静态面"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:41:54+08:00",
+        "role": "vuln-scan",
+        "finding": "CORS：简单请求 5 个 Origin + /error 3 组全部无 ACAO；预检 9 个 Origin（含 ys7.com/www/open/console/localhost/null/后缀绕过）全部 403 Invalid CORS request；8080 直连同样 403"
+      },
+      {
+        "at": "2026-11-03T03:41:54+08:00",
+        "role": "vuln-scan",
+        "finding": "客户端 XSS：404 JSON 原样回显裸 <script>（nginx 只拦 %3C 编码形式）但上下文为 application/json 不可执行；Accept: text/html 时 Whitelabel 页不反射路径；Tomcat 404 页不输出 URI"
+      },
+      {
+        "at": "2026-11-03T03:41:54+08:00",
+        "role": "vuln-scan",
+        "finding": "开放重定向：14 组路径规范化//双斜杠/目录补斜杠/Host 注入测试，全站零 Location 头，无跳转载体"
+      },
+      {
+        "at": "2026-11-03T03:41:54+08:00",
+        "role": "vuln-scan",
+        "finding": "缓存：443 无任何 Cache-Control/ETag/Age；80 端口 max-age=3600 但连续请求无 Age 增长，无共享缓存；缓存投毒/欺骗均无落点"
+      },
+      {
+        "at": "2026-11-03T03:41:54+08:00",
+        "role": "vuln-scan",
+        "finding": "协议：nginx 对任何 chunked 请求统一 411（CL.TE/TE.CL/混淆 TE 全拦），重复 CL 400；无 ALPN h2、h2c 无 101、h2 preface 400；HTTP/0.9 未关闭但无危害；TRACE 405；WEB-INF 不可读"
+      },
+      {
+        "at": "2026-11-03T03:41:54+08:00",
+        "role": "vuln-scan",
+        "finding": "仅存 4 个配置类观察（TLS1.0/1.1 开启、HTTP/0.9、8080 直连、80 明文可缓存），危害均量化为 0，不提交"
+      },
+      {
+        "at": "2026-11-03T03:49:58+08:00",
+        "role": "plan",
+        "finding": "CORS：简单请求无 ACAO、预检 9 Origin 全 403；215 份证据 ACAO=0"
+      },
+      {
+        "at": "2026-11-03T03:49:58+08:00",
+        "role": "plan",
+        "finding": "开放重定向：215 份证据 Location=0，无 30x"
+      },
+      {
+        "at": "2026-11-03T03:49:58+08:00",
+        "role": "plan",
+        "finding": "缓存：无 Age/X-Cache，无共享缓存；缓存欺骗/投毒无落点"
+      },
+      {
+        "at": "2026-11-03T03:49:58+08:00",
+        "role": "plan",
+        "finding": "客户端：404 JSON 回显仅在 application/json；Whitelabel/Tomcat 404 不反射"
+      },
+      {
+        "at": "2026-11-03T03:49:58+08:00",
+        "role": "plan",
+        "finding": "协议：TE 变体 411、重复 CL 400、无 h2/h2c；TLS 1.0/1.1 开启为配置观察，危害 0"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-033405-9031/handoffs/01-vuln-scan.yaml"
+      },
+      {
+        "seq": 2,
+        "role": "plan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-033405-9031/handoffs/02-plan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:49:58+08:00"
+}

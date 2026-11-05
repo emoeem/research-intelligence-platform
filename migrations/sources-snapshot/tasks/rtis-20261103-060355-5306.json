@@ -1,0 +1,185 @@
+{
+  "task": {
+    "id": "rtis-20261103-060355-5306",
+    "title": "对 9 家公开 SRC（萤石、PayPal 中国、乐信、Airbnb、OPPO、齐治科技、度小满、嘀嗒出行、原力金智）做…",
+    "objective": "对 9 家公开 SRC（萤石、PayPal 中国、乐信、Airbnb、OPPO、齐治科技、度小满、嘀嗒出行、原力金智）做“先读规则、只读探测、证据可复现”的安全评估，产出可提交报告与知识库回填",
+    "task_type": "recon",
+    "target": "萤石/PayPal中国/乐信/Airbnb/OPPO/齐治科技/度小满/嘀嗒出行/原力金智",
+    "created_at": "2026-11-03T06:03:55+08:00",
+    "updated_at": "2026-11-03T06:03:55+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T06:03:55+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T06:04:00+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "仅使用各 SRC 公开披露计划与公开 scope；主动测试前先读规则，规则不可得则只做被动测绘",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "各 SRC 公开漏洞披露计划 / 公开 scope"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 9 家公开 SRC（萤石、PayPal 中国、乐信、Airbnb、OPPO、齐治科技、度小满、嘀嗒出行、原力金智）做“先读规则、只读探测、证据可复现”的安全评估，产出可提交报告与知识库回填",
+      "萤石/PayPal中国/乐信/Airbnb/OPPO/齐治科技/度小满/嘀嗒出行/原力金智"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T06:04:05+08:00",
+        "queries": [
+          "对 9 家公开 SRC（萤石、PayPal 中国、乐信、Airbnb、OPPO、齐治科技、度小满、嘀嗒出行、原力金智）做“先读规则、只读探测、证据可复现”的安全评估，产出可提交报告与知识库回填",
+          "萤石/PayPal中国/乐信/Airbnb/OPPO/齐治科技/度小满/嘀嗒出行/原力金智"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 9 家公开 SRC（萤石、PayPal 中国、乐信、Airbnb、OPPO、齐治科技、度小满、嘀嗒出行、原力金智）做“先读规则、只读探测、证据可复现”的安全评估，产出可提交报告与知识库回填",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "src",
+              "paypal",
+              "airbnb",
+              "oppo",
+              "对",
+              "家公",
+              "公开",
+              "萤石",
+              "中国",
+              "乐信",
+              "齐治",
+              "治科",
+              "科技",
+              "度小",
+              "小满",
+              "嘀嗒",
+              "嗒出",
+              "出行",
+              "原力",
+              "力金",
+              "金智",
+              "做",
+              "先读",
+              "读规",
+              "规则",
+              "只读",
+              "读探",
+              "探测",
+              "证据",
+              "据可",
+              "可复",
+              "复现",
+              "的安",
+              "安全",
+              "全评",
+              "评估",
+              "产出",
+              "出可",
+              "可提",
+              "提交",
+              "交报",
+              "报告",
+              "告与",
+              "与知",
+              "知识",
+              "识库",
+              "库回",
+              "回填"
+            ],
+            "candidates": 448,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "萤石/PayPal中国/乐信/Airbnb/OPPO/齐治科技/度小满/嘀嗒出行/原力金智",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "paypal",
+              "airbnb",
+              "oppo",
+              "萤石",
+              "中国",
+              "乐信",
+              "齐治",
+              "治科",
+              "科技",
+              "度小",
+              "小满",
+              "嘀嗒",
+              "嗒出",
+              "出行",
+              "原力",
+              "力金",
+              "金智"
+            ],
+            "candidates": 18,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T06:04:05+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [],
+    "evidence": [],
+    "handoffs": []
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T06:04:05+08:00"
+}

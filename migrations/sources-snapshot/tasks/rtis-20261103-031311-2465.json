@@ -1,0 +1,793 @@
+{
+  "task": {
+    "id": "rtis-20261103-031311-2465",
+    "title": "为 drp.myoppo.com（OSRC/oppo）撰写本轮无提交级发现的 exhaust 报告，复核关键证据与 in…",
+    "objective": "为 drp.myoppo.com（OSRC/oppo）撰写本轮无提交级发现的 exhaust 报告，复核关键证据与 in-scope 依据，不新增扫描",
+    "task_type": "recon",
+    "target": "drp.myoppo.com",
+    "created_at": "2026-11-03T03:13:11+08:00",
+    "updated_at": "2026-11-03T03:13:11+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T03:13:11+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T03:13:14+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "项目 SCOPE.md 已将 drp.myoppo.com 列为 OSRC 高系数 in-scope 资产；仅撰写既有证据报告与两次只读复核",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "drp.myoppo.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "frontend_architecture": {
+        "value": "spa",
+        "status": "candidate",
+        "confidence": 0.7,
+        "evidence": [
+          "signal:spa-bundle"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:13:16+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "spa-bundle"
+    ],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "为 drp.myoppo.com（OSRC/oppo）撰写本轮无提交级发现的 exhaust 报告，复核关键证据与 in-scope 依据，不新增扫描",
+      "drp.myoppo.com",
+      "spa",
+      "SPA bundle 接口提取",
+      "source map 还原",
+      "spa-bundle"
+    ],
+    "matched_entries": [
+      {
+        "id": 3,
+        "code": "vue-cli-webpack-spa-生产-sourcemap-泄露检测与源码还原",
+        "title": "Vue CLI/webpack SPA 生产 sourcemap 泄露检测与源码还原",
+        "kind": "poc",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.7167,
+        "matched_by": [
+          "expand:frontend_architecture",
+          "dimension:frontend_architecture"
+        ]
+      },
+      {
+        "id": 6,
+        "code": "从-h5-spa-生产-bundle-明文提取接口字典-网关注册前缀-不经小程序抓包-无-token-未授权批量探测",
+        "title": "从 H5/SPA 生产 bundle 明文提取接口字典 + 网关注册前缀（不经小程序抓包）+ 无 token 未授权批量探测",
+        "kind": "script",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.6311,
+        "matched_by": [
+          "expand:frontend_architecture",
+          "dimension:frontend_architecture"
+        ]
+      },
+      {
+        "id": 66,
+        "code": "spa-接口加密通道反推与-encrypt_query-解密-伪造-aes-128-cbc-未授权下发静态-key-iv",
+        "title": "SPA 接口加密通道反推与 encrypt_query 解密/伪造（AES-128-CBC + 未授权下发静态 key/iv）",
+        "kind": "exp",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.6208,
+        "matched_by": [
+          "dimension:frontend_architecture"
+        ]
+      },
+      {
+        "id": 900004,
+        "code": "rule-js-config-vs-credential",
+        "title": "前端产物里的「公开配置」与「真凭据」判别清单",
+        "kind": "rule",
+        "category": "info-leak",
+        "verified": false,
+        "score": 0.62,
+        "matched_by": [
+          "archetype:spa"
+        ]
+      },
+      {
+        "id": 900007,
+        "code": "rule-spa-lifecycle",
+        "title": "SPA 后台生命周期判别矩阵：前端残留、后端下线、整站拒访",
+        "kind": "rule",
+        "category": "other",
+        "verified": false,
+        "score": 0.62,
+        "matched_by": [
+          "archetype:spa"
+        ]
+      },
+      {
+        "id": 11,
+        "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+        "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.6096,
+        "matched_by": [
+          "expand:frontend_architecture"
+        ]
+      },
+      {
+        "id": 8,
+        "code": "webpack-chunk-map-提全量按需-chunk-含-hash-批量抓取",
+        "title": "webpack chunk map 提全量按需 chunk（含 hash）+ 批量抓取",
+        "kind": "script",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.592,
+        "matched_by": [
+          "expand:frontend_architecture",
+          "dimension:frontend_architecture"
+        ]
+      },
+      {
+        "id": 21,
+        "code": "webpack-spa-前端硬编码-aes-cbc-密钥的定位与复刻-chunk-map-全量下取法",
+        "title": "webpack SPA 前端硬编码 AES-CBC 密钥的定位与复刻（chunk map 全量下取法）",
+        "kind": "script",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.59,
+        "matched_by": [
+          "dimension:frontend_architecture"
+        ]
+      }
+    ],
+    "selected_entries": [
+      {
+        "id": 3,
+        "at": "2026-11-03T03:13:23+08:00",
+        "reason": "本轮实际执行了：SPA sourcemap 缺失检测（NoSuchKey）、bundle 明文接口提取（2344 路径/1011 chunk）、chunk map 还原（tools/chunkmap.py）；用于解释 0 finding 的边界"
+      },
+      {
+        "id": 6,
+        "at": "2026-11-03T03:13:23+08:00",
+        "reason": "本轮实际执行了：SPA sourcemap 缺失检测（NoSuchKey）、bundle 明文接口提取（2344 路径/1011 chunk）、chunk map 还原（tools/chunkmap.py）；用于解释 0 finding 的边界"
+      },
+      {
+        "id": 8,
+        "at": "2026-11-03T03:13:23+08:00",
+        "reason": "本轮实际执行了：SPA sourcemap 缺失检测（NoSuchKey）、bundle 明文接口提取（2344 路径/1011 chunk）、chunk map 还原（tools/chunkmap.py）；用于解释 0 finding 的边界"
+      }
+    ],
+    "rejected_entries": [],
+    "sufficiency": "sufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:13:19+08:00",
+        "queries": [
+          "为 drp.myoppo.com（OSRC/oppo）撰写本轮无提交级发现的 exhaust 报告，复核关键证据与 in-scope 依据，不新增扫描",
+          "drp.myoppo.com",
+          "spa",
+          "SPA bundle 接口提取",
+          "source map 还原",
+          "spa-bundle"
+        ],
+        "query_count": 6,
+        "hits": 8,
+        "top_score": 0.7167,
+        "sufficiency": "sufficient",
+        "archetypes": {
+          "spa": 2
+        },
+        "external_research_needed": false,
+        "per_query": [
+          {
+            "q": "为 drp.myoppo.com（OSRC/oppo）撰写本轮无提交级发现的 exhaust 报告，复核关键证据与 in-scope 依据，不新增扫描",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "drp",
+              "myoppo",
+              "com",
+              "osrc",
+              "oppo",
+              "exhaust",
+              "in-scope",
+              "in",
+              "scope",
+              "为",
+              "撰写",
+              "写本",
+              "本轮",
+              "轮无",
+              "无提",
+              "提交",
+              "交级",
+              "级发",
+              "发现",
+              "现的",
+              "报告",
+              "复核",
+              "核关",
+              "关键",
+              "键证",
+              "证据",
+              "据与",
+              "依据",
+              "不新",
+              "新增",
+              "增扫",
+              "扫描"
+            ],
+            "candidates": 798,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "drp.myoppo.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "drp",
+              "myoppo",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "spa",
+            "origin": "dimension:frontend_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "spa"
+            ],
+            "candidates": 242,
+            "returned": 8,
+            "top": [
+              {
+                "id": 66,
+                "score": 0.6208,
+                "title": "SPA 接口加密通道反推与 encrypt_query 解密/伪造（AES-128-CBC + 未授权下发静态 key/iv）"
+              },
+              {
+                "id": 3,
+                "score": 0.6208,
+                "title": "Vue CLI/webpack SPA 生产 sourcemap 泄露检测与源码还原"
+              },
+              {
+                "id": 6,
+                "score": 0.6208,
+                "title": "从 H5/SPA 生产 bundle 明文提取接口字典 + 网关注册前缀（不经小程序抓包）+ 无 token 未授权批量探测"
+              }
+            ]
+          },
+          {
+            "q": "SPA bundle 接口提取",
+            "origin": "expand:frontend_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "spa",
+              "bundle",
+              "接口",
+              "口提",
+              "提取"
+            ],
+            "candidates": 309,
+            "returned": 4,
+            "top": [
+              {
+                "id": 6,
+                "score": 0.6311,
+                "title": "从 H5/SPA 生产 bundle 明文提取接口字典 + 网关注册前缀（不经小程序抓包）+ 无 token 未授权批量探测"
+              },
+              {
+                "id": 11,
+                "score": 0.6096,
+                "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）"
+              },
+              {
+                "id": 8,
+                "score": 0.592,
+                "title": "webpack chunk map 提全量按需 chunk（含 hash）+ 批量抓取"
+              }
+            ]
+          },
+          {
+            "q": "source map 还原",
+            "origin": "expand:frontend_architecture",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "source",
+              "map",
+              "还原"
+            ],
+            "candidates": 518,
+            "returned": 6,
+            "top": [
+              {
+                "id": 3,
+                "score": 0.7167,
+                "title": "Vue CLI/webpack SPA 生产 sourcemap 泄露检测与源码还原"
+              },
+              {
+                "id": 6,
+                "score": 0.59,
+                "title": "从 H5/SPA 生产 bundle 明文提取接口字典 + 网关注册前缀（不经小程序抓包）+ 无 token 未授权批量探测"
+              },
+              {
+                "id": 4465,
+                "score": 0.4,
+                "title": "Webpack Sourcemap"
+              }
+            ]
+          },
+          {
+            "q": "spa-bundle",
+            "origin": "signal:spa-bundle",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "spa-bundle",
+              "spa",
+              "bundle"
+            ],
+            "candidates": 258,
+            "returned": 1,
+            "top": [
+              {
+                "id": 6,
+                "score": 0.5333,
+                "title": "从 H5/SPA 生产 bundle 明文提取接口字典 + 网关注册前缀（不经小程序抓包）+ 无 token 未授权批量探测"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:13:19+08:00",
+      "top": [
+        {
+          "id": 3,
+          "code": "vue-cli-webpack-spa-生产-sourcemap-泄露检测与源码还原",
+          "title": "Vue CLI/webpack SPA 生产 sourcemap 泄露检测与源码还原",
+          "kind": "poc",
+          "category": "info-leak",
+          "component": null,
+          "verified": true,
+          "score": 0.7167,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:frontend_architecture",
+            "dimension:frontend_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 6,
+          "code": "从-h5-spa-生产-bundle-明文提取接口字典-网关注册前缀-不经小程序抓包-无-token-未授权批量探测",
+          "title": "从 H5/SPA 生产 bundle 明文提取接口字典 + 网关注册前缀（不经小程序抓包）+ 无 token 未授权批量探测",
+          "kind": "script",
+          "category": "info-leak",
+          "component": "通用：Vue/webpack H5 SPA（AddressUrl 拼接式请求层）",
+          "verified": true,
+          "score": 0.6311,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:frontend_architecture",
+            "dimension:frontend_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 66,
+          "code": "spa-接口加密通道反推与-encrypt_query-解密-伪造-aes-128-cbc-未授权下发静态-key-iv",
+          "title": "SPA 接口加密通道反推与 encrypt_query 解密/伪造（AES-128-CBC + 未授权下发静态 key/iv）",
+          "kind": "exp",
+          "category": "info-leak",
+          "component": null,
+          "verified": true,
+          "score": 0.6208,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "dimension:frontend_architecture"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 900004,
+          "code": "rule-js-config-vs-credential",
+          "title": "前端产物里的「公开配置」与「真凭据」判别清单",
+          "kind": "rule",
+          "category": "info-leak",
+          "component": "RTIS 本地规则",
+          "verified": false,
+          "score": 0.62,
+          "rtis": {
+            "archetypes": [
+              "spa"
+            ]
+          },
+          "matched_by": [
+            "archetype:spa"
+          ],
+          "negatives": []
+        },
+        {
+          "id": 900007,
+          "code": "rule-spa-lifecycle",
+          "title": "SPA 后台生命周期判别矩阵：前端残留、后端下线、整站拒访",
+          "kind": "rule",
+          "category": "other",
+          "component": "RTIS 本地规则",
+          "verified": false,
+          "score": 0.62,
+          "rtis": {
+            "archetypes": [
+              "spa"
+            ]
+          },
+          "matched_by": [
+            "archetype:spa"
+          ],
+          "negatives": [
+            {
+              "id": 5,
+              "knowledge_id": 900007,
+              "do_not_conclude": "后端域名 NXDOMAIN ⇒ 后端已下线",
+              "false_positive_cases": "内网/仅特定解析器可见、前端指向旧环境、灰度域名",
+              "known_failures": "以本机 DNS 结果推断服务生命周期",
+              "stop_conditions": "只有一个解析器的结果时，只能记为‘该解析器下不可达’",
+              "not_applicable_when": "域名本身是泛解析（通配）"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "code": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+          "title": "婚介行业目标池发现法（footer dork + SaaS 租户子域 + bundle 接口字典）",
+          "kind": "script",
+          "category": "other",
+          "component": "婚介/婚恋行业目标池",
+          "verified": true,
+          "score": 0.6096,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:frontend_architecture"
+          ]
+        },
+        {
+          "id": 8,
+          "code": "webpack-chunk-map-提全量按需-chunk-含-hash-批量抓取",
+          "title": "webpack chunk map 提全量按需 chunk（含 hash）+ 批量抓取",
+          "kind": "script",
+          "category": "info-leak",
+          "component": "webpack 4/5 打包的 Vue/React SPA",
+          "verified": true,
+          "score": 0.592,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "expand:frontend_architecture",
+            "dimension:frontend_architecture"
+          ]
+        },
+        {
+          "id": 21,
+          "code": "webpack-spa-前端硬编码-aes-cbc-密钥的定位与复刻-chunk-map-全量下取法",
+          "title": "webpack SPA 前端硬编码 AES-CBC 密钥的定位与复刻（chunk map 全量下取法）",
+          "kind": "script",
+          "category": "info-leak",
+          "component": "前端 webpack SPA（Vue2 + Element，多租户白标后台）",
+          "verified": true,
+          "score": 0.59,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "dimension:frontend_architecture"
+          ]
+        }
+      ],
+      "archetypes": {
+        "spa": 2
+      },
+      "sufficiency": "sufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "score": 6,
+        "why": [
+          "dim:frontend_architecture",
+          "signal:spa-bundle",
+          "kw:SPA"
+        ],
+        "phases": [
+          {
+            "phase": "bundle",
+            "role": "recon",
+            "action": "chunk/sourcemap 还原 + 接口字典",
+            "output": "api-paths"
+          },
+          {
+            "phase": "auth",
+            "role": "vuln-scan",
+            "action": "四态认证矩阵（无/自建/他人/过期）",
+            "output": "鉴权矩阵"
+          },
+          {
+            "phase": "bola",
+            "role": "vuln-scan",
+            "action": "对象级越权小范围验证",
+            "output": "越权证据"
+          },
+          {
+            "phase": "verify",
+            "role": "exploit",
+            "action": "授权内复现",
+            "output": "证据"
+          }
+        ],
+        "knowledge_queries": [
+          "SPA bundle 接口提取 source map",
+          "前端签名 加密 封装函数 定位",
+          "越权 IDOR 双账号 验证",
+          "OpenAPI swagger 未授权"
+        ],
+        "related_skills": [
+          "recon-js-analysis",
+          "hunt-spa-api",
+          "auth-access-control",
+          "api-protocol-security",
+          "hunt-shadow-api"
+        ],
+        "stop_conditions": [
+          "接口字典覆盖率 ≥ 已加载 chunk 的 95%",
+          "越权验证达到 3 个他人对象即停（不遍历）"
+        ],
+        "excluded_activities": [
+          "批量导出用户数据",
+          "对生产账号做写操作验证"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing",
+      "recon-js-analysis",
+      "hunt-spa-api",
+      "auth-access-control",
+      "api-protocol-security",
+      "hunt-shadow-api"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产",
+      "接口字典覆盖率 ≥ 已加载 chunk 的 95%",
+      "越权验证达到 3 个他人对象即停（不遍历）"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:17:58+08:00",
+        "role": "assess",
+        "finding": "无提交级发现：52 个未授权端点全部 401/404，0 字节业务数据"
+      },
+      {
+        "at": "2026-11-03T03:17:58+08:00",
+        "role": "assess",
+        "finding": "静态对象存储匿名列举/遍历/匿名写全部关闭（PUT 400 MissingSecurityElement）"
+      },
+      {
+        "at": "2026-11-03T03:17:58+08:00",
+        "role": "assess",
+        "finding": "SSO 回调落点固定 drp.myoppo.com/#/login，message 服务端生成且不反射 code；<script> 被 WAF 412"
+      },
+      {
+        "at": "2026-11-03T03:17:58+08:00",
+        "role": "assess",
+        "finding": "CORS 反射 Origin 且 credentials:true，但全站 0 Set-Cookie、token 在 localStorage → 不可利用"
+      },
+      {
+        "at": "2026-11-03T03:17:58+08:00",
+        "role": "assess",
+        "finding": "前端硬编码 token 5199f267...75104 实测 401，为失效死值"
+      },
+      {
+        "at": "2026-11-03T03:17:58+08:00",
+        "role": "assess",
+        "finding": "越权/IDOR/业务逻辑因无 OSRC 测试账号未验证，不推断"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "assess",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-031311-2465/handoffs/01-assess.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:18:06+08:00"
+}

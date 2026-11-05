@@ -60,9 +60,15 @@ ETL_VERSION = "1.1.0"
 # ---------------------------------------------------------------------------
 MIG_DIR = Path(__file__).resolve().parent
 
-SRC_CATALOG = Path("/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db")
-SRC_KNOWLEDGE = Path("/home/emo/.dsh/redteam/knowledge.db")
-SRC_TASKS_DIR = Path("/home/emo/.dsh/redteam/rtis/data/tasks")
+# 源快照锁定（M8）：快照目录存在时，全部对账/抽取对冻结副本执行（计划 §6.3）。
+# 活源（catalog/knowledge/tasks/tools）随生产运行变化；快照由协调会话生成于 2026-11-06。
+_SNAP = Path(__file__).resolve().parent / "sources-snapshot"
+def _snap(p: Path) -> Path:
+    return _SNAP / p.name if (_SNAP / p.name).exists() else p
+
+SRC_CATALOG = _snap(Path("/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db"))
+SRC_KNOWLEDGE = _snap(Path("/home/emo/.dsh/redteam/knowledge.db"))
+SRC_TASKS_DIR = (_SNAP / "tasks") if (_SNAP / "tasks").is_dir() else Path("/home/emo/.dsh/redteam/rtis/data/tasks")
 
 TARGET_DB = MIG_DIR / "platform-dryrun.db"
 SCHEMA_SQL = MIG_DIR / "001_init.sql"

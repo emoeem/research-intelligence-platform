@@ -1,0 +1,229 @@
+{
+  "task": {
+    "id": "rtis-20261103-025649-9564",
+    "title": "对 drp.myoppo.com（OPPO 数字零售运营后台，高系数资产）做手工未授权/信息泄露/默认口令/已知CVE/…",
+    "objective": "对 drp.myoppo.com（OPPO 数字零售运营后台，高系数资产）做手工未授权/信息泄露/默认口令/已知CVE/IDOR 验证，产出最多3条有实际危害证据的 finding",
+    "task_type": "vuln",
+    "target": "drp.myoppo.com",
+    "created_at": "2026-11-03T02:56:49+08:00",
+    "updated_at": "2026-11-03T02:56:49+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:49+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "drp.myoppo.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "business_type",
+      "delivery_architecture",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 drp.myoppo.com（OPPO 数字零售运营后台，高系数资产）做手工未授权/信息泄露/默认口令/已知CVE/IDOR 验证，产出最多3条有实际危害证据的 finding",
+      "drp.myoppo.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T02:57:10+08:00",
+        "queries": [
+          "对 drp.myoppo.com（OPPO 数字零售运营后台，高系数资产）做手工未授权/信息泄露/默认口令/已知CVE/IDOR 验证，产出最多3条有实际危害证据的 finding",
+          "drp.myoppo.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 drp.myoppo.com（OPPO 数字零售运营后台，高系数资产）做手工未授权/信息泄露/默认口令/已知CVE/IDOR 验证，产出最多3条有实际危害证据的 finding",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "drp",
+              "myoppo",
+              "com",
+              "oppo",
+              "cve",
+              "idor",
+              "finding",
+              "对",
+              "数字",
+              "字零",
+              "零售",
+              "售运",
+              "运营",
+              "营后",
+              "后台",
+              "高系",
+              "系数",
+              "数资",
+              "资产",
+              "做手",
+              "手工",
+              "工未",
+              "未授",
+              "授权",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "验证",
+              "产出",
+              "出最",
+              "最多",
+              "条有",
+              "有实",
+              "实际",
+              "际危",
+              "危害",
+              "害证",
+              "证据",
+              "据的"
+            ],
+            "candidates": 856,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "drp.myoppo.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "drp",
+              "myoppo",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:57:10+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "52 条人工挑选的业务/导出端点 POST {} 无 token → 51×401 + 1×404（编造路径），鉴权为过滤层统一拦截"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "12 种路径归一化/白名单穿越变体（尾斜杠、//、;.js、%2f、..;/、大小写、noLogin 前缀穿越）全部失败：401/400/404/412"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "静态层为自建对象存储网关（x-bill: Tbl:columbus-online-file-repo / Tbl:baymax-go2），NoSuchKey XML 泄漏桶名与对象键路径；?list-type=2 / ?acl 均落 SPA 兜底页，匿名 PUT → 400 MissingSecurityElement"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "路径穿越：/a/%2e%2e/%2e%2e/x 被归一化、%2e%2e%2f → nginx 400、....// → Access Forbidden、..%252f → Access Forbidden"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": ".git/config、.env、actuator/*、swagger-ui、druid 全部被 OPPO 自有 WAF 412 拦截（含大小写与 %61 编码变体）"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "SSO 回调 /drp/4a/login/callback：302 落点固定 https://drp.myoppo.com/#/login，message 为服务端生成不反射 code；前端以 React 文本子节点渲染 → 转义，无 DOM XSS"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "前端 common.js 硬编码 token 5199f267...（blackArticle/upload 的回退值）实测 401，为失效死值；bundle 内除 RSA 公钥外无其他密钥"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "CORS：Access-Control-Allow-Origin 反射任意 Origin（含 null）+ Allow-Credentials true + Expose-Headers token,location,App-ID；但全站 0 个 Set-Cookie，鉴权靠自定义 token 头（localStorage），跨站不可利用"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "X-Forwarded-Host / Forwarded / X-Forwarded-Proto / X-Forwarded-Prefix 注入均不能改变 OAuth redirect_uri，无 Host 头投毒"
+      },
+      {
+        "at": "2026-11-03T03:11:08+08:00",
+        "role": "vuln-scan",
+        "finding": "noLogin 白名单仅 5 个端点：date/range/query（200，auditSwitch/dateInterval）、entry/list（data:{}）、getBase（全 null）、switchToken（回显 token 报 invalid）、sso/drp/token/get（必填字段未知）"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025649-9564/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:11:09+08:00"
+}

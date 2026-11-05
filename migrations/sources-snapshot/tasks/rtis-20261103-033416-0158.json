@@ -1,0 +1,317 @@
+{
+  "task": {
+    "id": "rtis-20261103-033416-0158",
+    "title": "第二轮业务逻辑猎取：www.hoteltonight-test.com 的优惠券/邀请/支付状态机与并发缺陷（Airbn…",
+    "objective": "第二轮业务逻辑猎取：www.hoteltonight-test.com 的优惠券/邀请/支付状态机与并发缺陷（Airbnb Bug Bounty）",
+    "task_type": "vuln",
+    "target": "www.hoteltonight-test.com",
+    "created_at": "2026-11-03T03:34:16+08:00",
+    "updated_at": "2026-11-03T03:34:16+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T03:34:16+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "www.hoteltonight-test.com",
+      "api.hoteltonight-test.com",
+      "places.hoteltonight-test.com",
+      "*.hoteltonight-test.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "第二轮业务逻辑猎取：www.hoteltonight-test.com 的优惠券/邀请/支付状态机与并发缺陷（Airbnb Bug Bounty）",
+      "www.hoteltonight-test.com"
+    ],
+    "matched_entries": [
+      {
+        "id": 900018,
+        "code": "hoteltonight-mobile-header-auth-map",
+        "title": "HotelTonight 移动 Web 鉴权头部映射（_cat/_cxid/_sdid → Authorization/CXID/Device）",
+        "kind": "template",
+        "category": "unauthorized",
+        "verified": true,
+        "score": 0.6,
+        "matched_by": [
+          "target"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-03T03:34:23+08:00",
+        "queries": [
+          "第二轮业务逻辑猎取：www.hoteltonight-test.com 的优惠券/邀请/支付状态机与并发缺陷（Airbnb Bug Bounty）",
+          "www.hoteltonight-test.com"
+        ],
+        "query_count": 2,
+        "hits": 1,
+        "top_score": 0.6,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "第二轮业务逻辑猎取：www.hoteltonight-test.com 的优惠券/邀请/支付状态机与并发缺陷（Airbnb Bug Bounty）",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "www",
+              "hoteltonight-test",
+              "hoteltonight",
+              "test",
+              "com",
+              "airbnb",
+              "bug",
+              "bounty",
+              "第二",
+              "二轮",
+              "轮业",
+              "业务",
+              "务逻",
+              "逻辑",
+              "辑猎",
+              "猎取",
+              "的优",
+              "优惠",
+              "惠券",
+              "邀请",
+              "支付",
+              "付状",
+              "状态",
+              "态机",
+              "机与",
+              "与并",
+              "并发",
+              "发缺",
+              "缺陷"
+            ],
+            "candidates": 801,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "www.hoteltonight-test.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "www",
+              "hoteltonight-test",
+              "hoteltonight",
+              "test",
+              "com"
+            ],
+            "candidates": 801,
+            "returned": 1,
+            "top": [
+              {
+                "id": 900018,
+                "score": 0.6,
+                "title": "HotelTonight 移动 Web 鉴权头部映射（_cat/_cxid/_sdid → Authorization/CXID/Device）"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:34:23+08:00",
+      "top": [
+        {
+          "id": 900018,
+          "code": "hoteltonight-mobile-header-auth-map",
+          "title": "HotelTonight 移动 Web 鉴权头部映射（_cat/_cxid/_sdid → Authorization/CXID/Device）",
+          "kind": "template",
+          "category": "unauthorized",
+          "component": "HotelTonight mobile web / api.hoteltonight-test.com",
+          "verified": true,
+          "score": 0.6,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [],
+    "evidence": [],
+    "handoffs": []
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T03:34:25+08:00"
+}

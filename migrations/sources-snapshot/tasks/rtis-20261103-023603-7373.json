@@ -1,0 +1,438 @@
+{
+  "task": {
+    "id": "rtis-20261103-023603-7373",
+    "title": "对 Airbnb Bug Bounty Program 明列资产做被动测绘（CT/证书、DNS、公开 URL、HTTP …",
+    "objective": "对 Airbnb Bug Bounty Program 明列资产做被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出最多 2 个高优先级目标与证据",
+    "task_type": "recon",
+    "target": "airbnb.com（scope: www/support-api/one/next/m/api/assets/callbacks.airbnb.com, *.airbnb.com, *.airbnb.org, *.airbnbpayments.com, *.musta.ch 等）",
+    "created_at": "2026-11-03T02:36:03+08:00",
+    "updated_at": "2026-11-03T02:36:03+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:36:03+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T02:36:08+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "HackerOne 公开项目 hackerone.com/airbnb，SCOPE.md 判定 eligible，27 个 in-scope 资产；本轮仅被动测绘（CT/DNS/公开 URL/HTTP 指纹），不碰爆破与扫描器全量。",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "unconfirmed",
+    "authorized_assets": [],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "delivery_architecture": {
+        "value": "cdn-fronted",
+        "status": "candidate",
+        "confidence": 0.9,
+        "evidence": [
+          "signal:cloudfront"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T02:55:58+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "cloudfront"
+    ],
+    "unknowns": [
+      "business_type",
+      "frontend_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 Airbnb Bug Bounty Program 明列资产做被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出最多 2 个高优先级目标与证据",
+      "airbnb.com（scope: www/support-api/one/next/m/api/assets/callbacks.airbnb.com, *.airbnb.com, *.airbnb.org, *.airbnbpayments.com, *.musta.ch 等）"
+    ],
+    "matched_entries": [
+      {
+        "id": 65,
+        "code": "robots.txt-disallow-前缀-生产域名下非生产环境发现-三条假阳性判定规则-waf-对照-恒定响应-逐字节-diff",
+        "title": "robots.txt Disallow 前缀 → 生产域名下非生产环境发现 + 三条假阳性判定规则（WAF 对照 / 恒定响应 / 逐字节 diff）",
+        "kind": "script",
+        "category": "info-leak",
+        "verified": true,
+        "score": 0.5657,
+        "matched_by": [
+          "objective"
+        ]
+      }
+    ],
+    "selected_entries": [
+      {
+        "id": 65,
+        "at": "2026-11-03T02:55:55+08:00",
+        "reason": "robots.txt Disallow 前缀法用于非生产环境发现：本轮对 www.airbnb.com/robots.txt 实跑，非生产前缀 0 命中（负结论），但其“假阳性三判据”被用于解释 *.staging.airbnb.com 通配 DNS 噪声 —— 随机标签全解析到 34.160.96.171，不能当作主机存在证据。"
+      }
+    ],
+    "rejected_entries": [],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-03T02:36:20+08:00",
+        "queries": [
+          "对 Airbnb Bug Bounty Program 明列资产做被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出最多 2 个高优先级目标与证据",
+          "airbnb.com（scope: www/support-api/one/next/m/api/assets/callbacks.airbnb.com, *.airbnb.com, *.airbnb.org, *.airbnbpayments.com, *.musta.ch 等）"
+        ],
+        "query_count": 2,
+        "hits": 1,
+        "top_score": 0.5657,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 Airbnb Bug Bounty Program 明列资产做被动测绘（CT/证书、DNS、公开 URL、HTTP 指纹），产出最多 2 个高优先级目标与证据",
+            "origin": "objective",
+            "ok": true,
+            "fallback": true,
+            "tokens": [
+              "airbnb",
+              "bug",
+              "bounty",
+              "对"
+            ],
+            "candidates": 289,
+            "returned": 1,
+            "top": [
+              {
+                "id": 65,
+                "score": 0.5657,
+                "title": "robots.txt Disallow 前缀 → 生产域名下非生产环境发现 + 三条假阳性判定规则（WAF 对照 / 恒定响应 / 逐字节 diff）"
+              }
+            ]
+          },
+          {
+            "q": "airbnb.com（scope: www/support-api/one/next/m/api/assets/callbacks.airbnb.com, *.airbnb.com, *.airbnb.org, *.airbnbpayments.com, *.musta.ch 等）",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "airbnb",
+              "com",
+              "scope",
+              "www",
+              "support-api",
+              "support",
+              "api",
+              "one",
+              "next",
+              "assets",
+              "callbacks",
+              "org",
+              "airbnbpayments",
+              "musta",
+              "ch",
+              "等"
+            ],
+            "candidates": 908,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:36:20+08:00",
+      "top": [
+        {
+          "id": 65,
+          "code": "robots.txt-disallow-前缀-生产域名下非生产环境发现-三条假阳性判定规则-waf-对照-恒定响应-逐字节-diff",
+          "title": "robots.txt Disallow 前缀 → 生产域名下非生产环境发现 + 三条假阳性判定规则（WAF 对照 / 恒定响应 / 逐字节 diff）",
+          "kind": "script",
+          "category": "info-leak",
+          "component": null,
+          "verified": true,
+          "score": 0.5657,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "objective"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "score": 6,
+        "why": [
+          "dim:delivery_architecture",
+          "signal:cloudfront",
+          "kw:CDN"
+        ],
+        "phases": [
+          {
+            "phase": "edge",
+            "role": "recon",
+            "action": "边缘指纹与源站线索",
+            "output": "边缘/源站判定"
+          },
+          {
+            "phase": "bypass",
+            "role": "vuln-scan",
+            "action": "前缀/路径/Host 绕过探测",
+            "output": "绕过矩阵"
+          },
+          {
+            "phase": "decrypt",
+            "role": "vuln-scan",
+            "action": "加密层性质判定（传输 vs 应用）",
+            "output": "结论"
+          },
+          {
+            "phase": "verify",
+            "role": "exploit",
+            "action": "授权内只读验证",
+            "output": "证据"
+          }
+        ],
+        "knowledge_queries": [
+          "CDN 源站 IP 发现 历史 DNS 证书",
+          "前置分发器 前缀白名单 绕过 裸源站",
+          "响应加密 明文旁路 降级",
+          "application/octet-stream 响应 处理"
+        ],
+        "related_skills": [
+          "asset-correlation",
+          "hunt-cache-poison",
+          "unauth-path-key-hunt",
+          "api-protocol-security"
+        ],
+        "stop_conditions": [
+          "源站判定为不可直连且无替代通道",
+          "加密判定为传输层（不可绕）⇒ 转去 WF-02 找应用层面"
+        ],
+        "excluded_activities": [
+          "对 CDN 做缓存投毒实测（仅静态分析）",
+          "大流量压测"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing",
+      "asset-correlation",
+      "hunt-cache-poison",
+      "unauth-path-key-hunt",
+      "api-protocol-security"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产",
+      "源站判定为不可直连且无替代通道",
+      "加密判定为传输层（不可绕）⇒ 转去 WF-02 找应用层面"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "P1 iframes.airbnbpayments.com：根 403(S3)，带部署哈希路径 200，页面标题 'Payments card input form'，Last-Modified 2022-06-13，配套 drwp.encrypt.flexible.js 与 iframe_v2.bundle.js 均可公开读取；存在独立 CloudFront 分发的 iframes-dev 对端；历史 URL 参数为 country/origin/is_cvv_only/cvv_friction。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "P2 www.hoteltonight-test.com 200(Express/Node/React/Fastly)，api. 与 places.hoteltonight-test.com 均 302 到 /agents/sign_in；与生产 www.hoteltonight.com 同构；政策给出自助建号入口、测试卡与测试城市。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "support-api.airbnb.com 与 open.airbnb.com 在 1.1.1.1/8.8.8.8 均 NXDOMAIN（SCOPE 明列但当前不解析）。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "www.airbnb.com/sitemaps/localized（SCOPE 引用的 Localized sites 清单）实测 301 -> /404，指针已失效。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "*.musta.ch 研发工具链（artifactory/gerrit/git/gradle-enterprise/engflow/terraform/auth/deployboard）全部 HTTP 000，TCP 不可达；可达者仅有 Google IAP 302 与 k8s-oidc-provider 的 S3 403。该子树只剩 DNS 侧内部拓扑泄露。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "api-internal.hoteltonight.com 公网 DNS 泄露内部 ELB 名（internal-prod-hotelstonight-int-fg-...elb.amazonaws.com）与 RFC1918 地址 10.0.201.68 等。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "*.staging.airbnb.com 为通配 DNS，任意随机标签解析到 34.160.96.171 (Google IAP)，该子树名字不能作为存在性证据。"
+      },
+      {
+        "at": "2026-11-03T02:56:09+08:00",
+        "role": "recon",
+        "finding": "admin*/one*/grafana*/homer* 等全部 302 到 Google IAP（hd=airbnb.com），未登录不可触达应用逻辑。"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-023603-7373/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T02:56:14+08:00"
+}

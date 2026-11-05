@@ -1,0 +1,252 @@
+{
+  "task": {
+    "id": "rtis-20261104-184421-5129",
+    "title": "对 103.30.79.18/admin (Vite+Vue3+TDesign / PHP index.php) 与 s…",
+    "objective": "对 103.30.79.18/admin (Vite+Vue3+TDesign / PHP index.php) 与 sms.10658.net (IIS+ASP.NET 短信平台) 做漏洞发现：前端 JS 提接口、PHP 侧源码/配置泄露、未授权与越权、Nday 验证，逐条落库",
+    "task_type": "vuln",
+    "target": "http://103.30.79.18/admin/#/login,http://sms.10658.net/",
+    "created_at": "2026-11-04T18:44:21+08:00",
+    "updated_at": "2026-11-04T18:44:21+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-04T18:44:21+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "103.30.79.18",
+      " sms.10658.net",
+      " houtaiadmin.smstop.cn",
+      " smstop.cn",
+      " api.smstop.cn",
+      " 10658.net"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 103.30.79.18/admin (Vite+Vue3+TDesign / PHP index.php) 与 sms.10658.net (IIS+ASP.NET 短信平台) 做漏洞发现：前端 JS 提接口、PHP 侧源码/配置泄露、未授权与越权、Nday 验证，逐条落库",
+      "http://103.30.79.18/admin/#/login,http://sms.10658.net/"
+    ],
+    "matched_entries": [
+      {
+        "id": 42,
+        "code": "tun-伪-ack-环境下的协议级端口判活-含-nginx-占位端口识别",
+        "title": "TUN 伪 ACK 环境下的协议级端口判活（含 nginx 占位端口识别）",
+        "kind": "script",
+        "category": "other",
+        "verified": true,
+        "score": 0.504,
+        "matched_by": [
+          "target"
+        ]
+      }
+    ],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "partial",
+    "gates": [
+      {
+        "at": "2026-11-04T18:45:05+08:00",
+        "queries": [
+          "对 103.30.79.18/admin (Vite+Vue3+TDesign / PHP index.php) 与 sms.10658.net (IIS+ASP.NET 短信平台) 做漏洞发现：前端 JS 提接口、PHP 侧源码/配置泄露、未授权与越权、Nday 验证，逐条落库",
+          "http://103.30.79.18/admin/#/login,http://sms.10658.net/"
+        ],
+        "query_count": 2,
+        "hits": 1,
+        "top_score": 0.504,
+        "sufficiency": "partial",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 103.30.79.18/admin (Vite+Vue3+TDesign / PHP index.php) 与 sms.10658.net (IIS+ASP.NET 短信平台) 做漏洞发现：前端 JS 提接口、PHP 侧源码/配置泄露、未授权与越权、Nday 验证，逐条落库",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "103",
+              "30",
+              "79",
+              "18",
+              "admin",
+              "vite",
+              "vue3",
+              "tdesign",
+              "php",
+              "index",
+              "sms",
+              "10658",
+              "net",
+              "iis",
+              "asp",
+              "js",
+              "nday",
+              "对",
+              "与",
+              "短信",
+              "信平",
+              "平台",
+              "做漏",
+              "漏洞",
+              "洞发",
+              "发现",
+              "前端",
+              "提接",
+              "接口",
+              "侧源",
+              "源码",
+              "配置",
+              "置泄",
+              "泄露",
+              "未授",
+              "授权",
+              "权与",
+              "与越",
+              "越权",
+              "验证",
+              "逐条",
+              "条落",
+              "落库"
+            ],
+            "candidates": 859,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "http://103.30.79.18/admin/#/login,http://sms.10658.net/",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "http",
+              "103",
+              "30",
+              "79",
+              "18",
+              "admin",
+              "login",
+              "sms",
+              "10658",
+              "net"
+            ],
+            "candidates": 862,
+            "returned": 1,
+            "top": [
+              {
+                "id": 42,
+                "score": 0.504,
+                "title": "TUN 伪 ACK 环境下的协议级端口判活（含 nginx 占位端口识别）"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-04T18:45:05+08:00",
+      "top": [
+        {
+          "id": 42,
+          "code": "tun-伪-ack-环境下的协议级端口判活-含-nginx-占位端口识别",
+          "title": "TUN 伪 ACK 环境下的协议级端口判活（含 nginx 占位端口识别）",
+          "kind": "script",
+          "category": "other",
+          "component": "端口探测方法论（TUN 伪 ACK 环境）",
+          "verified": true,
+          "score": 0.504,
+          "rtis": {
+            "known": false
+          },
+          "matched_by": [
+            "target"
+          ],
+          "negatives": []
+        }
+      ],
+      "archetypes": {},
+      "sufficiency": "partial"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "2FA 实现：前端 index-CotGiQhX.js offset 1,406,210 — 428 时弹窗取 6 位动态码/≤16 位恢复码，带 X-Two-Factor-Code 头重发同一请求；无独立 /2fa 校验端点；two-factor/{setup,enable,disable,policy} 仅 POST 且受 token 保护"
+      },
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "428 在 20 次错误口令中从未出现 ⇒ 428 只在口令正确且账号启用 2FA 后触发，'登录返回428'的前提是先有正确口令"
+      },
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "admin×20 产品相关口令全 401 65B bad_credentials，139–558ms 无递增，无 429/Retry-After/Set-Cookie，无锁定迹象，不可枚举"
+      },
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "登录口 SQLi 3 次（用户名位/密码位）全 401，无 500 无延时 ⇒ 参数化"
+      },
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "41 条后门/备份/面板路径全 nginx 404/146B；关键否定 — 任一 .php 均 404（连 /index.php），而 /.htaccess(415B, RewriteRule ^ index.php [L]) 可静态读出 ⇒ 当前 nginx 无 PHP handler，PHP webshell 不可达"
+      },
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "https://103.30.79.18/ → 302 /admin/；OPTIONS /api/admin/login → 204 ACAO:* Allow-Headers 含 X-Two-Factor-Code（CORS 宽松，需 token 才可利用）"
+      },
+      {
+        "at": "2026-11-04T19:39:55+08:00",
+        "role": "exploit",
+        "finding": "旁站 houtaiadmin.smstop.cn→45.192.104.212 为同系统旧部署：/admin/ 200、旧构建 index-BNla42cA.js(1.41MB, 2026-10-13)、无 CSP、无任何 two-factor 客户端代码、56 端点 ⇒ 有口令时这条更易打通"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "exploit",
+        "status": "blocked",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261104-184421-5129/handoffs/01-exploit.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-04T19:39:55+08:00"
+}

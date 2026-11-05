@@ -6,19 +6,19 @@
   "etl_version": "1.1.0",
   "rtis_tasks": {
     "disposition": "仅统计，不迁移",
-    "path": "/home/emo/.dsh/redteam/rtis/data/tasks"
+    "path": "/home/emo/code/pensting/research-platform/migrations/sources-snapshot/tasks"
   },
   "sources": [
     {
-      "path": "/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db",
+      "path": "/home/emo/code/pensting/research-platform/migrations/sources-snapshot/catalog.db",
       "role": "catalog",
-      "sha256": "cd495a81a59cb1b23df7d080a864fa094a344cd4efb79409110e4d90a9f135e8",
-      "size_bytes": 569344
+      "sha256": "d43b5cc6de503a039b8a68d4f96a1d28180c3cef671b46050bca8e04cd97a838",
+      "size_bytes": 585728
     },
     {
-      "path": "/home/emo/.dsh/redteam/knowledge.db",
+      "path": "/home/emo/code/pensting/research-platform/migrations/sources-snapshot/knowledge.db",
       "role": "knowledge",
-      "sha256": "c3f42f58b05aafec8bec76965d82a437e967e77863f42ee5512771f30f1984ee",
+      "sha256": "79cadbed4a5e4fe8f56c22b03c8b1d2ffde524b0a9d44a6d0d704a36e2b689b4",
       "size_bytes": 28299264
     }
   ]

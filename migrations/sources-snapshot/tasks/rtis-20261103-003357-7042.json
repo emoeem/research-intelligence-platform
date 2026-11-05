@@ -1,0 +1,258 @@
+{
+  "task": {
+    "id": "rtis-20261103-003357-7042",
+    "title": "对 qt0008.com 进行渗透测试：站型判定→资产面→漏洞发现→利用，并回填知识库",
+    "objective": "对 qt0008.com 进行渗透测试：站型判定→资产面→漏洞发现→利用，并回填知识库",
+    "task_type": "full",
+    "target": "qt0008.com",
+    "created_at": "2026-11-03T00:33:57+08:00",
+    "updated_at": "2026-11-03T00:33:57+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T00:33:57+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "qt0008.com",
+      "*.qt0008.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "business_type": {
+        "value": "gambling-white-label",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T00:46:21+08:00"
+      },
+      "delivery_architecture": {
+        "value": "oss-static",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T00:46:21+08:00"
+      },
+      "frontend_architecture": {
+        "value": "spa-vue3-rolldown",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T00:46:21+08:00"
+      },
+      "api_architecture": {
+        "value": [
+          "encrypted-channel",
+          "bff-aggregator"
+        ],
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T00:46:21+08:00"
+      },
+      "identity_architecture": {
+        "value": "static-token",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T00:46:21+08:00"
+      },
+      "storage_architecture": {
+        "value": [
+          "aliyun-oss",
+          "s3"
+        ],
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T00:46:21+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "backend_architecture",
+      "response_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 qt0008.com 进行渗透测试：站型判定→资产面→漏洞发现→利用，并回填知识库",
+      "qt0008.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [
+      {
+        "id": 900009,
+        "at": "2026-11-03T00:46:21+08:00",
+        "reason": "900009 为本站族实测还原的双层加密通道；66 提供 SPA 加密通道反推方法论（已复用）；43/56 为同生态 BBIN 系包网对照（本族不适用其 MD5(alias) 算法，保留作对比）"
+      },
+      {
+        "id": 66,
+        "at": "2026-11-03T00:46:21+08:00",
+        "reason": "900009 为本站族实测还原的双层加密通道；66 提供 SPA 加密通道反推方法论（已复用）；43/56 为同生态 BBIN 系包网对照（本族不适用其 MD5(alias) 算法，保留作对比）"
+      },
+      {
+        "id": 43,
+        "at": "2026-11-03T00:46:21+08:00",
+        "reason": "900009 为本站族实测还原的双层加密通道；66 提供 SPA 加密通道反推方法论（已复用）；43/56 为同生态 BBIN 系包网对照（本族不适用其 MD5(alias) 算法，保留作对比）"
+      },
+      {
+        "id": 56,
+        "at": "2026-11-03T00:46:21+08:00",
+        "reason": "900009 为本站族实测还原的双层加密通道；66 提供 SPA 加密通道反推方法论（已复用）；43/56 为同生态 BBIN 系包网对照（本族不适用其 MD5(alias) 算法，保留作对比）"
+      }
+    ],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T00:34:43+08:00",
+        "queries": [
+          "对 qt0008.com 进行渗透测试：站型判定→资产面→漏洞发现→利用，并回填知识库",
+          "qt0008.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 qt0008.com 进行渗透测试：站型判定→资产面→漏洞发现→利用，并回填知识库",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "qt0008",
+              "com",
+              "对",
+              "进行",
+              "行渗",
+              "渗透",
+              "透测",
+              "测试",
+              "站型",
+              "型判",
+              "判定",
+              "资产",
+              "产面",
+              "漏洞",
+              "洞发",
+              "发现",
+              "利用",
+              "并回",
+              "回填",
+              "填知",
+              "知识",
+              "识库"
+            ],
+            "candidates": 620,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "qt0008.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "qt0008",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T00:34:43+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T01:05:05+08:00",
+        "role": "exploit",
+        "finding": "V1 未授权 BFF 聚合代理 bffApi：可批量投递任意 289 条 /api/* 路由（中危）"
+      },
+      {
+        "at": "2026-11-03T01:05:05+08:00",
+        "role": "exploit",
+        "finding": "V2 加密通道失效：OSS key 硬编码 thanks,pig4cloud；API key 由明文 staticToken 推导；且明文请求被接受（中危）"
+      },
+      {
+        "at": "2026-11-03T01:05:05+08:00",
+        "role": "exploit",
+        "finding": "V3 全局共享访客账号：staticToken → guest_73733733，含第三方写入 PII 与共享余额（中危）"
+      },
+      {
+        "at": "2026-11-03T01:05:05+08:00",
+        "role": "exploit",
+        "finding": "V4 内部服务名 apioss + i18n 内部 transId 泄露（低危）"
+      },
+      {
+        "at": "2026-11-03T01:05:05+08:00",
+        "role": "exploit",
+        "finding": "V5 CORS ACAO:* + ACAC:true + expose newjwt/token（低危/信息）"
+      },
+      {
+        "at": "2026-11-03T01:05:05+08:00",
+        "role": "exploit",
+        "finding": "V6 缺失 CSP/XFO/XCTO（信息）"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "exploit",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-003357-7042/handoffs/01-exploit.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T01:05:05+08:00"
+}

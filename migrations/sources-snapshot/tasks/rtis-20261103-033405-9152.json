@@ -1,0 +1,168 @@
+{
+  "task": {
+    "id": "rtis-20261103-033405-9152",
+    "title": "第二轮：业务逻辑/并发/优惠券邀请/支付状态机漏洞挖掘（第一轮零发现）",
+    "objective": "第二轮：业务逻辑/并发/优惠券邀请/支付状态机漏洞挖掘（第一轮零发现）",
+    "task_type": "vuln",
+    "target": "drp.myoppo.com",
+    "created_at": "2026-11-03T03:34:05+08:00",
+    "updated_at": "2026-11-03T03:34:05+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T03:34:05+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "drp.myoppo.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "第二轮：业务逻辑/并发/优惠券邀请/支付状态机漏洞挖掘（第一轮零发现）",
+      "drp.myoppo.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:35:13+08:00",
+        "queries": [
+          "第二轮：业务逻辑/并发/优惠券邀请/支付状态机漏洞挖掘（第一轮零发现）",
+          "drp.myoppo.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "第二轮：业务逻辑/并发/优惠券邀请/支付状态机漏洞挖掘（第一轮零发现）",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "第二",
+              "二轮",
+              "业务",
+              "务逻",
+              "逻辑",
+              "并发",
+              "优惠",
+              "惠券",
+              "券邀",
+              "邀请",
+              "支付",
+              "付状",
+              "状态",
+              "态机",
+              "机漏",
+              "漏洞",
+              "洞挖",
+              "挖掘",
+              "第一",
+              "一轮",
+              "轮零",
+              "零发",
+              "发现"
+            ],
+            "candidates": 139,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "drp.myoppo.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "drp",
+              "myoppo",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:35:13+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:41:05+08:00",
+        "role": "vuln-scan",
+        "finding": "1436 条 API 字面量全部位于 /drp/**，只有 5 条 noLogin 白名单 + /drp/yezi/login 免登录可达（/drp/login 为 404）"
+      },
+      {
+        "at": "2026-11-03T03:41:05+08:00",
+        "role": "vuln-scan",
+        "finding": "getBase 15 变体恒返回 6 个 null 字段；entry/list 有 language+psa 即 data:{}；switchToken 只校验 token 不签发；sso/drp/token/get 字段名为 drpToken，任意非法值静默 data:null"
+      },
+      {
+        "at": "2026-11-03T03:41:05+08:00",
+        "role": "vuln-scan",
+        "finding": "优惠券/活动/支付活动/订单/分期等业务端点抽样 13 条全部 401，业务逻辑与状态机不可达"
+      },
+      {
+        "at": "2026-11-03T03:41:05+08:00",
+        "role": "vuln-scan",
+        "finding": "并发测试无标的：可达端点均不写业务状态"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-033405-9152/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:41:07+08:00"
+}

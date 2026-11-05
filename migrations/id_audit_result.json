@@ -18,10 +18,10 @@
         "reverse_missing": []
       },
       "research_task": {
-        "alias_count": 35,
+        "alias_count": 42,
         "forward_missing": [],
         "pass": true,
-        "pk_count": 35,
+        "pk_count": 42,
         "reverse_missing": []
       },
       "resource": {
@@ -93,8 +93,8 @@
       "uniqueness_pass": true
     },
     "research_task": {
-      "count": 35,
-      "distinct": 35,
+      "count": 42,
+      "distinct": 42,
       "duplicates": [],
       "format_rule": "^rtis-\\d{8}-\\d{6}-\\d{2,}$",
       "format_violations": [],
@@ -110,10 +110,10 @@
     }
   },
   "format_pass": true,
-  "generated_at": "2026-11-05T19:33:04Z",
-  "id_audit_version": "1.0.0",
+  "generated_at": "2026-11-05T19:50:43Z",
+  "id_audit_version": "1.1.0",
   "intentional_reuse": {
-    "intersection_size": 35,
+    "intersection_size": 42,
     "note": "同一现网 task ID 有意沿用为平台主键（002_tasks.sql），非跨源冲突",
     "set_a": "rtis_task_id",
     "set_b": "research_task.task_id"
@@ -154,7 +154,7 @@
       "uniqueness_pass": true
     },
     "rtis_task_id": {
-      "dir_count": 36,
+      "dir_count": 44,
       "dir_format_violations": [],
       "dir_without_json": [
         "rtis-20261102-220844-7484",
@@ -162,20 +162,27 @@
         "rtis-20261102-221404-1375",
         "rtis-20261102-221528-2123",
         "rtis-20261102-221551-2908",
-        "rtis-20261102-225102-7665"
+        "rtis-20261102-225102-7665",
+        "rtis-20261106-033945-4774",
+        "rtis-20261106-034204-6350",
+        "rtis-20261106-034445-9052",
+        "rtis-20261106-034506-9517"
       ],
-      "distinct": 35,
+      "distinct": 42,
       "duplicates": [],
       "format_rule": "rtis-YYYYMMDD-HHMMSS-ms（ms 为 2 位以上数字）",
       "format_violations": [],
-      "id_count": 35,
-      "json_count": 35,
+      "id_count": 42,
+      "json_count": 42,
       "json_without_dir": [
         "rtis-20261103-003535-9050",
         "rtis-20261103-011047-6358",
         "rtis-20261103-033416-0158",
         "rtis-20261103-060355-5306",
-        "rtis-20261105-231342-2697"
+        "rtis-20261105-231342-2697",
+        "rtis-20261106-034205-6350",
+        "rtis-20261106-034446-9052",
+        "rtis-20261106-034507-9517"
       ],
       "pairing_note": "目录与 JSON 的配对差异属工件布局事实，登记备查，不构成 ID 冲突",
       "parse_errors": [],

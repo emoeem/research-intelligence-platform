@@ -1,0 +1,263 @@
+{
+  "task": {
+    "id": "rtis-20261103-025642-8968",
+    "title": "对 fcrm.duxiaoman.com（DXMSRC in-scope）做手工只读漏洞挖掘：未授权面/信息泄露/默认口…",
+    "objective": "对 fcrm.duxiaoman.com（DXMSRC in-scope）做手工只读漏洞挖掘：未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整证据的 finding 或写空穷尽说明",
+    "task_type": "vuln",
+    "target": "https://fcrm.duxiaoman.com/",
+    "created_at": "2026-11-03T02:56:42+08:00",
+    "updated_at": "2026-11-03T02:56:42+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:56:42+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "fcrm.duxiaoman.com",
+      "duxiaoman.com",
+      "duxiaomanfintech.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "business_type": {
+        "value": "internal-admin-crm",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      },
+      "delivery_architecture": {
+        "value": "cdn-fronted",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      },
+      "frontend_architecture": {
+        "value": "server-rendered-jquery-ejs",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      },
+      "backend_architecture": {
+        "value": "java-servlet",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      },
+      "api_architecture": {
+        "value": "json-rest",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      },
+      "identity_architecture": {
+        "value": "external-sso(uc.duxiaoman.com appid=410)",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      },
+      "environment_status": {
+        "value": "production",
+        "status": "confirmed",
+        "confidence": 1.0,
+        "evidence": [],
+        "alternatives": [],
+        "updated_at": "2026-11-03T03:09:49+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": [
+      "response_architecture",
+      "storage_architecture",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 fcrm.duxiaoman.com（DXMSRC in-scope）做手工只读漏洞挖掘：未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整证据的 finding 或写空穷尽说明",
+      "https://fcrm.duxiaoman.com/"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T02:56:57+08:00",
+        "queries": [
+          "对 fcrm.duxiaoman.com（DXMSRC in-scope）做手工只读漏洞挖掘：未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整证据的 finding 或写空穷尽说明",
+          "https://fcrm.duxiaoman.com/"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 fcrm.duxiaoman.com（DXMSRC in-scope）做手工只读漏洞挖掘：未授权面/信息泄露/默认口令/已知 CVE/IDOR，产出最多 3 条带完整证据的 finding 或写空穷尽说明",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "fcrm",
+              "duxiaoman",
+              "com",
+              "dxmsrc",
+              "in-scope",
+              "in",
+              "scope",
+              "cve",
+              "idor",
+              "finding",
+              "对",
+              "做手",
+              "手工",
+              "工只",
+              "只读",
+              "读漏",
+              "漏洞",
+              "洞挖",
+              "挖掘",
+              "未授",
+              "授权",
+              "权面",
+              "信息",
+              "息泄",
+              "泄露",
+              "默认",
+              "认口",
+              "口令",
+              "已知",
+              "产出",
+              "出最",
+              "最多",
+              "条带",
+              "带完",
+              "完整",
+              "整证",
+              "证据",
+              "据的",
+              "或写",
+              "写空",
+              "空穷",
+              "穷尽",
+              "尽说",
+              "说明"
+            ],
+            "candidates": 1120,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "https://fcrm.duxiaoman.com/",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "https",
+              "fcrm",
+              "duxiaoman",
+              "com"
+            ],
+            "candidates": 478,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:56:57+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:09:55+08:00",
+        "role": "assess",
+        "finding": "未登录面全部受 UC 统一登录保护：/sop/*、/crm/*、/bshop/* 一律 302 到 '当前用户无访问该资源的权限' 静态页（恒 1308B），未知路径同行为，无法用状态码区分路由存在性"
+      },
+      {
+        "at": "2026-11-03T03:09:55+08:00",
+        "role": "assess",
+        "finding": "唯一未授权可达的业务接口 /sop/api/getcsrftoken 与 /sop/api/gettooldetection：前者用公开 JS 中的固定串 rzxlszyykpbgqc 做 md5 签名后返回 code:0 与 B_crm_CsrfToken；后者返回 2001 用户未登录。两者均不返回业务数据"
+      },
+      {
+        "at": "2026-11-03T03:09:55+08:00",
+        "role": "assess",
+        "finding": "网关对含 .. / .git / .svn 的路径返回 200 + 0 字节（静默拦截），正常不存在的静态文件返回 404/168B → 200 空体不可解读为文件存在"
+      },
+      {
+        "at": "2026-11-03T03:09:55+08:00",
+        "role": "assess",
+        "finding": "/crm 301 泄露内部端口 8034（http://fcrm.duxiaoman.com:8034/crm/），实测 8034 TCP/TLS 外部 5s 超时不可达"
+      },
+      {
+        "at": "2026-11-03T03:09:55+08:00",
+        "role": "assess",
+        "finding": "CORS 三种 Origin（evil.example / null / evil.fcrm.duxiaoman.com）均无 ACAO；Host: evil.example 触发 500 空体（上游异常被替换，非回显）；X-Forwarded-Host 无反射"
+      },
+      {
+        "at": "2026-11-03T03:09:55+08:00",
+        "role": "assess",
+        "finding": "指纹：前端 nginx/1.16.1，上游 nginx/1.8.0，jQuery v1.11.3，mod.js 1.0.8，页脚 © 2019；CNAME 指向 fso.l.dxm-yibai.com（dxm-yibai.com 为 CDN 厂商标识）"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "assess",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-025642-8968/handoffs/01-assess.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:09:59+08:00"
+}

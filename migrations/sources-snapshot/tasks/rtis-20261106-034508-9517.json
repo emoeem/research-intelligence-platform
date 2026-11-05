@@ -1,0 +1,65 @@
+{
+  "task": {
+    "id": "rtis-20261106-034508-9517",
+    "title": "全链路回归",
+    "objective": "全链路回归",
+    "task_type": "recon",
+    "target": "example.test",
+    "created_at": "2026-11-06T03:45:08+08:00",
+    "updated_at": "2026-11-06T03:45:08+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-06T03:45:08+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "unconfirmed",
+    "authorized_assets": [],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "not_started",
+    "search_queries": [],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": null,
+    "gates": []
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [],
+    "evidence": [],
+    "handoffs": []
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-06T03:45:08+08:00"
+}

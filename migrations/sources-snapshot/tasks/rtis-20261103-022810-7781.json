@@ -1,0 +1,188 @@
+{
+  "task": {
+    "id": "rtis-20261103-022810-7781",
+    "title": "核实 Airbnb SRC（HackerOne 官方项目）的范围、赏金与测试规则，产出 SCOPE.md/scope.j…",
+    "objective": "核实 Airbnb SRC（HackerOne 官方项目）的范围、赏金与测试规则，产出 SCOPE.md/scope.json，不向业务资产发请求",
+    "task_type": "recon",
+    "target": "hackerone.com/airbnb",
+    "created_at": "2026-11-03T02:28:10+08:00",
+    "updated_at": "2026-11-03T02:28:10+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:28:10+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "hackerone.com/airbnb",
+      "www.airbnb.com/e/security"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "核实 Airbnb SRC（HackerOne 官方项目）的范围、赏金与测试规则，产出 SCOPE.md/scope.json，不向业务资产发请求",
+      "hackerone.com/airbnb"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T02:35:19+08:00",
+        "queries": [
+          "核实 Airbnb SRC（HackerOne 官方项目）的范围、赏金与测试规则，产出 SCOPE.md/scope.json，不向业务资产发请求",
+          "hackerone.com/airbnb"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "核实 Airbnb SRC（HackerOne 官方项目）的范围、赏金与测试规则，产出 SCOPE.md/scope.json，不向业务资产发请求",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "airbnb",
+              "src",
+              "hackerone",
+              "scope",
+              "md",
+              "json",
+              "核实",
+              "官方",
+              "方项",
+              "项目",
+              "的范",
+              "范围",
+              "赏金",
+              "金与",
+              "与测",
+              "测试",
+              "试规",
+              "规则",
+              "产出",
+              "不向",
+              "向业",
+              "业务",
+              "务资",
+              "资产",
+              "产发",
+              "发请",
+              "请求"
+            ],
+            "candidates": 745,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "hackerone.com/airbnb",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "hackerone",
+              "com",
+              "airbnb"
+            ],
+            "candidates": 447,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:35:19+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "官方性：www.airbnb.com/e/security 正文指向 hackerone.com/airbnb/；www.airbnb.com/.well-known/security.txt 给出 Contact/Policy 同址"
+      },
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "规则可读性 public：hackerone.com/airbnb?type=team 未登录可读完整 policy；legacy /airbnb/policy 会跳 sign_in，内容在 /airbnb#overview"
+      },
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "范围页 1-35 of 35：In scope 27 / Out of scope 8；Higher Impact 标签 12、Lower Impact 标签 12、3 个 wildcard 无标签"
+      },
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "赏金：最高 $25,000；High Impact 严重 $18,000–$25,000 / 高危 $10,000–$17,999 / 中危 $1,000–$5,000 / 低危 $250；Low Impact 严重 $5,000 起"
+      },
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "规则硬约束：禁止批量注册、禁止为探测限流做暴力测试、禁止社工与 DoS、只能用自有账号、HotelTonight 禁碰真实用户数据、第三方资产不在范围"
+      },
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "自动化扫描：政策全文无相关条款，判定 unknown（未授权也未禁止）"
+      },
+      {
+        "at": "2026-11-03T02:35:24+08:00",
+        "role": "recon",
+        "finding": "提交需 HackerOne 账号且过去一年 Signal ≥ 1.0，低于走 trial report"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-022810-7781/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T02:35:24+08:00"
+}

@@ -1,0 +1,240 @@
+{
+  "task": {
+    "id": "rtis-20261103-004415-7693",
+    "title": "对 qt0008.com 及其子域/边缘资产完成信息收集→资产梳理→漏洞发现→漏洞利用，优先复用知识库中 BBIN 系包…",
+    "objective": "对 qt0008.com 及其子域/边缘资产完成信息收集→资产梳理→漏洞发现→漏洞利用，优先复用知识库中 BBIN 系包网同族 verified POC（entrance/api 加密通道、前置分发器前缀白名单绕过、SPA 接口加密通道），边打边回填知识库。",
+    "task_type": "full",
+    "target": "qt0008.com",
+    "created_at": "2026-11-03T00:44:15+08:00",
+    "updated_at": "2026-11-03T00:44:15+08:00",
+    "status": "AUTHORIZATION_REVIEW",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T00:44:15+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      },
+      {
+        "at": "2026-11-03T00:44:20+08:00",
+        "state": "AUTHORIZATION_REVIEW",
+        "reason": "用户明确指定 qt0008.com 为本次授权测试目标并指令直接开工（选择方案 A）",
+        "skipped": []
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "qt0008.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "对 qt0008.com 及其子域/边缘资产完成信息收集→资产梳理→漏洞发现→漏洞利用，优先复用知识库中 BBIN 系包网同族 verified POC（entrance/api 加密通道、前置分发器前缀白名单绕过、SPA 接口加密通道），边打边回填知识库。",
+      "qt0008.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T00:44:47+08:00",
+        "queries": [
+          "对 qt0008.com 及其子域/边缘资产完成信息收集→资产梳理→漏洞发现→漏洞利用，优先复用知识库中 BBIN 系包网同族 verified POC（entrance/api 加密通道、前置分发器前缀白名单绕过、SPA 接口加密通道），边打边回填知识库。",
+          "qt0008.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "对 qt0008.com 及其子域/边缘资产完成信息收集→资产梳理→漏洞发现→漏洞利用，优先复用知识库中 BBIN 系包网同族 verified POC（entrance/api 加密通道、前置分发器前缀白名单绕过、SPA 接口加密通道），边打边回填知识库。",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "qt0008",
+              "com",
+              "bbin",
+              "verified",
+              "poc",
+              "entrance",
+              "api",
+              "spa",
+              "对",
+              "及其",
+              "其子",
+              "子域",
+              "边缘",
+              "缘资",
+              "资产",
+              "产完",
+              "完成",
+              "成信",
+              "信息",
+              "息收",
+              "收集",
+              "产梳",
+              "梳理",
+              "漏洞",
+              "洞发",
+              "发现",
+              "洞利",
+              "利用",
+              "优先",
+              "先复",
+              "复用",
+              "用知",
+              "知识",
+              "识库",
+              "库中",
+              "系包",
+              "包网",
+              "网同",
+              "同族",
+              "加密",
+              "密通",
+              "通道",
+              "前置",
+              "置分",
+              "分发",
+              "发器",
+              "器前",
+              "前缀",
+              "缀白",
+              "白名",
+              "名单",
+              "单绕",
+              "绕过",
+              "接口",
+              "口加",
+              "边打",
+              "打边",
+              "边回",
+              "回填",
+              "填知"
+            ],
+            "candidates": 993,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "qt0008.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "qt0008",
+              "com"
+            ],
+            "candidates": 400,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T00:44:47+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "前端纯静态 SPA（rolldown/vite chunk-closure），qt0008.com 与 qtyl001-004.com 是同一 siteCode=1169 镜像池，body 328499B 完全一致"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "静态站不代理 API：/api/backstage/system/status、/hall/index.html 均 404；业务 API 域名 qitianbet7.xyz 已不解析（000）"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "加密配置通道 /cocos/config_data.json → 200 5464B base64 密文（未解密，交 exploit）"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "atob 内嵌配置解出 siteCode=1169、ossName=nllj2m-1169-ppp、OSS_MODE=true、18 个 apiGet*/ossGet* 注入键"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "JS 提取 284 条 /api/* + 20 条 /gameApi/*（api_paths.txt），含 /api/club/manager/*、/api/agent/promote/*、/api/statistics/domain/pointer"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "同模板 FOFA 扩散：500 条 → 301 IP / 19 siteCode 白牌车队（213 澳门新葡京 234 节点、961 137、1358 100PG、1783、3385、2763…），nginx/1.24.0+OSS 反代，路径型无 vhost"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "防封网关 ccbhgl.com(tRPC-Gateway)：/c/?id= 按 type 头下发真实入口 cloudfront d1gjkbkw1v6h03 / sspylgcr.top:2000，两入口 200 同页"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "302 cloaking 链 qitianbet.com→g7006.com→jb6kvd1.com→hkaly2386kk.com(Apache APK 落地)；g7003.com 对爬虫跳 baidu.com"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "qitian003.com 为 Nuxt 下载分发前置，redirectDomains=saas-asiapacific-origin-download.wodoap.com（Cloudflare Workers x-edge-build 491，无参 400 traceId）"
+      },
+      {
+        "at": "2026-11-03T00:56:07+08:00",
+        "role": "recon",
+        "finding": "APK 桶 kdjaff-1169-ppp.s3.ap-east-1.amazonaws.com：1e1d18_sn.apk v1.1.34 / 1e1d18_nn64_v3.apk v6.9.18 可下载"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-004415-7693/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T00:56:07+08:00"
+}

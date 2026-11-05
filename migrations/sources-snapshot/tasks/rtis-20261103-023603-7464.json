@@ -1,0 +1,399 @@
+{
+  "task": {
+    "id": "rtis-20261103-023603-7464",
+    "title": "OSRC 被动测绘：CT/证书、DNS、公开 URL、HTTP 指纹，产出最多 2 个最可能有洞的目标",
+    "objective": "OSRC 被动测绘：CT/证书、DNS、公开 URL、HTTP 指纹，产出最多 2 个最可能有洞的目标",
+    "task_type": "recon",
+    "target": "oppo.com / heytap.com / realme.com / oneplus.com（OSRC scope 明列主机）",
+    "created_at": "2026-11-03T02:36:03+08:00",
+    "updated_at": "2026-11-03T02:36:03+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T02:36:03+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "scope.json 明列 web 域名：cloud.oppo.com",
+      "id.oppo.com",
+      "id.heytap.com",
+      "id.realme.com",
+      "safe.heytap.com",
+      "www.oppo.com",
+      "www.opposhop.cn",
+      "www.oneplus.com",
+      "account.oneplus.com",
+      "buy.realme.com",
+      "cloud.h2os.com",
+      "communityin.oppo.com",
+      "drp.myoppo.com",
+      "e.oppo.com",
+      "u.oppomobile.com",
+      "e-global.heytap.com",
+      "gcsm.oppoit.com",
+      "open.oppomobile.com",
+      "martech.heytap.com",
+      "e.oppomobile.com",
+      "community.oppo.com",
+      "community.oneplus.com",
+      "bbs.oneplus.com",
+      "c.realme.com",
+      "www.realme.com",
+      "chat-in.realme.com",
+      "chat-g.realmeservice.com",
+      "rcsm-sg.realmeservice.com",
+      "support.oppo.com",
+      "supervooc.oppo.cn",
+      "htms.heytapmobi.com",
+      "mdp-appconf-cn.heytapdownload.com",
+      "dc-dragate-cn.heytapmobi.com",
+      "www.coloros.com",
+      "developers.oppomobile.com",
+      "sceneswitch.oppo.com",
+      "smc-cn.heytap.com",
+      "zhongbao.heytap.com",
+      "zhongbao-ear.heytap.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {
+      "frontend_architecture": {
+        "value": "spa",
+        "status": "candidate",
+        "confidence": 0.7,
+        "evidence": [
+          "signal:spa-bundle"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T02:45:27+08:00"
+      },
+      "business_type": {
+        "value": "admin-backend",
+        "status": "candidate",
+        "confidence": 0.5,
+        "evidence": [
+          "signal:admin-login-page"
+        ],
+        "alternatives": [],
+        "updated_at": "2026-11-03T02:45:27+08:00"
+      }
+    },
+    "technologies": [],
+    "architecture": {},
+    "observations": [
+      "spa-bundle",
+      "admin-login-page"
+    ],
+    "unknowns": [
+      "delivery_architecture",
+      "backend_architecture",
+      "api_architecture",
+      "response_architecture",
+      "identity_architecture",
+      "storage_architecture",
+      "environment_status",
+      "deployment_model"
+    ]
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "OSRC 被动测绘：CT/证书、DNS、公开 URL、HTTP 指纹，产出最多 2 个最可能有洞的目标",
+      "oppo.com / heytap.com / realme.com / oneplus.com（OSRC scope 明列主机）"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T02:44:33+08:00",
+        "queries": [
+          "OSRC 被动测绘：CT/证书、DNS、公开 URL、HTTP 指纹，产出最多 2 个最可能有洞的目标",
+          "oppo.com / heytap.com / realme.com / oneplus.com（OSRC scope 明列主机）"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "OSRC 被动测绘：CT/证书、DNS、公开 URL、HTTP 指纹，产出最多 2 个最可能有洞的目标",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "osrc",
+              "ct",
+              "dns",
+              "url",
+              "http",
+              "被动",
+              "动测",
+              "测绘",
+              "证书",
+              "公开",
+              "指纹",
+              "产出",
+              "出最",
+              "最多",
+              "个最",
+              "最可",
+              "可能",
+              "能有",
+              "有洞",
+              "洞的",
+              "的目",
+              "目标"
+            ],
+            "candidates": 858,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "oppo.com / heytap.com / realme.com / oneplus.com（OSRC scope 明列主机）",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "oppo",
+              "com",
+              "heytap",
+              "realme",
+              "oneplus",
+              "osrc",
+              "scope",
+              "明列",
+              "列主",
+              "主机"
+            ],
+            "candidates": 426,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T02:44:33+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [
+      {
+        "id": "WF-00",
+        "name": "Generic Assessment（通用基线）",
+        "score": null,
+        "why": [
+          "always"
+        ],
+        "phases": [
+          {
+            "phase": "recon",
+            "role": "recon",
+            "action": "资产与指纹铺面",
+            "output": "资产库 + 指纹"
+          },
+          {
+            "phase": "assess",
+            "role": "assess",
+            "action": "逐条易打性评估",
+            "output": "priority 排序"
+          },
+          {
+            "phase": "vuln",
+            "role": "vuln-scan",
+            "action": "Nday/未授权面逐条测",
+            "output": "漏洞记录 + 原始请求"
+          },
+          {
+            "phase": "exploit",
+            "role": "exploit",
+            "action": "授权内验证",
+            "output": "证据或负结论"
+          }
+        ],
+        "knowledge_queries": [
+          "未授权访问 接口清单",
+          "指纹识别 组件 版本"
+        ],
+        "related_skills": [
+          "web2-recon",
+          "web-fingerprint",
+          "unauth-exploit",
+          "report-writing"
+        ],
+        "stop_conditions": [
+          "目标不可达且连续 2 轮无新证据",
+          "触发 WAF 封禁且无绕过后备通道",
+          "授权范围外资产"
+        ],
+        "excluded_activities": [
+          "未授权的写入/删除类操作"
+        ]
+      }
+    ],
+    "excluded_workflows": [
+      {
+        "id": "WF-01",
+        "name": "White-Label Landing Page（白牌站群 / 营销落地页）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-02",
+        "name": "SPA and API（前后端分离 / SPA + 独立 API）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-03",
+        "name": "CDN and Reverse Proxy（CDN 前置 / 反代 / 加密响应）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-04",
+        "name": "Encrypted API（接口加密通道）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-05",
+        "name": "File Response and Download（文件响应 / 导出 / 下载）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-06",
+        "name": "Admin Backend（后台 / 管理端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-07",
+        "name": "Object Storage（对象存储 / OSS）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-08",
+        "name": "OpenAPI Security Review（OpenAPI/Swagger 面）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-09",
+        "name": "Mini Program Assessment（小程序）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-10",
+        "name": "Android Security Review（Android 客户端）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-11",
+        "name": "IoT Security Review（IoT / 固件）",
+        "reason": "无任何触发证据"
+      },
+      {
+        "id": "WF-12",
+        "name": "Internal Security Assessment（内网）",
+        "reason": "无任何触发证据"
+      }
+    ],
+    "selected_roles": [
+      "recon",
+      "assess",
+      "vuln-scan",
+      "exploit"
+    ],
+    "selected_skills": [
+      "web2-recon",
+      "web-fingerprint",
+      "unauth-exploit",
+      "report-writing"
+    ],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": [
+      "目标不可达且连续 2 轮无新证据",
+      "触发 WAF 封禁且无绕过后备通道",
+      "授权范围外资产"
+    ],
+    "partial_workflows": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "P1 gcsm.oppoit.com（高系数，全球售后管理系统后台）：公开 /app_config.json 泄漏 API base /portal/api、SSO ssov2.myoas.com、WS gcsm-ws.oppoit.com、静态 token gcommon-admin、四地 DC 门户地址；/env.js 404 的 S3 XML 泄漏桶名 columbus-online-file-repo 与内部仓库 baymax-go-static-front 路径"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "P1 桶列举假设已实测否定：单次只读 GET /?list-type=2&max-keys=1 返回 2159B SPA 首页而非 ListBucketResult，前置层做了 SPA 回退；桶名泄漏成立、列桶不成立"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "P2 drp.myoppo.com（高系数，数字零售运营后台）：manifest.json name=drp-operation-pc；/app_env.js 泄漏 API_HOST、LOGIN_URL=/sso/#/login、STORE_HOST drp-store.myoppo.com、IS_BDM=true；umi+AntD Pro，index.html 注释 2020-03-06"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "e.oppo.com 与 e.oppomobile.com 返回逐字节相同页面（md5 80fd893f2a45c0e55d4a6653d8dcfee5），同一广告营销门户，含 /markets/manage/IndexManage"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "c.realme.com CNAME 到 127-0-0-1.realmebbs.com → 127.0.0.1：realme 侧有意配置的沉洞记录，非接管（realmebbs.com 仍由 realme 持有，dnspod 解析，2027 到期）"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "sso-sa/sso-me/yezi-sa/yezi-me.yeahzee.com 四主机 NXDOMAIN 且无 NS 委派 → 记录被删除，非遗留 CNAME，不构成接管"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "chat-g.realmeservice.com 公网 DNS 直接返回 RFC1918 地址 10.171.193.69，外部不可达"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "zhongbao.heytap.com 首页 title 为 Testing，任意路径回落同一 SPA（低系数，留作备用）"
+      },
+      {
+        "at": "2026-11-03T02:45:33+08:00",
+        "role": "recon",
+        "finding": "38/47 主机可达；e-global.heytap.com、htms.heytapmobi.com、smc-cn.heytap.com、mdp-appconf-cn、dc-dragate-cn 等仅返回 31–96B 的裸 404，疑为纯 API 端点"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "recon",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-023603-7464/handoffs/01-recon.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "not_started"
+  },
+  "updated_at": "2026-11-03T02:45:33+08:00"
+}

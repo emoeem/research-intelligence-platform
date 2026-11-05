@@ -1,0 +1,182 @@
+{
+  "task": {
+    "id": "rtis-20261103-033405-9244",
+    "title": "第二轮漏洞猎手：业务逻辑、并发、优惠券/邀请/支付状态机测试 loan.duxiaoman.com",
+    "objective": "第二轮漏洞猎手：业务逻辑、并发、优惠券/邀请/支付状态机测试 loan.duxiaoman.com",
+    "task_type": "vuln",
+    "target": "loan.duxiaoman.com",
+    "created_at": "2026-11-03T03:34:05+08:00",
+    "updated_at": "2026-11-03T03:34:05+08:00",
+    "status": "CREATED",
+    "skipped_phases": [],
+    "status_history": [
+      {
+        "at": "2026-11-03T03:34:05+08:00",
+        "state": "CREATED",
+        "reason": "任务创建"
+      }
+    ]
+  },
+  "authorization": {
+    "status": "declared",
+    "authorized_assets": [
+      "loan.duxiaoman.com"
+    ],
+    "excluded_assets": [],
+    "allowed_actions": [],
+    "approval_required": []
+  },
+  "environment": {
+    "site_profile": {},
+    "technologies": [],
+    "architecture": {},
+    "observations": [],
+    "unknowns": []
+  },
+  "knowledge": {
+    "search_status": "done",
+    "search_queries": [
+      "第二轮漏洞猎手：业务逻辑、并发、优惠券/邀请/支付状态机测试 loan.duxiaoman.com",
+      "loan.duxiaoman.com"
+    ],
+    "matched_entries": [],
+    "selected_entries": [],
+    "rejected_entries": [],
+    "sufficiency": "insufficient",
+    "gates": [
+      {
+        "at": "2026-11-03T03:34:22+08:00",
+        "queries": [
+          "第二轮漏洞猎手：业务逻辑、并发、优惠券/邀请/支付状态机测试 loan.duxiaoman.com",
+          "loan.duxiaoman.com"
+        ],
+        "query_count": 2,
+        "hits": 0,
+        "top_score": 0.0,
+        "sufficiency": "insufficient",
+        "archetypes": {},
+        "external_research_needed": true,
+        "per_query": [
+          {
+            "q": "第二轮漏洞猎手：业务逻辑、并发、优惠券/邀请/支付状态机测试 loan.duxiaoman.com",
+            "origin": "objective",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "loan",
+              "duxiaoman",
+              "com",
+              "第二",
+              "二轮",
+              "轮漏",
+              "漏洞",
+              "洞猎",
+              "猎手",
+              "业务",
+              "务逻",
+              "逻辑",
+              "并发",
+              "优惠",
+              "惠券",
+              "邀请",
+              "支付",
+              "付状",
+              "状态",
+              "态机",
+              "机测",
+              "测试"
+            ],
+            "candidates": 526,
+            "returned": 0,
+            "top": []
+          },
+          {
+            "q": "loan.duxiaoman.com",
+            "origin": "target",
+            "ok": true,
+            "fallback": false,
+            "tokens": [
+              "loan",
+              "duxiaoman",
+              "com"
+            ],
+            "candidates": 403,
+            "returned": 0,
+            "top": []
+          }
+        ]
+      }
+    ],
+    "dossier": {
+      "generated_at": "2026-11-03T03:34:22+08:00",
+      "top": [],
+      "archetypes": {},
+      "sufficiency": "insufficient"
+    }
+  },
+  "planning": {
+    "selected_workflows": [],
+    "excluded_workflows": [],
+    "selected_roles": [],
+    "selected_skills": [],
+    "selected_tools": [],
+    "priorities": [],
+    "stop_conditions": []
+  },
+  "execution": {
+    "current_phase": null,
+    "completed_phases": [],
+    "findings": [
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "192 条 /jloanop 路径中不存在 /pay /order /coupon /invite /activity /redpacket /lottery 接口，优惠券仅出现在对账 FAQ/协议文本"
+      },
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "所有业务状态机（试算/结算/回单/审批/额度）带有效 XSRF token 仍返回 errorCode 2003"
+      },
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "公开面只有 /jloanop/permission/regUcUser 与 sendMobileCode，需 Cookie j + Header j 双提交"
+      },
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "crypt.custom = RSA PKCS1v15 + 双层 base64，已等价复现（tools/dxm_crypt.py）"
+      },
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "短信验证码校验强制：空码/000000 均返回 1001 验证码不正确；发码失败不建立记录"
+      },
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "发码限流键为 userName，旋转用户名可绕过（短信轰炸排除类，未对真实号码发码）"
+      },
+      {
+        "at": "2026-11-03T03:43:03+08:00",
+        "role": "vuln-scan",
+        "finding": "sendMobileCode 不校验手机号格式，10000000000 返回成功（无独立影响）"
+      }
+    ],
+    "evidence": [],
+    "handoffs": [
+      {
+        "seq": 1,
+        "role": "vuln-scan",
+        "status": "completed",
+        "path": "/home/emo/.dsh/redteam/rtis/data/tasks/rtis-20261103-033405-9244/handoffs/01-vuln-scan.yaml"
+      }
+    ]
+  },
+  "final": {
+    "verification_status": "not_started",
+    "report_status": "not_started",
+    "postmortem_status": "done"
+  },
+  "updated_at": "2026-11-03T03:43:22+08:00"
+}
