@@ -29,6 +29,7 @@
 - rtis-bridge.js：已修复（复制备份到 security-research-upgrade/rtis/tools/，MCP 检索实测恢复 ok:true）。R-02 关闭。
 - 关键实测数：资源 81；D5=68（63 待人工+5 相关保留）；28 库=26 兼容/2 隔离；kb verified=130（0.88%，"13"是 M0 笔误）。
 - DEC-001（Rust）：验证通过。本机 cargo 走 rsproxy.cn 镜像，在线 9.6s / vendored 离线 8.7s 构建全通（见 research-platform/PROBE-RESULT.md）。M2-A 前置已满足。
+- **M8 切换已执行（2026-11-06，eff2918）**：RTIS_RESOLVER_MODE 默认 rp + platform.db 生产库 + 双路拆词修复。Flutterfox 授权更新：后续（含 Phase 7/8 移动端）不受 Rust 约束，能用非 Rust 方案完成即可。
 - 下一步序列：验收 M1 第一批 → M1 第二批（task JSON 字段映射、assets.db Evidence 映射、ID 冲突审计；评审指出 M0 方案缺此环节）→ M1 收尾验收报告 → M2 Rust workspace（research-platform/ 下建 crates/，重新锁版本+vendor）→ 推送 → M3-M6 隔离实现 → M7/M8 准备就绪（切流按第 3 条四检查）。
 
 ## 四、Flutterfox/Voicefox（第二项目，RIP 完成后再继续）
