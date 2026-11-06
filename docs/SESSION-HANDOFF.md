@@ -37,7 +37,7 @@
 
 - 计划书：/home/emo/Downloads/flutterfox-ui-redesign-plan-v2.md；视觉基准 HTML：/home/emo/Downloads/flutterfox-desktop-ui-concept.html；工程：/home/emo/code/voicefox-gui（main，远程 flutterfox/main）。
 - **Phase 0-6 全部落库并推送（9c4145b，2026-11-06）**：含 Phase 1-4 未入库文件补齐（design_system/shell/player）+ Phase 5（曲库/详情/下载/设置重写）+ Phase 6（榜单标题收敛、帮助页同步、治理文件）。本会话复检：analyze 0 issue + 145 测试全过。报告：docs/PHASE5-REPORT.md、docs/PHASE6-REPORT.md。
-- 剩余（PHASE6-REPORT 登记）：视口矩阵 1920/1280/1024 与浅色主题实机截图（需桌面空闲）；Phase 7/8 移动端 + 原生媒体（Rust 侧 5 项任务清单见 PHASE6-REPORT；授权更新：非 Rust 方案可用）。
+- 剩余（PHASE6-REPORT 登记）：视口矩阵 1920/1280/1024 与浅色主题实机截图（需桌面空闲）；Phase 7/8 移动端 + 原生媒体（Rust 侧 5 项任务清单见 PHASE6-REPORT；授权更新 2026-11-07：按实际需要选 Rust 或非 Rust 方案，不强制非 Rust）。
 - Flutter 3.47.9；应用实跑正常（FFI/mpv OK）。
 
 ## 五、环境事实
