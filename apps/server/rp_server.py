@@ -1,35 +1,71 @@
 #!/usr/bin/env python3
-"""RP Server: RIP M7 统一工作台只读骨架。
+"""RP Server: RIP M7 统一工作台（只读 + Token 鉴权）。
 
 单文件 http.server 实现，Python stdlib-only：
 - 静态页（apps/server/static/）
-- 4 个只读 JSON API（sqlite3 URI mode=ro 直查 platform-dryrun.db）
-- 无任何写端点，仅绑定 127.0.0.1（容器内通过 RP_HOST=0.0.0.0 覆盖）
+- 4 个只读 JSON API（sqlite3 URI mode=ro 直查生产库 platform.db）
+- 无任何写端点，默认绑定 127.0.0.1（容器内通过 RP_HOST=0.0.0.0 覆盖）
+- Bearer Token 鉴权：配置 RP_AUTH_TOKEN 或 RP_AUTH_TOKEN_FILE 后，
+  所有 /api/* 请求必须携带有效令牌（constant-time 比较 + 失败节流）；
+  未配置任何令牌时为本地开发模式（鉴权关闭，启动时显著告警）。
 
 环境变量：
-- RP_PORT      监听端口，默认 7800
-- RP_HOST      监听地址，默认 127.0.0.1
-- RP_DB_PATH   数据库路径，默认仓库内 migrations/platform-dryrun.db
+- RP_PORT            监听端口，默认 7800
+- RP_HOST            监听地址，默认 127.0.0.1
+- RP_DB_PATH         数据库路径，默认仓库内 migrations/platform.db
+- RP_AUTH_TOKEN      明文令牌（优先）
+- RP_AUTH_TOKEN_FILE 令牌文件路径（默认仓库根 .rp-workbench-token，权限应为 600）
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import posixpath
 import sqlite3
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(APP_DIR, "static")
 REPO_ROOT = os.path.dirname(os.path.dirname(APP_DIR))
-DEFAULT_DB = os.path.join(REPO_ROOT, "migrations", "platform-dryrun.db")
+DEFAULT_DB = os.path.join(REPO_ROOT, "migrations", "platform.db")
+DEFAULT_TOKEN_FILE = os.path.join(REPO_ROOT, ".rp-workbench-token")
 
 HOST = os.environ.get("RP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("RP_PORT", "7800"))
 DB_PATH = os.environ.get("RP_DB_PATH", DEFAULT_DB)
+AUTH_FAIL_DELAY = 0.3
+
+
+def _load_auth_token() -> str | None:
+    """令牌来源优先级：RP_AUTH_TOKEN > RP_AUTH_TOKEN_FILE > 默认令牌文件。"""
+    env_token = os.environ.get("RP_AUTH_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    token_file = os.environ.get("RP_AUTH_TOKEN_FILE", DEFAULT_TOKEN_FILE)
+    try:
+        if os.path.isfile(token_file):
+            mode = os.stat(token_file).st_mode & 0o777
+            if mode & 0o077:
+                print(
+                    f"[rp-server] 警告：令牌文件权限 {oct(mode)} 过宽，应为 600：{token_file}",
+                    file=sys.stderr,
+                )
+            with open(token_file, encoding="utf-8") as fh:
+                token = fh.read().strip()
+            if token:
+                return token
+    except OSError as exc:
+        print(f"[rp-server] 令牌文件读取失败：{exc}", file=sys.stderr)
+    return None
+
+
+AUTH_TOKEN = _load_auth_token()
+AUTH_ENABLED = AUTH_TOKEN is not None
 
 MAX_LIMIT = 200
 DEFAULT_LIMIT = 50
@@ -312,7 +348,7 @@ API_ROUTES = {
 
 
 class RpHandler(BaseHTTPRequestHandler):
-    server_version = "rp-server/0.1.0-m7-skeleton"
+    server_version = "rp-server/0.2.0-m7-auth"
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: A002
         sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -330,7 +366,28 @@ class RpHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_api_error(self, exc: ApiError) -> None:
-        self.send_json({"error": {"code": exc.code, "message": exc.message}}, status=exc.status)
+        body = json.dumps({"error": {"code": exc.code, "message": exc.message}}, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(exc.status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        if exc.status == 401:
+            self.send_header("WWW-Authenticate", "Bearer")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def require_auth(self) -> None:
+        """Bearer Token 校验：constant-time 比较，失败统一 401 + 节流。"""
+        if not AUTH_ENABLED:
+            return
+        supplied = self.headers.get("Authorization", "").strip()
+        expected = f"Bearer {AUTH_TOKEN}"
+        if supplied.startswith("Bearer ") and hmac.compare_digest(
+            supplied.encode("utf-8"), expected.encode("utf-8")
+        ):
+            return
+        time.sleep(AUTH_FAIL_DELAY)
+        raise ApiError(401, "unauthorized", "缺少或无效的访问令牌")
 
     def resolve_static(self, url_path: str) -> str | None:
         """把 URL 路径安全映射到 static 目录内文件，越界返回 None。"""
@@ -365,6 +422,7 @@ class RpHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query, keep_blank_values=True)
         try:
             if parsed.path.startswith("/api/"):
+                self.require_auth()
                 handler = API_ROUTES.get(parsed.path)
                 if handler is None:
                     raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
@@ -401,6 +459,14 @@ def main() -> int:
     server = ThreadingHTTPServer((HOST, PORT), RpHandler)
     print(f"[rp-server] listening http://{HOST}:{PORT}  (db: {DB_PATH}, mode=ro)")
     print(f"[rp-server] static dir: {STATIC_DIR}")
+    if AUTH_ENABLED:
+        print("[rp-server] 鉴权：已启用（Bearer Token）")
+    else:
+        print(
+            "[rp-server] 警告：鉴权未启用（本地开发模式）。任何能访问该端口的人都可读取全部 API 数据；"
+            "对外或非常规环境使用请先配置 RP_AUTH_TOKEN 或令牌文件（apps/server/rp_service.sh gen-token）",
+            file=sys.stderr,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -9,6 +9,7 @@ workers/python/.cache/
 workers/.cache/
 migrations/platform.db
 migrations/platform-fullbatch.db
+.rp-workbench-token
 migrations/platform.db-*
 migrations/platform-search.db
 migrations/platform-governance.db

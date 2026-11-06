@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RIP 工作台登录</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-card { width: min(380px, 92vw); background: #1E1E2E; border: 1px solid #313244; border-radius: 12px; padding: 28px; }
+    .login-card h1 { font-size: 18px; margin: 0 0 6px; color: #CBA6F7; }
+    .login-card p.sub { margin: 0 0 18px; font-size: 12px; color: #A6ADC8; }
+    .login-card input { width: 100%; box-sizing: border-box; background: #11111B; color: #CDD6F4; border: 1px solid #45475A; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+    .login-card button { width: 100%; margin-top: 12px; background: #CBA6F7; color: #11111B; border: 0; border-radius: 8px; padding: 10px 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .login-card button:disabled { opacity: 0.5; cursor: wait; }
+    .login-card .err { margin-top: 10px; font-size: 12px; color: #F38BA8; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <main class="login-wrap">
+    <section class="login-card">
+      <h1>RIP 统一工作台</h1>
+      <p class="sub">只读数据工作台，请输入访问令牌（Bearer Token）。</p>
+      <form id="f">
+        <input id="token" type="password" autocomplete="current-password" placeholder="访问令牌" autofocus />
+        <button id="go" type="submit">进入工作台</button>
+        <div class="err" id="err" role="alert"></div>
+      </form>
+    </section>
+  </main>
+  <script>
+    const err = document.getElementById("err");
+    const btn = document.getElementById("go");
+    document.getElementById("f").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const token = document.getElementById("token").value.trim();
+      if (!token) { err.textContent = "请输入令牌"; return; }
+      btn.disabled = true;
+      err.textContent = "";
+      try {
+        const resp = await fetch("/api/stats", {
+          headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          localStorage.setItem("rpToken", token);
+          location.href = "/";
+          return;
+        }
+        err.textContent = resp.status === 401 ? "令牌无效" : `服务异常（HTTP ${resp.status}）`;
+      } catch (e) {
+        err.textContent = `网络请求失败：${e.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

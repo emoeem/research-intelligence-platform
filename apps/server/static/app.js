@@ -33,12 +33,28 @@
     return node;
   }
 
+  function authToken() {
+    try {
+      return localStorage.getItem("rpToken") || "";
+    } catch (err) {
+      return "";
+    }
+  }
+
   async function api(path) {
     let resp;
+    const headers = { Accept: "application/json" };
+    const token = authToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
     try {
-      resp = await fetch(path, { headers: { Accept: "application/json" } });
+      resp = await fetch(path, { headers });
     } catch (err) {
       throw new Error(`网络请求失败：${err.message}`);
+    }
+    if (resp.status === 401) {
+      localStorage.removeItem("rpToken");
+      location.href = "/login.html";
+      throw new Error("需要登录");
     }
     let payload = null;
     try {
