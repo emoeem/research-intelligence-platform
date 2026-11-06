@@ -149,7 +149,7 @@
       "required": ["task"],
       "properties": {
         "task": {
-          "description": "Worker-specific input. Shape defined per worker; parsing: {text|path, format?}; embedding: {text|texts, dim?, ngram_range?, model?}; evaluation: {entries, rules?|rules_path?}. Debug op sleep/boom requires env WORKER_ALLOW_DEBUG=1.",
+          "description": "Worker-specific input. Shape defined per worker; parsing: {text|path, format?}; embedding: {text|texts, dim?, ngram_range?, model?} where model in {hashing-ngram-v1 (default, 256-dim hash), bge-small-zh-v1.5 (512-dim onnx, hash-fallback when unavailable)}, optional dim must equal the resolved backend output dim (no silent truncation; -32602 otherwise), data carries a backend field (hash | onnx:bge-small-zh-v1.5 | hash-fallback); evaluation: {entries, rules?|rules_path?}. Debug op sleep/boom requires env WORKER_ALLOW_DEBUG=1.",
           "type": "object"
         },
         "budget": { "$ref": "#/$defs/budget" },

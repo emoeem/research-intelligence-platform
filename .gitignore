@@ -13,3 +13,5 @@ migrations/platform-fullbatch.db
 migrations/platform.db-*
 migrations/platform-search.db
 migrations/platform-governance.db
+workers/python/.venv/
+models/

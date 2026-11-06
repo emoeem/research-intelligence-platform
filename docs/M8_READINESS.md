@@ -28,7 +28,7 @@
 1. evidence 抽样口径：4/26 兼容库、每表前 20 行；22 库结构与行数已登记未迁（M1 第二批报告）。
 2. research_task 仅映射核心字段；authorization/environment/knowledge 大 JSON 段留接续批次。
 3. rp 侧三轴缺口（M2/M4 报告）：topics 轴已补、CJK 桥 Rust 侧为 2-gram+桥表、license/maintenance 轴数据源未接。
-4. Worker embedding 为确定性占位（256 维 hashing），真实模型接入留 VectorModel 接口。
+4. ~~Worker embedding 为确定性占位（256 维 hashing），真实模型接入留 VectorModel 接口。~~ **已关闭（2026-11-07）**：bge-small-zh-v1.5 ONNX 后端接入（512 维），hash 占位保留为默认与回退后端，见 docs/M8_TAIL_EMBEDDING_REPORT.md。
 5. M7 工作台为只读骨架（无鉴权，127.0.0.1 绑定缓解）。
 6. 生产 rtis.py 自测基线 13 过 4 败为改动前既有（T2/T4/T11/T13），非本平台引入。
 
