@@ -35,12 +35,13 @@
 - **尾巴进展（2026-11-07 凌晨）**：CI 流水线已建（7d84c89 + gitignore vendor 修复 08f178d，Actions 全绿：Rust 69 测试+clippy 零警告+worker 109 测试）。M1 全量批已交付（f1de6ae + 评审修复 6da1d5e）：evidence 26 兼容库全量 700 行、research_task 大 JSON 126/126、verify 扩展 203 项 100% PASS、幂等 no-op、源库零写入；platform.db = fullbatch 生产批；M8_READINESS 限制 1/2 关闭。注意：platform-fullbatch.db 含凭据类证据，已移出版库（gitignore），评审时抓到。
 - **剩余尾巴**：license 轴数据源（低优先）。真实 embedding 已收口（ae705b3 + 守卫评审修复 2ffd635）：bge-small-zh-v1.5 ONNX（ModelScope，94.8MB，sha256 校验），512 维显式协商，回退语义 backend 字段，125 测试双口径验证；**至此"彻底部署上线"四缺口（M1 全量批 / CI / M7 鉴权服务化 / 真实 embedding）全部关闭**，工作台本机常驻 active 且生产数据在线。M7 细节：08846d7（鉴权 11 项自验 + systemd user 服务）+ e5abdf1（harness flake 根治）。
 
-## 四、Flutterfox/Voicefox（第二项目，桌面重构 Phase 0-6 已完成）
+## 四、Flutterfox/Voicefox（第二项目，Phase 0-8 完成，v0.9.0 已发布）
 
-- 计划书：/home/emo/Downloads/flutterfox-ui-redesign-plan-v2.md；视觉基准 HTML：/home/emo/Downloads/flutterfox-desktop-ui-concept.html；工程：/home/emo/code/voicefox-gui（main，远程 flutterfox/main）。
-- **Phase 0-6 全部落库并推送（9c4145b，2026-11-06）**：含 Phase 1-4 未入库文件补齐（design_system/shell/player）+ Phase 5（曲库/详情/下载/设置重写）+ Phase 6（榜单标题收敛、帮助页同步、治理文件）。本会话复检：analyze 0 issue + 145 测试全过。报告：docs/PHASE5-REPORT.md、docs/PHASE6-REPORT.md。
-- 剩余（PHASE6-REPORT 登记）：视口矩阵 1920/1280/1024 与浅色主题实机截图（需桌面空闲）；Phase 7/8 移动端 + 原生媒体（Rust 侧 5 项任务清单见 PHASE6-REPORT；授权更新 2026-11-07：按实际需要选 Rust 或非 Rust 方案，不强制非 Rust）。
-- Flutter 3.47.9；应用实跑正常（FFI/mpv OK）。
+- 计划书：/home/emo/Downloads/flutterfox-ui-redesign-plan-v2.md；工程：/home/emo/code/voicefox-gui（main，远程 flutterfox/main，最新 a0cfbf4）。
+- **Phase 0-8 全部完成并推送**：Phase 7（c2c72fa）MobileShell/平板三态/手势全屏播放，批次 0 补齐桌面冻结门禁截图（桌面逐像素 RMSE=0 零回归）；Phase 8（525f3d2）Rust 转发型 PlayerBackend + FRB 反向通道 + jniLibs + just_audio/audio_service。主会话验收：analyze 0 issue、Dart 189 + Rust 813 测试全过。报告：docs/PHASE7-REPORT.md、docs/PHASE8-REPORT.md。
+- **Release v0.9.0 已发布**（github.com/emoeem/flutterfox/releases/tag/v0.9.0）：Flutter 四平台产物（Linux/Android 全链路验证 + Windows/macOS CI 实跑通过）+ TUI 五平台资产同挂一个 Release。CI 全绿（fmt/clippy 零警告门禁修复 7e33e74 + flutter test 门禁增补）；release-flutter 管线落地（a0cfbf4）。踩坑记录：.cargo/config.toml 本机硬编码 NDK 路径已去本地化（本机配置外置 ~/.cargo）、Flutter 3.47 移除 --no-codesign、runner 镜像变量不进 env 上下文。
+- 剩余：真机验证（通知栏/锁屏/耳机键/蓝牙路由，需真机）、iOS 批次（无工具链未启动）、Windows/macOS 产物尝试矩阵转正。
+- Flutter 3.47.9；桌面实跑正常（FFI/mpv OK）。
 
 ## 五、环境事实
 
