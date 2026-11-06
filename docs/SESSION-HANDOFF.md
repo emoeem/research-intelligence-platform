@@ -31,7 +31,9 @@
 - DEC-001（Rust）：验证通过。本机 cargo 走 rsproxy.cn 镜像，在线 9.6s / vendored 离线 8.7s 构建全通（见 research-platform/PROBE-RESULT.md）。M2-A 前置已满足。
 - **M8 切换已执行（2026-11-06，eff2918）**：RTIS_RESOLVER_MODE 默认 rp + platform.db 生产库 + 双路拆词修复。Flutterfox 授权更新：后续（含 Phase 7/8 移动端）不受 Rust 约束，能用非 Rust 方案完成即可。
 - 下一步序列：M1 第一批 → 第二批 → M2-M8 全部完成（见 git log a87d82b..eff2918）。
-- **RIP 主线收口（2026-11-06 23:5x 复核）**：M8 切换后重跑 verify.py，PASS 一致率 100% exit 0。尾巴清单见 M8_READINESS §3（运营级非阻塞：M1 全量批生产化、evidence 其余 22 库、research_task 大 JSON 段、真实 embedding 接入、M7 鉴权、CI 流水线）。
+- **RIP 主线收口（2026-11-06 23:5x 复核）**：M8 切换后重跑 verify.py，PASS 一致率 100% exit 0。
+- **尾巴进展（2026-11-07 凌晨）**：CI 流水线已建（7d84c89 + gitignore vendor 修复 08f178d，Actions 全绿：Rust 69 测试+clippy 零警告+worker 109 测试）。M1 全量批已交付（f1de6ae + 评审修复 6da1d5e）：evidence 26 兼容库全量 700 行、research_task 大 JSON 126/126、verify 扩展 203 项 100% PASS、幂等 no-op、源库零写入；platform.db = fullbatch 生产批；M8_READINESS 限制 1/2 关闭。注意：platform-fullbatch.db 含凭据类证据，已移出版库（gitignore），评审时抓到。
+- **剩余尾巴**：真实 embedding 接入（后台 worker 进行中，2026-11-07 启动）；license 轴数据源。M7 鉴权 + 服务化已收口（08846d7：Bearer Token 鉴权 11 项自验全过 + systemd user 服务本机常驻 active + 生产数据在线 evidence 700/tasks 42；e5abdf1 根治 worker harness 偶发空 stderr 的 CI flake）。
 
 ## 四、Flutterfox/Voicefox（第二项目，桌面重构 Phase 0-6 已完成）
 
