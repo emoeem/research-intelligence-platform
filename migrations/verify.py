@@ -62,12 +62,13 @@ MIG_DIR = Path(__file__).resolve().parent
 
 
 def _target_db() -> Path:
-    """目标库：RP_TARGET_DB 环境变量可覆盖（M1 全量批重建流程：
-    platform-fullbatch.db / 生产复核 platform.db 用）；
-    相对路径按 migrations/ 解析；默认隔离库 platform-dryrun.db。"""
+    """目标库：RP_TARGET_DB 环境变量可覆盖（生产复核可指 platform.db，
+    历史隔离库可指 platform-dryrun.db）；相对路径按 migrations/ 解析；
+    默认全量批重建产物 platform-fullbatch.db（v4 schema，重建流程见
+    M1_FULLBATCH_REPORT.md）。"""
     v = os.environ.get("RP_TARGET_DB")
     if not v:
-        return MIG_DIR / "platform-dryrun.db"
+        return MIG_DIR / "platform-fullbatch.db"
     p = Path(v)
     return p if p.is_absolute() else MIG_DIR / p
 
@@ -587,6 +588,16 @@ def verify_research_task(tgt) -> None:
     check(all(e.get("source_file") and e.get("quarantine_reason") for e in quar),
           "隔离坏行条目齐备（source_file + quarantine_reason）",
           f"条目={len(quar)}")
+
+    # v1-3 隔离库（历史 dryrun 快照）无大 JSON 列：核心行对账在其下方依赖
+    # 下方 SELECT 的行集合，故 v1-3 目标整体跳过本节并显式留痕，避免误报
+    tgt_cols = {r[1] for r in tgt.execute("PRAGMA table_info(research_task)")}
+    if "authorization_json" not in tgt_cols:
+        check(True,
+              "ResearchTask 大 JSON 段对账跳过（目标库为 v1-3 历史隔离库 schema；"
+              "全量对账请以默认 fullbatch 库或 RP_TARGET_DB 指向 v4 库执行）",
+              "目标 schema=v1-3")
+        return
 
     tgt_rows = tgt.execute(
         "SELECT task_id, state, status_history, authorization_json,"
