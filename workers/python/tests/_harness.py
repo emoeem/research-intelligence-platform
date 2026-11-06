@@ -67,10 +67,12 @@ class WorkerProc:
             env=env, text=True, encoding="utf-8", bufsize=1)
         self._out: queue.Queue = queue.Queue()
         self._err: queue.Queue = queue.Queue()
-        threading.Thread(target=self._pump, args=(self.proc.stdout, self._out),
-                         daemon=True).start()
-        threading.Thread(target=self._pump, args=(self.proc.stderr, self._err),
-                         daemon=True).start()
+        self._pump_out = threading.Thread(target=self._pump,
+                                          args=(self.proc.stdout, self._out), daemon=True)
+        self._pump_err = threading.Thread(target=self._pump,
+                                          args=(self.proc.stderr, self._err), daemon=True)
+        self._pump_out.start()
+        self._pump_err.start()
 
     @staticmethod
     def _pump(stream, sink: queue.Queue):
@@ -143,22 +145,27 @@ class WorkerProc:
                 out.append(item)
 
     def close(self, force: bool = False):
-        if self.proc.poll() is None:
-            try:
-                self.proc.stdin.close()
-            except OSError:
-                pass
-            try:
-                self.proc.wait(timeout=5)
-                return
-            except subprocess.TimeoutExpired:
-                pass
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-                self.proc.wait(timeout=3)
+        try:
+            if self.proc.poll() is None:
+                try:
+                    self.proc.stdin.close()
+                except OSError:
+                    pass
+                try:
+                    self.proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.proc.terminate()
+                    try:
+                        self.proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        self.proc.kill()
+                        self.proc.wait(timeout=3)
+        finally:
+            # 进程退出后管道可能仍有尾部数据在 pump 线程途中：必须等两个
+            # 读取线程结束，drain_stdout/drain_stderr 才能看到完整流
+            #（此前不等导致 CI 偶发读到空 stderr，test_stderr_structured_logs_stdout_clean 报 ERROR）
+            for t in (self._pump_out, self._pump_err):
+                t.join(timeout=5)
 
 
 # ---------------------------------------------------------------- 契约断言
