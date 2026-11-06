@@ -32,7 +32,8 @@ import time
 from datetime import datetime, timezone
 
 RT_PLATFORM = os.path.join(os.path.expanduser("~"), "code", "pensting", "research-platform")
-RP_DB_DEFAULT = os.path.join(RT_PLATFORM, "migrations", "platform-dryrun.db")
+# M8 切换（2026-11-06）：生产库 platform.db（verify 100% 快照批），dryrun 库保留为对照。
+RP_DB_DEFAULT = os.path.join(RT_PLATFORM, "migrations", "platform.db")
 ERI_P2_DEFAULT = os.path.join(os.path.expanduser("~"), "code", "pensting",
                               "security-research-upgrade", "eri", "eri_p2.py")
 AUDIT_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "adapter_audit.jsonl")
@@ -65,8 +66,30 @@ def _find_rp_binary() -> str | None:
     return None
 
 
+CJK_BRIDGE = {
+    "落地页": ["landing", "redirect"], "跳转": ["redirect"], "资产": ["asset", "discovery"],
+    "加密": ["crypto", "encryption"], "密文": ["crypto", "encryption"],
+    "小程序": ["miniapp", "wechat"], "边缘": ["cdn", "edge"], "代理": ["proxy"],
+    "移动": ["mobile", "android"], "安卓": ["android", "apk"], "接口": ["api"],
+    "渗透": ["pentest"], "溯源": ["osint"], "口令": ["password"], "密码": ["password"],
+    "端口": ["scan", "recon"], "跳板": ["tunnel", "pivot"], "隧道": ["tunnel"],
+}
+
+
+def _split_phrase(text: str) -> list:
+    """整句任务目标 -> 确定性检索词：ASCII 词元 + CJK 桥表（与 eri_p2 同表同步）。"""
+    import re as _re
+    out = [t for t in _re.findall(r"[a-zA-Z0-9+#.]{2,}", text or "") if len(t) >= 2]
+    joined = text or ""
+    for cjk, en in CJK_BRIDGE.items():
+        if cjk in joined:
+            out.extend(en)
+    return sorted(set(w.lower() for w in out))
+
+
 def derive_keywords(task: dict) -> list:
-    """与 eri_p2.bridge_gate 完全一致的关键词推导（keywords + objective + 画像维度值）。"""
+    """与 eri_p2.bridge_gate 一致的关键词推导（keywords + objective + 画像维度值），
+    另加 M8 修正：整句 objective/维度值经确定性拆词，避免整句 LIKE 预筛 no_match。"""
     profile = task.get("profile") or {}
     dims = profile.get("dims") or profile.get("dimensions") or {}
     dim_words = []
@@ -77,7 +100,16 @@ def derive_keywords(task: dict) -> list:
         elif isinstance(val, list):
             dim_words.extend(str(x) for x in val if x)
     objective = str(task.get("objective") or "")
-    return [k for k in (list(task.get("keywords") or []) + [objective] + dim_words) if k][:12]
+    base = list(task.get("keywords") or []) + dim_words
+    base = [k for k in base if k and len(k) <= 24]        # 短词直用；长句拆词
+    for phrase in [objective] + [w for w in dim_words if len(w) > 24]:
+        base.extend(_split_phrase(phrase))
+    out = []
+    for k in base:
+        k = str(k).strip()
+        if k and k not in out:
+            out.append(k)
+    return out[:16]
 
 
 def run_with_retry(cmd: list, timeout: float, retries: int = 1) -> dict:

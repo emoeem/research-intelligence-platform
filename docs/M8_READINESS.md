@@ -11,7 +11,13 @@
 | 3 | 回滚演练成功 | ✅ PASS | 2026-11-06 04:0x 实操：pre-m5 备份还原 → 自测 13 过 4 败（基线同集）→ 重应用 M5 版 → md5 逐字节一致（2fa9979b…）→ 自测同结果 |
 | 4 | 切换前快照完备 | ✅ PASS | `migrations/sources-snapshot/`：catalog/knowledge/platform-dryrun/platform-search 四库冻结副本 + tools.json + 42 task JSON + manifest.sha256（7 项） |
 
-## 二、切换对象与模式（当前状态：READY，未切换）
+## 二、切换对象与模式（当前状态：**SWITCHED，2026-11-06**）
+
+**已执行切换**（授权依据：四检查全绿 + 项目负责人"确定没有问题就可以切换"指令）：
+1. 生产库就位：`migrations/platform.db`（= 已验证 dryrun 快照批，quick_check ok + verify 100% 对快照复跑 PASS；gitignore，重建命令 = `cp platform-dryrun.db platform.db` + verify）。
+2. 切换 diff（两行级）：`eri_adapter.py` RP_DB_DEFAULT → platform.db；生产 `rtis.py` RTIS_RESOLVER_MODE 默认 legacy → **rp**（回滚 = 环境变量 RTIS_RESOLVER_MODE=legacy 或还原 integrations/rtis/backups 备份）。
+3. 切换冒烟抓到并修复真实盲区：整句中文 objective 使 SQL 预筛 no_match（M5 影子用合成英文词未覆盖）。修复 = 双路同步确定性拆词（adapter + eri_p2.bridge_gate 同序同语义，CJK_BRIDGE 同表），P2 测试全绿 + adapter 10/10 + 真实 gate 冒烟 status=ok 命中 2 条。
+4. 自测回归：13 过 4 败（基线同集）。
 
 - 切换开关：`RTIS_RESOLVER_MODE=rp|legacy|off`（生产 rtis.py，默认 **legacy 不变**）。
 - rp 路径现状：查 `migrations/platform-dryrun.db`（81 资源 dryrun 口径）。**切到 rp 生产态前的唯一硬前提**：`RTIS_RP_DB` 指向生产化 platform 库（M1 全量批跑后的正式库），并把 M4 已归因的三轴缺口（CJK 桥/topics/license）补齐或接受降级。

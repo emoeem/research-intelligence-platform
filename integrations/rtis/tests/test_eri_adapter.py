@@ -173,9 +173,10 @@ class AdapterFallbackTests(unittest.TestCase):
         task = {"task_id": "t", "objective": "obj", "keywords": ["k1", "k2"],
                 "profile": {"dims": {"d1": {"value": "white-label-landing"},
                                      "d2": {"value": ["v3", "v4"]}}}}
+        # M8 序：短词直用（task keywords + 短 dim）→ 长句拆词（objective 拆出 obj）
         self.assertEqual(adapter.derive_keywords(task),
-                         ["k1", "k2", "obj", "white-label-landing", "v3", "v4"])
-        self.assertEqual(len(adapter.derive_keywords({"keywords": list("abcdefghijklmn")})), 12)
+                         ["k1", "k2", "white-label-landing", "v3", "v4", "obj"])
+        self.assertEqual(len(adapter.derive_keywords({"keywords": list("abcdefghijklmnop")})), 16)
 
     def test_9_missing_rp_binary_falls_back(self):
         os.environ["RTIS_RP_RESOLVE"] = "/nonexistent/rp-resolve"

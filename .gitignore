@@ -8,3 +8,7 @@ __pycache__/
 target/
 workers/python/.cache/
 workers/.cache/
+migrations/platform.db
+migrations/platform.db-*
+migrations/platform-search.db
+migrations/platform-governance.db
