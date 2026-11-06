@@ -1,6 +1,6 @@
 # SESSION HANDOFF：跨会话交接文档（RIP 主线）
 
-更新：2026-11-06 01:2x　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
+更新：2026-11-06 23:5x　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
 
 ## 一、授权口径（用户三轮授权，已生效）
 
@@ -30,15 +30,15 @@
 - 关键实测数：资源 81；D5=68（63 待人工+5 相关保留）；28 库=26 兼容/2 隔离；kb verified=130（0.88%，"13"是 M0 笔误）。
 - DEC-001（Rust）：验证通过。本机 cargo 走 rsproxy.cn 镜像，在线 9.6s / vendored 离线 8.7s 构建全通（见 research-platform/PROBE-RESULT.md）。M2-A 前置已满足。
 - **M8 切换已执行（2026-11-06，eff2918）**：RTIS_RESOLVER_MODE 默认 rp + platform.db 生产库 + 双路拆词修复。Flutterfox 授权更新：后续（含 Phase 7/8 移动端）不受 Rust 约束，能用非 Rust 方案完成即可。
-- 下一步序列：验收 M1 第一批 → M1 第二批（task JSON 字段映射、assets.db Evidence 映射、ID 冲突审计；评审指出 M0 方案缺此环节）→ M1 收尾验收报告 → M2 Rust workspace（research-platform/ 下建 crates/，重新锁版本+vendor）→ 推送 → M3-M6 隔离实现 → M7/M8 准备就绪（切流按第 3 条四检查）。
+- 下一步序列：M1 第一批 → 第二批 → M2-M8 全部完成（见 git log a87d82b..eff2918）。
+- **RIP 主线收口（2026-11-06 23:5x 复核）**：M8 切换后重跑 verify.py，PASS 一致率 100% exit 0。尾巴清单见 M8_READINESS §3（运营级非阻塞：M1 全量批生产化、evidence 其余 22 库、research_task 大 JSON 段、真实 embedding 接入、M7 鉴权、CI 流水线）。
 
-## 四、Flutterfox/Voicefox（第二项目，RIP 完成后再继续）
+## 四、Flutterfox/Voicefox（第二项目，桌面重构 Phase 0-6 已完成）
 
-- 计划书：/home/emo/Downloads/flutterfox-ui-redesign-plan-v2.md；视觉基准 HTML：/home/emo/Downloads/flutterfox-desktop-ui-concept.html；工程：/home/emo/code/voicefox-gui（main @ 32b1f37）。
-- Phase 0 已完成：基线截图 docs/ui-baseline-20261106/（含用户提供的 7 张）+ PHASE0-FINDINGS.md（2 个 P0 功能缺陷：duration 00:00 假进度、窄窗口播放栏被挤出视口）。
-- Phase 1（设计令牌+组件画廊）：**后台 agent 进行中**，产出 lib/src/design_system/（全部新增文件），验收门：flutter analyze 零 error + gallery widget test 通过。通知到达后验收即可，不要重复实施。
-- 待办：验收 Phase 1 → Phase 2（Shell 重构，见计划书 §8 各 Phase）→ integration_test 的 takeScreenshot API 需按 Flutter 3.47 修正（现版无此方法，flutter test 模式不可用，改用 flutter drive 或 golden 方案）。
-- Flutter 3.47.9；应用实跑正常（release bundle 直接启动，FFI/mpv OK）。
+- 计划书：/home/emo/Downloads/flutterfox-ui-redesign-plan-v2.md；视觉基准 HTML：/home/emo/Downloads/flutterfox-desktop-ui-concept.html；工程：/home/emo/code/voicefox-gui（main，远程 flutterfox/main）。
+- **Phase 0-6 全部落库并推送（9c4145b，2026-11-06）**：含 Phase 1-4 未入库文件补齐（design_system/shell/player）+ Phase 5（曲库/详情/下载/设置重写）+ Phase 6（榜单标题收敛、帮助页同步、治理文件）。本会话复检：analyze 0 issue + 145 测试全过。报告：docs/PHASE5-REPORT.md、docs/PHASE6-REPORT.md。
+- 剩余（PHASE6-REPORT 登记）：视口矩阵 1920/1280/1024 与浅色主题实机截图（需桌面空闲）；Phase 7/8 移动端 + 原生媒体（Rust 侧 5 项任务清单见 PHASE6-REPORT；授权更新：非 Rust 方案可用）。
+- Flutter 3.47.9；应用实跑正常（FFI/mpv OK）。
 
 ## 五、环境事实
 
@@ -50,5 +50,5 @@
 ## 六、新会话开场动作（建议）
 
 1. 读本文件 + 记忆索引。
-2. 检查后台任务通知（M1 agent、Voicefox Phase 1 agent）是否已到；未到则查状态。
-3. 验收 M1 第一批（跑 migrations/verify.py 复核 100%），然后按第三节序列推进。
+2. RIP 已收口（第三节），Flutterfox 桌面重构已完成（第四节），剩余项均在各节列明。
+3. 未决决策（用户定）：RIP 尾巴（CI/鉴权/evidence 迁移等）与 Flutterfox Phase 7/8（移动端）的优先级；实机截图需桌面空闲。
