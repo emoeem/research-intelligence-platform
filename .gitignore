@@ -5,7 +5,6 @@ legacy/eri/db/catalog.db*
 legacy/eri/cache/
 *.pyc
 __pycache__/
-target/
 workers/python/.cache/
 workers/.cache/
 migrations/platform.db
