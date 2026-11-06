@@ -3,7 +3,7 @@
     "count": "27 实存 / 1 engagement 无库（共 28 engagement）",
     "disposition": "M1 第一批不迁移；留第二批做 Evidence 映射"
   },
-  "etl_version": "1.1.0",
+  "etl_version": "1.1.1",
   "rtis_tasks": {
     "disposition": "仅统计，不迁移",
     "path": "/home/emo/code/pensting/research-platform/migrations/sources-snapshot/tasks"

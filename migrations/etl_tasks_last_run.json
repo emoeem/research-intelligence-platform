@@ -1,12 +1,25 @@
 {
+  "big_json_segments": {
+    "authorization_present": 42,
+    "authorization_serialized_bytes": 7278,
+    "environment_present": 42,
+    "environment_serialized_bytes": 14032,
+    "knowledge_present": 42,
+    "knowledge_serialized_bytes": 132680
+  },
   "content_digests": {
-    "research_task:research_task": "23a8837ebd4d7622608ec501eadc3f8ca923813c25c3a24a388bd18e3eb47274"
+    "research_task:research_task": "c7624eab3dba5fa6482378a480ddf1cb6cf9f6809653976f2277e5685a3ae68e"
   },
   "etl_script": "etl_tasks.py",
-  "etl_version": "1.0.0",
-  "finished_at": "2026-11-05T19:52:36Z",
+  "etl_version": "2.0.0",
+  "finished_at": "2026-11-06T16:52:46Z",
   "fk_violations": 0,
+  "guard_ddl": {
+    "research_task_columns_added": []
+  },
   "parse_errors": [],
+  "quarantine_count": 0,
+  "quarantine_file": "/home/emo/code/pensting/research-platform/migrations/quarantine/research_task_isolation.jsonl",
   "row_counts": {
     "entity_alias@research_task": 42,
     "research_task": 42
@@ -16,7 +29,7 @@
     "sha256_dir_listing": "1a0eb679c3f2ca9c879e51d5ba36b027cfe2e5977b6e95543861647c1a70c246"
   },
   "source_task_json_count": 42,
-  "started_at": "2026-11-05T19:52:36Z",
+  "started_at": "2026-11-06T16:52:46Z",
   "state_distribution": {
     "AUTHORIZATION_REVIEW": 7,
     "AUTHORIZED_EXECUTION": 1,
@@ -31,5 +44,5 @@
     "research_task": 42
   },
   "tables_changed_vs_previous_state": [],
-  "target_db": "/home/emo/code/pensting/research-platform/migrations/platform-dryrun.db"
+  "target_db": "/home/emo/code/pensting/research-platform/migrations/platform-fullbatch.db"
 }

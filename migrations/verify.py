@@ -15,11 +15,18 @@ A-1/A-2/A-3/A-4/A-5。
   5. 关系完整性：PRAGMA foreign_key_check = 0；孤儿关系 = 0 未解释。
   6. 字段抽样哈希：每个映射源/目标各抽 10 行（确定性等距抽样），规范化 md5 比对。
   7. 幂等：最近两次 ETL 运行内容摘要一致，且当前库内容与最后一次运行一致。
-  8. ResearchTask 对账（第二批）：源 35 JSON = 目标 35 行；状态分布原样一致；
-     status_history 保真；etl_tasks 重复执行 no-op。
-  9. Evidence 抽样对账（第二批）：逐库逐表 源总数/抽取数/目标行数 对账；
-     payload_json + content_hash 全字段逐行复建比对；隔离登记 2 条；
-     etl_evidence 重复执行 no-op。
+  8. ResearchTask 对账（第二批 + 全量批扩展）：源 task JSON（快照 42 个）=
+     目标行数 + 隔离坏行（quarantine/research_task_isolation.jsonl）；ID 集合
+     一致；状态分布原样一致；status_history 保真；authorization/environment/
+     knowledge 三大 JSON 段逐行保真复建比对（json.dumps 规范序列化 == 落库列，
+     可 json.loads 复原为等价对象）；schema_version version=2/4 已登记；
+     research_task 追加三列在场；etl_tasks 重复执行 no-op。
+  9. Evidence 全量对账（全量批，v2.0.0 全量迁移语义）：运行日志 mode=full、
+     无抽样上限；26 兼容库全量逐库逐表 源总数 = 抽取数 + 隔离坏行 =
+     目标行数 + 隔离坏行（源 = 目标 + 隔离，逐库逐表）；全字段 payload_json +
+     content_hash 逐行复建比对（全部行，无 LIMIT，隔离坏行除外且坏行不得落库）；
+     异构/无库隔离登记 2 条；evidence 行 100% 有 alias；etl_evidence 重复
+     执行 no-op。
   10. ID 审计结论（计划 §5.4）：id_audit_result.json 结论为"现网 ID 可直接沿用"，
       唯一性/格式/跨源碰撞/alias 一致性全过，且结果与当前库同步。
   11. Tools / Workflows / Skills 对账（M6 扩展，etl_m6.py 域）：
@@ -44,6 +51,7 @@ M6 起的域归属调整（如实记录）：
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -51,6 +59,17 @@ from collections import Counter
 from pathlib import Path
 
 MIG_DIR = Path(__file__).resolve().parent
+
+
+def _target_db() -> Path:
+    """目标库：RP_TARGET_DB 环境变量可覆盖（M1 全量批重建流程：
+    platform-fullbatch.db / 生产复核 platform.db 用）；
+    相对路径按 migrations/ 解析；默认隔离库 platform-dryrun.db。"""
+    v = os.environ.get("RP_TARGET_DB")
+    if not v:
+        return MIG_DIR / "platform-dryrun.db"
+    p = Path(v)
+    return p if p.is_absolute() else MIG_DIR / p
 
 # 源快照锁定（M8）：快照目录存在时，全部对账/抽取对冻结副本执行（计划 §6.3）。
 # 活源（catalog/knowledge/tasks/tools）随生产运行变化；快照由协调会话生成于 2026-11-06。
@@ -61,9 +80,11 @@ def _snap(p: Path) -> Path:
 SRC_CATALOG = _snap(Path("/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db"))
 SRC_KNOWLEDGE = _snap(Path("/home/emo/.dsh/redteam/knowledge.db"))
 SRC_TASKS_DIR = (_SNAP / "tasks") if (_SNAP / "tasks").is_dir() else Path("/home/emo/.dsh/redteam/rtis/data/tasks")
-TARGET_DB = MIG_DIR / "platform-dryrun.db"
+TARGET_DB = _target_db()
 MANIFEST_JSON = MIG_DIR / "source_manifest.json"
 QUARANTINE_D5 = MIG_DIR / "quarantine" / "d5_candidates.jsonl"
+QUARANTINE_TASKS = MIG_DIR / "quarantine" / "research_task_isolation.jsonl"
+QUARANTINE_EVID = MIG_DIR / "quarantine" / "evidence_isolation.jsonl"
 RUN_LOG_JSONL = MIG_DIR / "etl_run_log.jsonl"
 TASKS_RUN_LOG_JSONL = MIG_DIR / "etl_tasks_run_log.jsonl"
 EVID_RUN_LOG_JSONL = MIG_DIR / "etl_evidence_run_log.jsonl"
@@ -71,7 +92,7 @@ EVID_LAST_RUN_JSON = MIG_DIR / "etl_evidence_last_run.json"
 ID_AUDIT_RESULT_JSON = MIG_DIR / "id_audit_result.json"
 
 SAMPLE_N = 10
-SAMPLE_LIMIT = 20  # etl_evidence.py 每源表抽取行数（同一常量）
+# 全量批（etl_evidence.py v2.0.0）：全量迁移语义，无每表行数上限（旧 SAMPLE_LIMIT=20 已废止）
 
 FAILURES: list[str] = []
 INFOS: list[str] = []
@@ -528,27 +549,53 @@ def verify_idempotency() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 8. ResearchTask 对账（第二批映射）
+# 8. ResearchTask 对账（第二批核心字段 + 全量批大 JSON 段）
 # ---------------------------------------------------------------------------
+TASK_JSON_SEGMENTS = {"authorization": "authorization_json",
+                      "environment": "environment_json",
+                      "knowledge": "knowledge_json"}
+
+
 def verify_research_task(tgt) -> None:
-    print("\n== 8. ResearchTask 对账（第二批映射，源只读） ==")
+    print("\n== 8. ResearchTask 对账（第二批核心字段 + 全量批大 JSON 段，源只读） ==")
     q = lambda c, sql: c.execute(sql).fetchone()[0]  # noqa: E731
 
     files = sorted(SRC_TASKS_DIR.glob("*.json"))
-    src_ids, src_state = [], Counter()
+    src_ids, src_state, src_docs = [], Counter(), {}
+    parse_errors = []
     for f in files:
-        with open(f, encoding="utf-8") as fh:  # 只读打开源 JSON
-            t = (json.load(fh).get("task") or {})
+        try:
+            with open(f, encoding="utf-8") as fh:  # 只读打开源 JSON
+                doc = json.load(fh)
+        except Exception as e:  # noqa: BLE001
+            parse_errors.append({"file": f.name, "error": repr(e)})
+            continue
+        t = doc.get("task") or {}
         src_ids.append(t.get("id"))
         src_state[t.get("state") or t.get("status") or "MISSING"] += 1
+        src_docs[f.name] = doc
+
+    # 全量批：坏行隔离对账（etl_tasks.py v2.0.0：坏行进隔离清单，不静默丢弃）
+    quar = []
+    if QUARANTINE_TASKS.exists():
+        for line in QUARANTINE_TASKS.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                quar.append(json.loads(line))
+    check(len(quar) == len(parse_errors),
+          "隔离坏行登记 = 源解析失败文件数（不静默丢弃）",
+          f"隔离={len(quar)} 源解析失败={len(parse_errors)}")
+    check(all(e.get("source_file") and e.get("quarantine_reason") for e in quar),
+          "隔离坏行条目齐备（source_file + quarantine_reason）",
+          f"条目={len(quar)}")
 
     tgt_rows = tgt.execute(
-        "SELECT task_id, state, status_history FROM research_task ORDER BY task_id"
+        "SELECT task_id, state, status_history, authorization_json,"
+        " environment_json, knowledge_json FROM research_task ORDER BY task_id"
     ).fetchall()
     tgt_ids = {r["task_id"] for r in tgt_rows}
     check(len(src_ids) == len(tgt_rows),
           "行数对账：RTIS task JSON → research_task",
-          f"源={len(src_ids)} 目标={len(tgt_rows)}")
+          f"源={len(src_ids)} 目标={len(tgt_rows)} 隔离={len(quar)}")
     check(set(src_ids) == tgt_ids, "task ID 集合一致（现网 ID 直接沿用为平台主键）",
           f"差异={sorted(set(src_ids) ^ tgt_ids)}")
     tgt_state = Counter(r["state"] for r in tgt_rows)
@@ -559,6 +606,45 @@ def verify_research_task(tgt) -> None:
     bad_hist = [r["task_id"] for r in tgt_rows
                 if not isinstance(json.loads(r["status_history"]), list)]
     check(not bad_hist, "status_history JSON 保真可解析（数组）", f"坏行={bad_hist}")
+
+    # 全量批：大 JSON 段三列在场 + schema_version v4 登记
+    cols = {r[1] for r in tgt.execute("PRAGMA table_info(research_task)")}
+    need = set(TASK_JSON_SEGMENTS.values())
+    check(need <= cols, "research_task 大 JSON 段三列在场（004 守卫 DDL）",
+          f"缺失={sorted(need - cols)}")
+    sv4 = q(tgt, "SELECT COUNT(*) FROM schema_version WHERE version=4")
+    check(sv4 == 1, "schema_version 已登记全量批增量（version=4）", f"行数={sv4}")
+
+    # 大 JSON 段逐行保真复建比对：规范序列化逐字节相等，且可解析复原为等价对象
+    by_id = {r["task_id"]: r for r in tgt_rows}
+    bad_seg = []
+    for fname, doc in src_docs.items():
+        tid = (doc.get("task") or {}).get("id")
+        row = by_id.get(tid)
+        if row is None:
+            bad_seg.append((fname, "row-missing"))
+            continue
+        for seg, col in TASK_JSON_SEGMENTS.items():
+            v = doc.get(seg)
+            expect = None if v is None else json.dumps(v, ensure_ascii=False,
+                                                       sort_keys=True)
+            actual = row[col]
+            if expect != actual:
+                bad_seg.append((fname, seg))
+                continue
+            if actual is not None:
+                try:
+                    if json.loads(actual) != v:
+                        bad_seg.append((fname, seg, "roundtrip"))
+                except Exception:  # noqa: BLE001
+                    bad_seg.append((fname, seg, "unparsable"))
+    check(not bad_seg,
+          "大 JSON 段保真（authorization/environment/knowledge 逐行复建 + 复原等价）",
+          f"坏行/坏段={bad_seg}")
+    present = sum(1 for doc in src_docs.values()
+                  for seg in TASK_JSON_SEGMENTS if doc.get(seg) is not None)
+    info("大 JSON 段覆盖", f"源 {len(src_docs)} 文件 × 3 段，非空 {present} 段；"
+         "键缺失或 null → 列 NULL（忠实于源，不造空对象）")
 
     missing_alias = q(tgt, "SELECT COUNT(*) FROM research_task t WHERE NOT EXISTS"
                            " (SELECT 1 FROM entity_alias a WHERE a.entity_type='research_task'"
@@ -584,7 +670,7 @@ def verify_research_task(tgt) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 9. Evidence 抽样对账（第二批映射）
+# 9. Evidence 全量对账（全量批映射，etl_evidence.py v2.0.0 全量迁移语义）
 # ---------------------------------------------------------------------------
 def _http_pair_content_hash(row) -> str:
     # 与 etl_evidence.py http_pair_content_hash 同一规则（复制以保持 -I 隔离可运行）
@@ -597,9 +683,15 @@ def _http_pair_content_hash(row) -> str:
 
 
 def verify_evidence(tgt) -> None:
-    print("\n== 9. Evidence 抽样对账（第二批映射，源只读） ==")
+    print("\n== 9. Evidence 全量对账（全量批映射，源只读） ==")
 
     last = json.loads(EVID_LAST_RUN_JSON.read_text(encoding="utf-8"))
+
+    # 全量迁移语义（v2.0.0）：mode=full、无每表行数上限
+    check(last.get("mode") == "full"
+          and last["source"].get("sample_limit_per_table", "missing") is None,
+          "运行日志为全量迁移语义（mode=full，无抽样上限）",
+          f"mode={last.get('mode')} sample_limit={last['source'].get('sample_limit_per_table')}")
 
     # 隔离登记：恰 2 条（1 异构 + 1 无库），原因齐备
     iso = last["isolated"]
@@ -615,26 +707,47 @@ def verify_evidence(tgt) -> None:
           "28 库盘点口径（26 兼容 + 1 异构 + 1 无库）",
           f"兼容={last['source']['compatible_count']} 总数={last['source']['engagement_count']}")
 
-    # 逐库逐表对账 + 全字段逐行复建比对
-    for d in last["sampled"]:
+    # 坏行隔离清单（v2.0.0：单行映射失败不迁移、不静默丢弃）
+    quar_entries = []
+    if QUARANTINE_EVID.exists():
+        for line in QUARANTINE_EVID.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                quar_entries.append(json.loads(line))
+    quar_ids = {(e["engagement"], e["source_table"], e["source_pk"].rsplit("#", 1)[-1])
+                for e in quar_entries}
+    total_quar_rec = sum(d["tables"][t]["quarantined"]
+                         for d in last["migrated"] for t in d["tables"])
+    check(len(quar_entries) == total_quar_rec
+          and all(e.get("engagement") and e.get("source_table")
+                  and e.get("source_pk") and e.get("quarantine_reason")
+                  for e in quar_entries),
+          "坏行隔离清单 = 运行日志隔离计数（条目齐备）",
+          f"清单={len(quar_entries)} 日志={total_quar_rec}")
+
+    # 逐库逐表全量对账（源 = 抽取 + 隔离 = 目标 + 隔离）+ 全字段逐行复建比对
+    n_rows_checked = 0
+    for d in last["migrated"]:
         db_path = Path(d["db_path"])
         src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         src.row_factory = sqlite3.Row
         for t in ("http_evidence", "shot"):
             rec = d["tables"][t]
             total = src.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: S608
-            expect = min(total, SAMPLE_LIMIT)
             tgt_cnt = tgt.execute(
                 "SELECT COUNT(*) FROM evidence WHERE source_pk LIKE ?",
                 (f"{d['db_path']}#{t}#%",)).fetchone()[0]
-            check(rec["source_total"] == total and rec["extracted"] == expect
-                  and tgt_cnt == expect,
-                  f"抽样对账：{d['engagement']}（{d['role']}）#{t}",
-                  f"源总数={total} 应抽={expect} 目标行={tgt_cnt}")
+            check(rec["source_total"] == total
+                  and rec["extracted"] + rec["quarantined"] == rec["source_total"]
+                  and tgt_cnt == rec["extracted"],
+                  f"全量对账：{d['engagement']}（{d['role']}）#{t}",
+                  f"源总数={total} 迁移={rec['extracted']} 隔离={rec['quarantined']}"
+                  f" 目标行={tgt_cnt}")
             bad = []
-            for row in src.execute(
-                    f"SELECT * FROM {t} ORDER BY id LIMIT ?",  # noqa: S608
-                    (SAMPLE_LIMIT,)).fetchall():
+            for row in src.execute(  # 全量：无 LIMIT（v2.0.0）
+                    f"SELECT * FROM {t} ORDER BY id").fetchall():  # noqa: S608
+                if (d["engagement"], t, str(row["id"])) in quar_ids:
+                    # 坏行：不在目标库（对账由 tgt_cnt == extracted 覆盖）
+                    continue
                 if t == "http_evidence":
                     eid = f"EVD-{d['slug']}-http_evidence-{row['id']}"
                     ch = _http_pair_content_hash(row)
@@ -651,10 +764,12 @@ def verify_evidence(tgt) -> None:
                                 ensure_ascii=False, sort_keys=True)
                 if prow["payload_json"] != pj or (prow["content_hash"] or "") != ch:
                     bad.append(row["id"])
+            n_rows_checked += rec["extracted"]
             check(not bad,
-                  f"全字段保真（payload_json + content_hash 逐行复建）："
+                  f"全字段保真（payload_json + content_hash 逐行复建，全量）："
                   f"{d['engagement']}#{t}", f"不一致行={bad}")
         src.close()
+    info("全量逐行复建覆盖", f"26 兼容库 × 2 表共比对 {n_rows_checked} 行（坏行隔离 {len(quar_entries)} 行除外）")
 
     missing_alias = tgt.execute(
         "SELECT COUNT(*) FROM evidence e WHERE NOT EXISTS"
@@ -1130,7 +1245,8 @@ def verify_m6(tgt) -> None:
 def main() -> int:
     print("=" * 72)
     print("M1 verify 对账（第一批 Schema/ETL + 第二批 task/evidence/回填/ID 审计扩展"
-          " + M6 tools/workflows/skills 扩展；MIGRATION_STRATEGY §10.5 / 计划 §M1-E / §M6）")
+          " + M6 tools/workflows/skills 扩展 + 全量批 task 大 JSON/evidence 全量扩展；"
+          "MIGRATION_STRATEGY §10.5 / 计划 §M1-E / §M6）")
     print("=" * 72)
 
     manifest = json.loads(MANIFEST_JSON.read_text(encoding="utf-8"))

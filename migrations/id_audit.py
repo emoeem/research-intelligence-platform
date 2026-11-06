@@ -4,7 +4,9 @@
 M1 第二批：ID 冲突审计（全量，计划 §5.4 硬门槛）
 ================================================
 
-版本：1.1.0（M6 起 alias↔实体一致性补 tool/skill/workflow 三类，etl_m6.py 域）
+版本：1.1.1（M6 起 alias↔实体一致性补 tool/skill/workflow 三类，etl_m6.py 域）
+  v1.1.1 变更（M1 全量批）：目标库可配置（RP_TARGET_DB 环境变量，全量批重建
+  流程 platform-fullbatch.db 用），默认仍为 platform-dryrun.db；审计规则不变。
 
 审计范围（三源现有稳定 ID，全量）：
   A. catalog.db resources.resource_id（81，gh:/url: 两型）
@@ -39,14 +41,27 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ID_AUDIT_VERSION = "1.1.0"
+ID_AUDIT_VERSION = "1.1.1"
 
 MIG_DIR = Path(__file__).resolve().parent
 
 SRC_CATALOG = Path("/home/emo/code/pensting/security-research-upgrade/eri/db/catalog.db")
 SRC_KNOWLEDGE = Path("/home/emo/.dsh/redteam/knowledge.db")
 SRC_TASKS_DIR = Path("/home/emo/.dsh/redteam/rtis/data/tasks")
-TARGET_DB = MIG_DIR / "platform-dryrun.db"
+
+
+def _target_db() -> Path:
+    """目标库：RP_TARGET_DB 环境变量可覆盖（M1 全量批重建流程用）；
+    相对路径按 migrations/ 解析；默认隔离库 platform-dryrun.db。"""
+    import os
+    v = os.environ.get("RP_TARGET_DB")
+    if not v:
+        return MIG_DIR / "platform-dryrun.db"
+    p = Path(v)
+    return p if p.is_absolute() else MIG_DIR / p
+
+
+TARGET_DB = _target_db()
 RESULT_JSON = MIG_DIR / "id_audit_result.json"
 
 RE_RESOURCE_GH = re.compile(r"^gh:[^\s/]+/[^\s]+$")

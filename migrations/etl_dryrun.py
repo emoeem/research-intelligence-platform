@@ -4,7 +4,9 @@
 M1 第一批 ETL Dry-run（隔离环境，不切流）
 =========================================
 
-版本：1.1.0（M1_IMPLEMENTATION_PLAN M1-D：脚本带版本号；转换器版本随行记录）
+版本：1.1.1（M1_IMPLEMENTATION_PLAN M1-D：脚本带版本号；转换器版本随行记录）
+  v1.1.1 变更（M1 全量批）：目标库可配置（RP_TARGET_DB 环境变量，全量批重建
+  流程 platform-fullbatch.db 用），默认仍为 platform-dryrun.db；映射规则不变。
   v1.1.0 变更（M1 第二批）：B2 反知识父链接回填，源 k_negative 的父 poc 存在于
   源但不在 k_meta 覆盖时（第一批 1/17 悬空），迁移该父 poc 行为 knowledge(own)
   （无 k_meta 分层字段，lifecycle=DISCOVERED）并回填 negates_knowledge_id；
@@ -47,13 +49,14 @@ M1 第一批 ETL Dry-run（隔离环境，不切流）
 
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-ETL_VERSION = "1.1.0"
+ETL_VERSION = "1.1.1"
 
 # ---------------------------------------------------------------------------
 # 路径常量（硬约束：源只读；只写 migrations/ 目录内）
@@ -70,7 +73,17 @@ SRC_CATALOG = _snap(Path("/home/emo/code/pensting/security-research-upgrade/eri/
 SRC_KNOWLEDGE = _snap(Path("/home/emo/.dsh/redteam/knowledge.db"))
 SRC_TASKS_DIR = (_SNAP / "tasks") if (_SNAP / "tasks").is_dir() else Path("/home/emo/.dsh/redteam/rtis/data/tasks")
 
-TARGET_DB = MIG_DIR / "platform-dryrun.db"
+def _target_db() -> Path:
+    """目标库：RP_TARGET_DB 环境变量可覆盖（M1 全量批重建流程用）；
+    相对路径按 migrations/ 解析；默认隔离库 platform-dryrun.db。"""
+    v = os.environ.get("RP_TARGET_DB")
+    if not v:
+        return MIG_DIR / "platform-dryrun.db"
+    p = Path(v)
+    return p if p.is_absolute() else MIG_DIR / p
+
+
+TARGET_DB = _target_db()
 SCHEMA_SQL = MIG_DIR / "001_init.sql"
 MANIFEST_JSON = MIG_DIR / "source_manifest.json"
 QUARANTINE_DIR = MIG_DIR / "quarantine"

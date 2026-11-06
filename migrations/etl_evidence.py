@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-M1 第二批 ETL：Evidence 抽样映射（隔离环境，不切流）
+M1 第二批 ETL：Evidence 映射（隔离环境，不切流）
 ==================================================
 
-版本：1.0.0
+版本：2.0.0（M1_IMPLEMENTATION_PLAN M1-D：脚本带版本号）
+  v2.0.0 变更（M1 全量批）：
+    - 全量迁移：兼容库从抽样 4 个扩展为全部（26 个），每源表抽取上限
+      （前 20 行）取消，http_evidence / shot 全表迁移。
+    - 坏行隔离：单行映射失败（如时间戳断言不通过）不再中止整个 ETL，逐行
+      写入 quarantine/evidence_isolation.jsonl（确定性覆写），不迁移、
+      不静默丢弃。
+    - 目标库可配置：RP_TARGET_DB 环境变量（全量批重建流程
+      platform-fullbatch.db 用），默认仍为隔离库 platform-dryrun.db。
+  v1.0.0（第二批）：抽样映射（4 兼容库、每表前 20 行）。
 
 职责：
   Extract：/home/emo/.dsh/redteam/engagements/*/assets.db 全部只读打开
            （URI mode=ro），抽取前登记表集指纹与文件大小。
   Select（确定性规则，全部写进运行日志）：
-    - 兼容类 = assets.db 表集指纹与多数派一致的库（26 个）。
-    - 代表库 3 个：最大 / 最小 / 中等（中等 = 文件大小最接近中位数的兼容库；
-      平局依次按 (行数多, 路径字典序) 决出）。
-    - 结构覆盖补抽样：若代表库 trio 对某源表（http_evidence/shot）抽到 0 行，
-      追加 1 个含该表数据的兼容库（同样确定性规则），角色标记 supplemental。
-  Transform：版本化映射
+    - 兼容类 = assets.db 表集指纹与多数派一致的库（26 个），全量选择，
+      角色标记 compatible-full。
+    - 异构库 / 无库 engagement 只登记隔离（quarantine/assets_isolation.jsonl），
+      不抽取、不猜测转换（计划 §6.2）。
+  Transform：版本化映射（与 v1.0.0 同一映射规则，mapping v1）
     - http_evidence → evidence(evidence_type='http_pair')
       content_hash := sha256(method|url|status|request|response 规范拼接)
     - shot → evidence(evidence_type='screenshot')，content_hash := 源 sha256
@@ -24,8 +32,6 @@ M1 第二批 ETL：Evidence 抽样映射（隔离环境，不切流）
     - payload_json := 源行全字段 JSON（ensure_ascii=False, sort_keys=True），
       全字段保真，schema 未覆盖列经此承载、可逐字节复原。
   Load：只写隔离目标库 evidence 表 + entity_alias。
-  Isolate：异构库 / 无库 engagement 只登记隔离（quarantine/assets_isolation.jsonl），
-           不抽取、不猜测转换（计划 §6.2）。
   Replay：确定性主键 + INSERT OR REPLACE，重复执行 no-op。
 
 硬约束：assets.db 只读，绝不写入/升级/修复（计划 §6.2）；stdlib-only；
@@ -34,30 +40,44 @@ M1 第二批 ETL：Evidence 抽样映射（隔离环境，不切流）
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
-import statistics
 import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-ETL_VERSION = "1.0.0"
+ETL_VERSION = "2.0.0"
 
 MIG_DIR = Path(__file__).resolve().parent
 
 SRC_ENGAGEMENTS_DIR = Path("/home/emo/.dsh/redteam/engagements")
-TARGET_DB = MIG_DIR / "platform-dryrun.db"
+
+
+def _target_db() -> Path:
+    """目标库：RP_TARGET_DB 环境变量可覆盖（M1 全量批重建流程
+    platform-fullbatch.db 用）；相对路径按 migrations/ 解析；默认隔离库。"""
+    v = os.environ.get("RP_TARGET_DB")
+    if not v:
+        return MIG_DIR / "platform-dryrun.db"
+    p = Path(v)
+    return p if p.is_absolute() else MIG_DIR / p
+
+
+TARGET_DB = _target_db()
 SCHEMA_002_SQL = MIG_DIR / "002_tasks.sql"
 
 EVID_RUN_LOG_JSONL = MIG_DIR / "etl_evidence_run_log.jsonl"
 EVID_LAST_RUN_JSON = MIG_DIR / "etl_evidence_last_run.json"
 ISOLATION_JSONL = MIG_DIR / "quarantine" / "assets_isolation.jsonl"
+QUARANTINE_EVID_JSONL = MIG_DIR / "quarantine" / "evidence_isolation.jsonl"
 
 SCHEMA_VERSION = 1
 SOURCE_SYSTEM_ASSETS = "eri-assets"
 
-SAMPLE_LIMIT = 20  # 每源表前 20 行
+# v2.0.0：全量迁移（无每表行数上限）；v1.0.0 为 SAMPLE_LIMIT=20 抽样。
+MIGRATION_MODE = "full"
 
 EXTRACT_TABLES = ("http_evidence", "shot")
 
@@ -224,49 +244,13 @@ def inventory() -> tuple[list[dict], list[dict]]:
     return compat, isolated, baseline_tables
 
 
-def select_samples(compat: list[dict]) -> list[dict]:
-    """最大 / 最小 / 中等（确定性规则）+ 结构覆盖补抽样。"""
-    if len(compat) < 3:
-        raise SystemExit("FATAL: 兼容库不足 3 个，无法抽样")
-
-    def order_key(d: dict) -> tuple:
-        return (d["size_bytes"], -d["rows_total"], d["db_path"])
-
-    srt = sorted(compat, key=order_key)
-    smallest = srt[0]
-    largest = srt[-1]
-    med_size = statistics.median(d["size_bytes"] for d in compat)
-    median = min(compat, key=lambda d: (abs(d["size_bytes"] - med_size),
-                                        -d["rows_total"], d["db_path"]))
-
-    trio = []
-    for role, d in (("min", smallest), ("median", median), ("max", largest)):
-        d["role"] = role
-        trio.append(d)
-    # 同库多角色去重（保留首个角色标记，追加副角色）
-    seen: dict[str, dict] = {}
-    for d in trio:
-        if d["db_path"] in seen:
-            seen[d["db_path"]]["role"] += "|" + d["role"]
-        else:
-            seen[d["db_path"]] = d
-    sampled = list(seen.values())
-
-    # 结构覆盖补抽样：某源表在已选库中抽到 0 行 → 追加 1 个含数据的兼容库
-    for t, col in (("http_evidence", "http_evidence_rows"), ("shot", "shot_rows")):
-        covered = any(d[col] > 0 for d in sampled)
-        if covered:
-            continue
-        cands = [d for d in compat if d[col] > 0]
-        if not cands:
-            continue  # 全域该表皆空，无补抽样对象（记录于日志）
-        sup = min(cands, key=order_key)
-        if sup["db_path"] in seen:
-            sup["role"] += f"|supplemental-{t}"
-        else:
-            sup["role"] = f"supplemental-{t}"
-            sampled.append(sup)
-    return sampled
+def select_all(compat: list[dict]) -> list[dict]:
+    """v2.0.0 全量选择：全部兼容库（26 个），角色标记 compatible-full。"""
+    if not compat:
+        raise SystemExit("FATAL: 无兼容库")
+    for d in compat:
+        d["role"] = "compatible-full"
+    return list(compat)
 
 
 # ---------------------------------------------------------------------------
@@ -288,8 +272,9 @@ def http_pair_content_hash(row: sqlite3.Row) -> str:
 
 def map_http_evidence(slug: str, db_path: str, row: sqlite3.Row) -> dict:
     if not row["captured_at"]:
-        raise SystemExit(
-            f"FATAL: http_evidence id={row['id']} 无 captured_at（时间戳断言失败）")
+        # v2.0.0：单行映射失败 → 由调用方逐行隔离（quarantine），不再中止整个 ETL
+        raise ValueError(
+            f"http_evidence id={row['id']} 无 captured_at（时间戳断言失败）")
     source_ref = f"{db_path}#http_evidence#{row['id']}"
     return {
         "evidence_id": f"EVD-{slug}-http_evidence-{row['id']}",
@@ -314,8 +299,9 @@ def map_http_evidence(slug: str, db_path: str, row: sqlite3.Row) -> dict:
 def map_shot(slug: str, db_path: str, row: sqlite3.Row) -> dict:
     captured = row["captured_at"] or row["created_at"]
     if not captured:
-        raise SystemExit(
-            f"FATAL: shot id={row['id']} 无 captured_at/created_at（时间戳断言失败）")
+        # v2.0.0：单行映射失败 → 由调用方逐行隔离（quarantine），不再中止整个 ETL
+        raise ValueError(
+            f"shot id={row['id']} 无 captured_at/created_at（时间戳断言失败）")
     source_ref = f"{db_path}#shot#{row['id']}"
     return {
         "evidence_id": f"EVD-{slug}-shot-{row['id']}",
@@ -344,22 +330,38 @@ EVIDENCE_COLS = ("evidence_id", "evidence_type", "storage_ref", "content_hash",
                  "payload_json")
 
 
-def etl_evidence(conn: sqlite3.Connection, sampled: list[dict], stats: Counter) -> dict:
+def etl_evidence(conn: sqlite3.Connection, migrated: list[dict], stats: Counter,
+                 quarantine: list) -> dict:
     per_db = []
     cur = conn.cursor()
-    for d in sampled:
+    for d in migrated:
         slug = db_slug(d["engagement"])
         src = open_ro(Path(d["db_path"]))
         tables_out = {}
         for t, mapper in (("http_evidence", map_http_evidence),
                           ("shot", map_shot)):
             total = src.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: S608
-            rows = src.execute(
-                f"SELECT * FROM {t} ORDER BY id LIMIT ?",  # noqa: S608
-                (SAMPLE_LIMIT,)).fetchall()
+            rows = src.execute(  # v2.0.0：全表，无 LIMIT
+                f"SELECT * FROM {t} ORDER BY id").fetchall()  # noqa: S608
             extracted = 0
+            quarantined = 0
             for row in rows:
-                rec = mapper(slug, d["db_path"], row)
+                try:
+                    rec = mapper(slug, d["db_path"], row)
+                except Exception as e:  # noqa: BLE001
+                    # v2.0.0：单行映射失败 → 逐行隔离（不迁移、不静默丢弃）
+                    quarantine.append({
+                        "source_system": SOURCE_SYSTEM_ASSETS,
+                        "engagement": d["engagement"],
+                        "source_table": t,
+                        "source_pk": f"{d['db_path']}#{t}#{row['id']}",
+                        "quarantine_reason": repr(e),
+                        "disposition": "全量批坏行隔离（不迁移，不静默丢弃）",
+                        "record": {k: row[k] for k in row.keys()},
+                    })
+                    stats["evidence_quarantined"] += 1
+                    quarantined += 1
+                    continue
                 exists = cur.execute(
                     "SELECT evidence_id FROM evidence WHERE evidence_id=?",
                     (rec["evidence_id"],)).fetchone()
@@ -377,13 +379,14 @@ def etl_evidence(conn: sqlite3.Connection, sampled: list[dict], stats: Counter) 
                                SOURCE_SYSTEM_ASSETS,
                                f"assets.{t}.id", rec["source_pk"], stats)
                 extracted += 1
-            tables_out[t] = {"source_total": total, "extracted": extracted}
+            tables_out[t] = {"source_total": total, "extracted": extracted,
+                             "quarantined": quarantined}
         src.close()
         per_db.append({
             "engagement": d["engagement"], "db_path": d["db_path"], "role": d["role"],
             "slug": slug, "size_bytes": d["size_bytes"], "tables": tables_out,
         })
-    return {"sampled": per_db}
+    return {"migrated": per_db}
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +407,9 @@ def main() -> int:
 
     before = {t: table_digest(conn, t, pk) for t, pk in CONTENT_TABLES.items()}
 
-    sampled = select_samples(compat)
-    src_meta = etl_evidence(conn, sampled, stats)
+    migrated = select_all(compat)
+    quarantine: list = []
+    src_meta = etl_evidence(conn, migrated, stats, quarantine)
     conn.commit()
 
     after = {t: table_digest(conn, t, pk) for t, pk in CONTENT_TABLES.items()}
@@ -432,12 +436,19 @@ def main() -> int:
         for e in isolated:
             f.write(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n")
 
+    # v2.0.0：坏行隔离登记（确定性覆写；无坏行时为空文件）
+    QUARANTINE_EVID_JSONL.parent.mkdir(parents=True, exist_ok=True)
+    with open(QUARANTINE_EVID_JSONL, "w", encoding="utf-8") as f:
+        for entry in quarantine:
+            f.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+
     result = {
         "etl_script": "etl_evidence.py",
         "etl_version": ETL_VERSION,
         "started_at": started,
         "finished_at": now_iso(),
         "target_db": str(TARGET_DB),
+        "mode": MIGRATION_MODE,
         "source": {"engagements_dir": str(SRC_ENGAGEMENTS_DIR),
                    "engagement_count": len(compat) + len(isolated),
                    "compatible_count": len(compat),
@@ -445,15 +456,17 @@ def main() -> int:
                    "baseline_fingerprint_md5": baseline_tables is not None and
                        hashlib.md5(",".join(baseline_tables).encode("utf-8")).hexdigest(),
                    "baseline_tables": baseline_tables,
-                   "sample_limit_per_table": SAMPLE_LIMIT,
-                   "mapping_version": "evidence-mapping-v1 (EVD-<slug>-<table>-<id>)"},
-        "sampled": src_meta["sampled"],
+                   "sample_limit_per_table": None,
+                   "mapping_version": "evidence-mapping-v1-full (EVD-<slug>-<table>-<id>)"},
+        "migrated": src_meta["migrated"],
         "isolated": registry,
         "row_counts": row_counts,
         "tables_changed_vs_previous_state": changed,
         "content_digests": {f"evidence:{t}": d for t, d in after.items()},
         "fk_violations": len(fk_violations),
         "stats": dict(stats),
+        "quarantine_file": str(QUARANTINE_EVID_JSONL),
+        "quarantined_count": len(quarantine),
     }
     EVID_LAST_RUN_JSON.write_text(
         json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -461,9 +474,10 @@ def main() -> int:
     with open(EVID_RUN_LOG_JSONL, "a", encoding="utf-8") as f:
         f.write(json.dumps(result, ensure_ascii=False, sort_keys=True) + "\n")
 
-    print(f"[etl_evidence] 兼容={len(compat)} 隔离={len(isolated)}")
-    for d in src_meta["sampled"]:
-        print(f"[etl_evidence] 抽样：{d['engagement']}（{d['role']}）"
+    print(f"[etl_evidence] 兼容={len(compat)}（全量迁移） 隔离={len(isolated)}"
+          f" 坏行隔离={len(quarantine)}")
+    for d in src_meta["migrated"]:
+        print(f"[etl_evidence] 迁移：{d['engagement']}（{d['role']}）"
               f" {json.dumps(d['tables'], ensure_ascii=False)}")
     print(f"[etl_evidence] 行数：{json.dumps(row_counts, ensure_ascii=False)}")
     print(f"[etl_evidence] 与上一状态相比变化的表：{changed or '（无，no-op）'}")

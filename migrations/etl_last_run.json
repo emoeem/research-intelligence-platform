@@ -1,10 +1,10 @@
 {
   "content_digests": {
     "audit_event": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "entity_alias": "8948c9ea84fbb6c606b627f576544215e1f59e753db9ac7e331e3d8d2a972dac",
-    "evidence": "bd848fb49d0e240720d5f5a31c98ebc3cd47c36c097c71b732e9628be6cb2e23",
+    "entity_alias": "65c479b8bbdbab5b0030baab26b5ada933ee05eca6b49460615e438fbe1d4f71",
+    "evidence": "c4953465fc45e48bcc5e98c7322a169f53f45a5f05bd75fd8af08add2a18312b",
     "knowledge": "17eb79836843bea40096afb87ac90d4469ab964bed9456fdc6f4dd1d10a9058b",
-    "research_task": "23a8837ebd4d7622608ec501eadc3f8ca923813c25c3a24a388bd18e3eb47274",
+    "research_task": "c7624eab3dba5fa6482378a480ddf1cb6cf9f6809653976f2277e5685a3ae68e",
     "resource": "2e1d4f23459e3501f53dedc59f15439a7f1f9911ba71935802ba20d09e083e86",
     "resource_source": "bc7f225022b2dca3585631e2e885461032fa25ee685da390b64225de05147053",
     "review": "9d105ce9015e8e6c95955cae1c3ea0d5989349e8c23e4394fb684e76ebbb6988",
@@ -12,13 +12,13 @@
     "tool": "60bead2b3fb2ee77dbeb926c0d91617984c1eaea753b7376be176fdef1176f5f",
     "tool_version": "9c10abbb0f5ac0b61958031e792ecb2c8c95f9c16f13f8a7c03799df69075fe4"
   },
-  "etl_version": "1.1.0",
-  "finished_at": "2026-11-05T19:52:51Z",
+  "etl_version": "1.1.1",
+  "finished_at": "2026-11-06T16:53:06Z",
   "fk_violations": 0,
   "row_counts": {
     "audit_event": 0,
-    "entity_alias": 596,
-    "evidence": 23,
+    "entity_alias": 1273,
+    "evidence": 700,
     "knowledge": 46,
     "research_task": 42,
     "resource": 81,
@@ -28,7 +28,7 @@
     "tool": 20,
     "tool_version": 20
   },
-  "started_at": "2026-11-05T19:52:51Z",
+  "started_at": "2026-11-06T16:53:05Z",
   "stats": {
     "alias_inserted": 0,
     "alias_skipped_existing": 373,
@@ -62,5 +62,5 @@
     }
   },
   "tables_changed_vs_previous_state": [],
-  "target_db": "/home/emo/code/pensting/research-platform/migrations/platform-dryrun.db"
+  "target_db": "/home/emo/code/pensting/research-platform/migrations/platform-fullbatch.db"
 }
