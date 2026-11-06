@@ -30,15 +30,41 @@ _MISSING = object()
 
 
 def _probe_model_env() -> tuple[bool, str]:
-    """(可用, 原因)：解释器可导入 onnx 依赖且模型文件齐全。"""
-    try:
-        import onnxruntime  # noqa: F401
-        import tokenizers  # noqa: F401
-    except ImportError as exc:
-        return False, f"deps missing: {exc}"
+    """(可用, 原因)：以 worker 子进程的真实视角探测，而不是测试进程的
+    可导入性。测试进程能 import 不代表 -I 隔离子进程能 import（例如依赖
+    装在 user site 时，-I 的 -s 会把 user site 排除掉，实测踩过：
+    onnxruntime 在系统 site 可见、tokenizers 在 user site 不可见，子进程
+    回退 hash 而用例误跑导致断言失败）。因此守卫 = 模型文件齐全 + 真实
+    起一次 worker 拿到 onnx 后端。"""
     for fname in ("model.onnx", "tokenizer.json"):
         if not (MODEL_DIR / fname).is_file():
             return False, f"model file missing: {MODEL_DIR / fname}"
+    try:
+        w = WorkerProc("embedding", cache_dir=None)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"worker spawn failed: {exc}"
+    try:
+        w.send({"jsonrpc": "2.0", "id": "init", "method": "initialize",
+                "params": {"protocol_version": "1"}})
+        w.recv_for("init")
+        w.send({"jsonrpc": "2.0", "id": "probe", "method": "execute",
+                "params": {"task": {"text": "probe", "model": "bge-small-zh-v1.5"}}})
+        resp = w.recv_for("probe")
+    except Exception as exc:  # noqa: BLE001
+        return False, f"worker probe failed: {exc}"
+    finally:
+        w.close()
+    backend = ((resp.get("result") or {}).get("data") or {}).get("backend", "")
+    if not backend.startswith("onnx:"):
+        for line in w.drain_stderr():
+            if "embedding_backend_fallback" in line:
+                import json as _json
+                try:
+                    reason = _json.loads(line).get("reason", "")
+                except Exception:  # noqa: BLE001
+                    reason = line[:200]
+                return False, f"worker fell back to {backend or 'unknown'}: {reason}"
+        return False, f"worker backend is {backend or 'unknown'}, not onnx"
     return True, "ready"
 
 
