@@ -31,3 +31,7 @@ integrations/rtis/*.log
 *.db
 *.db-shm
 *.db-wal
+
+# 门禁 cwd 兼容自引 symlink（编排 world.run cwd=内层时解析外层相对路径用；
+# 环境级工件不入库，见 PHASE2-ACCEPTANCE.md 收口说明）
+/research-platform

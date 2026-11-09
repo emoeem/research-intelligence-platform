@@ -4,12 +4,20 @@
 //! - [`python_worker`]：宿主派发器（进程池 + initialize/get_capabilities
 //!   握手 + execute/cancel 转发 + stderr 日志采集），修补架构盘点差距第 4 条
 //!   「Worker 宿主派发器缺失」（CURRENT-ARCHITECTURE-INVENTORY.md:219）；
+//! - [`podman_host`]：容器执行面（P2-5，ADR §3 决定第 1 条过渡 Runner），
+//!   计划 §5.4 约束清单逐条注入 + keep-id 产物属主对齐 + out/ Artifact
+//!   收集 + 超时/协作式取消（docs/phase2/PHASE2-DESIGN.md §5.1）；
 //! - §5.3 错误码映射表（[`map_worker_code`]）为 Worker Protocol 码表到
 //!   信封 category 的一一对应，全量码均有断言（tests/python_worker_e2e.rs）。
 
+pub mod podman_host;
 pub mod python_worker;
 pub mod structured_output;
 
+pub use podman_host::{
+    execute_container_via_engine, ContainerCall, FamilyGuard, FamilyLimiter, PodmanHostAdapter,
+    PodmanHostConfig, WorkspacePaths,
+};
 pub use python_worker::{
     execute_via_engine, AdapterCall, PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };

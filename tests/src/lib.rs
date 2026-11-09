@@ -36,14 +36,19 @@ fn workspace_root() -> PathBuf {
 
 /// eri 源目录（eri_p2.py / db/catalog.db 所在），可用 RPI_ERI_DIR 覆盖。
 pub fn eri_dir() -> PathBuf {
-    std::env::var("RPI_ERI_DIR")
+    let dir = std::env::var("RPI_ERI_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             workspace_root()
                 .join("..")
                 .join("security-research-upgrade")
                 .join("eri")
-        })
+        });
+    // 规范化符号链接与 ..：eri_p2.py 以 __file__ 的词法 abspath 定位 HERE
+    // 再 sys.path 插入后 import eri，非规范路径（经符号链接的工作区）在
+    // 词法归一化后会指向不存在目录。canonicalize 失败（目录未就绪）时
+    // 原样返回，由 parity_prereq 报告真实缺失路径。
+    dir.canonicalize().unwrap_or(dir)
 }
 
 /// platform dryrun 库路径，可用 RPI_PLATFORM_DB 覆盖。

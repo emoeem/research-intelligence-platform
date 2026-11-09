@@ -1,0 +1,136 @@
+{
+  "schema_version": "1",
+  "id": "rip.smoke.native",
+  "name": "RIP Smoke Native",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "utility",
+  "description": "podman_host 通道端到端冒烟：stdin 一行 JSON 请求 stdout 一行 JSON 结果（D-TC-03），自证非 root 用户、capabilities 收敛、只读根、tmpfs 与 keep-id 产物属主",
+  "runtime": {
+    "type": "podman_host",
+    "image": "localhost/rip-tool-base:smoke@sha256:84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a",
+    "entrypoint": [
+      "python3",
+      "/app/smoke_tool.py"
+    ],
+    "readonly_rootfs": true,
+    "mounts": [
+      {
+        "role": "input",
+        "path": "/task/in",
+        "mode": "ro"
+      },
+      {
+        "role": "output",
+        "path": "/task/out",
+        "mode": "rw"
+      }
+    ]
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "echo": {
+        "type": "string",
+        "description": "原样回显字符串（缺省时序列化整个 input）"
+      },
+      "sleep_ms": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 600000,
+        "description": "睡眠毫秒数（超时与协作式取消用例的受控负载）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "echo",
+      "uid",
+      "cap_eff",
+      "tmpfs_writable",
+      "rootfs_readonly"
+    ],
+    "properties": {
+      "echo": {
+        "type": "string"
+      },
+      "uid": {
+        "type": "integer",
+        "description": "容器内进程 uid（keep-id 下等于宿主 uid，非 0）"
+      },
+      "cap_eff": {
+        "type": "string",
+        "description": "/proc/self/status CapEff（--cap-drop ALL 下为全零）"
+      },
+      "tmpfs_writable": {
+        "type": "boolean"
+      },
+      "rootfs_readonly": {
+        "type": "boolean"
+      },
+      "run_id": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "2",
+    "memory": "2Gi",
+    "pid_limit": 256,
+    "disk_mb": 256,
+    "timeout_seconds": 600,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "exec",
+      "command": [
+        "python3",
+        "-c",
+        "import json,sys; print(json.dumps({'ok': True}))"
+      ],
+      "timeout_ms": 5000,
+      "interval_seconds": 600,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_repo": "containerfiles/rip-tool-base（本仓库，自研冒烟载具）",
+    "license": "repo-internal",
+    "dependencies": [],
+    "image_digest": "sha256:84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a",
+    "known_limits": [
+      "冒烟载具，无外部副作用；T0 仅覆盖容器内自证行为"
+    ],
+    "tested": "P2-5 批次端到端实测（crates/tool-engine/tests/podman_host_e2e.rs，含 podman inspect 逐条约束断言）"
+  },
+  "context": {
+    "summary": "podman_host 冒烟工具",
+    "tags": [
+      "smoke",
+      "podman_host"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "echo": "hello-rip"
+      },
+      "output_hint": {
+        "echo": "hello-rip",
+        "uid": 1000
+      }
+    }
+  ]
+}
