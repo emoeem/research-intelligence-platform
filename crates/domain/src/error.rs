@@ -22,6 +22,18 @@ pub enum DomainError {
     InvalidAuditEvent(String),
     /// ToolRun 状态出现未知变体（TOOL-CONTRACT §3.1 八态之外的值）。
     UnknownToolRunStatus(String),
+    /// RuntimeNode kind 出现未知变体（计划 §6 Runtime 类型表本阶段落面
+    /// 三值 python_worker/podman_host/podman_vm 之外的值；remote_runner 不入词表）。
+    UnknownRuntimeNodeKind(String),
+    /// 节点健康出现未知变体（D-TC-07 四值 unknown/ok/degraded/broken 之外的值）。
+    UnknownNodeHealth(String),
+    /// RuntimeNode 字段非法（node_id 空/超长、可空字段带空串等）。
+    InvalidRuntimeNode {
+        /// 被拒绝的字段名。
+        field: String,
+        /// 拒绝原因。
+        reason: String,
+    },
     /// RunId 非法（TOOL-CONTRACT §4.1：非空且不超过 128 字符）。
     InvalidRunId {
         /// 被拒绝的原始值。
@@ -78,6 +90,15 @@ impl fmt::Display for DomainError {
             }
             DomainError::UnknownToolRunStatus(v) => {
                 write!(f, "unknown tool run status: {v:?}")
+            }
+            DomainError::UnknownRuntimeNodeKind(v) => {
+                write!(f, "unknown runtime node kind: {v:?}")
+            }
+            DomainError::UnknownNodeHealth(v) => {
+                write!(f, "unknown node health: {v:?}")
+            }
+            DomainError::InvalidRuntimeNode { field, reason } => {
+                write!(f, "invalid runtime node field {field:?}: {reason}")
             }
             DomainError::InvalidRunId { value, reason } => {
                 write!(f, "invalid run id {value:?}: {reason}")

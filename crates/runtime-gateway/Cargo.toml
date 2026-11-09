@@ -1,0 +1,16 @@
+[package]
+name = "runtime-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 2 Tool Gateway 骨架（ROADMAP P2-4）：心跳探测、RuntimeNode.health 落库（runtime_node 表，007）、与 tool-engine 的 WAITING_FOR_RUNNER 判定接通（计划 §5.6:336-337：Runner 离线任务进 WAITING_FOR_RUNNER，不伪装成工具失败）"
+
+[dependencies]
+database = { workspace = true }
+domain = { workspace = true }
+tool-engine = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tool-registry = { workspace = true }

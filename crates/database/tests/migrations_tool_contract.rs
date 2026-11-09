@@ -96,14 +96,14 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6],
-        "discover must see 001..006 in order (006 = P7-1 提前通道按合入顺序顺延)"
+        vec![1, 2, 3, 4, 5, 6, 7],
+        "discover must see 001..007 in order (006 = P7-1 提前通道，007 = P2-4a RuntimeNode 数据面，均按合入顺序顺延)"
     );
 
     reset_dev_copy();
     let pool = open_dev_pool();
 
-    // 第一次：全链 001..006 落地，含本批 005_tool_contract 与 P7-1 的 006。
+    // 第一次：全链 001..007 落地，含本批 005_tool_contract、P7-1 的 006 与 P2-4a 的 007。
     let first = migrate(&pool, &dir).unwrap();
     let first_summary: Vec<(i64, String)> =
         first.iter().map(|m| (m.version, m.name.clone())).collect();
@@ -116,16 +116,17 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
             (4, "_fullbatch".to_string()),
             (5, "_tool_contract".to_string()),
             (6, "_agent_data_plane".to_string()),
+            (7, "_runtime_node".to_string()),
         ],
-        "first run must apply exactly 001..006"
+        "first run must apply exactly 001..007"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 6,
-        "user_version must be 6 after first run (chain tail 006)"
+        uv1, 7,
+        "user_version must be 7 after first run (chain tail 007)"
     );
     assert!(
         sv1.iter()

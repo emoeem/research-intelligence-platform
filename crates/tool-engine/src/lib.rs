@@ -299,6 +299,11 @@ impl Engine {
     }
 
     /// 以 Mock Runner 驱动一个 QUEUED 的 run 走到终态，返回信封与状态轨迹。
+    ///
+    /// P2-4b 起真实心跳路径经 [`Engine::mark_waiting_for_runner`] +
+    /// [`Engine::resume_to_preparing`] + [`Engine::drive_resumed`] 走第 3/4 行
+    /// 同一跃迁对（runtime-gateway 判定，见 crates/runtime-gateway）；
+    /// `runner.wait_for_runner` 注入开关保留给 Phase 1 契约测试（§10.2）。
     pub fn drive(&self, run_id: &str, runner: &MockRunner) -> Result<DriveOutcome, EngineError> {
         let row = self.load_row(run_id)?;
         if row.status != ToolRunStatus::Queued {
@@ -310,8 +315,6 @@ impl Engine {
         let started = Instant::now();
         let mut transcript = vec![ToolRunStatus::Queued];
         let mut current = ToolRunStatus::Queued;
-        let mut truncated_flag = false;
-        let mut artifacts: Vec<envelope::EnvelopeArtifact> = Vec::new();
 
         // 第 3 行：QUEUED → WAITING_FOR_RUNNER 注入。
         if runner.wait_for_runner {
@@ -338,6 +341,88 @@ impl Engine {
             current = ToolRunStatus::Preparing;
             transcript.push(current);
         }
+
+        self.drive_tail(run_id, &row, runner, started, transcript, current)
+    }
+
+    /// QUEUED → WAITING_FOR_RUNNER（§3.2 第 3 行；P2-4b 真实心跳判定入口）。
+    ///
+    /// Runner 探测失败时由 runtime-gateway 调用：run 停在 WAITING_FOR_RUNNER，
+    /// 不伪装成工具失败（计划 §5.6:336 原文语义）。
+    pub fn mark_waiting_for_runner(&self, run_id: &str) -> Result<(), EngineError> {
+        let row = self.load_row(run_id)?;
+        if row.status != ToolRunStatus::Queued {
+            return Err(EngineError::NotStartable {
+                status: row.status,
+                run_id: run_id.to_string(),
+            });
+        }
+        self.advance(
+            run_id,
+            ToolRunStatus::Queued,
+            ToolRunStatus::WaitingForRunner,
+            false,
+        )
+    }
+
+    /// WAITING_FOR_RUNNER → PREPARING（§3.2 第 4 行；心跳恢复判定入口）。
+    pub fn resume_to_preparing(&self, run_id: &str) -> Result<(), EngineError> {
+        let row = self.load_row(run_id)?;
+        if row.status != ToolRunStatus::WaitingForRunner {
+            return Err(EngineError::NotStartable {
+                status: row.status,
+                run_id: run_id.to_string(),
+            });
+        }
+        self.advance(
+            run_id,
+            ToolRunStatus::WaitingForRunner,
+            ToolRunStatus::Preparing,
+            false,
+        )
+    }
+
+    /// 从 PREPARING 续跑（心跳恢复路径，P2-4b）：复用 [`Engine::drive`] 自
+    /// 第 6 行起的全部语义（RUNNING 推进、终局判定、信封组装）。
+    /// transcript 以 [WAITING_FOR_RUNNER, PREPARING] 开头：前者是此前
+    /// [`Engine::mark_waiting_for_runner`] 已落库的真实状态。
+    pub fn drive_resumed(
+        &self,
+        run_id: &str,
+        runner: &MockRunner,
+    ) -> Result<DriveOutcome, EngineError> {
+        let row = self.load_row(run_id)?;
+        if row.status != ToolRunStatus::Preparing {
+            return Err(EngineError::NotStartable {
+                status: row.status,
+                run_id: run_id.to_string(),
+            });
+        }
+        let started = Instant::now();
+        let transcript = vec![ToolRunStatus::WaitingForRunner, ToolRunStatus::Preparing];
+        self.drive_tail(
+            run_id,
+            &row,
+            runner,
+            started,
+            transcript,
+            ToolRunStatus::Preparing,
+        )
+    }
+
+    /// drive 的公共尾段（第 6 行 RUNNING 推进到终局信封组装）；
+    /// drive（QUEUED 起）与 drive_resumed（心跳恢复续跑）共用。
+    fn drive_tail(
+        &self,
+        run_id: &str,
+        row: &RunRow,
+        runner: &MockRunner,
+        started: Instant,
+        mut transcript: Vec<ToolRunStatus>,
+        mut current: ToolRunStatus,
+    ) -> Result<DriveOutcome, EngineError> {
+        let mut truncated_flag = false;
+        let mut artifacts: Vec<envelope::EnvelopeArtifact> = Vec::new();
 
         // 第 6 行：RUNNING（进入即记 started_at）。准备期失败则走第 7 行。
         if !current.is_terminal() && !runner.fail_in_preparing {
@@ -497,7 +582,7 @@ impl Engine {
 
         let elapsed_ms = started.elapsed().as_millis() as u64;
         let envelope = self.build_envelope(
-            &row,
+            row,
             current,
             TerminalParts {
                 result: result.clone(),

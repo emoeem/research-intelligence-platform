@@ -72,25 +72,34 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6],
-        "discover must see 001..006 in order (006 = next available by merge order)"
+        vec![1, 2, 3, 4, 5, 6, 7],
+        "discover must see 001..007 in order (006 = next available by merge order, 007 = P2-4a RuntimeNode 数据面)"
     );
 
     reset_dev_copy();
     let pool = open_dev_pool();
     let first = migrate(&pool, &dir).unwrap();
+    assert!(
+        first
+            .iter()
+            .any(|m| (m.version, m.name.as_str()) == (6, "_agent_data_plane")),
+        "first run must still apply 006_agent_data_plane"
+    );
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (6, "_agent_data_plane"),
-        "first run must land 006 last"
+        (7, "_runtime_node"),
+        "chain tail is now 007 (P2-4a)，006 落于链中段"
     );
 
     let dump1 = schema_dump(&pool);
     let uv: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(uv, 6, "user_version must be 6 after first run");
+    assert_eq!(
+        uv, 7,
+        "user_version must be 7 after first run (chain tail 007)"
+    );
 
     // 第二次：执行器按 user_version 全跳过，零变更。
     let second = migrate(&pool, &dir).unwrap();

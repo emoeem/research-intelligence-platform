@@ -38,8 +38,9 @@ const FAMILIES: [&str; 13] = [
     "utility",
     "browser_automation",
 ];
-const RUNTIME_TYPES: [&str; 7] = [
+const RUNTIME_TYPES: [&str; 8] = [
     "podman_vm",
+    "podman_host",
     "python_worker",
     "native_rust",
     "mcp_client",
@@ -655,7 +656,7 @@ fn rule4_runtime(
         ));
     }
 
-    if matches!(rtype, "podman_vm" | "cli_adapter") {
+    if matches!(rtype, "podman_vm" | "podman_host" | "cli_adapter") {
         let image = req_str(runtime, "image").map_err(err4)?;
         match image_digest_part(image) {
             Err(e) => return Err(err4(format!("runtime.image {image:?}: {e}"))),
@@ -669,7 +670,9 @@ fn rule4_runtime(
     }
 
     match rtype {
-        "podman_vm" => {
+        // podman_host 与 podman_vm 分支必填同构（Schema allOf 同款；容器约束
+        // 清单的运行期注入属 tool-engine adapter，PHASE2-DESIGN 5.1.2）。
+        "podman_vm" | "podman_host" => {
             let ep = req_arr(runtime, "entrypoint").map_err(err4)?;
             if ep.is_empty() || ep.iter().any(|v| !v.is_string()) {
                 return Err(err4(
@@ -808,12 +811,12 @@ fn rule5_provenance(manifest: &Map<String, Value>, id: &str) -> Result<(), Regis
     }
     let runtime = req_obj(manifest, "runtime").map_err(err5)?;
     let rtype = req_str(runtime, "type").map_err(err5)?;
-    if rtype == "podman_vm" {
+    if matches!(rtype, "podman_vm" | "podman_host") {
         let digest = provenance
             .get("image_digest")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                err5("provenance.image_digest is required when runtime.type=podman_vm (TOOL-CONTRACT 2.3)".to_string())
+                err5("provenance.image_digest is required when runtime.type is podman_vm/podman_host (TOOL-CONTRACT 2.3)".to_string())
             })?;
         let image = req_str(runtime, "image").map_err(err5)?;
         let image_digest = image_digest_part(image)
