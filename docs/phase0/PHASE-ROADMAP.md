@@ -703,7 +703,7 @@ virsh -c qemu:///session pool-list --all               # 镜像池占用在 50 G
 | V-7 | VM 内 subuid/subgid 配置 | P2-3 | TOOL-RUNTIME-ADR §12.2 |
 | V-8 | `--userns=keep-id` 与具体镜像组合行为 | P2-5 | TOOL-RUNTIME-ADR §12.5 |
 | V-9 | CI runner 上 podman 可用性 | 容器端到端测试进 CI 的排期 | 盘点 §9.1 |
-| V-10 | rip.http.inspect 真实镜像（替换占位 digest） | P3-2 | TOOL-CONTRACT §11.1 |
+| V-10 | rip.http.inspect 真实镜像（替换占位 digest）；已关闭（2026-11-10 P3-3：digest 固定镜像落地 + §9.1 回填 + 端到端经 Gateway::dispatch，见 TOOL-CONTRACT §11.1 与 docs/phase3/P3-3-BATCH-REPORT.md） | P3-2 | TOOL-CONTRACT §11.1 |
 | V-11 | Token 估算常数对真实 tokenizer 校准 | P4-6 前 | CONTEXT-BROKER-DESIGN §13.1 |
 | V-12 | RTIS knowledge.db 实际条数 | P4-3、P6-5 | 盘点 §5 口径差 |
 | V-13 | tool_execution 历史 0 行，past_success 校准 | Phase 4 排序回看 | CONTEXT-BROKER-DESIGN §13.4 |

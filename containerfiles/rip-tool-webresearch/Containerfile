@@ -1,0 +1,23 @@
+# ============================================================================
+# rip-tool-webresearch：Web Research Pack 镜像族（P3-1 批次交付物）
+# ============================================================================
+# 基础镜像 digest 固定，与 rip-tool-base 同款（计划 §5.4「镜像固定版本和
+# digest」）：python:3.12-slim，本机 containers-storage 已有同 digest 实例
+#   （podman images --digests 实测 sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54），
+#   构建全程离线可用；基础镜像更换须重新对账并按 containerfiles/README.md
+#   digest 台账流程重取同步。
+# 构建命令（宿主机零安装，镜像属运行时数据，ADR §3.2 口径）：
+#   podman build -t localhost/rip-tool-webresearch -f containerfiles/rip-tool-webresearch/Containerfile containerfiles/rip-tool-webresearch/
+# 约束落点：非 root 用户与 --userns=keep-id 在运行期由 Adapter 注入
+#   （Config.User 实测自动置为宿主 uid:gid），本文件不设 USER 指令以免与
+#   keep-id 语义叠加（rip-tool-base 同款）。
+# 工具本体：http_inspector.py，Python 纯标准库（urllib.request 含 TLS），
+#   镜像内零包安装、零第三方依赖；T1 只读 GET 面，出网面由 Manifest
+#   network.mode 声明（PHASE3-DESIGN §5.3）。
+FROM docker.io/library/python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+
+COPY http_inspector.py /app/http_inspector.py
+
+# 任务目录挂载点（Adapter 只挂载 workspaces/<run_id> 之下的 in/out，
+# 计划 §5.4「只挂载当前任务所需输入和输出目录」；/tmp 由 --tmpfs 提供）。
+RUN mkdir -p /task/in /task/out

@@ -35,6 +35,7 @@ use domain::ToolRunStatus;
 use serde_json::{json, Value};
 use tool_registry::hash::sha256_hex;
 
+use crate::adapter::egress_proxy::{host_from_url, EgressAllowlist, EgressProxy, NetworkPlan};
 use crate::adapter::{AdapterFailure, AdapterOutcome};
 use crate::envelope;
 use crate::envelope::{EnvelopeArtifact, EnvelopeError};
@@ -226,6 +227,10 @@ pub struct ContainerCall<'a> {
     pub entrypoint: &'a [String],
     /// 工具族（Manifest family；每工具族并发闸的键，ADR §7）。
     pub family: &'a str,
+    /// 网络计划（Manifest network.mode 执行面，P3-2：none 默认 /
+    /// egress_allowlist 走 [`EgressProxy`]，host 由 Adapter 从 input.url
+    /// 派生临时 allowlist，Policy Resolver 职责最小化）。
+    pub network: NetworkPlan,
 }
 
 impl PodmanHostAdapter {
@@ -335,7 +340,22 @@ impl PodmanHostAdapter {
 
     /// §5.4 约束清单逐条注入的容器命令（计划 §5.4:304-317 + PHASE2-DESIGN
     /// §5.1.2 表；字段名与 podman 6.1.4 inspect 实测一致）。
-    fn run_command(&self, ws: &WorkspacePaths, call: &ContainerCall, name: &str) -> Command {
+    ///
+    /// 网络分派（P3-2，PHASE3-DESIGN §5.3）：按 Manifest network.mode 分派，
+    /// 非单值硬编码。`none` 维持 P2-5 现状（`--network none`）；
+    /// `egress_allowlist` 走 pasta:-T 端口转发（容器内 127.0.0.1:<port> 即
+    /// 宿主 loopback 同端口，本机 pasta 实测冻结）+ http(s)_proxy env 指向
+    /// run 生命周期内的本机 CONNECT 白名单代理（[`EgressProxy`]，allowlist
+    /// 为 input.url 派生 host + egress.ports）。过渡期 allowlist 为代理层
+    /// 策略执行（自有可信工具面），网络层硬隔离属 podman_vm 目标拓扑
+    /// （ADR §8 已知代价）。
+    fn run_command(
+        &self,
+        ws: &WorkspacePaths,
+        call: &ContainerCall,
+        name: &str,
+        egress_port: Option<u16>,
+    ) -> Command {
         let mut cmd = Command::new(&self.config.podman_bin);
         cmd.args([
             "run",
@@ -346,9 +366,29 @@ impl PodmanHostAdapter {
             name,
             "--label",
             "rip.runtime=rip-tool",
-            // 网络由执行配置决定（network.mode=none），工具不能任意改变。
-            "--network",
-            "none",
+        ]);
+        match &call.network {
+            NetworkPlan::None => {
+                // 网络由执行配置决定（network.mode=none），工具不能任意改变。
+                cmd.arg("--network");
+                cmd.arg("none");
+            }
+            NetworkPlan::EgressAllowlist { .. } => {
+                // 出站白名单执行面（P3-2）：pasta:-T 把容器内 127.0.0.1:<port>
+                // 映射到宿主 loopback 同端口的代理；工具流量经代理 env 收敛。
+                let port = egress_port
+                    .expect("egress proxy port required for NetworkPlan::EgressAllowlist");
+                cmd.arg("--network");
+                cmd.arg(format!("pasta:-T,{port}"));
+                for key in ["http_proxy", "https_proxy"] {
+                    cmd.args(["-e", &format!("{key}=http://127.0.0.1:{port}")]);
+                }
+                for key in ["HTTP_PROXY", "HTTPS_PROXY"] {
+                    cmd.args(["-e", &format!("{key}=http://127.0.0.1:{port}")]);
+                }
+            }
+        }
+        cmd.args([
             // 根文件系统只读，写入目录单独挂载。
             "--read-only",
             // rootless + 产物属主对齐宿主用户（ADR §5 第 4 条）。
@@ -390,6 +430,7 @@ impl PodmanHostAdapter {
         call: &ContainerCall,
         ws: &WorkspacePaths,
         timeout: Duration,
+        egress_port: Option<u16>,
     ) -> Result<AdapterOutcome, AdapterFailure> {
         let name = self.container_name(call.run_id);
         let input = call
@@ -399,7 +440,7 @@ impl PodmanHostAdapter {
             .input_sanitized;
         let budget_frame = self.budget_frame(call.engine, call.run_id)?;
         let mut child = self
-            .run_command(ws, call, &name)
+            .run_command(ws, call, &name, egress_port)
             .spawn()
             .map_err(|e| AdapterFailure::new(format!("podman run spawn failed: {e}")))?;
 
@@ -701,6 +742,66 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
     // 返回释放（超时/取消/失败路径统一）。
     let _family_guard = call.adapter.limiter.acquire(call.family);
 
+    // egress_allowlist 执行面（P3-2）：host 从 input.url 派生临时 allowlist
+    // （Policy Resolver 最小化，TOOL-CONTRACT §9.1 note），端口限 Manifest
+    // egress.ports；代理随 run 生命周期启动，Drop 停机（含四条终局路径）。
+    // 派生失败落 POLICY 结构化错误（不猜测目标）；代理启动失败落 INFRA。
+    let egress_proxy = match &call.network {
+        NetworkPlan::None => None,
+        NetworkPlan::EgressAllowlist { ports } => {
+            let host = match row.input_sanitized.get("url").and_then(Value::as_str) {
+                Some(url) => match host_from_url(url) {
+                    Ok(host) => host,
+                    Err(e) => {
+                        return preparing_failed(
+                            engine,
+                            call.run_id,
+                            &row,
+                            started,
+                            transcript,
+                            "POLICY",
+                            format!("egress allowlist host derivation failed: {e}"),
+                            &call.adapter.config.node_id,
+                        );
+                    }
+                },
+                None => {
+                    return preparing_failed(
+                        engine,
+                        call.run_id,
+                        &row,
+                        started,
+                        transcript,
+                        "POLICY",
+                        "egress_allowlist requires string input.url to derive the temporary allowlist host"
+                            .to_string(),
+                        &call.adapter.config.node_id,
+                    );
+                }
+            };
+            let allow = EgressAllowlist {
+                hosts: vec![host],
+                ports: ports.clone(),
+            };
+            match EgressProxy::spawn_for_run(call.run_id, allow) {
+                Ok(proxy) => Some(proxy),
+                Err(e) => {
+                    return preparing_failed(
+                        engine,
+                        call.run_id,
+                        &row,
+                        started,
+                        transcript,
+                        "INFRA",
+                        format!("egress proxy spawn failed: {e}"),
+                        &call.adapter.config.node_id,
+                    );
+                }
+            }
+        }
+    };
+    let egress_port = egress_proxy.as_ref().map(EgressProxy::port);
+
     // 第 6 行：PREPARING → RUNNING（容器创建）。
     engine.advance(
         call.run_id,
@@ -719,7 +820,7 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
             .clamp(1, 600_000),
     );
 
-    let outcome = call.adapter.execute(&call, &ws, timeout);
+    let outcome = call.adapter.execute(&call, &ws, timeout, egress_port);
 
     // 容器回收与 tmp 清理（四路径统一；ADR §6 超时取消回收容器并清理 tmp）。
     let partial = !matches!(outcome, Ok(AdapterOutcome::Succeeded { .. }));

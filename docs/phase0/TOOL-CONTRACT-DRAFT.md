@@ -550,10 +550,12 @@ kind: "tool"
 family: "web_http"
 description: "在工具 VM 容器内发起 HTTP 请求并提取结构化响应信息"
 runtime:
-  type: "podman_vm"
-  image: "registry.local/rip/http-inspector@sha256:<digest>"
-  entrypoint: ["/opt/rip/bin/http-inspector"]
-  user: "1000:1000"
+  # 2026-11-10 P3-3 回填：podman_vm 示例形状按过渡拓扑落地为 podman_host，
+  # 真实镜像与入口见 containerfiles/rip-tool-webresearch/tool-manifest 双份
+  # （非 root 由运行期 --userns=keep-id 保证，不设 user 字段）。
+  type: "podman_host"
+  image: "localhost/rip-tool-webresearch:latest@sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91"
+  entrypoint: ["python3", "/app/http_inspector.py"]
   readonly_rootfs: true
   mounts:
     - { role: "input", path: "/task/in", mode: "ro" }
@@ -621,7 +623,7 @@ idempotent: false
 health:
   probe:
     type: "exec"
-    command: ["/opt/rip/bin/http-inspector", "--selfcheck"]
+    command: ["python3", "-c", "import urllib.request, json; print(json.dumps({'ok': True}))"]
     timeout_ms: 5000
     interval_seconds: 600
     degraded_after: 1
@@ -632,10 +634,10 @@ provenance:
   source_repo: "rip tool pack: web-research（Phase 3 交付物）"
   license: "repo-internal"
   dependencies: []
-  image_digest: "sha256:<digest>"
+  image_digest: "sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91"
   known_limits:
-    - "仅 80/443 出站；非 HTTP(S) 目标不适用"
-  tested: "待验证（镜像与工具本体属 Phase 2/3 交付，本文档仅示范契约形状）"
+    - "仅 80/443 出站且经白名单代理；非 HTTP(S) 目标不适用"
+  tested: "P3-3 批次消解（2026-11-10）：计划 §4.3 三项验证实测通过 + 端到端 crates/tool-engine/tests/web_research_e2e.rs 经 Gateway::dispatch 全链，记录 docs/phase3/P3-3-BATCH-REPORT.md"
 context:
   summary: "HTTP 请求与响应检查工具"
   docs: "docs/usage.md"
@@ -666,7 +668,7 @@ examples:
 ### 9.3 调用流程（对照 §3 状态机）
 
 1. QUEUED：提交携带 `input: {url: "https://example.com/"}`，Policy Resolver 校验 T1 无需授权引用。
-2. PREPARING：Runner 校验 `registry.local/rip/http-inspector@sha256:<digest>` 在 VM 缓存中（缺失则拉取并复核 digest）；创建任务目录，挂载 `/task/in`(ro) 与 `/task/out`(rw)；渲染 env 模板。
+2. PREPARING：Runner 校验 `localhost/rip-tool-webresearch:latest@sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91` 在本地 containers-storage（P3-2 缓存策略：只探不拉，缺失按 DEPENDENCY 失败）；创建任务目录，挂载 `/task/in`(ro) 与 `/task/out`(rw)；env 模板由 egress_allowlist 分派注入代理地址（P3-2）。
 3. RUNNING：容器启动，stdin 收到请求行；出站仅 80/443 且目标 host 在临时 allowlist。
 4. 终态：stdout 结果行经 output_schema 校验后入库；`/task/out` 内响应体文件收集登记为 Artifact（sha256/size/mime）；容器与任务目录清理，保留项先归档（计划 §5.4:315）。
 
@@ -716,7 +718,7 @@ Mock Runner 契约测试最小集（Phase 1 验收「实现 Mock Runner 验证�
 
 ## 11. 未验证项汇总
 
-1. **rip.http.inspect 镜像与工具本体不存在**：本文档仅示范契约形状，`<digest>` 为占位符；真实交付属 Phase 2（基础镜像）与 Phase 3（Web Research Pack）。登记前必须完成计划 §4.3 三项验证（源码检查、最小功能验证、输出格式验证）。
+1. **rip.http.inspect 镜像与工具本体不存在（已消解，2026-11-10 P3-3）**：真实交付落地为 containerfiles/rip-tool-webresearch（纯标准库 http_inspector.py + digest 固定镜像，Manifest 双份登记形状见 §9.1 回填后内容）；计划 §4.3 三项验证（源码检查、最小功能验证、输出格式验证）实测通过，记录 docs/phase3/P3-3-BATCH-REPORT.md；端到端经 Gateway::dispatch 全链（tests/web_research_e2e.rs）与开发库副本对账通过。ROADMAP V-10 同步关闭。
 2. **T1/T2 分界线为草案提议**：M6 已有成文规则 readonly=true → T0、false → T1、T2 预留（`docs/M6_REPORT.md:38`），本草案与其兼容；但「写平台内部库是否升 T2」未裁决（rtis.py 现网 T1，`docs/M6_REPORT.md:38`；只读实测一致），Phase 1 定稿前标注待验证。
 3. **附录 A 的 Manifest JSON Schema 未做 jsonschema 库级校验**：宿主机与仓库 `.venv` 均无 jsonschema 模块（本会话实测 `python3 -I -c "import jsonschema"` 双双 ModuleNotFoundError），红线禁止安装；本次仅完成 JSON 语法级校验（json.loads 通过）与两示例 YAML 解析校验（pyyaml 6.0.3 实测通过，见附录 A 尾注）。Schema 语义正确性属 Phase 1 首个实现任务。
 4. **tool_run/artifact 的 DDL 未编写**：属 Phase 1 执行项，本草案只定字段语义（§3.3、§5.2）。

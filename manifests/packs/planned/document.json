@@ -1,0 +1,28 @@
+{
+  "schema_version": "1",
+  "pack_id": "document",
+  "name": "Document Pack",
+  "status": "planned",
+  "roadmap_ref": "ROADMAP §4.3 行 P3-4",
+  "capabilities": [
+    "PDF 文本抽取",
+    "Office 文档解析",
+    "Markdown 结构化",
+    "OCR 文本抽取"
+  ],
+  "trust_ruling": {
+    "level": "third-party-license-unverified",
+    "rationale": "PDF/Office/OCR 依赖第三方解析库（PyMuPDF/python-docx/Tesseract 等），许可证未核实；ROADMAP P3-4 原行建议「引入第三方库建议等 P2-6 后走 VM，按信任级裁定」，VM 通道 S1 到 S4 挂起中（PHASE2-DESIGN §5.2.5），ADR §3.2 禁未核实依赖上宿主过渡通道"
+  },
+  "exit_conditions": [
+    "S1 到 S4 解锁（podman_vm 通道可用，PHASE2-DESIGN §3.2 两类条件任一命中）",
+    "第三方解析库许可证核实通过并入 provenance"
+  ],
+  "not_runnable": {
+    "no_manifest": true,
+    "no_registry_entry": true,
+    "no_containerfile": true
+  },
+  "suspension_ref": "PHASE2-DESIGN §5.2.5 挂起批次 S1 到 S4；ROADMAP §14 V-5/V-6 待验证",
+  "notes": "parsing_worker 现仅 md/txt/html 纯文本（TOOL-INVENTORY §1.2），本存根为补强计划面"
+}

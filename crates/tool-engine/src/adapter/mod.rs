@@ -10,10 +10,14 @@
 //! - §5.3 错误码映射表（[`map_worker_code`]）为 Worker Protocol 码表到
 //!   信封 category 的一一对应，全量码均有断言（tests/python_worker_e2e.rs）。
 
+pub mod egress_proxy;
 pub mod podman_host;
 pub mod python_worker;
 pub mod structured_output;
 
+pub use egress_proxy::{
+    host_from_url, proxy_events, EgressAllowlist, EgressProxy, NetworkPlan, ProxyEvent,
+};
 pub use podman_host::{
     execute_container_via_engine, ContainerCall, FamilyGuard, FamilyLimiter, PodmanHostAdapter,
     PodmanHostConfig, WorkspacePaths,

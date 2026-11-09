@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "pack_id": "tpscan-p37",
+  "name": "T12 TPscan（许可证裁决与登记候选）",
+  "status": "planned",
+  "roadmap_ref": "ROADMAP §4.3 行 P3-7",
+  "capabilities": [
+    "Web 指纹识别",
+    "路径扫描（TOOL-INVENTORY §4.3 登记候选）"
+  ],
+  "trust_ruling": {
+    "level": "untrusted-third-party",
+    "rationale": "TPscan 无 LICENSE 文件（TOOL-INVENTORY §4.3 实证），属不受信第三方工具：ADR §3.2 禁上宿主过渡通道；ADR §3.1 提前触发条件 1 即本项（「登记第一个不受信第三方工具时，该工具必须跑在 VM 内」），PHASE2-ACCEPTANCE §4 监控条目 1 持续监控中"
+  },
+  "exit_conditions": [
+    "许可证核实结论落盘：准入则按计划 §4.3 三项验证后在 VM 内容器登记，拒绝则记录淘汰（ROADMAP P3-7 判据原文）",
+    "S1 到 S4 解锁（不受信工具一律等待 VM，ADR §3.2）"
+  ],
+  "not_runnable": {
+    "no_manifest": true,
+    "no_registry_entry": true,
+    "no_containerfile": true
+  },
+  "suspension_ref": "ADR §3.1 提前触发条件 1；PHASE2-DESIGN §3.2；PHASE2-ACCEPTANCE §4 监控条目 1",
+  "notes": "本存根即监控条目 1 的登记载体：准入判定发生时，本文件状态与裁定结论随批次报告更新"
+}

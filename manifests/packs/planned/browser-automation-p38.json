@@ -1,0 +1,25 @@
+{
+  "schema_version": "1",
+  "pack_id": "browser-automation-p38",
+  "name": "Browser Automation 族补齐评估（P3-8）",
+  "status": "planned",
+  "roadmap_ref": "ROADMAP §4.3 行 P3-8",
+  "capabilities": [
+    "真实浏览器环境执行（视觉回归）",
+    "页面级抓取与渲染后提取"
+  ],
+  "trust_ruling": {
+    "level": "beyond-host-rootless",
+    "rationale": "真实浏览器环境的执行配置超出宿主 rootless 可表达范围（ADR §3.1 提前触发条件 2 的典型输入；TELEGRAM-ADMIN-UI-REUSE §2.5 视觉回归浏览器需求为需求源）；PHASE3-DESIGN §3.1 第 4 条已落静态评估结论：不在宿主过渡通道实现，落 VM 面"
+  },
+  "exit_conditions": [
+    "S1 到 S4 解锁后在 VM 内评估实现（评估结论随解锁批落盘，PHASE2-ACCEPTANCE §4 监控条目 2）"
+  ],
+  "not_runnable": {
+    "no_manifest": true,
+    "no_registry_entry": true,
+    "no_containerfile": true
+  },
+  "suspension_ref": "ADR §3.1 提前触发条件 2；PHASE2-DESIGN §3.2；PHASE2-ACCEPTANCE §4 监控条目 2",
+  "notes": "评估结论已随 PHASE3-DESIGN §3.1.4 落盘，本存根为承接载体，不构成新的实现承诺"
+}

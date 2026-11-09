@@ -812,6 +812,7 @@ version = "0.2.0"
 dependencies = [
  "database",
  "domain",
+ "runtime-gateway",
  "serde_json",
  "tool-registry",
 ]

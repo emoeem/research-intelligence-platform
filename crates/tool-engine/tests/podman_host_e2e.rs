@@ -26,7 +26,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tool_engine::adapter::{
-    execute_container_via_engine, ContainerCall, PodmanHostAdapter, PodmanHostConfig,
+    execute_container_via_engine, ContainerCall, NetworkPlan, PodmanHostAdapter, PodmanHostConfig,
 };
 use tool_engine::Engine;
 use tool_registry::{Options, Registry};
@@ -240,6 +240,7 @@ fn smoke_run_succeeds_with_keep_id_and_artifacts() {
         image: &image,
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
+        network: NetworkPlan::None,
     })
     .expect("container e2e run");
     let env = &outcome.envelope;
@@ -362,6 +363,7 @@ fn inspect_constraints_and_cooperative_cancel() {
                 image: &image,
                 entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
                 family: "utility",
+                network: NetworkPlan::None,
             })
         });
 
@@ -538,6 +540,7 @@ fn budget_timeout_terminates_container() {
         image: &image,
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
+        network: NetworkPlan::None,
     })
     .expect("timeout run");
     assert!(
@@ -581,6 +584,7 @@ fn tag_ref_image_rejected_in_preparing() {
         image: "localhost/rip-tool-base:smoke",
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
+        network: NetworkPlan::None,
     })
     .expect("tag-ref run must be handled, not panic");
     assert_eq!(outcome.envelope.status, ToolRunStatus::Failed);

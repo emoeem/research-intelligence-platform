@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "pack_id": "mobile-analysis",
+  "name": "Mobile Analysis Pack",
+  "status": "planned",
+  "roadmap_ref": "ROADMAP §4.3 行 P3-6",
+  "capabilities": [
+    "APK 元数据",
+    "Manifest 解析",
+    "权限静态分析"
+  ],
+  "trust_ruling": {
+    "level": "third-party-license-unverified",
+    "rationale": "Java 生态依赖重（apktool 等工具链），ROADMAP P3-6 原行建议「Java 生态依赖重，建议 P2-6 后走 VM 通道」；VM 通道 S1 到 S4 挂起中，许可证未核前不登记"
+  },
+  "exit_conditions": [
+    "S1 到 S4 解锁（VM 内容器执行面可用）",
+    "Java 工具链许可证核实通过并入 provenance"
+  ],
+  "not_runnable": {
+    "no_manifest": true,
+    "no_registry_entry": true,
+    "no_containerfile": true
+  },
+  "suspension_ref": "PHASE2-DESIGN §5.2.5 挂起批次 S1 到 S4",
+  "notes": "Android SDK 工具链体积大，VM 磁盘预算评估随解锁批进行（ADR §7 预算约束）"
+}

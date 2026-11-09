@@ -22,7 +22,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tool_engine::adapter::{
-    execute_container_via_engine, ContainerCall, PodmanHostAdapter, PodmanHostConfig,
+    execute_container_via_engine, ContainerCall, NetworkPlan, PodmanHostAdapter, PodmanHostConfig,
 };
 use tool_engine::mock_runner::MockRunner;
 use tool_engine::Engine;
@@ -298,6 +298,7 @@ fn drill3_boundary_negative_mount_whitelist_and_sensitive_faces() {
         image: &image,
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
+        network: NetworkPlan::None,
     })
     .unwrap();
     assert_eq!(outcome.envelope.status, ToolRunStatus::Succeeded);

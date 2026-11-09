@@ -1,0 +1,147 @@
+{
+  "schema_version": "1",
+  "kind": "tool",
+  "family": "utility",
+  "runtime": {
+    "type": "podman_host",
+    "image": "localhost/rip-tool-coreutils:latest@sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb",
+    "readonly_rootfs": true,
+    "mounts": [
+      {
+        "role": "input",
+        "path": "/task/in",
+        "mode": "ro"
+      },
+      {
+        "role": "output",
+        "path": "/task/out",
+        "mode": "rw"
+      }
+    ],
+    "entrypoint": [
+      "python3",
+      "/app/core_tools.py",
+      "hash"
+    ]
+  },
+  "resources": {
+    "cpu": "2",
+    "memory": "2Gi",
+    "pid_limit": 256,
+    "disk_mb": 256,
+    "timeout_seconds": 120,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T1",
+  "health": {
+    "probe": {
+      "type": "exec",
+      "command": [
+        "python3",
+        "-c",
+        "import json; print(json.dumps({'ok': True}))"
+      ],
+      "timeout_ms": 5000,
+      "interval_seconds": 600,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_repo": "containerfiles/rip-tool-coreutils（本仓库，自研纯标准库入口）",
+    "license": "repo-internal",
+    "dependencies": [],
+    "image_digest": "sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb",
+    "known_limits": [
+      "md5/sha1 仅用于既有系统对账，不用于安全用途"
+    ],
+    "tested": "P3-4 批次端到端实测（crates/tool-engine/tests/core_utils_e2e.rs：五 run 经 Gateway::dispatch 全链 + artifact sha256 对账 + 坏输入/截断负例）"
+  },
+  "context": {
+    "summary": "Core Utilities：RIP Core Hash",
+    "tags": [
+      "utility",
+      "podman_host",
+      "p3-4"
+    ]
+  },
+  "id": "rip.core.hash",
+  "name": "RIP Core Hash",
+  "version": "0.1.0",
+  "description": "Core Utilities Pack（计划 §14:776）：共用 coreutils 镜像与 core_tools.py 入口（argv op 分派），纯标准库，network.mode=none 纯本地变换：sha256/sha1/sha512/md5 文件摘要（与 artifact 表同算法可直接对账）",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "/task/in 之下的输入文件路径"
+      },
+      "algorithm": {
+        "type": "string",
+        "enum": [
+          "sha256",
+          "sha1",
+          "sha512",
+          "md5"
+        ],
+        "default": "sha256"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "name",
+      "algorithm",
+      "digest",
+      "size_bytes"
+    ],
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "algorithm": {
+        "type": "string"
+      },
+      "digest": {
+        "type": "string"
+      },
+      "size_bytes": {
+        "type": "integer"
+      },
+      "tool": {
+        "type": "string"
+      },
+      "elapsed_ms": {
+        "type": "integer"
+      },
+      "uid": {
+        "type": "integer"
+      }
+    }
+  },
+  "idempotent": true,
+  "examples": [
+    {
+      "input": {
+        "path": "/task/in/sample.txt",
+        "algorithm": "sha256"
+      },
+      "output_hint": {
+        "algorithm": "sha256",
+        "digest": "f6b613eded2a980b125196c9437de2e448bec9d40804be9a49cf57f10d515bc0",
+        "size_bytes": 31
+      }
+    }
+  ]
+}

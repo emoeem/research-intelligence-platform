@@ -1,0 +1,135 @@
+# ============================================================================
+# rip.http.inspect：Web Research Pack 首工具 Manifest（P3-3 批次交付物）
+# ============================================================================
+# 形状依据：TOOL-CONTRACT-DRAFT §9.1（示例 Manifest 二：容器化 HTTP 工具），
+# 差异以 §9.2 口径注明（method 枚举收敛、resources 对齐 Adapter 实际注入、
+# runtime.type=podman_host 过渡拓扑）。json 孪生：tool-manifest.json（Registry
+# 加载用），两者内容一致；image digest 为本机实建镜像真实值（podman inspect
+# 实测，containerfiles/README.md digest 台账同步）。
+# ============================================================================
+schema_version: "1"
+id: "rip.http.inspect"
+name: "RIP HTTP Inspect"
+version: "0.1.0"
+kind: "tool"
+family: "web_http"
+description: "T1 只读 HTTP 检查：GET/HEAD 请求与结构化响应信息提取（TOOL-CONTRACT §9.1 形状落地），出站经 egress_proxy 白名单代理（P3-2）"
+runtime:
+  type: "podman_host"
+  image: "localhost/rip-tool-webresearch:latest@sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91"
+  entrypoint:
+    - "python3"
+    - "/app/http_inspector.py"
+  readonly_rootfs: true
+  mounts:
+    - { role: "input", path: "/task/in", mode: "ro" }
+    - { role: "output", path: "/task/out", mode: "rw" }
+input_schema:
+  type: "object"
+  required: ["url"]
+  additionalProperties: false
+  properties:
+    url:
+      type: "string"
+      description: "http/https 目标（egress allowlist host 派生源，派发时冻结）"
+    method:
+      type: "string"
+      enum: ["GET", "HEAD"]
+      default: "GET"
+      description: "T1 只读面收敛为 GET/HEAD；§9.1 草案的 POST 属演示枚举（应改 T2 + authorization_ref），本登记拒绝"
+    headers:
+      type: "object"
+      description: "附加请求头，Authorization 类头部必须走 secrets，禁止明文传入"
+    timeout_seconds:
+      type: "integer"
+      minimum: 1
+      maximum: 60
+      default: 15
+    save_body:
+      type: "boolean"
+      default: true
+      description: "true 且 method=GET 时响应体落 /task/out/body.bin 为 Artifact，结果内带 body_artifact_id（容器内产物名 body.bin）"
+output_schema:
+  type: "object"
+  required: ["status_code", "final_url"]
+  properties:
+    status_code:
+      type: "integer"
+    final_url:
+      type: "string"
+    headers:
+      type: "object"
+      description: "选定响应头子集（Content-Type/Length/Encoding、Last-Modified、ETag、Server、Date）"
+    body_bytes:
+      type: "integer"
+    body_artifact_id:
+      type: "string"
+      description: "响应体 Artifact 引用（role=primary；值为容器内产物名 body.bin，引擎 artifact 行按 file://...body.bin 与 sha256 对账）"
+    request_url:
+      type: "string"
+    reason:
+      type: "string"
+    redirects:
+      type: "integer"
+    elapsed_ms:
+      type: "integer"
+    body_sha256:
+      type: "string"
+    body_cap_bytes:
+      type: "integer"
+    content_type:
+      type: "string"
+    header_count:
+      type: "integer"
+    out_files:
+      type: "array"
+    uid:
+      type: "integer"
+resources:
+  cpu: "2"
+  memory: "2Gi"
+  pid_limit: 256
+  disk_mb: 256
+  timeout_seconds: 120
+  max_output_bytes: 1048576
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80, 443]
+    domains: []
+    note: "目标 URL host 由 Adapter 在派发时从 input.url 派生临时 allowlist（P3-2 egress_proxy 实测冻结），运行结束失效；§9.1 的 Policy Resolver 职责按此最小化"
+secrets: []
+permission_level: "T1"
+idempotent: false
+health:
+  probe:
+    type: "exec"
+    command: ["python3", "-c", "import urllib.request, json; print(json.dumps({'ok': True}))"]
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "rip-native"
+  source_repo: "containerfiles/rip-tool-webresearch（本仓库，自研纯标准库包装，P3-1 镜像 + P3-2 代理面 + P3-3 登记）"
+  license: "repo-internal"
+  dependencies: []
+  image_digest: "sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91"
+  known_limits:
+    - "仅 80/443 出站且经白名单代理；非 HTTP(S) 目标不适用"
+    - "method 收敛为 GET/HEAD（T1 只读面），§9.1 草案的 POST 枚举不登记"
+    - "allowlist 为代理层策略执行（自有可信工具面），网络层硬隔离属 podman_vm 目标拓扑（ADR §8）"
+  tested: "P3-3 批次计划 §4.3 三项验证实测通过（源码检查/最小功能验证/输出格式验证，docs/phase3/P3-3-BATCH-REPORT.md；端到端 crates/tool-engine/tests/web_research_e2e.rs 经 Gateway::dispatch 全链）"
+context:
+  summary: "Web Research 首工具：HTTP 请求与响应检查"
+  docs: "docs/phase3/PHASE3-DESIGN.md"
+  tags: ["http", "web", "recon", "web_http", "podman_host"]
+examples:
+  - input:
+      url: "https://example.com/"
+      method: "GET"
+    output_hint:
+      status_code: 200
+      final_url: "https://example.com/"
+      body_artifact_id: "body.bin"

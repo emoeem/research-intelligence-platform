@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "pack_id": "source-analysis",
+  "name": "Source Analysis Pack",
+  "status": "planned",
+  "roadmap_ref": "ROADMAP §4.3 行 P3-5",
+  "capabilities": [
+    "Git 仓库元数据",
+    "代码搜索",
+    "依赖清单提取",
+    "静态检查"
+  ],
+  "trust_ruling": {
+    "level": "self-owned",
+    "rationale": "候选实现为自研薄包装（基础镜像自带 git 能力，来源可信），依赖最轻、可走宿主过渡通道；但按计划 §14:784 原文「不追求工具数量，优先保证安装、运行、结果 Schema、错误处理和证据归档可靠」，范围裁定收窄为 planned（PHASE3-DESIGN §2.3 表）"
+  },
+  "exit_conditions": [
+    "Phase 3 两包端到端验收通过（P3-6 收口）",
+    "下一批次预算裁定纳入（数量让位于可靠的批次排期）"
+  ],
+  "not_runnable": {
+    "no_manifest": true,
+    "no_registry_entry": true,
+    "no_containerfile": true
+  },
+  "notes": "三包 planned 之首：依赖最轻，解锁排序第一"
+}

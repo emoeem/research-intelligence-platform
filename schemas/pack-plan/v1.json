@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rip.local/schemas/pack-plan/v1.json",
+  "title": "RIP Pack Plan v1（planned 计划性存根）",
+  "description": "planned Pack 与挂起承接项的计划性存根格式（P3-5 批次）：只承载能力点、信任级裁定与解锁条件，不承载任何可运行登记面。因 TOOL-CONTRACT 校验九条第 4 条拒绝占位 digest，planned 项不使用 tool-manifest v1 形状、不入 Registry、不建容器定义文件；解锁实施时应另立 tool-manifest v1 走九条校验与本仓库既有登记链路。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "pack_id",
+    "status",
+    "roadmap_ref",
+    "capabilities",
+    "trust_ruling",
+    "exit_conditions",
+    "not_runnable"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "pack_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "const": "planned",
+      "description": "计划性存根唯一合法状态；解锁实施后由 tool-manifest v1 登记链路接管，本格式不承载 enabled 等运行状态"
+    },
+    "roadmap_ref": {
+      "type": "string",
+      "pattern": "^ROADMAP §4\\.3 行 P3-[4-8]$",
+      "description": "对应的 PHASE-ROADMAP §4.3 批次表行（P3-4 到 P3-8）"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "计划能力点（只写计划，不含可运行实现）"
+    },
+    "trust_ruling": {
+      "type": "object",
+      "required": ["level", "rationale"],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "enum": [
+            "self-owned",
+            "third-party-license-unverified",
+            "untrusted-third-party",
+            "beyond-host-rootless"
+          ],
+          "description": "self-owned：自研可走宿主过渡通道；third-party-license-unverified：第三方依赖许可证未核；untrusted-third-party：不受信第三方工具；beyond-host-rootless：执行配置超出宿主 rootless 可表达范围"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "exit_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "解锁条件：全部满足才可进入实施（另立 tool-manifest v1 走九条校验）"
+    },
+    "not_runnable": {
+      "type": "object",
+      "required": ["no_manifest", "no_registry_entry", "no_containerfile"],
+      "additionalProperties": false,
+      "properties": {
+        "no_manifest": {
+          "const": true,
+          "description": "不写 tool-manifest（校验九条第 4 条拒绝占位 digest，planned 无真实可固定值）"
+        },
+        "no_registry_entry": {
+          "const": true,
+          "description": "不进 Registry（tool/tool_version 表只收已落地工具）"
+        },
+        "no_containerfile": {
+          "const": true,
+          "description": "不建容器定义文件（containerfiles/ 只收已交付镜像族）"
+        }
+      }
+    },
+    "suspension_ref": {
+      "type": "string",
+      "description": "挂起承接引用（S 批次或 ADR 条款）；无挂起关系的 planned Pack 省略"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

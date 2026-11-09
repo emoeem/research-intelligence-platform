@@ -24,7 +24,8 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tool_engine::adapter::{
-    execute_container_via_engine, ContainerCall, FamilyLimiter, PodmanHostAdapter, PodmanHostConfig,
+    execute_container_via_engine, ContainerCall, FamilyLimiter, NetworkPlan, PodmanHostAdapter,
+    PodmanHostConfig,
 };
 use tool_engine::Engine;
 use tool_registry::{Options, Registry};
@@ -324,6 +325,7 @@ fn same_image_second_dispatch_hits_cache() {
             image: &image,
             entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
             family: "utility",
+            network: NetworkPlan::None,
         })
         .unwrap_or_else(|e| panic!("{run_id} container run failed: {e}"));
         assert_eq!(outcome.envelope.status, ToolRunStatus::Succeeded);
@@ -388,6 +390,7 @@ fn budget_timeout_registers_partial_artifact() {
         image: &image,
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
+        network: NetworkPlan::None,
     })
     .expect("timeout run");
     assert!(
@@ -471,6 +474,7 @@ fn oversized_output_is_truncated_with_artifact_carrier() {
         image: &image,
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
+        network: NetworkPlan::None,
     })
     .expect("truncation run");
     let env = &outcome.envelope;

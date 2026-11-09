@@ -11,3 +11,8 @@ database = { workspace = true }
 domain = { workspace = true }
 tool-registry = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# P3-3 端到端经 Gateway::dispatch 派发（不绕过 Gateway 直调 Adapter）；
+# dev-dep 环允许（runtime-gateway 正常依赖 tool-engine）。
+runtime-gateway = { workspace = true }

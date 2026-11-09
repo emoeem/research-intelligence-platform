@@ -1,0 +1,129 @@
+# ============================================================================
+# rip.core.validate：Core Utilities Pack Manifest（P3-4 批次交付物）
+# ============================================================================
+# 五 Manifest 共用 coreutils 镜像与 core_tools.py 入口（argv op 分派：
+# entrypoint 第三位 = validate）；json 孪生 rip.core.validate.json（Registry
+# 加载用），两者内容一致；image digest 为本机实建镜像真实值（podman inspect
+# 实测，containerfiles/README.md digest 台账同步）。
+# ============================================================================
+schema_version: "1"
+kind: "tool"
+family: "utility"
+runtime:
+  type: "podman_host"
+  image: "localhost/rip-tool-coreutils:latest@sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb"
+  readonly_rootfs: true
+  mounts:
+      role: "input"
+      path: "/task/in"
+      mode: "ro"
+      role: "output"
+      path: "/task/out"
+      mode: "rw"
+  entrypoint:
+    - "python3"
+    - "/app/core_tools.py"
+    - "validate"
+resources:
+  cpu: "2"
+  memory: "2Gi"
+  pid_limit: 256
+  disk_mb: 256
+  timeout_seconds: 120
+  max_output_bytes: 1048576
+network:
+  mode: "none"
+secrets: []
+permission_level: "T1"
+health:
+  probe:
+    type: "exec"
+    command:
+      - "python3"
+      - "-c"
+      - "import json; print(json.dumps({'ok': True}))"
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "rip-native"
+  source_repo: "containerfiles/rip-tool-coreutils（本仓库，自研纯标准库入口）"
+  license: "repo-internal"
+  dependencies: []
+  image_digest: "sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb"
+  known_limits:
+    - "YAML 显式不支持（错误帧 -32602 yaml_unsupported），不自研解析器不装第三方包"
+  tested: "P3-4 批次端到端实测（crates/tool-engine/tests/core_utils_e2e.rs：五 run 经 Gateway::dispatch 全链 + artifact sha256 对账 + 坏输入/截断负例）"
+context:
+  summary: "Core Utilities：RIP Core Validate"
+  tags:
+    - "utility"
+    - "podman_host"
+    - "p3-4"
+id: "rip.core.validate"
+name: "RIP Core Validate"
+version: "0.1.0"
+description: "Core Utilities Pack（计划 §14:776）：共用 coreutils 镜像与 core_tools.py 入口（argv op 分派），纯标准库，network.mode=none 纯本地变换：json/csv 结构化校验与统计；YAML 显式不支持（stdlib-only，PHASE3-DESIGN §5.2 降级声明，不自研解析器）"
+input_schema:
+  type: "object"
+  required:
+    - "format"
+  additionalProperties: false
+  properties:
+    format:
+      type: "string"
+      enum:
+        - "json"
+        - "csv"
+      description: "yaml 拒绝（stdlib-only 镜像）"
+    src:
+      type: "string"
+    text:
+      type: "string"
+    delimiter:
+      type: "string"
+output_schema:
+  type: "object"
+  required:
+    - "format"
+    - "valid"
+  properties:
+    format:
+      type: "string"
+    src:
+      type: "string"
+    valid:
+      type: "boolean"
+    top_type:
+      type: "string"
+    depth:
+      type: "integer"
+    top_keys:
+      type: "integer"
+    items:
+      type: "integer"
+    header:
+      type: "array"
+    rows:
+      type: "integer"
+    cols_max:
+      type: "integer"
+    size_bytes:
+      type: "integer"
+    tool:
+      type: "string"
+    elapsed_ms:
+      type: "integer"
+    uid:
+      type: "integer"
+idempotent: true
+examples:
+    input:
+      format: "json"
+      text: "[{\"a\":1},{\"a\":2}]"
+    output_hint:
+      format: "json"
+      valid: true
+      items: 2
