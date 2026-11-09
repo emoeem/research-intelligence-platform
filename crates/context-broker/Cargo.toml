@@ -1,0 +1,29 @@
+[package]
+name = "context-broker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 4 Context Broker（计划 §14:786-794 / CONTEXT-BROKER-DESIGN）：P4-1 落预算策略七分项（policy）、token 估算器（estimate）与错误类型（error）骨架，并 re-export domain::context 词表；intent/source/assemble/manifest/cache 面按 PHASE4-DESIGN §6 批次表在 P4-2 到 P4-5 逐批落位"
+
+[dependencies]
+# 依赖面（PHASE4-DESIGN §5.1 总则 4：预计零新增第三方 → P4-2 增量评估后加
+# toml 一项：规则包 rules.toml 结构化解析用，维护活跃的成熟实现，按复用优先
+# 纪律不手写解析器；增量 cargo vendor 后 --offline 构建通过见批次报告。
+# tool-registry 为 P4-0 决议 2 的直连落位（L1 目录源消费其公开接口）；
+# audit-engine/resource-engine 在 P4-3 消费批次加入，database 随 P4-4
+# manifest store 加入）。
+domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tool-registry = { workspace = true }
+# P4-3（M4.2）三源接入（PHASE4-DESIGN §5.1 总则 2 复用优先：分词/检索/审计
+# 全部走既有公开接口，Broker 内不重写）：
+resource-engine = { workspace = true }
+search-engine = { workspace = true }
+audit-engine = { workspace = true }
+# P4-4（M4.3）：manifest 三表落库（ManifestStore）与 artifact 只读源。
+database = { workspace = true }
+
+[dev-dependencies]

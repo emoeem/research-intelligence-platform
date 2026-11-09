@@ -1,0 +1,92 @@
+# RIP 意图族配置（P4-3 落盘；结构见 crates/context-broker/src/intent.rs IntentConfig）
+# 版本化映射表（设计稿 §4.2 第 3 条「映射表（族、触发词、示例）是版本化配置
+# 而非硬编码」）。族 id 恰为计划 §4.2 十三族原文名（ToolFamily::parse 兼容，
+# 拼写漂移即拒绝）；ASCII 触发词走词元级匹配（含复数容忍），非 ASCII 触发词
+# 走子串匹配（CJK 不入 tokenizer 词元集）。
+schema_version = "1"
+config_id = "intent-families"
+config_version = "1.0.0"
+
+[[family]]
+id = "Web / HTTP"
+triggers = ["http", "https", "httpx", "网页", "页面", "请求", "响应头", "抓取"]
+examples = ["抓取 example.com 首页", "检查目标站响应头"]
+
+[[family]]
+id = "DNS / Domain"
+triggers = ["dns", "子域", "subdomain", "域名", "证书透明", "ct日志"]
+examples = ["枚举目标子域", "查证书透明记录"]
+
+[[family]]
+id = "Network"
+triggers = ["端口", "port", "服务识别", "nmap", "连通性", "探测"]
+examples = ["扫描目标端口", "服务指纹识别"]
+
+[[family]]
+id = "Web Analysis"
+triggers = ["页面结构", "js资源", "路由", "api线索", "静态资源", "端点"]
+examples = ["提取页面 JS 与端点线索"]
+
+[[family]]
+id = "Source Code"
+triggers = ["git", "代码", "依赖", "仓库", "静态检查", "source"]
+examples = ["审计仓库依赖清单"]
+
+[[family]]
+id = "Mobile / APK"
+triggers = ["apk", "安卓", "android", "manifest", "权限", "dex"]
+examples = ["解析 APK 元数据与权限"]
+
+[[family]]
+id = "Binary / Reverse"
+triggers = ["二进制", "反汇编", "逆向", "符号", "脱壳"]
+examples = ["识别二进制文件类型与哈希"]
+
+[[family]]
+id = "Document"
+triggers = ["pdf", "office", "文档", "ocr", "markdown", "docx"]
+examples = ["抽取 PDF 文本与页码"]
+
+[[family]]
+id = "Data Processing"
+triggers = ["json", "csv", "yaml", "xml", "格式转换", "去重", "规范化"]
+examples = ["JSON 转 CSV 并校验"]
+
+[[family]]
+id = "Knowledge"
+triggers = ["知识", "检索", "kb", "poc", "案例", "知识库"]
+examples = ["检索 kingdee 相关 POC 案例"]
+
+[[family]]
+id = "Evidence"
+triggers = ["证据", "截图", "归档", "evidence", "证据包"]
+examples = ["归档请求响应为证据"]
+
+[[family]]
+id = "Utility"
+triggers = ["文件", "压缩", "哈希", "编码", "diff", "比较"]
+examples = ["计算文件哈希与压缩"]
+
+[[family]]
+id = "Browser Automation"
+triggers = ["浏览器", "dom", "automation", "导航", "交互"]
+examples = ["浏览器截图与 DOM 提取"]
+
+[[knowledge_intent]]
+id = "kb-search"
+triggers = ["检索", "搜索", "search", "知识", "案例", "poc", "查"]
+
+[[knowledge_intent]]
+id = "kb-evaluate"
+triggers = ["评估", "evaluate", "评级", "质量", "分级"]
+
+[[knowledge_intent]]
+id = "source-verify"
+triggers = ["来源核验", "核验", "溯源", "verify", "来源"]
+
+[[knowledge_intent]]
+id = "negative-check"
+triggers = ["反知识", "误判", "negative", "不能得出", "排除"]
+
+[task_verbs]
+verbs = ["收集", "解析", "检索", "评估", "比对", "监控", "检查", "扫描", "核验", "抓取", "提取", "转换", "审计", "识别"]

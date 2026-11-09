@@ -68,24 +68,24 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7],
-        "discover must see 001..007 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8],
+        "discover must see 001..008 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表)"
     );
 
     let pool = open_memory_pool();
 
-    // 第一次：全链 001..007 落地，链尾 007_runtime_node。
+    // 第一次：全链 001..008 落地，链尾 008_context_broker（007 落于链中段）。
     let first = migrate(&pool, &dir).unwrap();
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (7, "_runtime_node"),
-        "first run must land 007 last"
+        (8, "_context_broker"),
+        "first run must land 008 last"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
-    assert_eq!(uv1, 7, "user_version must be 7 after first run");
+    assert_eq!(uv1, 8, "user_version must be 8 after first run");
 
     // 第二次：执行器按 user_version 全跳过，零变更。
     let second = migrate(&pool, &dir).unwrap();

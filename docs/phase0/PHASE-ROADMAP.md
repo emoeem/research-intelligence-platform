@@ -329,7 +329,12 @@ cargo run --offline -p context-broker --bin rp-context -- cache-stats
 python3 -I -c "import sqlite3; c=sqlite3.connect('file:<开发库副本>?mode=ro',uri=True); print(c.execute('select layer,kind,sum(est_tokens) from context_manifest_item group by layer,kind').fetchall())"
 # 期望：无 L3 正文内联行，L1 为目录卡片，used 总量在 budget_report 内
 
-# 4. 验收第 3 条「Artifact 引用」对账：context_ref_log 有 CITED_IN_TOOL_CALL 事件且引用指向 artifact
+# 4. 验收第 3 条「Artifact 引用」对账：context_ref_log 有 ASSEMBLED/EXPANDED 事件，artifact ref-only 引用指向 artifact 行
+# （2026-11-10 Phase 4 收口修订：CITED_IN_TOOL_CALL 属 Phase 7 Agent Engine
+#  调用接线（调用对象 context_refs，计划:219），写入 Phase 7 验收清单
+#  （PHASE4-ACCEPTANCE §七.1）；事件枚举值在 008 CHECK 域内，存储面已就绪。
+#  本批落证 = ASSEMBLED/EXPANDED 事件 + ref-only 引用（sha256 进 citations）。
+#  修订仅调期望注释，命令与依赖冻结不变。）
 python3 -I -c "import sqlite3; c=sqlite3.connect('file:<开发库副本>?mode=ro',uri=True); print(c.execute(\"select event,count(*) from context_ref_log group by event\").fetchall())"
 ~~~
 

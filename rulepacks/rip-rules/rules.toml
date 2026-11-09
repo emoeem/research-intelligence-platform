@@ -1,0 +1,50 @@
+# RIP L0 规则包 rip-rules（P4-2 落盘；结构见 crates/context-broker/src/sources/rulepack.rs）
+# 版本信号：pack_version = 规则条目失效信号；policy_version = 预算策略同源
+# 信号（与 BudgetPolicy 默认策略 policy-1 一致；变化即 L0 与预算相关缓存
+# 整体失效，设计稿 §7.2）。规则 id 只增不改不复用（RULEPACK.md 变更纪律）。
+schema_version = "1"
+pack_id = "rip-rules"
+pack_version = "1.0.0"
+policy_version = "policy-1"
+
+[[rules]]
+id = "on-demand-loading"
+title = "按需加载，预算封顶"
+tier = "T0"
+body = "任何一层内容进入上下文前先过预算闸，不把整个知识库或所有工具描述塞入每次上下文（计划:121、:444；设计稿 §2 第 1 条）。"
+
+[[rules]]
+id = "explainable-selection"
+title = "可解释选择"
+tier = "T0"
+body = "每一个被选中的知识、工具、插件都携带 reason 与命中信号，能回答为什么是它（计划:794；设计稿 §2 第 2 条）。"
+
+[[rules]]
+id = "no-host-install"
+title = "不在宿主机安装依赖"
+tier = "T0"
+body = "AI 不允许随意污染宿主机：不在宿主机安装任何依赖或工具，运行面走容器与项目内 vendored 依赖（计划 §18:920）。"
+
+[[rules]]
+id = "no-production-db-write"
+title = "不写生产库"
+tier = "T0"
+body = "migrations/ 下 platform*.db 一律不写，一切库操作走开发库副本与测试内存库（ROADMAP §13 红线）。"
+
+[[rules]]
+id = "rtis-adapter-only"
+title = "RTIS 只读 Adapter 接入"
+tier = "T0"
+body = "RTIS 知识栈只经 rtis_kb.mjs 与 rt.py 只读接入，不修改生产 RTIS 行为，不拷贝 knowledge.db 内容入库（设计稿 §1.2、§12）。"
+
+[[rules]]
+id = "artifact-ref-only"
+title = "工具输出以 Artifact 引用进入上下文"
+tier = "T0"
+body = "Run 产出的正文永不预装，工具输出通过 Artifact 引用进入上下文，原始证据不因压缩或驱逐消失（计划:794、:474）。"
+
+[[rules]]
+id = "t0-read-only-default"
+title = "T0 只读分级默认"
+tier = "T0"
+body = "只读查询类工具标 T0，写入类操作需更高权限分级并显式登记（架构盘点:152 T0 只读分级口径）。"

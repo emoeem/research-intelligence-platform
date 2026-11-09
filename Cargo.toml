@@ -10,6 +10,7 @@ members = [
     "crates/tool-registry",
     "crates/tool-engine",
     "crates/runtime-gateway",
+    "crates/context-broker",
     "tests",
 ]
 
@@ -24,6 +25,7 @@ authors = ["RIP core team"]
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "1.1"
 
 # workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
 domain = { path = "crates/domain" }
@@ -35,6 +37,8 @@ quality-engine = { path = "crates/quality-engine" }
 tool-registry = { path = "crates/tool-registry" }
 tool-engine = { path = "crates/tool-engine" }
 runtime-gateway = { path = "crates/runtime-gateway" }
+context-broker = { path = "crates/context-broker" }
+
 
 [profile.release]
 # 商业化基线：体积与 panic 行为显式声明

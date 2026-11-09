@@ -5,7 +5,7 @@
 | 项       | 值                   |
 | -------- | -------------------- |
 | 状态     | 生效中               |
-| 日期     | 2026-11-09           |
+| 日期     | 2026-11-10           |
 
 ## 日常看
 
@@ -37,3 +37,4 @@
 | Phase 1 | docs/phase1/   | 完成（commit 962cfa9） |
 | Phase 2 | docs/phase2/   | 完成（commit 352b3df，收口批次 P2-8 见 [releases/RELEASE_2026-11-10_PHASE2.md](releases/RELEASE_2026-11-10_PHASE2.md)） |
 | Phase 3 | docs/phase3/   | 完成（批次 P3-0 到 P3-6，收口记录见 [releases/RELEASE_2026-11-10_PHASE3.md](releases/RELEASE_2026-11-10_PHASE3.md) 与 [phase3/PHASE3-ACCEPTANCE.md](phase3/PHASE3-ACCEPTANCE.md)；设计冻结 [phase3/PHASE3-DESIGN.md](phase3/PHASE3-DESIGN.md)） |
+| Phase 4 | docs/phase4/   | 完成（批次 P4-0 到 P4-6，收口记录见 [releases/RELEASE_2026-11-10_PHASE4.md](releases/RELEASE_2026-11-10_PHASE4.md) 与 [phase4/PHASE4-ACCEPTANCE.md](phase4/PHASE4-ACCEPTANCE.md)；设计冻结 [phase4/PHASE4-DESIGN.md](phase4/PHASE4-DESIGN.md)，实施差异 [phase4/PHASE4-IMPLEMENTATION-DIFF.md](phase4/PHASE4-IMPLEMENTATION-DIFF.md)） |

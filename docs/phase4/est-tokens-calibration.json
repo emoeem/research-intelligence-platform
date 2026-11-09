@@ -1,0 +1,71 @@
+{
+ "date": "2026-11-10",
+ "tokenizer": "models/bge-small-zh-v1.5/tokenizer.json",
+ "model_type": "WordPiece",
+ "vocab_size": 21128,
+ "formula": "est = ceil(ascii/4 + cjk*1.0 + other/2)",
+ "tolerance": [
+  0.8,
+  1.25
+ ],
+ "median_est_over_bge": 0.9333,
+ "verdict": "keep",
+ "samples": [
+  {
+   "sample": "rule-body-cjk",
+   "chars": 40,
+   "bge_tokens": 40,
+   "est_tokens": 40,
+   "est_over_bge": 1.0
+  },
+  {
+   "sample": "rule-body-mixed",
+   "chars": 49,
+   "bge_tokens": 41,
+   "est_tokens": 40,
+   "est_over_bge": 0.9756
+  },
+  {
+   "sample": "brief-mixed",
+   "chars": 114,
+   "bge_tokens": 69,
+   "est_tokens": 52,
+   "est_over_bge": 0.7536
+  },
+  {
+   "sample": "query-short",
+   "chars": 15,
+   "bge_tokens": 6,
+   "est_tokens": 6,
+   "est_over_bge": 1.0
+  },
+  {
+   "sample": "query-cjk",
+   "chars": 23,
+   "bge_tokens": 15,
+   "est_tokens": 14,
+   "est_over_bge": 0.9333
+  },
+  {
+   "sample": "ascii-id",
+   "chars": 73,
+   "bge_tokens": 47,
+   "est_tokens": 19,
+   "est_over_bge": 0.4043
+  },
+  {
+   "sample": "ascii-path",
+   "chars": 59,
+   "bge_tokens": 31,
+   "est_tokens": 15,
+   "est_over_bge": 0.4839
+  },
+  {
+   "sample": "doc-title",
+   "chars": 42,
+   "bge_tokens": 25,
+   "est_tokens": 22,
+   "est_over_bge": 0.88
+  }
+ ]
+}

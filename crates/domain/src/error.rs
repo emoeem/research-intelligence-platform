@@ -68,6 +68,15 @@ pub enum DomainError {
         /// 拒绝原因。
         reason: String,
     },
+    /// Context Broker 词表出现未知变体（008 迁移 CHECK 域与 domain::context
+    /// 枚举之外的值；覆盖 layer/kind/included/intent_status/event/target_slot/
+    /// tool_family 七类词表，P4-1 收编）。
+    UnknownContextVariant {
+        /// 词表字段名（layer/kind/included/intent_status/event/target_slot/tool_family）。
+        field: String,
+        /// 被拒绝的原始值。
+        value: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -114,6 +123,9 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidAgentDefinition { field, reason } => {
                 write!(f, "invalid agent definition field {field:?}: {reason}")
+            }
+            DomainError::UnknownContextVariant { field, value } => {
+                write!(f, "unknown context variant in {field:?}: {value:?}")
             }
         }
     }
