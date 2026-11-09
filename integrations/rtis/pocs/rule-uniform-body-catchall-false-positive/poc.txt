@@ -1,0 +1,22 @@
+---
+code: rule-uniform-body-catchall-false-positive
+title: Rule：同体多路径 200 = catch-all 假阳性
+kind: rule
+category: info-leak
+evidence_level: L3（双目标实测）
+verified_on: 2026-10-26
+source: 实战（flux-recon/dirs.txt；ts_unauth.txt）
+tags: [假阳性, SPA, catch-all, 目录扫描]
+---
+
+## 适用信号
+目录扫描输出中：大量 200、且多个**不同**路径的 Content-Length 完全一致。
+
+## 判定动作
+`for p in /backup.zip /config.json /nonexist-$(date +%s); do curl -sk -o /dev/null -w '%{size_download}\n' https://<host>$p; done` —— 含随机不存在路径在内全部同长 ⇒ catch-all；再 `diff <(curl -sk https://<host>/a) <(curl -sk https://<host>/b)` 字节级确认。结论写「catch-all，不可测」，不写「文件存在」。
+
+## 反证条件
+路径间响应体哪怕 1 字节不同（随机 404 兜底除外）⇒ 真实路由差异；状态码 403/404 混杂 ⇒ 非 catch-all。
+
+## 关联
+`vue-cli-webpack-spa-生产-sourcemap-泄露检测与源码还原`（bet-cash）中「SPA fallback 假 200」判别的泛化；对 401/鉴权类的假阳性另见丁香园三条判定规则（robots.txt 条目）。

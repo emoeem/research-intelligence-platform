@@ -1,0 +1,13 @@
+GET /3b2d37b3518f41ce3d98618e2e7cd9f0cfda1452/iframe_v2.html?country=US&origin=https%3A%2F%2Fevil.example HTTP/1.1
+Host: iframes.airbnbpayments.com
+
+HTTP/1.1 200 OK
+Content-Length: 346
+Server: AmazonS3
+（无 X-Frame-Options / CSP / ACAO）
+
+bundle 关键路径：
+- module 726：origin 取自 location.search；校验失败仅 console.warn("Invalid origin")，返回值仍被使用
+- module 303：白名单正则 \airbnb\.com 可被 evilairbnb.com / notairbnb.com 绕过
+- module 302：event.origin === this.origin 入站过滤，postMessage(..., this.origin) 出站
+- 浏览器正例收到 iframeReady/changeHeight；负对照 0 条

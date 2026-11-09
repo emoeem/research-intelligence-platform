@@ -1,0 +1,26 @@
+---
+code: method-static-asset-server-side-injection-forensics
+title: Method：静态资源服务端前插第三方加载器的只读取证
+kind: method
+category: info-leak
+evidence_level: L4（双部署实测）
+verified_on: 2026-11-04
+source: 实战（EVENT-REPORT-103.30.79.18.md；runs/six-admin/4-103.30.79.18/freeze/）
+tags: [供应链, 构建产物投毒, 事件取证, freeze, YARA]
+---
+
+## 适用信号
+页面引用的**本地** JS chunk（构建产物哈希文件名）响应体**开头**多出一段混淆字节：引用第三方域名（如 xss.icu / update.fview.xyz）、`document.write`/动态 `import`、eval 字符串表。区分点：不是引用外部 <script src>，而是本地文件本体被改。
+
+## 判定动作（全程只读）
+1. `curl -sk <chunk_url> -o s1.bin && sleep 3 && curl -sk <chunk_url> -o s2.bin && sha256sum s1.bin s2.bin` —— 多次取样哈希一致 ⇒ 服务端稳定篡改，排除传输损坏；
+2. `-D hdr.txt` 保存原始响应头（Server/ETag/Last-Modified/CSP）；
+3. 剥离前缀得 loader，`node` vm 沙箱解码字符串表 → payload-decoded.js；
+4. 找同系统第二套部署取同一 chunk，`cmp`/`diff` 逐字节对比 ⇒ 同毒证明平台级入侵而非单机；
+5. 产出 YARA 规则（`yara -w ioc.yar s1.bin` 自验命中）供封禁与全网自查。
+
+## 反证条件
+干净出口复取一致 ⇒ 客户端/中间人注入，非服务端；`Cache-Control: no-cache` 重取即恢复 ⇒ 缓存层投毒；chunk 文件名带内容哈希且与构建清单一致 ⇒ 非篡改。
+
+## 关联
+落库同族：`ueditor-*`（同 engagement 六后台）。产出物命名：freeze/<n>.bin + h<n>.hdr + payload-decoded.js + DIFF-REPORT.md + ioc-yara.yar。

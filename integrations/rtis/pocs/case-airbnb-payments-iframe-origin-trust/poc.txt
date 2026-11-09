@@ -1,0 +1,25 @@
+---
+code: case-airbnb-payments-iframe-origin-trust
+title: Case：iframes.airbnbpayments.com 支付卡 iframe postMessage origin 信任边界
+kind: case
+category: auth-bypass
+evidence_level: L4（reproduced + 独立复核）
+verified_on: 2026-11-03
+source: 实战（src-programs/airbnb/reports/iframes.airbnbpayments.com-2026-11-03.md）
+tags: [postMessage, iframe, payment, origin, CWE-346, CWE-940]
+---
+
+## 一句话结论
+`iframe_v2.html?country=US&origin=<attacker-origin>`：把「postMessage 发给谁」和「接受谁的消息」两个信任判断都交给 URL 查询参数 `origin`；页面自带 origin 白名单校验函数，但其返回值被直接丢弃。任意第三方站可嵌入真实卡表单、接收 `iframeReady`/`changeHeight`/`tokenizeResponse`，受害者输入卡号后取得 `bin`/`bin8`/`lastFour`/有效期。
+
+## 适用信号
+支付/敏感 iframe 的 URL 携带 `origin=`/`parent=`/`target=` 类参数；页面 JS 中存在 origin 白名单函数但其返回值未被 if 条件消费。
+
+## 判定动作
+headless Chromium 加载 `iframe_v2.html?origin=https://attacker.example`，宿主页 `window.addEventListener('message', ...)` 记录来自 iframe 的消息体（iframeReady/changeHeight/tokenizeResponse 字段与卡数据字段）；对照源码中白名单函数调用点确认返回值被丢弃。
+
+## 反证条件
+若白名单返回值被用于 postMessage 目标过滤、或 iframe 校验 `window.parent` 与参数一致性，则不成立。
+
+## 关联
+方法论：`method-postmessage-origin-audit`。渠道注意：资产属 HackerOne 全球项目 Higher Impact Scope，**不可投 AirSRC 中国**（范围仅 *.airbnb.cn 等）。

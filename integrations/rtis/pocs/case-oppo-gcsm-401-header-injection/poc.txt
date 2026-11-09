@@ -1,0 +1,25 @@
+---
+code: case-oppo-gcsm-401-header-injection
+title: Case：gcsm.oppoit.com 401 处理器 Host/Referer 拼接 OAuth redirect_uri
+kind: case
+category: other
+evidence_level: L4（reproduced + 独立重放）
+verified_on: 2026-11-03
+source: 实战（src-programs/oppo/reports/gcsm.oppoit.com-2026-11-03.md）
+tags: [OPPO, OSRC, 401, redirect_uri, 响应头注入]
+---
+
+## 一句话结论
+`/portal/api/**` 未认证 401 响应把 `X-Forwarded-Host` / `Referer` 的 host 原样拼进 OAuth2 `redirect_uri` 与 `state`——响应头注入 confirmed（low）；接管/缓存投毒未成立，**不表述为账号接管**。
+
+## 适用信号
+未认证 401/302 处理器构造 OAuth authorize 跳转；`Host`/`Referer`/`X-Forwarded-*` 出现在 `Location` 或响应体 URL 中。
+
+## 判定动作
+`curl -sk -H 'X-Forwarded-Host: attacker.example' https://<host>/portal/api/<x>` → 检查 401 响应中 redirect_uri/state 是否携带 attacker.example；再以 Referer 头对照。
+
+## 反证条件
+401 被浏览器自动跟随、响应被缓存、或目标存在服务端取值校验白名单 ⇒ 危害升级或缺陷不成立。
+
+## 关联
+规则化条目：`rule-401-location-injection-limits`（本 case 是其证据来源与边界记录）。

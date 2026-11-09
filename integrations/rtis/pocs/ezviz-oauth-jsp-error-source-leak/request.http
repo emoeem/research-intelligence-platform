@@ -1,0 +1,10 @@
+GET https://oauth.ezvizlife.com/login.jsp HTTP/1.1
+-> HTTP/2 500
+HTTP Status 500 - An exception occurred processing JSP page /login.jsp at line 25
+22: Cookie[] cookies = request.getCookies();
+
+GET https://oauth.ezvizlife.com/login.jsp?authentication_error=ysrcmark123 HTTP/1.1
+Cookie: JSESSIONID=...
+-> HTTP/2 500
+ELException
+login.jsp at line 112

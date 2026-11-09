@@ -1,0 +1,14 @@
+GET http://oauth.ezvizlife.com/ HTTP/1.1
+-> HTTP/1.1 200 OK, Content-Length: 535
+
+GET http://oauth.ezvizlife.com/login.jsp HTTP/1.1
+Cookie: OAUTHSESSIONID=...
+-> HTTP/1.1 200 OK, Content-Length: 4043
+<form action="/login.do" method="post">
+<input name="username"><input name="password">
+
+POST http://oauth.ezvizlife.com/login.do HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+username=FAKE&password=MD5
+-> HTTP/1.1 302 Found
+Location: https://oauth.ezvizlife.com/login.jsp?authentication_error=1

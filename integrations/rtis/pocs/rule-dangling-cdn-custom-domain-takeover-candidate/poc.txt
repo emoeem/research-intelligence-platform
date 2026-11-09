@@ -1,0 +1,22 @@
+---
+code: rule-dangling-cdn-custom-domain-takeover-candidate
+title: Rule：悬空 CDN 自定义域判定（认领性未实测只记 candidate）
+kind: rule
+category: info-leak
+evidence_level: L3（检测实测，认领性未验证）
+verified_on: 2026-11-02
+source: 实战（apk-dist/REPORT.md §8.4）
+tags: [悬空CNAME, 子域接管, CDN, DNS]
+---
+
+## 适用信号
+资产梳理/证书 SAN 集群中出现：域名解析 CNAME → `<host>.<cdn>.net`，但该域名 A 记录查询 NXDOMAIN。
+
+## 判定动作
+1. `dig <域> CNAME +short` 与 `dig <域> A +short` 对照（CNAME 活 + A NXDOMAIN）；2. `curl -sk -o /dev/null -w '%{http_code}' https://<cdn自定义域>` 看 CDN 侧行为（000 = 无站点）；3. 同批其他域 CNAME 是否一并消失（区分整域弃用 vs 单配置删除）；4. 认领测试：尝试在 CDN 侧以该自定义域重新绑定——**未做此步前一律记 candidate，不计成果**。
+
+## 反证条件
+CNAME 一并消失 ⇒ 非悬空；CDN 侧仍正常回源 ⇒ 配置未删；认领测试失败（绑定校验所有权）⇒ 降级 info。
+
+## 关联
+同族：`oss-桶真名反查-cname-四态错误码判-acl`；nuclei takeover 模板族可作第二意见（其 false  ≠ 不存在，见金蝶反知识）。

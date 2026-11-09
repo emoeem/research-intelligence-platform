@@ -1,0 +1,5 @@
+GET /oauth/authorize?response_type=code&client_id=clientapp&redirect_uri=https://oauth.ezvizlife.com/cb HTTP/1.1
+Host: evil.example
+
+HTTP/2 302
+location: https://evil.example/login.jsp

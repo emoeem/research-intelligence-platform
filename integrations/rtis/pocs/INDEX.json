@@ -1,0 +1,1625 @@
+{
+ "generated_at": "2026-11-01T23:13:15+0800",
+ "root": "/home/emo/.dsh/redteam/pocs",
+ "total": 95,
+ "by_status": {
+  "script_ok": 87,
+  "notes_only": 8
+ },
+ "by_family": {
+  "bypass": 6,
+  "oracle": 36,
+  "crypto": 28,
+  "generic": 15,
+  "recon": 6,
+  "miniapp": 4
+ },
+ "battle_verified_total": 0,
+ "note": "battle_verified 只有在真实目标上跑通并留证才置 1。此处全为 0 是事实，不是占位。",
+ "items": [
+  {
+   "path": "Log4j-JNDI-无害探测-多header注入位-嵌套绕过变体-dnslog占位",
+   "family": "bypass",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "probe.py"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 241,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "SSTI-引擎指纹阶梯探测-七级probe-响应差分-引擎判定表",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "fingerprint.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 219,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "Shiro-rememberMe-key-无害探测-deleteMe消失oracle-常见key表-AES-CBC",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "detect.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 237,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "api-docs-精确路径屏蔽判别法与绕过矩阵-空-body-404-vs-应用-json-404-差分-stricthttpfirewall-收口判定",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 47,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "appid-secret-泄露面静态扫描-wxappid正则-ak-pattern-解包目录与web-bundle",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "scan-appsecret.py",
+    "scan.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 286,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "baowang-userinit-hallid-oracle-换厅枚举",
+   "family": "oracle",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "bbin-系包网-entrance-api-加密通道解密算法-md5-alias-aes-256-ecb-双层-base64",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 89,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "bkapi-加密通道反推-aes-128-ecb-key-隐写解码-25进制-xor118-websdk-设备头要求",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "bkapi_aes_client.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 82,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "ck6u06vu4-包网会员站端点提取-desktop-vite-产物-405-7274b-存在性判据-三元表达式真实路径",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 65,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "com.mltech.sign-签名密钥下发接口未授权利用-自传公钥换回-hmac-key-免签路径清单-rsa-oaep-sha256-aes-256-gcm",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "yidui_signkey.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 90,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "crypto_data-加密网关判定法-公钥是否参与加密-合法容器-vs-随机噪声对照-通道旁路清单",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "crypto-gateway-probe.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 426,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "entrance-api-错误码差分路由枚举器-bbin-系白牌盘口通用打法",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "entrance_route_oracle.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 78,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "eval-packed-aes.js-解包-cryptojs-硬编码密钥解密站点配置-白牌包网-h5",
+   "family": "crypto",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "flutter-apk-密钥-签名-内网地址全自动提取-blutter-自有包字符串池汇总",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "flutter-extract.py",
+    "flutter_apk_secrets.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 365,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "flux-wms-识别与未授权面探测-actuator-saml-文件读取路径-登录裸rsa",
+   "family": "recon",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 130,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "gin-debug-pprof-内网门禁可绕过性快速判定法-xff-oracle-前端严格度",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 116,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "gitlab-匿名面体检器-仓库-public-三通道判定-cve-2021-22175-ci-lint-ssrf-差分判定-防-nuclei-误报",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 127,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "hex2bin-站群落地页-归一化-diff-分离真实参数-js-上下文逃逸判定",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "hex2bin_param_diff.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 97,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "mq-死信-内部重放端点定性法-tp-类-用-handler-签名-v3-api-docs-返回类型判定-查询型-vs-触发-写入型-否证-bola-假说",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "inner_endpoint_triage.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 132,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "n-a-configuration-exposure-spring-cloud-alibaba-actuator-泄露-nacos-凭据-绕过-show-val",
+   "family": "bypass",
+   "status": "script_ok",
+   "scripts": [
+    "poc-actuator.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md"
+   ],
+   "lines": 120,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "oss-桶真名反查-cname-四态错误码判-acl",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 206,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "php-api-控制器-方法三态枚举-oracle-516-517-9-筛匿名接口",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "enum_api_oracle.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 72,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "robots.txt-disallow-前缀-生产域名下非生产环境发现-三条假阳性判定规则-waf-对照-恒定响应-逐字节-diff",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 148,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "safeline-拦截页伪装成频控-签名大小写敏感绕过-thinkphp-__construct-家族通用",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "safeline_case_bypass.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 31,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "safeline-雷池-拦截页伪装成频控-签名大小写敏感绕过-__construct-__construct",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "safeline_case_bypass.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 39,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "spa-接口加密通道反推与-encrypt_query-解密-伪造-aes-128-cbc-未授权下发静态-key-iv",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "encrypt_query_forge.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 79,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "spring-api-authwhitelist-probe",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 120,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "spring-boot-统一响应体三值-oracle-anon-handler-存在性枚举器",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "anon_oracle_enum.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 113,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "spring-cloud-gateway-discovery-locator-路由探测-api-wg-lt-svc-gt-直达后端服务",
+   "family": "recon",
+   "status": "script_ok",
+   "scripts": [
+    "gws-locator-probe.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 41,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "spring-cloud-gateway-springdoc-api-wg-svc-v3-api-docs-零认证拿全量接口契约",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "openapi_docs_harvest.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 50,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "springdoc-v3-api-docs-白名单绕过-零凭据拉取微服务全量-openapi-sa-token-场景",
+   "family": "bypass",
+   "status": "script_ok",
+   "scripts": [
+    "springdoc-whitelist-enum.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 62,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "struts2-框架判别四-oracle-不含-ognl-waf-拦死-payload-后仍可定案-三种常见误报排除",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 120,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "tasgine-service-网关命名空间破解与服务端点未鉴权枚举-code-3-501-500-三分法",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "tasgine_enum.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 90,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "thinkphp-url_route_must-路由存在性-oracle-含-think-multi-app-判别",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "tp_route_oracle.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 34,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "thinkphp-站点三连判定-edgeone-大小写绕过-s-路由覆盖-url_route_must-识别",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "tp-probe.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 187,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "tun-伪-ack-环境下的协议级端口判活-含-nginx-占位端口识别",
+   "family": "recon",
+   "status": "script_ok",
+   "scripts": [
+    "tun-port-probe.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 260,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "vue-cli-webpack-spa-生产-sourcemap-泄露检测与源码还原",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "spa-sourcemap-check.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 215,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "waf-签名阶梯判别法-10-请求定位边缘-waf-拦的是-ognl-分隔符还是关键字-决定该绕什么",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 50,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "webpack-chunk-map-提全量按需-chunk-含-hash-批量抓取",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "chunk-harvest.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 203,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "webpack-spa-前端硬编码-aes-cbc-密钥的定位与复刻-chunk-map-全量下取法",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "aes-hunter.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 477,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "wmpf-小程序-cdp-桥接-frida-注入-运行时路由-流量采集-静态分析盲区的解法",
+   "family": "miniapp",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "上传点-路径可控性-四问判定矩阵-区分-filename-参与-key-扩展名白名单-参数覆盖",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "upload_path_control_matrix.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 213,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "世纪佳缘-花千树-_t-签名离线伪造-cpi.jiayuan.com-fam-未授权访问",
+   "family": "crypto",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "云AK-SK-只读权限枚举模板-aliyun-tccli-Describe-List-白名单动作",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "cloud-ak-enum.py",
+    "enumerate.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 366,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "云存储桶零凭据枚举三段式-cos-appid-变体-oss-region-泄露-dns-cname-反查真实桶名",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "cloud_bucket_enum.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 63,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "从-h5-spa-生产-bundle-明文提取接口字典-网关注册前缀-不经小程序抓包-无-token-未授权批量探测",
+   "family": "miniapp",
+   "status": "script_ok",
+   "scripts": [
+    "h5-api-dict-extract.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 43,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "代理后台-bundle-硬编码-aes-256-gcm-密钥-匿名解密全品牌-ag-hall-远程配置",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "decode_config.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 85,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "写接口参数契约的-抓自己请求再解密-恢复法-图形验证码绑定关系的零延迟-539-540-判定法",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 114,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "列表接口-limit-page-直通探测-判定-服务端未裁剪-前端过滤-型付费墙绕过",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "limit_escalation_probe.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 63,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "判定-加密参数通道是否绕过-waf-的四步对照实验-含密文有效性-oracle-与-waf-有无证伪",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 48,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "前端硬编码密钥型-加密-api-通道-还原-ecb-hex-xign-kc528-182体育-实例",
+   "family": "crypto",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "前置分发器前缀白名单绕过-entrance-..-直连裸源站-cdn-绕过",
+   "family": "bypass",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 28,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "加密信封路由器-entrance-api-四码-oracle-白名单定界-白名单内方法枚举-参数类型层判据-111034714-715-716-717-1110",
+   "family": "crypto",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网-app_config.txt-离线解密-aes-256-cbc-sha256-硬编码常量-iv-全-0",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "appconfig_decrypt.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 125,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网-bbin-系-registeragent-addagent.json-代理在线注册参数契约-account-首字母-长度-规则的两维业务码盲反推法",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "bbin_registeragent_account_rule.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 76,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网-h5-api-签名仅校验非空判定-会话-token-跨路径复用-成对重放",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 34,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网-h5-白牌系-token-派生算法-aes-128-ecb-md5-动态密钥-离线铸造器",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "mint.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 69,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网-miwen-请求签名-secret-派生-js-base64-容错吃掉注入垃圾",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "miwen_secret.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 120,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网会员站-密码找回-pwdforget-前置判定-vite-包逆出真实契约-beforeenter-守卫判模块是否已下线",
+   "family": "oracle",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "包网会员站代理自助注册-addagent.json-参数契约枚举-未鉴权-逐字段业务码-oracle",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "addagent-param-walk.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 31,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "匿名多部分上传点定性探针-合法-非法图片对照-扩展名-mime-单变量矩阵-落地-url-匿名取回",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "upload_matrix_probe.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 65,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "半揭面-脱敏展示-类功能的数据面绕过判定模板-mask-只在前端-blur-头像-字段差集",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 121,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "多-vhost-族应用层可达性收敛器-区分-已下线-ip-白名单-域名停放-cf-522-六类判据",
+   "family": "recon",
+   "status": "script_ok",
+   "scripts": [
+    "poc.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 111,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "多域名复用同一-ip-的-host-路由矩阵测绘-curl-resolve-应用层判据-替代不可信-nmap",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "vhost_routing_matrix.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 196,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "多租户-saas-的-ssrf-白名单字典-schema-存在性-oracle-yz_sys_dict-error-1146-按租户取-token",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 119,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "多租户-saas-鉴权前缀差分法-401-9999-404-三态判读-定位拦截器覆盖缺口",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "saas-prefix-diff.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 37,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "婚介行业目标池发现法-footer-dork-saas-租户子域-bundle-接口字典",
+   "family": "recon",
+   "status": "script_ok",
+   "scripts": [
+    "hunjie-target-pool.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 74,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "容器编排未授权面批量检查-docker-2375-k8s-10250-6443-etcd-2379-registry-5000",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "audit.sh",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 177,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "富勒-flux-wms-expcenter-getexporttemplateservlet-任意文件读取-形参名-dowmloadurl",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "flux_wms_getExportTemplateFileAction.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 33,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "小程序-wxapkg-全自动解包与敏感信息提取流水线-unveilr-主链-纯python-兜底",
+   "family": "miniapp",
+   "status": "script_ok",
+   "scripts": [
+    "extract.py",
+    "wxapkg-unpack.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 434,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "小程序-wxapkg-内-cryptojs-硬编码-aes-密钥定位与字段级-pii-解密-含重加密复现判据",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "wxapkg-aes.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 306,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "小程序-wxencryptversion-响应加密降级绕过-原样重放捕获请求即得明文-json",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 73,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "小程序请求签名链离线复现-sign-base64-hmacsha1-signstr-secret-secret-来自-config-get_sign-的-dat",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 194,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "微信小程序-chat-ws-协议还原-vtclp-二进制帧-首帧-bind-鉴权-sync_history-读消息帧-青藤之恋-wx788f5daad54eb8",
+   "family": "miniapp",
+   "status": "notes_only",
+   "scripts": [],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 0,
+   "syntax_ok": false,
+   "usage_ok": false,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "微信小程序接口面全流程审计流水线-静态全集-四态认证矩阵-全量路由巡",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES-legacy.md",
+    "NOTES.md"
+   ],
+   "lines": 129,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "按-sni-http-host-分流的透明代理绕过-tcp-分段拆解请求头强制按-ip-直连-cdn-源站直连通用手法",
+   "family": "bypass",
+   "status": "script_ok",
+   "scripts": [
+    "frag_probe.py",
+    "sni-split-bypass.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 286,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "授权态写接口归属校验探针-body-uid-vs-token-读回-oracle-双对照",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "ownership_probe.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 322,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "泛微-e-cology-404-534b-错误页二分判定-securityintercept-安全拦截-vs-真-404-附参数级拦截矩阵探针",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "weaver_securityintercept_probe.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 52,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "泛微-e-cology-weaver-封堵名单漏项探测法-三层判据-503-挡外-500-200-进应用-302-noright.jsp-已完成鉴权判定",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 77,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "泛微-e-cology-系统维护中-503-实为-request_uri-路径封堵-识别-绕过与错误页指纹判据-避免把站点-404-误判成-waf",
+   "family": "bypass",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES-bypass.md"
+   ],
+   "lines": 168,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "泛解析域名-vhost-存在性判别器-dns-ct-无判别力时判定子域真伪",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "vhost-discrim.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 51,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "白牌包网-h5-上传接口契约-file-name-枚举-与图片马托管-api-v1-upload-file-api-v1-customer-service-up",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 98,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "白牌包网-lobby-线路配置离线解密-pig4cloud-前端硬编码-aes-密钥-ecb-pkcs7",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "poc.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 59,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "白牌包网-spa-加密入口密钥硬编码-requestdata-可伪造-解密-内部路由分发器识别",
+   "family": "crypto",
+   "status": "script_ok",
+   "scripts": [
+    "lib_ecb_entrance.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 37,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "白牌包网-web-config-.json-静态配置未鉴权枚举",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 27,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "站群-落地页开放重定向专项测试法-h2-陷阱-路径面-78-参数矩阵-hex2bin-解码-浏览器执行验证",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 123,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "站群落地页开放重定向普查方法论-唯一标记法-无点载荷-只认-location-js-数据流",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "openredir_landing_survey.py",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 108,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "站群跳转中枢-前缀-lt-id-gt-lt-code-gt-探测法-id-定-host-code-入落地页-js-串-含开放重定向否证口径",
+   "family": "recon",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 125,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "网易易盾类抽取加固-从明文-string_data-段整包抽符号-root-设备内存分块扫描",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 83,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "聊天-websocket-vtclp-会话读取客户端-bind-首帧鉴权-sync_history-拉明文",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh",
+    "ws_client.py"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 91,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "腾讯云-cos-桶-万能重定向器-判定-匿名写面收敛四探针",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 54,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "腾讯云-cos-桶只读审计与写权限非侵入判定-地域定位-桶级跳转规则识别-子资源配置泄露-delete-鉴权差异",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "cos-readonly-audit.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 57,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "认证后不校验角色-会员-token-访问代理端-api-agent-接口-code-400-业务错-401-鉴权错",
+   "family": "generic",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [
+    "NOTES.md"
+   ],
+   "lines": 139,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": true,
+   "battle_verified": 0
+  },
+  {
+   "path": "鉴权实现四态判定探针-区分-fail-open-存在性校验-值校验-无鉴权",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "auth4state.sh",
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 223,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  },
+  {
+   "path": "鉴权错误响应作-oracle-枚举未授权端点-白名单路由发现",
+   "family": "oracle",
+   "status": "script_ok",
+   "scripts": [
+    "poc.sh"
+   ],
+   "supporting": [],
+   "notes": [],
+   "lines": 49,
+   "syntax_ok": true,
+   "usage_ok": true,
+   "has_notes": false,
+   "battle_verified": 0
+  }
+ ]
+}

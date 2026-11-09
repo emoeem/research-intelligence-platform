@@ -15,3 +15,11 @@ migrations/platform-search.db
 migrations/platform-governance.db
 workers/python/.venv/
 models/
+
+# RTIS kit 运行时产物（knowledge.db 由 bootstrap.sh 从备份或旧 dsh 目录重建，不入库）
+integrations/rtis/knowledge.db*
+integrations/rtis/data/
+integrations/rtis/reports/
+integrations/rtis/engagements/
+integrations/rtis/current
+integrations/rtis/*.log

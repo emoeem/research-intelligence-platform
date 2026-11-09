@@ -1,0 +1,11 @@
+GET /v4/trips HTTP/2
+Host: api.hoteltonight-test.com
+Accept: application/json
+X-App-Device: 11111111-2222-3333-4444-555555555555
+X-App-Platform: Mobile-Web
+X-App-Country: US
+X-App-Version: 2026.11.1
+
+# 响应 200 []
+# 不带头 → 400 {"error":"Trip requests require a device_id","error_class":"ExpectedMobileApiException","code":0}
+# 已登录态追加：Authorization: Basic base64(<_cat 值>)  +  X-App-CXID: <_cxid 值>

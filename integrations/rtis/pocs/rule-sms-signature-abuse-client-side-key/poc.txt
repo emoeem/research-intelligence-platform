@@ -1,0 +1,22 @@
+---
+code: rule-sms-signature-abuse-client-side-key
+title: Rule：客户端可算短信签名 ⇒ 冒用已报备签名
+kind: rule
+category: auth-bypass
+evidence_level: L4（真实送达留证）
+verified_on: 2026-11-04
+source: 实战（REPORT-傲众云-2026-11-04.md §3.2；runs/six-admin/sms-send/）
+tags: [短信, 签名冒用, 客户端密钥]
+---
+
+## 适用信号
+发送接口参数含 `sign`/`signature`/`signName`；对应计算逻辑在前端 JS 或下发密钥可获取；签名通过即按 `signName` 出账。
+
+## 判定动作
+提取签名算法 → 以目标租户已报备签名构造请求 → 向**授权**手机号发送并保存回执与截图（写操作最小化：一条、报备签名、授权号码）。
+
+## 反证条件
+签名密钥服务端托管不下发、签名与会话/模板双向绑定校验、按租户鉴权调用方身份 ⇒ 不可冒用。
+
+## 关联
+写操作纪律：实发短信属写操作，须在报告口径中单列；`runs/six-admin/sms-send/keys*.json`（多租户密钥面）按 600 权限留存。

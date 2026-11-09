@@ -1,0 +1,47 @@
+# FLUX WMS 识别 + 未授权面探测（实测清单）
+
+## 0. 指纹（FOFA / 主动）
+```
+body="/logincenterapp/ValidateImageService" || title="FLUX WMS生产环境" || title="WMS Login Page"
+响应头：v668-h1: V20200829 / v666-headers-num: n5 / server-type1: V6SERVER
+```
+版本：POST /logincenterapp/WmsLoginAction 的响应 JSON 字段 `"verno":"V239(20231208)"`。
+
+## 1. 前端资源（jsgz 其实是 gzip，直连 403，需首包 Cookie + Referer）
+```bash
+curl -sk -c cj.txt https://HOST/
+curl -sk -b cj.txt -e https://HOST/ -o wmslogin001.jsgz \
+  https://HOST/logincenter/wmslogin2016/wmslogin001.jsgz
+gunzip -c wmslogin001.jsgz > wmslogin001.js
+```
+同构建判定：解压后 md5 一致即同一版本（V239 = 7b2b791b915fd4f89ec86bad2de71e79）。
+
+## 2. 上下文与网关行为
+- 已知上下文：`/logincenter`（老页面/ SAML）、`/logincenterapp`（Spring Boot 网关控制器）、`/common01web`、`/expcenter`、`/a00webres`（静态）。
+- 未识别的顶层路径会被网关重写到 `/logincenter/<path>`（用 404 的 path 字段可观察到）。
+- 404 = Spring JSON（`{"status":404,...}`）；403 = Spring Security；500（497B，`etag: "688da6b0-1f1"`，`Faithfully yours, nginx.`）= upstream 5xx 被 nginx error_page 静态页替换，**不可当回显用**。
+
+## 3. 未授权可达（已实测）
+```bash
+curl -sk https://HOST/logincenterapp/actuator        # 200 _links，泄露内部端口 :18080
+curl -sk https://HOST/logincenterapp/actuator/info   # {"git":{"commit":{"id":"c55ebd1","time":"2020-07-08..."},"branch":"v4.4.1"}}
+curl -sk https://HOST/logincenterapp/actuator/health # {"status":"UP"}
+curl -sk https://HOST/logincenterapp/actuator/metrics
+curl -sk -o /dev/null -D - https://HOST/logincenter/saml/dologin.jsp  # 302 → login.microsoftonline.com/<TENANT_ID>/saml2
+```
+`/actuator/env`、`/v2/api-docs`、`/swagger-ui.html` 未开放；`:18080` 外部不可达。
+
+## 4. 已知漏洞路径（公开披露，需按目标确认回显）
+```
+/expcenter/getExportTemplateFileAction     # 未授权任意文件读取（2025-09 披露）
+/logincenterapp/getDownloadFileAction      # 未授权任意文件读取（2026-06 披露）
+```
+映射存在性差分法：随机 action（`/expcenter/zzzrandomAction`）→ 404；本 action → 500/403 ⇒ handler 真实存在。
+实测 3 个已知目标上该 action 均返回 500/403，44 参数名 + `?s=` 覆盖 + `.do/.action` 后缀 + 大小写变体都无差异化回显，**未读到文件**。
+
+## 5. 登录机制（爆破不可行的判据）
+- `POST /logincenterapp/WmsLoginAction`，参数：`opr=8001&id&pd1&pd2&pd3&winmod=m2&s64=Y&oid&admin&checknumtype&checknum&SID001&lang&ver=20160827&cws&mac&browserInfo&timezone&browserTime`
+- `pd3` = 裸 RSA（无填充）密文：模数按会话变化，从登录页内联 `modulus = '<hex>'` 取；128 字节小端分块 `pow(v, 0x10001, n)` 后 hex 拼接；明文是 `encodeURI(encodeURIComponent(password))`。
+- 验证码 `GET /logincenterapp/ValidateImageService`（80x26 JPEG，种 `LC01=vc01-<uuid>`）；**校验前置于口令校验，且失败即作废**（第二次同值返回 `Verify code has expired`）⇒ 一次 OCR 只能换一次口令尝试。
+- `checknumtype` 改 100/600 仍强制验证码；内部免密分支 `opr=8001&FMSYS=Y&loginFsysAppSecretCode=` 仍要求口令，不是认证绕过。
+- 二段选仓 `opr=8002&isLogin=Y&whid&whnm&lang&sysType&ver=20170427`（需先登录）。

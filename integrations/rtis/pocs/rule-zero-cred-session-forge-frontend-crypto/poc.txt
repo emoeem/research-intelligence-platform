@@ -1,0 +1,25 @@
+---
+code: rule-zero-cred-session-forge-frontend-crypto
+title: Rule：前端可复现会话凭据 ⇒ 零口令登录
+kind: rule
+category: auth-bypass
+evidence_level: L4（真实目标超管态实证）
+verified_on: 2026-11-04
+source: 实战（REPORT-傲众云-2026-11-04.md；runs/aozoneyun-admin/）
+tags: [会话伪造, 零口令, 前端加密, 超管]
+---
+
+## 适用信号
+登录接口响应或后续页面 JS 中可见凭据构造逻辑（字段拼接、固定/可推导密钥、Base64/JSON 明文段）；会话 Cookie 可由 `document.cookie`/JS 读写（非 HttpOnly 下发）；管理面板请求仅依赖该自造凭据。
+
+## 判定动作
+1. 从 JS 定位凭据构造函数（参数、密钥、字段顺序、编码层）；
+2. 本地复现构造（node vm 沙箱执行原函数优先于手抄）；
+3. 直带伪造凭据请求管理接口 → 取得管理态数据即成立；
+4. 变体槽位测试（字段顺序/大小写/时间窗）扩展稳定性。
+
+## 反证条件
+服务端校验签发时间戳/nonce 库（重放窗口）、HttpOnly 且构造不可复现、凭据绑定 IP/UA/设备指纹 ⇒ 不成立。
+
+## 关联
+同族：`明文身份 Cookie 伪造 user_id+user_time 无签名`（qhinfo，六后台）；与 `rule-edge-vs-origin` 组合使用：先证测试面为 CDN 可达面，再落本条。

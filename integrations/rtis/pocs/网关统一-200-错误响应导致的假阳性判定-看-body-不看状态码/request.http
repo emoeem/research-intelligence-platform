@@ -1,0 +1,34 @@
+# 反知识：200 不等于"存在"
+
+## 现象
+在 qt0008 的 API 网关上，任意不存在的路径（`/hall/actuator/env`、`/hall/v2/api-docs`、
+`/hall/swagger-ui/index.html`）都返回 **HTTP 200 + application/json**，body 形如：
+
+```json
+{"time":0,"err_code":41000,"version":"","msg":"Failed to obtain server, please try again(error: a083b21c73600aa4)","code":0}
+```
+
+或
+
+```json
+{"version":"","err_code":41000,"msg":"Operaten Failed(error: eefa04c7a13f612b)","time":0,"code":0}
+```
+
+## 误判
+- 用 `curl -o /dev/null -w '%{http_code}'` 批量扫路径 → 全部 200 → 误报 actuator/swagger 暴露
+- 用长度差判断 → 125B 的网关错误体与 99B 的错误体混在正常响应里
+
+## 正确判据
+1. **必须看 body**，不能只看状态码
+2. 该网关的错误体特征：含 `err_code:41000` 且 `msg` 含 `Failed to obtain server` / `Operaten Failed`
+3. 真正的业务成功体含 `"code":1,"msg":"返回成功"` 或直接是业务对象
+4. 业务侧错误为 `{"code":0,"errorCode":41010,"msg":"参数错误"}` —— 说明路由存在但参数不对（这是"路由存在"的正向信号）
+
+## 附带价值
+`error: <16 hex>` 是网关内部错误 ID，可用于向客服/后端定位，但不泄露内部细节。
+`Failed: apioss: upstream business code not success` 这类 msg 才会泄露内部服务名（apioss），
+属于低危信息泄露。
+
+## 通用化
+任何在 SPA/网关前的资产扫描，先发一个**确定不存在的随机路径**建立"错误基线"，
+再拿目标路径与基线比 body 特征。基线不同才值得深看。
