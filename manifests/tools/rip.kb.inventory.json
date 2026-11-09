@@ -1,0 +1,140 @@
+{
+  "schema_version": "1",
+  "id": "rip.kb.inventory",
+  "name": "Resource Inventory",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "data_processing",
+  "description": "资源清单按质量等级/生命周期/信任级统计（只读），可选按质量等级输出明细",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "scripts/rip_inventory.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "grade": {
+        "type": "string",
+        "enum": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "description": "质量等级过滤（脚本内 to_upper 归一）；缺省只出全量统计"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "total",
+      "by_grade",
+      "by_lifecycle",
+      "by_trust"
+    ],
+    "properties": {
+      "total": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "by_grade": {
+        "type": "object",
+        "description": "质量等级计数"
+      },
+      "by_lifecycle": {
+        "type": "object",
+        "description": "生命周期计数"
+      },
+      "by_trust": {
+        "type": "object",
+        "description": "信任级计数"
+      },
+      "grade_filter": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "grade_count": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "grade_entries": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "等级明细（脚本最多展示 40 条）；每条 {raw, resource_id?, name?, lifecycle?, score?}"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "scripts/rip_inventory.py",
+    "license": "repo-internal",
+    "dependencies": [],
+    "known_limits": [
+      "脚本输出为文本行，结构化面由平台侧 Adapter 解析（解析失败 fail-closed）",
+      "等级明细最多展示 40 条，超出部分脚本侧省略",
+      "只读 platform.db（mode=ro）"
+    ],
+    "tested": "TOOL-INVENTORY §2.2 冒烟实跑 + 2026-11-09 本会话实跑（总量 81，A 级 4 条）经薄包装端到端"
+  },
+  "context": {
+    "summary": "资源清单质量/生命周期/信任级统计（只读）",
+    "docs": "scripts/rip_inventory.py 模块头注",
+    "tags": [
+      "inventory",
+      "quality",
+      "readonly"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "grade": "A"
+      },
+      "output_hint": {
+        "total": 81,
+        "grade_filter": "A",
+        "grade_count": 4
+      }
+    }
+  ]
+}

@@ -7,6 +7,8 @@ members = [
     "crates/resource-engine",
     "crates/search-engine",
     "crates/quality-engine",
+    "crates/tool-registry",
+    "crates/tool-engine",
     "tests",
 ]
 
@@ -29,6 +31,8 @@ audit-engine = { path = "crates/audit-engine" }
 resource-engine = { path = "crates/resource-engine" }
 search-engine = { path = "crates/search-engine" }
 quality-engine = { path = "crates/quality-engine" }
+tool-registry = { path = "crates/tool-registry" }
+tool-engine = { path = "crates/tool-engine" }
 
 [profile.release]
 # 商业化基线：体积与 panic 行为显式声明

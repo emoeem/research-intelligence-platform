@@ -1,0 +1,120 @@
+{
+  "schema_version": "1",
+  "id": "rip.kb.eri",
+  "name": "ERI External Resource Review",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "knowledge",
+  "description": "ERI 外部资源复查网关（eri_adapter bridge-gate）：rp-resolve 优先、eri_p2 legacy 回落，输出 external_resource_review 九字段与 adapter 过程元数据",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "--env",
+      "RTIS_ERI_ADAPTER_AUDIT=off",
+      "integrations/rtis/eri_adapter.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "per_run"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "task_json"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "task_json": {
+        "type": "string",
+        "maxLength": 65536,
+        "description": "bridge-gate 任务文件原文 JSON（字段宽松：task_id/objective/keywords/profile/skills/workflows，见 eri_p2.py bridge_gate 读取面）；薄包装写入临时文件后经 --task-file 传入，进程结束即删"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "rp",
+          "legacy"
+        ],
+        "default": "auto",
+        "description": "解析链：auto=rp 优先 legacy 回落；rp/legacy 单选"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string",
+        "description": "bridge-gate JSON 原文：{external_resource_review(9 字段), adapter(resolver_used/attempts)}"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "internal-kit",
+    "source_path": "integrations/rtis/eri_adapter.py",
+    "license": "repo-internal",
+    "dependencies": [
+      "target/debug 或 target/release 的 rp-resolve 二进制（rp 解析链；auto 模式缺失时回落 legacy）",
+      "security-research-upgrade/eri/eri_p2.py（legacy 解析链，工作区根）",
+      "migrations/platform.db（rp-resolve 只读数据源，M8 生产库）"
+    ],
+    "known_limits": [
+      "登记面只读：审计 JSONL 关闭（kit 目录零改动红线）；external_resource_review 的 status 可为 error（契约保证不抛异常）",
+      "task_json 为透传面（薄 Adapter），bridge-gate 任务字段的结构化 schema 属 Phase 4 Context Broker 摄取面"
+    ],
+    "tested": "2026-11-09 本会话实跑：bridge-gate --mode auto 对 probe 任务返回 external_resource_review（resolver_used=rp，elapsed_ms≈3.7）经薄包装端到端（first_batch_b5）"
+  },
+  "context": {
+    "summary": "ERI 外部资源复查网关（eri_adapter bridge-gate，只读）",
+    "docs": "integrations/rtis/eri_adapter.py 模块头注",
+    "tags": [
+      "eri",
+      "resolve",
+      "readonly"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "task_json": "{\"task_id\":\"rip-b5-eri-probe\",\"objective\":\"read path probe\",\"keywords\":[\"nmap\"]}"
+      }
+    }
+  ]
+}

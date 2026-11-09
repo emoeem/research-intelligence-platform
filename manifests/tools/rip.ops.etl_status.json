@@ -1,0 +1,99 @@
+{
+  "schema_version": "1",
+  "id": "rip.ops.etl_status",
+  "name": "ETL Health",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "utility",
+  "description": "RIP 数据管线健康只读报告：三份 ETL last_run 摘要与生产库完整性 quick_check",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "scripts/rip_etl_status.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "platform",
+      "etl_files"
+    ],
+    "properties": {
+      "platform": {
+        "type": "object",
+        "description": "{quick_check, resources, evidence, tasks}（quick_check=ok 为健康）"
+      },
+      "etl_files": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "每份 last_run：{file, status(ok|truncated|missing|error), summary?|summary_raw?|error?}；脚本对摘要做 200 字符截断，截断态以 summary_raw 保留原文"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "scripts/rip_etl_status.py",
+    "license": "repo-internal",
+    "dependencies": [],
+    "known_limits": [
+      "脚本对 last_run 摘要做 200 字符截断，截断行不是合法 JSON，Adapter 以 truncated 态保留原文",
+      "只读访问 platform.db（mode=ro quick_check），不触发任何重新计算（脚本头注原文）"
+    ],
+    "tested": "TOOL-INVENTORY §2.3 冒烟实跑 + 2026-11-09 本会话实跑（quick_check=ok，resources=81 evidence=700 tasks=42）经薄包装端到端"
+  },
+  "context": {
+    "summary": "数据管线健康与生产库完整性（只读）",
+    "docs": "scripts/rip_etl_status.py 模块头注",
+    "tags": [
+      "etl",
+      "health",
+      "readonly"
+    ]
+  },
+  "examples": [
+    {
+      "input": {},
+      "output_hint": {
+        "platform": {
+          "quick_check": "ok"
+        }
+      }
+    }
+  ]
+}

@@ -16,6 +16,9 @@ migrations/platform-governance.db
 workers/python/.venv/
 models/
 
+# Phase 1 临时校验 venv（jsonschema 库级校验用，ROADMAP 2.4 第 1 条，项目目录内非宿主机安装）
+.venv-check/
+
 # RTIS kit 运行时产物（knowledge.db 由 bootstrap.sh 从备份或旧 dsh 目录重建，不入库）
 integrations/rtis/knowledge.db*
 integrations/rtis/data/

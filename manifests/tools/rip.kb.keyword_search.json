@@ -1,0 +1,128 @@
+{
+  "schema_version": "1",
+  "id": "rip.kb.keyword_search",
+  "name": "KB Keyword Search",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "knowledge",
+  "description": "对 platform.db 的工具/技能/资源/知识/研究任务五面做关键词 LIKE 检索（只读），按组返回命中行",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "scripts/rip_kb_search.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "keyword"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "keyword": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "检索关键词（LIKE %kw%）"
+      },
+      "per_group_limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 5,
+        "description": "每组最大条数，缺省 5"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "keyword",
+      "per_group_limit",
+      "total_hits",
+      "groups"
+    ],
+    "properties": {
+      "keyword": {
+        "type": "string"
+      },
+      "per_group_limit": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "total_hits": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "groups": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "每组 {label, hits[], empty}；hits 为脚本原文行"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "scripts/rip_kb_search.py",
+    "license": "repo-internal",
+    "dependencies": [],
+    "known_limits": [
+      "脚本输出为文本行，结构化面由平台侧 Adapter 解析（解析失败 fail-closed）",
+      "只读 platform.db（mode=ro），永不写库（脚本头注原文）"
+    ],
+    "tested": "TOOL-INVENTORY §2.1 冒烟实跑 + 2026-11-09 本会话实跑（nmap 关键词 2 命中）经薄包装端到端"
+  },
+  "context": {
+    "summary": "知识/工具/资源/任务关键词检索（只读）",
+    "docs": "scripts/rip_kb_search.py 模块头注",
+    "tags": [
+      "search",
+      "knowledge",
+      "readonly"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "keyword": "nmap",
+        "per_group_limit": 2
+      },
+      "output_hint": {
+        "keyword": "nmap",
+        "per_group_limit": 2,
+        "total_hits": 2
+      }
+    }
+  ]
+}

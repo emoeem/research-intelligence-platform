@@ -1,0 +1,108 @@
+{
+  "schema_version": "1",
+  "id": "rip.evidence.rtk.auth",
+  "name": "RTK Auth Check",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "evidence",
+  "description": "rtk auth check：engagement 授权记录完整性与 scope 覆盖校验（只读）",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "--module",
+      "rtk",
+      "--pythonpath",
+      "../toolkit/src"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "root": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "engagement 根目录（相对 cwd=平台仓库根解析，缺省 .）"
+      },
+      "today": {
+        "type": "string",
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        "description": "以指定日期校验授权窗口（YYYY-MM-DD）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "internal-kit",
+    "source_path": "../toolkit/src/rtk/auth.py",
+    "license": "MIT",
+    "dependencies": [],
+    "known_limits": [
+      "薄包装原样返回 stdout 文本；平台侧结构化解析属后续增强（Phase 1 不做 auth 文本解析）",
+      "目标目录相对 cwd=平台仓库根解析；工作区外路径属部署期沙箱约束（Phase 2 容器面收敛）"
+    ],
+    "tested": "toolkit pytest 27 passed（V-2 关闭：research-platform/.venv-check 临时 venv，2026-11-09 实跑 exit=0；TOOL-INVENTORY 待验证项 1）"
+  },
+  "context": {
+    "summary": "rtk auth check：授权记录与 scope 校验（只读）",
+    "docs": "toolkit/src/rtk/auth.py 与 toolkit/README.md 命令表",
+    "tags": [
+      "auth",
+      "evidence",
+      "readonly"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "root": "runs/example-engagement"
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[package]
+name = "tool-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 1 工具引擎骨架：ToolCallRequest 受理（D-TC-05 提交校验）、ToolRun 状态机（TOOL-CONTRACT §3.2 十三条跃迁）、ToolRunResult 信封（§5，含 §5.4 截断对齐）与 Mock Runner（可注入四路径 + WAITING_FOR_RUNNER）"
+
+[dependencies]
+database = { workspace = true }
+domain = { workspace = true }
+tool-registry = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/tool-contract/result-v1.json",
+  "title": "RIP ToolRunResult v1",
+  "description": "ToolRunResult 结果信封（v1，2026-11-09 冻结，ROADMAP P1-1）。字段语义规范来源：docs/phase0/TOOL-CONTRACT-DRAFT.md 第 5 章（5.1 信封字段、5.2 Artifact 规范、5.3 标准错误类别）。机器可读 JSON 与人类可读 summary 双轨是计划 4.5 节 229 行的明文要求。条件必填由 status 驱动：SUCCEEDED 时必填 result 与 summary；FAILED 时必填 error 与 summary；TIMED_OUT 与 CANCELLED 时必填 error。result 的内容合法性由目标工具 Manifest 的 output_schema 在入库前校验，本 Schema 只冻结信封结构。",
+  "type": "object",
+  "required": ["protocol_version", "run_id", "tool_id", "tool_version", "status", "usage", "environment", "replay"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "description": "结果信封协议主版本，当前恒为 1。",
+      "type": "string",
+      "const": "1"
+    },
+    "run_id": {
+      "description": "与调用请求一致。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "tool_id": {
+      "description": "与调用请求一致。2026-11-09 P1-7b 修订：段内字符集放宽为 [a-z0-9_-]（对齐 TOOL-CONTRACT 10.2 节 B2/B5 工具名），与 tool-manifest/v1.json id 同步。",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 128
+    },
+    "tool_version": {
+      "description": "实际执行版本（重放依据），可与请求的 tool_version 不同（请求缺省时由 Registry 补 current）。",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "status": {
+      "description": "终态，与 TOOL-CONTRACT 第 3 章状态机终态同名。",
+      "type": "string",
+      "enum": ["SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED"]
+    },
+    "result": {
+      "description": "工具结构化输出，Registry 按 Manifest output_schema 校验后入库（仅 SUCCEEDED 时必填）。",
+      "type": "object"
+    },
+    "summary": {
+      "description": "人类可读一段话摘要，SUCCEEDED/FAILED 时必填（Tool Center 结果预览用，计划 4.6 节 245 行）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "artifacts": {
+      "description": "本次运行产出的 Artifact 列表（TOOL-CONTRACT 5.2）。结构化协议行以外的 stdout/stderr 一律存为 role=stdout/stderr 的 Artifact，不进入 result。",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "evidence_refs": {
+      "description": "证据记录引用（计划 4.5 节 234 行）。",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "usage": {
+      "description": "执行用量；elapsed_ms/output_bytes/truncated 与 Worker Protocol usage 语义一致（schemas/worker-protocol/v1.json）；cpu_ms 与 max_rss_bytes 在 podman/worker 可得则填，否则 null。",
+      "type": "object",
+      "required": ["elapsed_ms", "output_bytes", "truncated"],
+      "additionalProperties": false,
+      "properties": {
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "output_bytes": { "type": "integer", "minimum": 0 },
+        "truncated": {
+          "description": "结构化结果超过 max_output_bytes 时为 true，result 降级为截断说明并附原始字节 Artifact 引用（TOOL-CONTRACT 5.4）。",
+          "type": "boolean"
+        },
+        "cpu_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "max_rss_bytes": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "environment": {
+      "description": "版本与环境指纹（计划 4.5 节 232 行），按 runtime 类型取用，取不到的字段填 null。",
+      "type": "object",
+      "required": ["runtime_type"],
+      "additionalProperties": false,
+      "properties": {
+        "runtime_type": {
+          "description": "remote_runner 在 Phase 1 不开放，故不在词表内。",
+          "type": "string",
+          "enum": ["podman_vm", "python_worker", "native_rust", "mcp_client", "http_api", "cli_adapter"]
+        },
+        "runtime_node_id": { "type": ["string", "null"] },
+        "image_digest": { "type": ["string", "null"] },
+        "worker_protocol_version": { "type": ["string", "null"] },
+        "host_fingerprint_hash": { "type": ["string", "null"] }
+      }
+    },
+    "replay": {
+      "description": "脱敏后输入与幂等键，可重放（计划 4.5 节 235 行）；python_worker 幂等命中时 cached=true 透传进本对象的 cached 字段并照常入库。",
+      "type": "object",
+      "required": ["input_sanitized", "submit_key"],
+      "additionalProperties": false,
+      "properties": {
+        "input_sanitized": {
+          "description": "对敏感值脱敏后的 input 副本（D-TC-06）。",
+          "type": "object"
+        },
+        "submit_key": { "type": ["string", "null"] },
+        "cached": { "description": "python_worker runtime 幂等命中时为 true（TOOL-CONTRACT 5.1 信封生成规则）。", "type": "boolean" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "SUCCEEDED" } } },
+      "then": { "required": ["result", "summary"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "FAILED" } } },
+      "then": { "required": ["error", "summary"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "TIMED_OUT" } } },
+      "then": { "required": ["error"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "CANCELLED" } } },
+      "then": { "required": ["error"] }
+    }
+  ],
+  "$defs": {
+    "error": {
+      "description": "标准错误对象（TOOL-CONTRACT 5.3）。category 与 Worker Protocol 错误码一一对应，映射原则见 5.3 节。",
+      "type": "object",
+      "required": ["category", "code", "message", "retryable"],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "description": "VALIDATION：参数/预算/提交校验失败；INPUT：输入不可读/超大/格式不支持；TIMEOUT：预算超时；CANCELLED：被取消；EXECUTION：工具内部执行失败；POLICY_DENIED：授权缺失/网络策略拒绝（平台侧）；DEPENDENCY：外部依赖不可达；INFRA：平台/协议层错误；RUNNER_UNAVAILABLE：runner 失联（仅 PREPARING/WAITING 期失败时使用）。",
+          "type": "string",
+          "enum": [
+            "VALIDATION", "INPUT", "TIMEOUT", "CANCELLED", "EXECUTION",
+            "POLICY_DENIED", "DEPENDENCY", "INFRA", "RUNNER_UNAVAILABLE"
+          ]
+        },
+        "code": {
+          "description": "Worker Protocol 错误码（整数，见 schemas/worker-protocol/v1.json 码表）或平台侧错误码字符串（POLICY_DENIED、DEPENDENCY、RUNNER_UNAVAILABLE 无对应协议码）。",
+          "type": ["integer", "string"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": {
+          "description": "可重试性；默认值按 5.3 节：VALIDATION/INPUT/CANCELLED/POLICY_DENIED 为 false，DEPENDENCY/INFRA/RUNNER_UNAVAILABLE 为 true，TIMEOUT/EXECUTION 视工具。",
+          "type": "boolean"
+        },
+        "detail_ref": { "description": "详细诊断信息的 Artifact 引用（可选）。", "type": "string" }
+      }
+    },
+    "artifact": {
+      "description": "Artifact 登记条目（计划 12 节 698 行：artifact_id、run_id、uri、hash、mime、size、provenance；TOOL-CONTRACT 5.2）。",
+      "type": "object",
+      "required": ["artifact_id", "role", "uri", "sha256", "size_bytes", "mime_type", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": { "description": "全局唯一，服务端登记时生成。", "type": "string", "minLength": 1 },
+        "role": {
+          "description": "primary：主输出文件；attachment：附件；stdout/stderr：协议行以外的输出；log：日志。",
+          "type": "string",
+          "enum": ["primary", "attachment", "stdout", "stderr", "log"]
+        },
+        "uri": { "description": "Artifact Manager 存储地址（任务结束后由暂存区归档）。", "type": "string", "minLength": 1 },
+        "sha256": { "description": "收集时计算登记。", "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "mime_type": { "type": "string", "minLength": 1 },
+        "provenance": { "description": "生成方式描述（工具输出 / 平台采集）。", "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

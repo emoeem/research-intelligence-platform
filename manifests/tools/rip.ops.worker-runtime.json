@@ -1,0 +1,82 @@
+{
+  "schema_version": "1",
+  "id": "rip.ops.worker-runtime",
+  "name": "Worker Runtime (protocol base)",
+  "version": "0.0.0",
+  "kind": "tool",
+  "family": "utility",
+  "description": "Worker Protocol v1 运行时基类（协议底座元数据条目）：initialize/get_capabilities/execute/cancel/ping 五方法与幂等缓存、协作式取消、budget 硬上限的承载者",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "abstract-worker",
+    "command": [
+      "python3",
+      "-I",
+      "workers/python/runtime/worker_runtime.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "128Mi",
+    "timeout_seconds": 30
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "workers/python/runtime/worker_runtime.py",
+    "license": "repo-internal",
+    "dependencies": [],
+    "known_limits": [
+      "元数据条目：登记即置 DISABLED，不派发不探活（probe=none）；协议能力由具体 worker（parsing/embedding/evaluation/rip-cli）承载",
+      "budget 默认与硬上限（timeout_ms [1, 600000]，max_output_bytes [256, 67108864]）见 worker_runtime.py:34-36"
+    ],
+    "tested": "协议底座经 P1-6 端到端派发链实测（workers/python/tests 125 项 + tool-engine python_worker_e2e 8 项全绿）+ worker_runtime.py:148-152 常量实读（2026-11-09）"
+  },
+  "context": {
+    "summary": "Worker Protocol v1 基类（runtime 资产条目，不可调用）",
+    "docs": "workers/python/runtime/worker_runtime.py 模块头注与 schemas/worker-protocol/README.md",
+    "tags": [
+      "runtime",
+      "protocol",
+      "metadata"
+    ]
+  }
+}

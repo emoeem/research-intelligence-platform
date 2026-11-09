@@ -1,0 +1,156 @@
+{
+  "schema_version": "1",
+  "id": "rip.doc.parse",
+  "name": "Document Parser",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "解析 md/txt/html 文本为章节结构、标题树与词元统计，包装现有 Worker Protocol v1 worker",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "parsing-worker",
+    "command": [
+      "python3",
+      "-I",
+      "workers/python/parsing_worker.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "oneOf": [
+      {
+        "required": [
+          "text"
+        ]
+      },
+      {
+        "required": [
+          "path"
+        ]
+      }
+    ],
+    "properties": {
+      "text": {
+        "type": "string",
+        "maxLength": 10485760,
+        "description": "内联文本，UTF-8 字节上限 10 MiB，与 path 二选一"
+      },
+      "path": {
+        "type": "string",
+        "description": "输入文件，Artifact 暂存到任务目录后的相对路径，与 text 二选一"
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "md",
+          "txt",
+          "html"
+        ],
+        "description": "缺省时 text 按 txt，path 按扩展名推断"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "format",
+      "source",
+      "sections",
+      "heading_tree",
+      "stats"
+    ],
+    "properties": {
+      "format": {
+        "type": "string",
+        "enum": [
+          "md",
+          "txt",
+          "html"
+        ]
+      },
+      "source": {
+        "type": "object",
+        "description": "输入来源：kind(inline|file)、path、bytes、sha256"
+      },
+      "sections": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "章节列表，md 带行号区间，html 行号为 null"
+      },
+      "heading_tree": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "标题嵌套树"
+      },
+      "stats": {
+        "type": "object",
+        "description": "chars/lines/words/unique_words/cjk_chars/ascii_words/tokens_est/sections/headings"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "workers/python/parsing_worker.py",
+    "license": "repo-internal",
+    "dependencies": [],
+    "known_limits": [
+      "输入硬上限 10 MiB",
+      "html 行号不可用（剥标签后无行映射）"
+    ],
+    "tested": "workers/python/tests 125 项全绿（TOOL-INVENTORY §1.5，2026-11-09 实跑）"
+  },
+  "context": {
+    "summary": "文档解析：md/txt/html 转章节结构与统计",
+    "docs": "workers/python/parsing_worker.py 模块头注",
+    "tags": [
+      "parse",
+      "document",
+      "markdown",
+      "html"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "text": "# 标题\n\n正文一段。",
+        "format": "md"
+      },
+      "output_hint": {
+        "format": "md",
+        "stats": {
+          "sections": 1
+        }
+      }
+    }
+  ]
+}

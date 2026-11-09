@@ -20,6 +20,42 @@ pub enum DomainError {
     UnknownQualityGrade(String),
     /// 审计事件缺必填字段（actor / action）。
     InvalidAuditEvent(String),
+    /// ToolRun 状态出现未知变体（TOOL-CONTRACT §3.1 八态之外的值）。
+    UnknownToolRunStatus(String),
+    /// RunId 非法（TOOL-CONTRACT §4.1：非空且不超过 128 字符）。
+    InvalidRunId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// ArtifactId 非法（TOOL-CONTRACT §5.2：非空）。
+    InvalidArtifactId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// AgentId 非法（P7-1：非空且不超过 128 字符）。
+    InvalidAgentId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// capability_refs 绑定指向不存在的工具（ROADMAP §8.3 P7-1：指向不存在
+    /// 工具即拒绝；谓词由调用方注入，domain 保持零依赖）。
+    UnknownCapabilityTarget {
+        /// 绑定引用的工具 id。
+        tool_id: String,
+    },
+    /// AgentDefinition 字段非法（版本/上下文策略等）。
+    InvalidAgentDefinition {
+        /// 被拒绝的字段名。
+        field: String,
+        /// 拒绝原因。
+        reason: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -39,6 +75,24 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidAuditEvent(reason) => {
                 write!(f, "invalid audit event: {reason}")
+            }
+            DomainError::UnknownToolRunStatus(v) => {
+                write!(f, "unknown tool run status: {v:?}")
+            }
+            DomainError::InvalidRunId { value, reason } => {
+                write!(f, "invalid run id {value:?}: {reason}")
+            }
+            DomainError::InvalidArtifactId { value, reason } => {
+                write!(f, "invalid artifact id {value:?}: {reason}")
+            }
+            DomainError::InvalidAgentId { value, reason } => {
+                write!(f, "invalid agent id {value:?}: {reason}")
+            }
+            DomainError::UnknownCapabilityTarget { tool_id } => {
+                write!(f, "capability ref targets unknown tool {tool_id:?}")
+            }
+            DomainError::InvalidAgentDefinition { field, reason } => {
+                write!(f, "invalid agent definition field {field:?}: {reason}")
             }
         }
     }

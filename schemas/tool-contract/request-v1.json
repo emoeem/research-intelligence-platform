@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/tool-contract/request-v1.json",
+  "title": "RIP ToolCallRequest v1",
+  "description": "统一调用协议对象（v1，2026-11-09 冻结，ROADMAP P1-1）。字段语义规范来源：docs/phase0/TOOL-CONTRACT-DRAFT.md 4.1 节。调用对象中没有 secrets 字段（D-TC-06），没有宿主机路径字段（文件一律经 input_refs 引用，计划 5.5 节 331 行）；input 的内容合法性由目标工具 Manifest 的 input_schema 在派发前校验，本 Schema 只冻结信封结构。authorization_ref 的 T2 必填规则依赖目标工具的 permission_level，属跨文档条件，由 Tool Policy Resolver 在派发时强制（对应 D-TC-05 的 POLICY_DENIED），不在本 Schema 内表达。",
+  "type": "object",
+  "required": ["protocol_version", "tool_id", "run_id", "input", "workspace_id"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "description": "调用协议主版本，当前恒为 1（TOOL-CONTRACT 4.1）。",
+      "type": "string",
+      "const": "1"
+    },
+    "tool_id": {
+      "description": "目标工具 Manifest id。2026-11-09 P1-7b 修订：段内字符集放宽为 [a-z0-9_-]（对齐 TOOL-CONTRACT 10.2 节 B2/B5 工具名），与 tool-manifest/v1.json id 同步。",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 128
+    },
+    "tool_version": {
+      "description": "缺省用 Registry current 版本；重放或固定版本场景必填。",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "run_id": {
+      "description": "服务端生成，全局唯一，审计链 correlation_id；不进 python_worker 的 task 参数，由宿主派发器记录（TOOL-CONTRACT 4.2）。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "submit_key": {
+      "description": "调用方幂等提交键（计划 5.6 节 337 行）；python_worker runtime 直通 idempotency_key，长度域 1..512（schemas/worker-protocol/v1.json）。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "input": {
+      "description": "已通过 Manifest input_schema 校验的参数；文件内容用 input_refs 引用，不内联大对象。",
+      "type": "object"
+    },
+    "input_refs": {
+      "description": "Artifact 引用，由 Artifact Manager 暂存到任务目录（计划 5.5 节 324 到 329 行的受控文件交换路径）。",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["artifact_id", "mount_as"],
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": { "type": "string", "minLength": 1 },
+          "mount_as": { "description": "任务目录内的相对路径。", "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "workspace_id": {
+      "description": "工作区隔离边界。",
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "description": "关联研究任务（审计链用）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "context_refs": {
+      "description": "本次调用使用的知识与证据引用（计划 4.5 节 219 行）。",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "budget": {
+      "description": "缺省取 Manifest resources；显式值不得超过 Manifest 上限，超出按 VALIDATION 拒绝（TOOL-CONTRACT 4.1）。域与 Worker Protocol budget 对齐。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 600 },
+        "max_output_bytes": { "type": "integer", "minimum": 256, "maximum": 67108864 }
+      }
+    },
+    "execution_profile": {
+      "description": "命名执行配置（network/资源覆盖由 Tool Policy Resolver 裁定，计划 6 节 356 行），Phase 1 仅保留字段。",
+      "type": "string",
+      "minLength": 1
+    },
+    "result_schema_version": {
+      "description": "期望的结果信封版本，默认 1（计划 4.5 节 221 行）。",
+      "type": "string",
+      "const": "1"
+    },
+    "authorization_ref": {
+      "description": "授权记录引用；目标工具 permission_level=T2 时必填，Tool Policy Resolver 校验（TOOL-CONTRACT 2.4 与 4.1）。",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

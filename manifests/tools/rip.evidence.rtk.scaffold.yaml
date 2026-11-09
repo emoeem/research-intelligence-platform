@@ -1,0 +1,102 @@
+# B4 批次登记文件 5/5：rip.evidence.rtk.scaffold（T08，ROADMAP P1-7c）。
+# 形态与授权见 rip.evidence.rtk.auth.yaml 头注。scaffold 在 cwd（平台仓库根）
+# 相对路径创建 engagement 骨架文件，按 TOOL-CONTRACT §2.4 登记 T1。
+schema_version: "1"
+id: "rip.evidence.rtk.scaffold"
+name: "RTK Engagement Scaffold"
+version: "0.1.0"
+kind: "tool"
+family: "utility"
+description: "rtk scaffold：创建 engagement 目录骨架（授权字段齐全的engagement.yaml 与目录结构）"
+runtime:
+  type: "python_worker"
+  protocol_version: "1"
+  worker_name: "rip-cli-worker"
+  command: ["python3", "-I", "scripts/rip_cli_worker.py", "--module", "rtk", "--pythonpath", "../toolkit/src"]
+  working_dir: "repo://research-platform"
+  restart: "pooled"
+input_schema:
+  type: "object"
+  required: ["dir", "engagement", "client", "auth_ref", "window", "granted_by"]
+  additionalProperties: false
+  properties:
+    dir:
+      type: "string"
+      maxLength: 200
+      description: "目标目录（相对 cwd=平台仓库根解析）"
+    engagement:
+      type: "string"
+      maxLength: 100
+      description: "项目名称"
+    client:
+      type: "string"
+      maxLength: 100
+      description: "委托方"
+    auth_ref:
+      type: "string"
+      maxLength: 100
+      description: "授权书 / 合同编号"
+    window:
+      type: "string"
+      maxLength: 30
+      description: "授权窗口 YYYY-MM-DD~YYYY-MM-DD"
+    granted_by:
+      type: "string"
+      maxLength: 100
+      description: "授权人"
+    report_to:
+      type: "string"
+      maxLength: 100
+      description: "报告接收方（可选）"
+    force:
+      type: "boolean"
+      default: false
+      description: "覆盖已有文件（--force）"
+output_schema:
+  type: "object"
+  required: ["exit_code", "stdout", "stderr_tail"]
+  properties:
+    exit_code:
+      type: "integer"
+    stdout:
+      type: "string"
+    stderr_tail:
+      type: "string"
+resources:
+  cpu: "1"
+  memory: "256Mi"
+  timeout_seconds: 30
+network:
+  mode: "none"
+secrets: []
+permission_level: "T1"
+idempotent: false
+health:
+  probe:
+    type: "worker_ping"
+    timeout_ms: 2000
+    interval_seconds: 300
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "internal-kit"
+  source_path: "../toolkit/src/rtk/scaffold.py"
+  license: "MIT"
+  dependencies: []
+  known_limits:
+    - "写工作区文件（骨架目录与 engagement.yaml）故登记 T1；dir 建议相对路径，绝对路径指向工作区外属部署期沙箱约束（Phase 2 容器面收敛）"
+    - "薄包装原样返回 stdout；结构化解析属后续增强"
+  tested: "toolkit pytest 27 passed（V-2 关闭：research-platform/.venv-check 临时 venv，2026-11-09 实跑 exit=0）"
+context:
+  summary: "rtk scaffold：engagement 骨架创建（写工作区文件）"
+  docs: "toolkit/src/rtk/scaffold.py 与 toolkit/README.md 命令表"
+  tags: ["scaffold", "engagement", "workspace-write"]
+examples:
+  - input:
+      dir: "runs/example-engagement"
+      engagement: "example-engagement"
+      client: "example-client"
+      auth_ref: "AUTH-EXAMPLE-001"
+      window: "2026-01-01~2026-03-01"
+      granted_by: "example-grantor"

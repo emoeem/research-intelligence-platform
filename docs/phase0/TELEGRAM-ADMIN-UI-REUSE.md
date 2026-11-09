@@ -248,3 +248,15 @@
 - `grep`：表格分布（10 处 `.tbl`）、useDialogs 消费面（33 文件）、index.css 类锚点、Toast 位置。
 - `git -C telegram-bot log -3`：最近提交 2026-11-08。
 - 未执行：`pnpm test:visual:gate` 与 `tsc --noEmit`（本任务为只读盘点，且红线禁止在宿主机装依赖；两仓库 node_modules 是否完整未验证，测试可运行性待验证）。
+
+## 附：复用前必读（2026-11-09 补充，用户要求）
+
+实际动手复用（Phase 5 Web Workbench 或 Web 壳层并行车道）之前，必须先查阅 telegram-bot 项目自带的更新文档，以文档为准修正本矩阵中可能过时的结论：
+
+- `admin/README.md`：admin 前端唯一开发入口，技术栈以 package.json 实测为准（react ^19.2.8、react-router ^8.3.0、vite ^8.2.2 Rolldown、tailwind ^4.3.3、daisyui ^5.7.20、echarts ^6.1.0）。
+- `admin/DEPENDENCIES.md`：逐包依赖与许可审计（2026-08-22 基线，复用前重核）。
+- `docs/HANDOVER.md`：交接文档（最新 2026-11-08：第三批 AI 研发已合入 main，含举报/拉黑/投稿墙上线与遗留风险清单，1808 例单测基线）。
+- `docs/UPGRADE_ROADMAP_2026-10-28.md`：升级路线图（编辑器 P2 三栏外壳 S0-S3、游戏插件协议、视觉基线纪律与门禁约定）。
+- `docs/FEATURE-OVERVIEW.md`、`docs/DOC-STANDARD.md`、根目录 `AGENTS.md`、根目录 `OPEN_SOURCE_REUSE_REPORT.md`（该项目自己的开源复用研究，含 shadcn/ui 推荐结论，可参考其评估口径）。
+
+注意事项：HANDOVER 与 UPGRADE_ROADMAP 反映的状态比本矩阵审计时点更新，编辑器外壳（editor/）相关结论以 HANDOVER 为准；复用前逐份核对，差异记回本矩阵。

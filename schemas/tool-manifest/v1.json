@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/tool-manifest/v1.json",
+  "title": "RIP Tool Manifest v1",
+  "description": "工具登记 Manifest 的结构契约（v1，2026-11-09 冻结，ROADMAP P1-1）。字段语义规范来源：docs/phase0/TOOL-CONTRACT-DRAFT.md 第 2 章（附录 A 为结构起点）。结构合法不等于可登记：落库校验九条（TOOL-CONTRACT 2.5 节，含拒绝 remote_runner、拒绝 tag 引用与占位 digest、license=unknown 拒绝）由 crates/tool-registry 在落库前执行，不属于本 Schema 的职责。",
+  "type": "object",
+  "required": [
+    "schema_version", "id", "name", "version", "kind", "family",
+    "description", "runtime", "input_schema", "output_schema",
+    "resources", "network", "secrets", "permission_level",
+    "idempotent", "health", "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Manifest 格式主版本，当前恒为 1（TOOL-CONTRACT 2.1 与 6.1）。",
+      "type": "string",
+      "const": "1"
+    },
+    "id": {
+      "description": "全局唯一工具标识，形如 rip.doc.parse（D-TC-02）。2026-11-09 P1-7b 修订：段内字符集放宽为 [a-z0-9_-]，修正 D-TC-02 原正则与本契约 10.2 节 B2/B5 行点名工具名（rip.kb.keyword_search、rip.ops.etl_status）的内部矛盾；不升主版本（修正过窄字符集，未改字段语义）。",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 128
+    },
+    "name": {
+      "description": "人类可读名。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "version": {
+      "description": "工具自身语义化版本 X.Y.Z（TOOL-CONTRACT 6.2）。",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "kind": {
+      "description": "恒为 tool；插件等其他 kind 属 Plugin Contract 范围。",
+      "type": "string",
+      "const": "tool"
+    },
+    "family": {
+      "description": "十三工具族之一（计划 4.2 节）。",
+      "type": "string",
+      "enum": [
+        "web_http", "dns_domain", "network", "web_analysis", "source_code",
+        "mobile_apk", "binary_reverse", "document", "data_processing",
+        "knowledge", "evidence", "utility", "browser_automation"
+      ]
+    },
+    "description": {
+      "description": "一句话能力描述。",
+      "type": "string",
+      "minLength": 1
+    },
+    "runtime": {
+      "description": "执行后端声明，按 type 分支必填（TOOL-CONTRACT 2.2）。remote_runner 在 Phase 1 不开放登记，Registry 校验器直接拒绝。",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "podman_vm", "python_worker", "native_rust",
+            "mcp_client", "http_api", "cli_adapter", "remote_runner"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "podman_vm" } } },
+          "then": {
+            "required": ["image", "entrypoint"],
+            "properties": {
+              "image": {
+                "description": "镜像引用，必须 digest 固定。sha256:<digest> 为占位形态，仅用于示例与契约演练（TOOL-CONTRACT 9.2 与 11.1），Registry 落库校验（2.5 第 4 条）拒绝占位与 tag 引用。",
+                "type": "string",
+                "pattern": "@sha256:([0-9a-f]{64}|<digest>)$"
+              },
+              "entrypoint": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "user": { "description": "默认非 root（计划 5.4 节）。", "type": "string" },
+              "readonly_rootfs": { "type": "boolean", "default": true },
+              "mounts": {
+                "description": "只挂任务目录（role 为 input/output），不挂宿主机目录与容器 Socket（计划 5.4 节）。",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["role", "path", "mode"],
+                  "properties": {
+                    "role": { "type": "string", "enum": ["input", "output"] },
+                    "path": { "type": "string" },
+                    "mode": { "type": "string", "enum": ["ro", "rw"] }
+                  }
+                }
+              },
+              "env": {
+                "description": "值支持 {{run_id}}、{{task_dir}} 等模板变量，PREPARING 阶段渲染（TOOL-CONTRACT 4.3）。",
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "python_worker" } } },
+          "then": {
+            "required": ["protocol_version", "worker_name", "command"],
+            "properties": {
+              "protocol_version": { "type": "string", "const": "1" },
+              "worker_name": {
+                "description": "须与 initialize 响应一致（worker_runtime.py:154）。",
+                "type": "string",
+                "minLength": 1
+              },
+              "command": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "working_dir": { "description": "repo:// 或 artifact:// 前缀。", "type": "string" },
+              "restart": { "type": "string", "enum": ["pooled", "per_run"], "default": "pooled" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "native_rust" } } },
+          "then": {
+            "required": ["binary", "subcommand"],
+            "properties": {
+              "binary": { "description": "Registry 已知二进制名（rp-resolve、rp-search-index、rp-review 等），禁止宿主机任意 shell（计划 6 节 370 行）。", "type": "string" },
+              "subcommand": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "mcp_client" } } },
+          "then": {
+            "required": ["endpoint", "tool_name"],
+            "properties": {
+              "endpoint": { "description": "stdio 命令或 URL。", "type": "string" },
+              "tool_name": { "description": "远端工具名。", "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "http_api" } } },
+          "then": {
+            "required": ["base_url", "method", "auth"],
+            "properties": {
+              "base_url": { "type": "string", "format": "uri" },
+              "method": { "type": "string" },
+              "auth": { "type": "string", "enum": ["none", "bearer_secret", "header_secret"] },
+              "request_template": { "type": "string" },
+              "response_mapping": { "type": "object" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "cli_adapter" } } },
+          "then": {
+            "required": ["image", "argv_template"],
+            "properties": {
+              "image": {
+                "description": "该 CLI 所在 Tool Pack 镜像，digest 固定；占位形态同 podman_vm.image。",
+                "type": "string",
+                "pattern": "@sha256:([0-9a-f]{64}|<digest>)$"
+              },
+              "argv_template": { "description": "参数占位从 input_schema 映射。", "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "remote_runner" } } },
+          "then": { "description": "P2 runtime（计划 6 节 368 行）：本 Schema 不做结构约束，Registry 校验器直接拒绝该类型（TOOL-CONTRACT 2.2 与 2.5 第 4 条）。" }
+        }
+      ]
+    },
+    "input_schema": {
+      "description": "JSON Schema draft 2020-12 文档，校验 ToolCallRequest.input。",
+      "type": "object"
+    },
+    "output_schema": {
+      "description": "JSON Schema draft 2020-12 文档，校验 ToolRunResult.result（仅 SUCCEEDED 时）。",
+      "type": "object"
+    },
+    "resources": {
+      "description": "资源上限（计划 4.4 与 5.4 节：CPU、内存、PID、磁盘和执行时间上限）。",
+      "type": "object",
+      "required": ["cpu", "memory", "timeout_seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "description": "Kubernetes 数量格式，如 1、500m。", "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(m)?$" },
+        "memory": { "description": "字节量格式，如 512Mi。", "type": "string", "pattern": "^[0-9]+(Mi|Gi|Ki)$" },
+        "timeout_seconds": {
+          "description": "执行硬上限 [1, 600]，超出转 TIMED_OUT；python_worker 须换算进 budget.timeout_ms 的 [1, 600000] ms 域。",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "max_output_bytes": {
+          "description": "结构化结果行字节上限，默认 1048576，域对齐 Worker Protocol budget.max_output_bytes。",
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 67108864
+        },
+        "pid_limit": { "description": "容器 PID 上限（podman_vm / cli_adapter）。", "type": "integer", "minimum": 1 },
+        "disk_mb": { "description": "任务目录磁盘配额（podman_vm / cli_adapter）。", "type": "integer", "minimum": 1 }
+      }
+    },
+    "network": {
+      "description": "网络访问由执行配置决定，工具不能任意改变 VM 网络规则（计划 5.4 节）。",
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "none：无网络（默认建议）；egress_allowlist：白名单出网；vm_local：仅 VM 内部互通。",
+          "type": "string",
+          "enum": ["none", "egress_allowlist", "vm_local"]
+        },
+        "egress": {
+          "type": "object",
+          "properties": {
+            "ports": { "description": "mode=egress_allowlist 时必填。", "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+            "domains": { "description": "静态域名白名单；动态目标由 Tool Policy Resolver 派发时生成临时条目，运行结束失效。", "type": "array", "items": { "type": "string" } },
+            "cidrs": { "type": "array", "items": { "type": "string" } },
+            "note": { "type": "string" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "egress_allowlist" } } },
+          "then": { "required": ["egress"], "properties": { "egress": { "required": ["ports"] } } }
+        }
+      ]
+    },
+    "secrets": {
+      "description": "允许空数组；条目只含键名不含值（D-TC-06）。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "inject_as", "required"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "description": "平台 secrets 存储中的键名，Manifest 中绝不出现值。", "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+          "inject_as": { "description": "env：环境变量；file：挂载文件（权限 600）。", "type": "string", "enum": ["env", "file"] },
+          "required": { "description": "false 表示可选缺失时跳过注入。", "type": "boolean" }
+        }
+      }
+    },
+    "permission_level": {
+      "description": "T0：无外部副作用；T1：对外只读交互或平台内部读写无外部目标副作用；T2：有外部写副作用，派发必须携带授权引用（TOOL-CONTRACT 2.4；T1/T2 分界线为草案提议，Phase 1 定稿前标注待验证）。",
+      "type": "string",
+      "enum": ["T0", "T1", "T2"]
+    },
+    "idempotent": {
+      "description": "true 表示同输入重复执行产出相同结果，Registry 可安全重放；python_worker 用 idempotency_key 支撑。",
+      "type": "boolean"
+    },
+    "health": {
+      "description": "健康探针声明（TOOL-CONTRACT 第 7 章）。",
+      "type": "object",
+      "required": ["probe"],
+      "properties": {
+        "probe": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "description": "worker_ping：worker initialize/ping；exec：容器内自检命令；http_get：HTTP 探针；none：不探活。", "type": "string", "enum": ["worker_ping", "exec", "http_get", "none"] },
+            "command": { "type": "array", "items": { "type": "string" } },
+            "endpoint": { "type": "string" },
+            "timeout_ms": { "type": "integer", "minimum": 100, "default": 5000 },
+            "interval_seconds": { "type": "integer", "minimum": 30, "default": 600 },
+            "degraded_after": { "type": "integer", "minimum": 1, "default": 1 },
+            "broken_after": { "type": "integer", "minimum": 1, "default": 3 }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "type": { "const": "exec" } } },
+              "then": { "required": ["command"] }
+            },
+            {
+              "if": { "properties": { "type": { "const": "http_get" } } },
+              "then": { "required": ["endpoint"] }
+            }
+          ]
+        },
+        "on_run_recover": { "type": "boolean", "default": true }
+      }
+    },
+    "provenance": {
+      "description": "来源与许可（计划 4.3 节接入记录清单）。已知扩展键（如 rip-native 的 source_path、source_repo）允许存在，Registry 落库时原样存入 provenance_json。",
+      "type": "object",
+      "required": ["origin", "license", "dependencies", "tested"],
+      "properties": {
+        "origin": { "description": "rip-native：自研；opensource：第三方；internal-kit：内部 kit。", "type": "string", "enum": ["rip-native", "opensource", "internal-kit"] },
+        "source_url": { "description": "origin=opensource 时必填（Registry 层校验）。", "type": "string" },
+        "source_commit": { "description": "origin=opensource 时必填（Registry 层校验）。", "type": "string" },
+        "license": { "description": "SPDX 标识或 repo-internal；未知必须写 unknown，此时 Registry 拒绝登记。", "type": "string", "minLength": 1 },
+        "dependencies": { "description": "运行依赖清单，可为空数组；python_worker 依赖须注明位于仓库内 .venv。", "type": "array", "items": { "type": "string" } },
+        "image_digest": {
+          "description": "runtime.type=podman_vm 时必填且与 runtime.image 内 digest 一致（Registry 层校验一致性）；sha256:<digest> 为占位形态，见 runtime.image 说明。",
+          "type": "string",
+          "pattern": "^sha256:([0-9a-f]{64}|<digest>)$"
+        },
+        "known_limits": { "type": "array", "items": { "type": "string" } },
+        "tested": { "description": "最近一次验证的方式与结果摘要；未验证写明待验证及原因。", "type": "string", "minLength": 1 }
+      }
+    },
+    "context": {
+      "description": "给 Agent 的一句话上下文与文档路径（计划 4.4 节 205 到 207 行）。",
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "docs": { "type": "string" }
+      }
+    },
+    "tags": {
+      "description": "字符串数组，供 Tool Center 检索（计划 4.6 节 243 行）。",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "examples": {
+      "description": "输入/输出样例对，供 Mock Runner 契约测试与升级兼容检查（TOOL-CONTRACT 6.3 与 2.5 第 8 条）；Registry 层校验 input 合 input_schema、output_hint 合 output_schema。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["input"],
+        "properties": {
+          "input": { "type": "object" },
+          "output_hint": { "type": "object" }
+        }
+      }
+    }
+  }
+}

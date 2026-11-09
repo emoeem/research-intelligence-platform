@@ -1,0 +1,131 @@
+{
+  "schema_version": "1",
+  "id": "rip.kb.evaluate",
+  "name": "Knowledge Evaluator",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "knowledge",
+  "description": "按外置规则集对知识条目做信号抽取与规则评估，输出 candidate/reject/review 建议（只建议不改写知识状态）",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "evaluation-worker",
+    "command": [
+      "python3",
+      "-I",
+      "workers/python/evaluation_worker.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "entries"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "type": "array",
+        "maxItems": 500,
+        "items": {
+          "type": "object"
+        },
+        "description": "知识条目（宽松形状：id/title/content/source/sources/evidence_refs/evidence_ref_count），上限 500 条"
+      },
+      "rules": {
+        "type": "object",
+        "description": "内联规则集（reject_if/candidate_if/score_weights/score_thresholds）；缺省用仓库内 workers/python/rules/default_ruleset.json。Phase 1 登记面不开放 rules_path（宿主机路径不进调用协议），外置规则集经 input_refs 暂存后以内联对象传入"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "ruleset_version",
+      "results",
+      "summary"
+    ],
+    "properties": {
+      "ruleset_version": {
+        "type": "string"
+      },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "每条 {index, entry_id, suggestion, score, signals, matched_rules, reasons}"
+      },
+      "summary": {
+        "type": "object",
+        "description": "{candidate, reject, review} 计数"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 4194304
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "workers/python/evaluation_worker.py",
+    "license": "repo-internal",
+    "dependencies": [],
+    "known_limits": [
+      "条目上限 500（MAX_ENTRIES=500）",
+      "输出仅为建议（M3 约束：AI 输出默认是 Candidate/Suggestion），不直接改写知识状态",
+      "Phase 1 登记面只开内联 rules；rules_path 宿主机路径形态不进调用协议"
+    ],
+    "tested": "workers/python/tests 125 项全绿（2026-11-09 本会话重跑 SUMMARY ok=True exit=0）"
+  },
+  "context": {
+    "summary": "知识条目规则评估：candidate/reject/review 建议",
+    "docs": "workers/python/evaluation_worker.py 模块头注",
+    "tags": [
+      "knowledge",
+      "evaluation",
+      "rules"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "entries": [
+          {
+            "id": "kb-001",
+            "title": "示例条目",
+            "content": "正文内容若干。",
+            "evidence_ref_count": 2
+          }
+        ]
+      },
+      "output_hint": {
+        "ruleset_version": "default-ruleset-v1",
+        "summary": {
+          "candidate": 0,
+          "reject": 0,
+          "review": 1
+        }
+      }
+    }
+  ]
+}

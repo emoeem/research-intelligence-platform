@@ -1,0 +1,114 @@
+{
+  "schema_version": "1",
+  "id": "rip.evidence.rtk.ledger",
+  "name": "RTK Ledger Sync",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "evidence",
+  "description": "rtk ledger sync：汇总报告目录生成 ledger.json 并更新 README 状态表（默认写盘；check_mode 只校验不写）",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "--module",
+      "rtk",
+      "--pythonpath",
+      "../toolkit/src"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "root": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "engagement 根目录（相对 cwd=平台仓库根解析，缺省 .）"
+      },
+      "check_mode": {
+        "type": "boolean",
+        "default": false,
+        "description": "true 时只校验是否同步，不写盘（--check）"
+      },
+      "skip_auth": {
+        "type": "boolean",
+        "default": false,
+        "description": "跳过授权校验（不推荐，rtk 原生旗标）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T1",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "internal-kit",
+    "source_path": "../toolkit/src/rtk/ledger.py",
+    "license": "MIT",
+    "dependencies": [],
+    "known_limits": [
+      "默认写工作区文件（ledger.json/README 状态表）故登记 T1；check_mode=true 为只读面",
+      "薄包装原样返回 stdout 文本；结构化解析属后续增强"
+    ],
+    "tested": "toolkit pytest 27 passed（V-2 关闭：research-platform/.venv-check 临时 venv，2026-11-09 实跑 exit=0）"
+  },
+  "context": {
+    "summary": "rtk ledger sync：报告台账汇总与状态表更新",
+    "docs": "toolkit/src/rtk/ledger.py 与 toolkit/README.md 命令表",
+    "tags": [
+      "ledger",
+      "evidence",
+      "workspace-write"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "root": "runs/example-engagement",
+        "check_mode": true
+      }
+    }
+  ]
+}

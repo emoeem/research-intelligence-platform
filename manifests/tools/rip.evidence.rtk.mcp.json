@@ -1,0 +1,131 @@
+{
+  "schema_version": "1",
+  "id": "rip.evidence.rtk.mcp",
+  "name": "RTK MCP Client",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "utility",
+  "description": "rtk mcp：最小 MCP stdio 客户端（list 列出 server 工具 / call 调用工具）；call 的外部副作用取决于远端 server",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "--module",
+      "rtk",
+      "--pythonpath",
+      "../toolkit/src"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "op"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "op": {
+        "type": "string",
+        "enum": [
+          "list",
+          "call"
+        ]
+      },
+      "name": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "op=call 时必填（薄包装侧校验）：远端工具名"
+      },
+      "args_json": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "op=call 可选：JSON 对象参数原文"
+      },
+      "server": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "server 启动命令（rtk 原生形态，如 'python3 server.py'；rtk 侧拆分 exec，不经 shell）"
+      },
+      "timeout_seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 55,
+        "default": 30,
+        "description": "MCP 往返超时（--timeout，秒）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60
+  },
+  "network": {
+    "mode": "vm_local"
+  },
+  "secrets": [],
+  "permission_level": "T2",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "internal-kit",
+    "source_path": "../toolkit/src/rtk/mcp.py",
+    "license": "MIT",
+    "dependencies": [],
+    "known_limits": [
+      "T2 从严登记：call 的外部副作用由远端 server 决定；派发须携带 authorization_ref，缺失按 POLICY_DENIED 拒绝（D-TC-05）",
+      "薄包装原样返回 stdout；server 须本仓可启动（network=vm_local），端到端调用需外部 MCP server 在线（同 T11 待验证口径，本批未实跑 call）"
+    ],
+    "tested": "toolkit pytest 27 passed（V-2 关闭：research-platform/.venv-check 临时 venv，2026-11-09 实跑 exit=0，含 test_mcp.py 用例）"
+  },
+  "context": {
+    "summary": "rtk mcp：MCP stdio 客户端（list/call，T2 需授权引用）",
+    "docs": "toolkit/src/rtk/mcp.py 与 toolkit/README.md 命令表",
+    "tags": [
+      "mcp",
+      "client",
+      "external"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "op": "list",
+        "server": "python3 tools/dump_server.py"
+      }
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+schema_version: "1"
+id: "rip.http.inspect"
+name: "HTTP Inspector"
+version: "1.0.0"
+kind: "tool"
+family: "web_http"
+description: "在工具 VM 容器内发起 HTTP 请求并提取结构化响应信息"
+runtime:
+  type: "podman_vm"
+  image: "registry.local/rip/http-inspector@sha256:<digest>"
+  entrypoint: ["/opt/rip/bin/http-inspector"]
+  user: "1000:1000"
+  readonly_rootfs: true
+  mounts:
+    - { role: "input", path: "/task/in", mode: "ro" }
+    - { role: "output", path: "/task/out", mode: "rw" }
+  env:
+    RIP_RUN_ID: "{{run_id}}"
+    RIP_TASK_DIR: "{{task_dir}}"
+input_schema:
+  type: "object"
+  required: ["url"]
+  additionalProperties: false
+  properties:
+    url:
+      type: "string"
+      format: "uri"
+    method:
+      type: "string"
+      enum: ["GET", "HEAD", "POST"]
+      default: "GET"
+    headers:
+      type: "object"
+      additionalProperties:
+        type: "string"
+      description: "附加请求头，Authorization 类头部必须走 secrets，禁止明文传入"
+    timeout_seconds:
+      type: "integer"
+      minimum: 1
+      maximum: 60
+      default: 15
+    save_body:
+      type: "boolean"
+      default: true
+      description: "响应体超过 1 MiB 时落为 Artifact，result 内只留 body_artifact_id"
+output_schema:
+  type: "object"
+  required: ["status_code", "final_url"]
+  properties:
+    status_code:
+      type: "integer"
+    final_url:
+      type: "string"
+    headers:
+      type: "object"
+    body_bytes:
+      type: "integer"
+    body_artifact_id:
+      type: "string"
+      description: "响应体 Artifact 引用（role=primary）"
+resources:
+  cpu: "1"
+  memory: "512Mi"
+  pid_limit: 64
+  disk_mb: 256
+  timeout_seconds: 90
+  max_output_bytes: 1048576
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80, 443]
+    domains: []
+    note: "目标 URL host 由 Tool Policy Resolver 在派发时加入临时 allowlist，运行结束失效"
+secrets: []
+permission_level: "T1"
+idempotent: false
+health:
+  probe:
+    type: "exec"
+    command: ["/opt/rip/bin/http-inspector", "--selfcheck"]
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "rip-native"
+  source_repo: "rip tool pack: web-research（Phase 3 交付物）"
+  license: "repo-internal"
+  dependencies: []
+  image_digest: "sha256:<digest>"
+  known_limits:
+    - "仅 80/443 出站；非 HTTP(S) 目标不适用"
+  tested: "待验证（镜像与工具本体属 Phase 2/3 交付，本文档仅示范契约形状）"
+context:
+  summary: "HTTP 请求与响应检查工具"
+  docs: "docs/usage.md"
+  tags: ["http", "web", "recon"]
+examples:
+  - input:
+      url: "https://example.com/"
+      method: "GET"
+    output_hint:
+      status_code: 200
+      final_url: "https://example.com/"

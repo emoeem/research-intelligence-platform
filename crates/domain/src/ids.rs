@@ -69,6 +69,130 @@ impl TryFrom<&str> for ResourceId {
     }
 }
 
+/// ToolRun 运行 ID（服务端生成，全局唯一，审计链 correlation_id）。
+///
+/// 口径（TOOL-CONTRACT §4.1；本仓冻结契约 schemas/tool-contract/request-v1.json
+/// run_id：minLength 1，maxLength 128）：非空且不超过 128 字符，不做格式强约束，
+/// 生成策略（如 `rn-` 前缀 ULID）属服务端派发器实现细节。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RunId(String);
+
+impl RunId {
+    /// 长度上限（与 request-v1.json run_id maxLength 一致）。
+    pub const MAX_LEN: usize = 128;
+
+    /// 校验并构造：非空且不超过 [`RunId::MAX_LEN`] 字符。
+    pub fn try_new(value: impl Into<String>) -> Result<Self, DomainError> {
+        let value = value.into();
+        let reason = if value.is_empty() {
+            "empty run id".to_string()
+        } else if value.chars().count() > Self::MAX_LEN {
+            format!("run id exceeds {} chars", Self::MAX_LEN)
+        } else {
+            return Ok(Self(value));
+        };
+        Err(DomainError::InvalidRunId { value, reason })
+    }
+
+    /// 内部值视图。
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// 消费自身，返回内部 String。
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl fmt::Display for RunId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for RunId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for RunId {
+    type Error = DomainError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        RunId::try_new(value)
+    }
+}
+
+impl TryFrom<&str> for RunId {
+    type Error = DomainError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        RunId::try_new(value.to_string())
+    }
+}
+
+/// Artifact 全局唯一 ID（服务端登记时生成，TOOL-CONTRACT §5.2）。
+///
+/// 口径（本仓冻结契约 schemas/tool-contract/result-v1.json $defs.artifact
+/// artifact_id：minLength 1）：非空即可，生成与解析格式属 Artifact Manager
+/// 实现细节，域层不做强约束。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ArtifactId(String);
+
+impl ArtifactId {
+    /// 校验并构造：非空。
+    pub fn try_new(value: impl Into<String>) -> Result<Self, DomainError> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(DomainError::InvalidArtifactId {
+                value,
+                reason: "empty artifact id".to_string(),
+            });
+        }
+        Ok(Self(value))
+    }
+
+    /// 内部值视图。
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// 消费自身，返回内部 String。
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl fmt::Display for ArtifactId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for ArtifactId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for ArtifactId {
+    type Error = DomainError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        ArtifactId::try_new(value)
+    }
+}
+
+impl TryFrom<&str> for ArtifactId {
+    type Error = DomainError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        ArtifactId::try_new(value.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

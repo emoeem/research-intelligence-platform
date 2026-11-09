@@ -1,0 +1,139 @@
+{
+  "schema_version": "1",
+  "id": "rip.evidence.rtk.lint",
+  "name": "RTK Report Lint",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "utility",
+  "description": "rtk report lint：报告结构完整性 + 域名/IP/密钥/个人信息残留检查（只读）",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "--module",
+      "rtk",
+      "--pythonpath",
+      "../toolkit/src"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "paths"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "paths": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "description": "报告文件路径列表（相对 cwd=平台仓库根解析）"
+      },
+      "allow": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "正则白名单（--allow，命中整行则跳过）"
+      },
+      "require": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "必备章节名（--require）"
+      },
+      "any_of": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "结论章节候选（--any-of）"
+      },
+      "no_structure": {
+        "type": "boolean",
+        "default": false,
+        "description": "只做泄漏扫描（--no-structure）"
+      },
+      "json_output": {
+        "type": "boolean",
+        "default": false,
+        "description": "输出 JSON（--json；stdout 内为 lint 的 JSON 结果）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 30
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "internal-kit",
+    "source_path": "../toolkit/src/rtk/lint.py",
+    "license": "MIT",
+    "dependencies": [],
+    "known_limits": [
+      "薄包装原样返回 stdout（json_output=true 时 stdout 内含 lint JSON）；深度结构化解析属后续增强",
+      "paths 上限 4 个（薄包装 args 上限 32，为旗标组合留量）"
+    ],
+    "tested": "toolkit pytest 27 passed（V-2 关闭：research-platform/.venv-check 临时 venv，2026-11-09 实跑 exit=0）"
+  },
+  "context": {
+    "summary": "rtk report lint：报告结构与泄漏残留检查（只读）",
+    "docs": "toolkit/src/rtk/lint.py 与 toolkit/README.md 命令表",
+    "tags": [
+      "lint",
+      "report",
+      "readonly"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "paths": [
+          "reports/dsh-plugin-shortlist-2026-11-09.md"
+        ],
+        "no_structure": true
+      }
+    }
+  ]
+}

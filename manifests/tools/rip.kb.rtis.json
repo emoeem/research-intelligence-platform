@@ -1,0 +1,128 @@
+{
+  "schema_version": "1",
+  "id": "rip.kb.rtis",
+  "name": "RTIS KB Search",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "knowledge",
+  "description": "RTIS 红队知识库只读检索（双入口）：rt.py FTS5 CLI 面与 rtis_kb.mjs 引擎面（中文 2-gram 分词 + 组覆盖率门禁 + K0-K4 证据等级排序）",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rtis-kb-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rtis_kb_worker.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "surface",
+      "q"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "surface": {
+        "type": "string",
+        "enum": [
+          "cli",
+          "engine"
+        ],
+        "description": "cli：rt.py poc search；engine：rtis_kb.mjs search（stdin JSON）。字段名取 surface（op 键保留给 worker runtime 调试面）"
+      },
+      "q": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "检索关键词（中文多词按 2-gram 分词）"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 5,
+        "description": "返回条数上限"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr_tail"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer"
+      },
+      "stdout": {
+        "type": "string",
+        "description": "cli：rt.py 文本表格；engine：rtis_kb.mjs JSON（ok/items/score/rtis 元数据）原文"
+      },
+      "stderr_tail": {
+        "type": "string"
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "timeout_seconds": 30,
+    "max_output_bytes": 4194304
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "internal-kit",
+    "source_path": "integrations/rtis/rt.py + integrations/rtis/rtis_kb.mjs",
+    "license": "repo-internal",
+    "dependencies": [
+      "integrations/rtis/knowledge.db（kit 运行时数据，gitignore，bootstrap.sh 重建）",
+      "node 22+（rtis_kb.mjs 的 node:sqlite 标准模块依赖；宿主实测 v24.22.2）"
+    ],
+    "known_limits": [
+      "登记面只读：op 仅暴露 search（rt.py 检索路径 mode=ro）；poc add/use/update 写子命令与 rtis.py 编排层不登记（V-3 裁决）",
+      "输出为入口原文（cli 文本表格 / engine JSON），KB 结构化解析属 Phase 4 Context Broker 摄取面",
+      "engine 面依赖 knowledge.db 就绪（bootstrap.sh 重建），缺失时报错不静默"
+    ],
+    "tested": "2026-11-09 本会话实跑：rt.py poc search --q kingdee --limit 2 返回 2 条（id 900008/15630，与 TOOL-INVENTORY §5 冒烟一致）；node rtis_kb.mjs 返回 ok=true items 2 条；两者经薄包装端到端（first_batch_b5）"
+  },
+  "context": {
+    "summary": "RTIS 知识库只读检索（rt.py CLI 面与 rtis_kb.mjs 引擎面）",
+    "docs": "integrations/rtis/README.md 与 rtis-bridge.js 头注",
+    "tags": [
+      "knowledge",
+      "rtis",
+      "readonly",
+      "search"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "surface": "engine",
+        "q": "kingdee",
+        "limit": 2
+      }
+    }
+  ]
+}
