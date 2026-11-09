@@ -23,3 +23,8 @@ integrations/rtis/reports/
 integrations/rtis/engagements/
 integrations/rtis/current
 integrations/rtis/*.log
+
+# 全局数据库文件不入库（gitignore 只拦未跟踪文件，已跟踪的历史 db 不受影响）
+*.db
+*.db-shm
+*.db-wal
