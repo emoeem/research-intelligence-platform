@@ -1,4 +1,4 @@
-import { Suspense, lazy, type ReactNode } from "react";
+import { Suspense, lazy, useState, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
@@ -36,9 +36,28 @@ function lazyElement(node: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
 }
 
-const queryClient = new QueryClient();
+/**
+ * QueryClient 默认值对齐原手写 useApi 行为（lib/hooks.ts 旧版语义）：
+ * 无自动重试（原实现只有手动 retry）、窗口聚焦/网络恢复不重取、
+ * staleTime 0（挂载即重取）。lib/hooks.ts 是唯一消费面（P5 复用纪律整改）。
+ */
+function createQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        staleTime: 0,
+      },
+    },
+  });
+}
 
 export function App() {
+  // client 随 App 挂载创建（useState 惰性初始化，重渲染不重建）：生产单次
+  // 挂载与模块级单例等价；测试反复挂载 App 时各自独立缓存，互不串扰。
+  const [queryClient] = useState(createQueryClient);
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

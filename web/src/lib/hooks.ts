@@ -1,12 +1,22 @@
-/** 数据获取 hook：SWR（旧数据留屏）+ abort 竞态取消 + retry + 身份变更事件重载。
- *  模式沿自参照实现 admin/src/hooks.ts（UI 复用盘点 §3.5 解耦切点）：
- *  fetcher 改为参数注入（默认走 lib/api 的 apiGet），身份事件按 RIP 会话模型
- *  重定义（rip:identity，由令牌刷新/登录面在 P5-4 后派发）。 */
+/** 数据获取 hook：@tanstack/react-query useQuery 封装（P5 复用纪律整改：
+ *  QueryClientProvider 此前空转，本 hook 是 src 内唯一的 react-query 消费面）。
+ *  对外形状与原手写 useApi 完全一致：{ data, error, loading, retry }，页面
+ *  三态消费方式不变；手写 fetch/abort/reloadKey 机制已由 react-query 取代。
+ *
+ *  行为对齐原实现（hooks.ts 旧版语义，页面行为保持一致）：
+ *  - 查询键 = 端点+参数（path 字符串本身就是原取数键）；
+ *  - staleTime = 0：每次挂载都重取（原实现组件本地态无跨挂载缓存）；
+ *  - retry = false：无自动重试（原实现只有手动 retry 回调）；
+ *  - 窗口聚焦/网络恢复不触发重取（原实现无此监听）；
+ *  - 路径切换时旧数据留屏（keepPreviousData，原 SWR「旧数据留屏」语义）；
+ *  - 身份变更事件（rip:identity）令全部在屏查询失效重取（原 reloadKey 语义）；
+ *  - 非 ApiError 的抛出统一包成 ApiError(0, ...)（原 catch 分支同口径）。 */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, ApiError } from "./api";
 
-/** 身份变更事件：令牌刷新或重新登录后派发，所有在屏 useApi 重取。 */
+/** 身份变更事件：令牌刷新或重新登录后派发，所有在屏查询重取。 */
 export const IDENTITY_EVENT = "rip:identity";
 
 export function notifyIdentityChanged(): void {
@@ -19,57 +29,56 @@ export type Fetcher<T> = (path: string, signal: AbortSignal) => Promise<T>;
 const defaultFetcher: Fetcher<unknown> = (path, signal) => apiGet(path, { signal });
 
 export interface UseApiOptions<T> {
-  /** 注入的取数器；不传则用默认 apiGet。传内联函数不会触发重取（ref 保稳）。 */
+  /** 注入的取数器；不传则用默认 apiGet。传内联函数不会触发重取（重取只看
+   *  queryKey，fetcher 不进依赖）。 */
   fetcher?: Fetcher<T>;
 }
 
 export function useApi<T>(path: string | null, options: UseApiOptions<T> = {}) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
+  const fetcher = options.fetcher ?? (defaultFetcher as Fetcher<T>);
+  const queryClient = useQueryClient();
 
-  // fetcher 存 ref：调用方每渲染传新函数时不能把请求打挂（effect 依赖只看 path/reloadKey）。
-  const fetcherRef = useRef<Fetcher<T> | null>(options.fetcher ?? null);
-  fetcherRef.current = options.fetcher ?? null;
-
+  // 身份变更 → 全部在屏查询失效重取；react-query 对同一 key 的并发失效自动
+  // 去重（原实现每个挂载点各起一次请求，行为收敛为每 key 一次）。
   useEffect(() => {
-    if (!path) return undefined;
-    const controller = new AbortController();
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    // Stale-while-revalidate：上一个载荷留在屏上。清空它（旧行为）会在每次
-    // 防抖按键、翻页与筛选时把整个列表换回骨架屏，既闪又跳滚动位置。
-    // abort 竞态：卸载/换路径时直接取消在途请求，配合 cancelled 双保险。
-    const fetcher = fetcherRef.current ?? (defaultFetcher as Fetcher<T>);
-    fetcher(path, controller.signal)
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((requestError: unknown) => {
-        // 取消导致的失败不算错误：组件已经不在乎这次响应了。
-        if (cancelled || controller.signal.aborted) return;
-        setError(
-          requestError instanceof ApiError ? requestError : new ApiError(0, String(requestError)),
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
+    const onIdentity = () => {
+      void queryClient.invalidateQueries();
     };
-  }, [path, reloadKey]);
-
-  useEffect(() => {
-    const onIdentity = () => setReloadKey((key) => key + 1);
     window.addEventListener(IDENTITY_EVENT, onIdentity);
     return () => window.removeEventListener(IDENTITY_EVENT, onIdentity);
-  }, []);
+  }, [queryClient]);
 
-  const retry = useCallback(() => setReloadKey((key) => key + 1), []);
+  const query = useQuery<T, ApiError>({
+    queryKey: ["api", path],
+    enabled: path !== null,
+    // path 为 null 时 queryFn 不会执行，?? "" 仅为类型收窄。
+    queryFn: async ({ signal }) => {
+      try {
+        return await fetcher(path ?? "", signal);
+      } catch (requestError) {
+        // 取消导致的失败由 react-query 自行丢弃（in-flight 换 key/卸载），
+        // 这里只负责把非 ApiError 统一成带构造的 ApiError。
+        throw requestError instanceof ApiError
+          ? requestError
+          : new ApiError(0, String(requestError));
+      }
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
-  return { data, error, loading, retry };
+  return {
+    /** 上一次成功载荷；路径切换期由 keepPreviousData 留屏。 */
+    data: query.data ?? null,
+    error: query.error ?? null,
+    /** 有在途请求即 loading：首取、换路径、retry、失效重取全部覆盖（原
+     *  实现 loading 的四个来源一致）。 */
+    loading: query.isFetching,
+    retry: () => {
+      void query.refetch();
+    },
+  };
 }

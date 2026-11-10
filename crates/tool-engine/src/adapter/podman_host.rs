@@ -35,7 +35,9 @@ use domain::ToolRunStatus;
 use serde_json::{json, Value};
 use tool_registry::hash::sha256_hex;
 
-use crate::adapter::egress_proxy::{host_from_url, EgressAllowlist, EgressProxy, NetworkPlan};
+use crate::adapter::egress_proxy::{
+    host_from_url, wait_port_ready, EgressAllowlist, EgressProxy, NetworkPlan,
+};
 use crate::adapter::{AdapterFailure, AdapterOutcome};
 use crate::envelope;
 use crate::envelope::{EnvelopeArtifact, EnvelopeError};
@@ -801,6 +803,25 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
         }
     };
     let egress_port = egress_proxy.as_ref().map(EgressProxy::port);
+
+    // 代理就绪探活（P5 验收 a 项）：spawn 已同步 bind，但放行容器前必须有
+    // 界确认端口可达（~10 次 x 100ms）。探活连接立即关闭，落到代理 read_head
+    // 的 EOF/400 路径，不产生 ProxyEvent；超时按 INFRA 准备失败落账，不放行
+    // 容器去撞未就绪的代理。
+    if let Some(port) = egress_port {
+        if !wait_port_ready(port, Duration::from_secs(1)) {
+            return preparing_failed(
+                engine,
+                call.run_id,
+                &row,
+                started,
+                transcript,
+                "INFRA",
+                format!("egress proxy port {port} not ready within 1s"),
+                &call.adapter.config.node_id,
+            );
+        }
+    }
 
     // 第 6 行：PREPARING → RUNNING（容器创建）。
     engine.advance(

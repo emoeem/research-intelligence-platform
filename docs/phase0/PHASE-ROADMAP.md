@@ -135,6 +135,8 @@ python3 -m venv .venv-check && .venv-check/bin/pip install jsonschema
 .venv-check/bin/python -c "import json,jsonschema; s=json.load(open('schemas/tool-manifest/v1.json')); jsonschema.Draft202012Validator.check_schema(s); print('SCHEMA_VALID')"
 
 # 2. 全仓质量门（与 CI 同命令，ci.yml 实测原文）
+# 注记：cargo 门禁必须从仓库根执行（vendor 配置按 CWD 发现）：.cargo/config.toml
+# 的 vendor 源替换只在 CWD 位于仓库内时生效，从子目录裸跑会退回 crates.io 网络。
 cargo test --offline --workspace
 cargo clippy --offline --workspace --all-targets -- -D warnings
 

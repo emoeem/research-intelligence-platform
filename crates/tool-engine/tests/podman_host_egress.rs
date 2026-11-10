@@ -352,26 +352,47 @@ fn egress_allowlisted_get_succeeds_through_proxy() {
         workspace_root: ws_root.clone(),
         ..PodmanHostConfig::default()
     });
-    submit(
-        &engine,
-        "rn-p32-ok",
-        json!({"url": "https://example.com/"}),
-        120,
-    );
-
-    let outcome = execute_container_via_engine(ContainerCall {
-        engine: &engine,
-        run_id: "rn-p32-ok",
-        adapter: &adapter,
-        image: &image,
-        entrypoint: &["python3".to_string(), "/app/http_inspector.py".to_string()],
-        family: "web_http",
-        network: NetworkPlan::EgressAllowlist {
-            ports: vec![80, 443],
-        },
-    })
-    .expect("egress e2e run");
-    let env = &outcome.envelope;
+    // 外网 TLS 握手瞬断重试（P5 flaky 修复，实测根因）：上游 edge 偶发在
+    // CONNECT 隧道建立 ~400ms 后发 FIN，容器内 urlopen 落
+    // SSL: UNEXPECTED_EOF_WHILE_READING。宿主出站路径经透明代理面（本机
+    // dae0 eBPF 代理接口实测在位），外网瞬态与套件负载相关、可连续数秒；
+    // 属外网瞬态而非 allowlist/代理语义失败（代理就绪探活与事件时序已另行
+    // 修复）。仅当错误消息命中该特征时换 run_id 重跑（3 次尝试 + 2s 退避，
+    // 给透明代理的节点健康切换留收敛窗口）；其余失败原样断言（不掩盖真实
+    // 回归）。proxy_events 台账按 run_id 隔离，重跑无串扰。
+    const OK_RUN_IDS: [&str; 3] = ["rn-p32-ok", "rn-p32-ok-retry2", "rn-p32-ok-retry3"];
+    let mut envelope = None;
+    let mut final_run_id = OK_RUN_IDS[0];
+    for (attempt, run_id) in OK_RUN_IDS.iter().enumerate() {
+        submit(&engine, run_id, json!({"url": "https://example.com/"}), 120);
+        let outcome = execute_container_via_engine(ContainerCall {
+            engine: &engine,
+            run_id,
+            adapter: &adapter,
+            image: &image,
+            entrypoint: &["python3".to_string(), "/app/http_inspector.py".to_string()],
+            family: "web_http",
+            network: NetworkPlan::EgressAllowlist {
+                ports: vec![80, 443],
+            },
+        })
+        .expect("egress e2e run");
+        let env = outcome.envelope;
+        let transient = env.status == ToolRunStatus::Failed
+            && env
+                .error
+                .as_ref()
+                .is_some_and(|e| e.message.contains("UNEXPECTED_EOF_WHILE_READING"));
+        final_run_id = run_id;
+        envelope = Some(env);
+        if !transient || attempt + 1 == OK_RUN_IDS.len() {
+            break;
+        }
+        eprintln!("transient upstream TLS EOF (attempt {attempt}), retrying with backoff");
+        force_cleanup_rip_containers();
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    let env = &envelope.expect("egress e2e envelope");
     assert_eq!(
         env.status,
         ToolRunStatus::Succeeded,
@@ -384,7 +405,7 @@ fn egress_allowlisted_get_succeeds_through_proxy() {
     assert!(data["body_bytes"].as_u64().unwrap() > 0);
 
     // 代理事件留痕：隧道确实经过代理（env 注入生效的直接证据，非直连）。
-    let events = proxy_events("rn-p32-ok");
+    let events = proxy_events(final_run_id);
     assert!(
         events.iter().any(
             |e| matches!(e, ProxyEvent::TunnelAccepted { host, port: 443 } if host == "example.com")
@@ -393,7 +414,7 @@ fn egress_allowlisted_get_succeeds_through_proxy() {
     );
 
     // body.bin Artifact sha256 与宿主文件对账一致（P3-5 判据同款口径）。
-    let body_path = ws_root.join("rn-p32-ok/out/body.bin");
+    let body_path = ws_root.join(format!("{final_run_id}/out/body.bin"));
     assert!(body_path.exists(), "body.bin artifact must exist");
     let bytes = std::fs::read(&body_path).unwrap();
     assert_eq!(
@@ -414,7 +435,7 @@ fn egress_allowlisted_get_succeeds_through_proxy() {
         "no rip-tool containers may remain: {:?}",
         rip_containers()
     );
-    assert!(!ws_root.join("rn-p32-ok/tmp").exists());
+    assert!(!ws_root.join(format!("{final_run_id}/tmp")).exists());
     let _ = std::fs::remove_dir_all(&ws_root);
 }
 
@@ -441,26 +462,41 @@ fn non_allowlisted_host_connect_rejected_structured() {
         workspace_root: ws_root.clone(),
         ..PodmanHostConfig::default()
     });
-    submit(
-        &engine,
-        "rn-p32-deny",
-        json!({"url": "https://npmjs.com/"}),
-        120,
-    );
-
-    let outcome = execute_container_via_engine(ContainerCall {
-        engine: &engine,
-        run_id: "rn-p32-deny",
-        adapter: &adapter,
-        image: &image,
-        entrypoint: &["python3".to_string(), "/app/http_inspector.py".to_string()],
-        family: "web_http",
-        network: NetworkPlan::EgressAllowlist {
-            ports: vec![80, 443],
-        },
-    })
-    .expect("deny e2e run handled, not panic");
-    let env = &outcome.envelope;
+    // 首个 CONNECT（本尊 url 派生 host）同样走外网 TLS 握手，瞬断重试口径
+    // 与 ok 用例一致（仅 UNEXPECTED_EOF 特征命中才重跑，403 语义失败不重试）。
+    const DENY_RUN_IDS: [&str; 3] = ["rn-p32-deny", "rn-p32-deny-retry2", "rn-p32-deny-retry3"];
+    let mut envelope = None;
+    let mut final_run_id = DENY_RUN_IDS[0];
+    for (attempt, run_id) in DENY_RUN_IDS.iter().enumerate() {
+        submit(&engine, run_id, json!({"url": "https://npmjs.com/"}), 120);
+        let outcome = execute_container_via_engine(ContainerCall {
+            engine: &engine,
+            run_id,
+            adapter: &adapter,
+            image: &image,
+            entrypoint: &["python3".to_string(), "/app/http_inspector.py".to_string()],
+            family: "web_http",
+            network: NetworkPlan::EgressAllowlist {
+                ports: vec![80, 443],
+            },
+        })
+        .expect("deny e2e run handled, not panic");
+        let env = outcome.envelope;
+        let transient = env.status == ToolRunStatus::Failed
+            && env
+                .error
+                .as_ref()
+                .is_some_and(|e| e.message.contains("UNEXPECTED_EOF_WHILE_READING"));
+        final_run_id = run_id;
+        envelope = Some(env);
+        if !transient || attempt + 1 == DENY_RUN_IDS.len() {
+            break;
+        }
+        eprintln!("transient upstream TLS EOF (attempt {attempt}), retrying with backoff");
+        force_cleanup_rip_containers();
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    let env = &envelope.expect("deny e2e envelope");
     assert_eq!(
         env.status,
         ToolRunStatus::Failed,
@@ -480,7 +516,7 @@ fn non_allowlisted_host_connect_rejected_structured() {
 
     // 代理侧拒绝落账：重定向目标 host_not_allowlisted；首次 CONNECT（本尊
     // url 派生 host）正常放行进隧道。
-    let events = proxy_events("rn-p32-deny");
+    let events = proxy_events(final_run_id);
     assert!(
         events.iter().any(|e| matches!(
             e,

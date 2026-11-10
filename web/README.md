@@ -9,7 +9,7 @@ RIP（Research Intelligence Platform）Web 工作台前端，Phase 5 车道 B �
 | `npm run dev`              | 开发服务器（`/api` 代理到 127.0.0.1:7800）                                 |
 | `npm run build`            | `tsc --noEmit` + vite build                                                |
 | `npm run typecheck`        | 仅类型检查                                                                 |
-| `npm run test -- --run`    | vitest 单次运行（不带 `--run` 为 watch 模式）                              |
+| `npm run test`             | vitest 单次运行（watch 模式用 `npm run test:watch`）                       |
 | `npm run format`           | prettier 写回                                                              |
 | `npm run format:check`     | prettier 检查（格式门）                                                    |
 | `npm run test:visual:gate` | build + Playwright 视觉矩阵（6 页 x 2 主题 x 2 视口 + axe AA，无快照基线） |

@@ -23,7 +23,7 @@ use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// 请求头与首行的读取上限（代理面防御上限，非业务约束）。
 const MAX_HEAD_BYTES: usize = 32 * 1024;
@@ -31,6 +31,47 @@ const MAX_HEAD_BYTES: usize = 32 * 1024;
 const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 泵空闲轮询间隔（同时是 stop 传播粒度）。
 const PUMP_POLL: Duration = Duration::from_millis(250);
+/// 端口探活轮询节奏（就绪/关闭等待共用；P5 验收 a 项口径 ~10 次 x 100ms）。
+const PORT_PROBE_INTERVAL: Duration = Duration::from_millis(100);
+
+/// 端口就绪探活：有界轮询 TCP 连接，连上即视为就绪（true），超时仍连不上
+/// 返回 false（失败语义由调用方定，分派面按 INFRA 准备失败落账）。
+///
+/// 探活连接立即双向关闭：代理侧该连接落到 read_head 的 EOF/400 路径，
+/// 不产生 [`ProxyEvent`]（事件台账零污染）。仅 std::net，零新依赖。
+pub fn wait_port_ready(port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match TcpStream::connect(("127.0.0.1", port)) {
+            Ok(stream) => {
+                let _ = stream.shutdown(Shutdown::Both);
+                return true;
+            }
+            Err(_) if Instant::now() < deadline => std::thread::sleep(PORT_PROBE_INTERVAL),
+            Err(_) => return false,
+        }
+    }
+}
+
+/// 端口关闭等待：有界轮询 TCP 连接直到被拒（true = 端口已关闭）或超时
+/// （false = 超时内端口仍可达）。替代「shutdown 后定长 sleep 即断言」的
+/// 竞态写法（P5 验收 b 项）：shutdown 语义虽同步 join accept 线程，内核侧
+/// listen fd 收尾与新连接被拒的呈现存在毫秒级漂移，高负载下定长窗口会撞上。
+pub fn wait_port_closed(port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match TcpStream::connect(("127.0.0.1", port)) {
+            Ok(stream) => {
+                let _ = stream.shutdown(Shutdown::Both);
+                if Instant::now() >= deadline {
+                    return false;
+                }
+                std::thread::sleep(PORT_PROBE_INTERVAL);
+            }
+            Err(_) => return true,
+        }
+    }
+}
 
 /// run 生命周期内的出站白名单（host 精确匹配 + 端口枚举）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -295,19 +336,19 @@ fn handle_conn(
                         tunnel(client, &host, port, stop);
                     }
                     Err(reason) => {
-                        let _ = client.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        // 事件先落账再回 403：客户端可见响应是「事件已可读」的
+                        // 同步锚点（实测反向排序在抢占下让测试读到空台账）。
                         push_event(
                             &events,
                             &run_id,
                             ProxyEvent::Rejected { host, port, reason },
                         );
+                        let _ = client.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                     }
                 }
             }
             Err(reason) => {
-                let _ = client.write_all(
-                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                );
+                // 同上：事件先于响应落账（响应可见即事件可读）。
                 push_event(
                     &events,
                     &run_id,
@@ -316,6 +357,9 @@ fn handle_conn(
                         port: 0,
                         reason,
                     },
+                );
+                let _ = client.write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 );
             }
         }
@@ -336,19 +380,19 @@ fn handle_conn(
                         forward_http(client, &head, &method, &path, &host, port, stop);
                     }
                     Err(reason) => {
-                        let _ = client.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        // 事件先落账再回 403：客户端可见响应是「事件已可读」的
+                        // 同步锚点（实测反向排序在抢占下让测试读到空台账）。
                         push_event(
                             &events,
                             &run_id,
                             ProxyEvent::Rejected { host, port, reason },
                         );
+                        let _ = client.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                     }
                 }
             }
             Err(reason) => {
-                let _ = client.write_all(
-                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                );
+                // 同上：事件先于响应落账（响应可见即事件可读）。
                 push_event(
                     &events,
                     &run_id,
@@ -357,6 +401,9 @@ fn handle_conn(
                         port: 0,
                         reason,
                     },
+                );
+                let _ = client.write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 );
             }
         }
@@ -681,13 +728,13 @@ mod tests {
             ProxyEvent::Rejected { ref reason, .. } if reason.contains("port_not_allowed")
         ));
 
-        // shutdown 后端口关闭（run 生命周期锚点）。
+        // shutdown 后端口关闭（run 生命周期锚点）：有界轮询替代定长 sleep
+        // （P5 验收 b 项——固定 100ms 在高负载下会撞上内核收尾的竞态）。
         let port = proxy.port();
         proxy.shutdown();
-        thread::sleep(Duration::from_millis(100));
         assert!(
-            TcpStream::connect(("127.0.0.1", port)).is_err(),
-            "port must close"
+            wait_port_closed(port, Duration::from_secs(2)),
+            "port must close within 2s of shutdown"
         );
     }
 
