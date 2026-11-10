@@ -3,16 +3,24 @@
 
 单文件 http.server 实现，Python stdlib-only：
 - 静态页（apps/server/static/）
-- 4 个只读 JSON API（sqlite3 URI mode=ro 直查生产库 platform.db）
+- 9 个只读 JSON API（sqlite3 URI mode=ro 直查生产库 platform.db）：
+  M7 四端点 /api/stats /api/resources /api/reviews /api/tasks；
+  Phase 5 增量五端点 /api/overview /api/knowledge /api/tools /api/runs
+  /api/runtime（对应 ROADMAP P5-4 的本阶段落地形态，api-server crate 化
+  顺延，见 docs/phase5/PHASE5-PLAN.md 偏差登记 1）
 - 无任何写端点，默认绑定 127.0.0.1（容器内通过 RP_HOST=0.0.0.0 覆盖）
 - Bearer Token 鉴权：配置 RP_AUTH_TOKEN 或 RP_AUTH_TOKEN_FILE 后，
   所有 /api/* 请求必须携带有效令牌（constant-time 比较 + 失败节流）；
   未配置任何令牌时为本地开发模式（鉴权关闭，启动时显著告警）。
+- RP_AUX_DB 只读 ATTACH 通道：Phase 1-4 数据面（tool_run/artifact/
+  runtime_node 等）尚未并入主库时，经只读 ATTACH 挂载开发库副本读取；
+  缺库缺表按 sqlite_master 守卫返回真实空态说明，不造假数据。
 
 环境变量：
 - RP_PORT            监听端口，默认 7800
 - RP_HOST            监听地址，默认 127.0.0.1
 - RP_DB_PATH         数据库路径，默认仓库内 migrations/platform.db
+- RP_AUX_DB          Phase 1-4 数据面只读库（如 migrations/dev-b5.db），缺省不挂载
 - RP_AUTH_TOKEN      明文令牌（优先）
 - RP_AUTH_TOKEN_FILE 令牌文件路径（默认仓库根 .rp-workbench-token，权限应为 600）
 """
@@ -26,6 +34,7 @@ import posixpath
 import sqlite3
 import sys
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -38,6 +47,7 @@ DEFAULT_TOKEN_FILE = os.path.join(REPO_ROOT, ".rp-workbench-token")
 HOST = os.environ.get("RP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("RP_PORT", "7800"))
 DB_PATH = os.environ.get("RP_DB_PATH", DEFAULT_DB)
+AUX_DB_PATH = (os.environ.get("RP_AUX_DB") or "").strip() or None
 AUTH_FAIL_DELAY = 0.3
 
 
@@ -100,7 +110,25 @@ def connect_ro() -> sqlite3.Connection:
         raise ApiError(503, "db_unavailable", f"数据库打开失败：{exc}") from exc
     conn.execute("PRAGMA query_only = ON")
     conn.row_factory = sqlite3.Row
+    attach_aux(conn)
     return conn
+
+
+def attach_aux(conn: sqlite3.Connection) -> None:
+    """尽力挂载 RP_AUX_DB 只读库（URI mode=ro，主连接已开 URI）。
+
+    失败只告警不抛错：aux 缺失只影响 Phase 1-4 五端点的数据面，绝不能
+    连累既有四端点（query_only 对整个连接生效，挂载的库同样只读）。
+    """
+    if not AUX_DB_PATH:
+        return
+    if not os.path.isfile(AUX_DB_PATH):
+        print(f"[rp-server] 警告：RP_AUX_DB 文件不存在，aux 端点返回缺失说明：{AUX_DB_PATH}", file=sys.stderr)
+        return
+    try:
+        conn.execute("ATTACH DATABASE ? AS aux", (f"file:{AUX_DB_PATH}?mode=ro",))
+    except sqlite3.Error as exc:
+        print(f"[rp-server] 警告：RP_AUX_DB 挂载失败，aux 端点返回缺失说明：{exc}", file=sys.stderr)
 
 
 def query_all(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list:
@@ -131,6 +159,81 @@ def parse_limit(params: dict) -> int:
     if value < 1 or value > MAX_LIMIT:
         raise ApiError(400, "bad_limit", f"limit 需在 1..{MAX_LIMIT} 之间，收到：{value}")
     return value
+
+
+# ---------------------------------------------------------------------------
+# Phase 1-4 数据面（RP_AUX_DB 通道）守卫
+# ---------------------------------------------------------------------------
+
+
+def attached_schemas(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA database_list")}
+
+
+def table_exists(conn: sqlite3.Connection, schema: str, table: str) -> bool:
+    row = conn.execute(
+        f"SELECT 1 FROM {schema}.sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
+
+
+def phase14_source(conn: sqlite3.Connection, table: str) -> str | None:
+    """返回某张 Phase 1-4 表应读取的 schema：主库已建表一律主库优先（主库是
+    全量注册面，如 tool=20）；aux 只承载主库未建的表（tool_run/artifact/
+    runtime_node 等尚在 Phase 2-4 开发库副本中的面）；都无则 None。"""
+    if table_exists(conn, "main", table):
+        return "main"
+    if "aux" in attached_schemas(conn) and table_exists(conn, "aux", table):
+        return "aux"
+    return None
+
+
+def phase14_unavailable(conn: sqlite3.Connection, table: str) -> dict:
+    """数据面不可读时的真实空态说明（不是空数据集）：按缺什么说什么。"""
+    schemas = attached_schemas(conn)
+    if AUX_DB_PATH is None:
+        reason = "aux_db_not_configured"
+        message = f"未配置 RP_AUX_DB，且主库无 {table} 表：Phase 1-4 数据面暂不可读（真实空态说明，非空数据）"
+    elif not os.path.isfile(AUX_DB_PATH):
+        reason = "aux_db_missing"
+        message = f"RP_AUX_DB 指向的文件不存在：{AUX_DB_PATH}，{table} 表不可读"
+    elif "aux" not in schemas:
+        reason = "aux_db_unavailable"
+        message = f"RP_AUX_DB 挂载失败（详见服务端日志）：{AUX_DB_PATH}，{table} 表不可读"
+    else:
+        reason = "table_missing"
+        message = f"aux 库（{os.path.basename(AUX_DB_PATH)}）中不存在 {table} 表：对应 Phase 迁移未应用"
+    return {"available": False, "reason": reason, "table": table, "message": message, "total": 0, "items": []}
+
+
+def parse_json_or_none(text: str | None):
+    """JSON 文本列安全解析：解析失败保留原文（不静默丢字段）。"""
+    if text is None or text == "":
+        return None
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError):
+        return {"_raw": text}
+
+
+def check_enum(params: dict, name: str, allowed: tuple) -> str | None:
+    value = clean_str(params, name)
+    if value is not None and value not in allowed:
+        raise ApiError(400, f"bad_{name}", f"{name} 仅支持 {'/'.join(allowed)}，收到：{value!r}")
+    return value
+
+
+def heartbeat_age_seconds(last_heartbeat_at: str | None) -> float | None:
+    """ISO8601 心跳时刻到现在的时间；解析失败返回 None（不猜）。"""
+    if not last_heartbeat_at:
+        return None
+    try:
+        ts = datetime.fromisoformat(last_heartbeat_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return round((datetime.now(timezone.utc) - ts).total_seconds(), 3)
 
 
 # ---------------------------------------------------------------------------
@@ -334,11 +437,351 @@ def handle_tasks(conn: sqlite3.Connection, params: dict) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Phase 5 增量五端点（ROADMAP P5-4 本阶段落地形态，只读）
+# ---------------------------------------------------------------------------
+
+KNOWLEDGE_LIFECYCLE = ("DISCOVERED", "FETCHED", "PARSED", "CANDIDATE", "VERIFIED", "INDEXED", "STALE")
+TOOL_LIFECYCLE = ("REGISTERED", "VALIDATED", "ENABLED", "DISABLED", "DEPRECATED")
+RUN_STATUS = ("QUEUED", "WAITING_FOR_RUNNER", "PREPARING", "RUNNING",
+              "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED")
+
+KNOWLEDGE_LIST_COLUMNS = (
+    "knowledge_id, record_kind, lifecycle, governance, title, content_kind, category, cve,"
+    " component, versions, severity, language, evidence_level, verified, verified_note,"
+    " hit_count, tags, source, source_url, updated_at"
+)
+
+TOOL_LIST_COLUMNS = (
+    "tool_id, name, kind, lifecycle, governance, install_state, health_state,"
+    " permission_level, timeout_s, source_system, created_at, updated_at"
+)
+
+RUN_LIST_COLUMNS = (
+    "run_id, tool_id, tool_version, task_id, workspace_id, status, error_category,"
+    " duration_ms, created_at, started_at, finished_at, updated_at"
+)
+
+
+def handle_overview(conn: sqlite3.Connection, params: dict) -> dict:
+    """Overview 页聚合：M 面计数取主库（与 /api/stats 同源缩小版），
+    Phase 1-4 面（tools/runs/runtime）走守卫，缺什么说什么。"""
+    result: dict = {
+        "database": {
+            "file": os.path.basename(DB_PATH),
+            "mode": "readonly",
+            "aux": {
+                "configured": AUX_DB_PATH is not None,
+                "file": os.path.basename(AUX_DB_PATH) if AUX_DB_PATH else None,
+                "attached": "aux" in attached_schemas(conn),
+            },
+        }
+    }
+    result["knowledge"] = {
+        "total": conn.execute("SELECT COUNT(*) FROM knowledge").fetchone()[0],
+        "by_lifecycle": {
+            r["k"]: r["n"]
+            for r in query_all(conn, "SELECT lifecycle AS k, COUNT(*) AS n FROM knowledge GROUP BY lifecycle")
+        },
+        "by_verified": {
+            r["k"]: r["n"]
+            for r in query_all(
+                conn,
+                "SELECT CASE WHEN verified = 1 THEN 'verified' WHEN verified = 0 THEN 'unverified'"
+                " ELSE 'unknown' END AS k, COUNT(*) AS n FROM knowledge GROUP BY k",
+            )
+        },
+    }
+    result["tasks"] = {
+        "total": conn.execute("SELECT COUNT(*) FROM research_task").fetchone()[0],
+        "by_state": {
+            r["k"]: r["n"]
+            for r in query_all(conn, "SELECT state AS k, COUNT(*) AS n FROM research_task GROUP BY state")
+        },
+    }
+    for name, table in (("resources", "resource"), ("evidence", "evidence"), ("reviews", "review")):
+        result[name] = {"total": conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]}
+
+    tools_src = phase14_source(conn, "tool")
+    if tools_src:
+        result["tools"] = {
+            "available": True,
+            "source": tools_src,
+            "total": conn.execute(f"SELECT COUNT(*) FROM {tools_src}.tool").fetchone()[0],
+        }
+    else:
+        result["tools"] = phase14_unavailable(conn, "tool")
+    runs_src = phase14_source(conn, "tool_run")
+    if runs_src:
+        result["runs"] = {
+            "available": True,
+            "source": runs_src,
+            "total": conn.execute(f"SELECT COUNT(*) FROM {runs_src}.tool_run").fetchone()[0],
+            "by_status": {
+                r["k"]: r["n"]
+                for r in query_all(
+                    conn, f"SELECT status AS k, COUNT(*) AS n FROM {runs_src}.tool_run GROUP BY status"
+                )
+            },
+        }
+    else:
+        result["runs"] = phase14_unavailable(conn, "tool_run")
+    runtime_src = phase14_source(conn, "runtime_node")
+    if runtime_src:
+        result["runtime"] = {
+            "available": True,
+            "source": runtime_src,
+            "total": conn.execute(f"SELECT COUNT(*) FROM {runtime_src}.runtime_node").fetchone()[0],
+            "by_health": {
+                r["k"]: r["n"]
+                for r in query_all(
+                    conn, f"SELECT health AS k, COUNT(*) AS n FROM {runtime_src}.runtime_node GROUP BY health"
+                )
+            },
+        }
+    else:
+        result["runtime"] = phase14_unavailable(conn, "runtime_node")
+    return result
+
+
+def handle_knowledge(conn: sqlite3.Connection, params: dict) -> dict:
+    """知识条目列表：主库 knowledge（M 面数据），keyword/lifecycle/verified 过滤；
+    ?knowledge_id= 返回单条全字段详情。"""
+    knowledge_id = clean_str(params, "knowledge_id")
+    if knowledge_id:
+        item = query_one(conn, "SELECT * FROM knowledge WHERE knowledge_id = ?", (knowledge_id,))
+        if item is None:
+            raise ApiError(404, "no_knowledge", f"知识条目不存在：{knowledge_id}")
+        item["tags"] = parse_json_or_none(item.get("tags"))
+        return {"available": True, "source": "main", "item": item}
+
+    keyword = clean_str(params, "keyword")
+    lifecycle = check_enum(params, "lifecycle", KNOWLEDGE_LIFECYCLE)
+    verified_raw = clean_str(params, "verified")
+    if verified_raw is not None and verified_raw not in ("true", "false"):
+        raise ApiError(400, "bad_verified", f"verified 仅支持 true/false，收到：{verified_raw!r}")
+    limit = parse_limit(params)
+
+    where, args = [], []
+    if keyword:
+        needle = f"%{like_escape(keyword)}%"
+        like_fields = ["title", "knowledge_id", "component", "cve", "category"]
+        clauses = " OR ".join(f"{f} LIKE ? ESCAPE '\\'" for f in like_fields)
+        where.append(f"({clauses})")
+        args.extend([needle] * len(like_fields))
+    if lifecycle:
+        where.append("lifecycle = ?")
+        args.append(lifecycle)
+    if verified_raw is not None:
+        where.append("verified = ?")
+        args.append(1 if verified_raw == "true" else 0)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = conn.execute(f"SELECT COUNT(*) FROM knowledge {where_sql}", args).fetchone()[0]
+    items = query_all(
+        conn,
+        f"SELECT {KNOWLEDGE_LIST_COLUMNS} FROM knowledge {where_sql}"
+        " ORDER BY updated_at DESC, knowledge_id DESC LIMIT ?",
+        tuple(args) + (limit,),
+    )
+    for item in items:
+        item["tags"] = parse_json_or_none(item.get("tags"))
+    result = {
+        "available": True,
+        "source": "main",
+        "total": total,
+        "returned": len(items),
+        "limit": limit,
+        "filters": {"keyword": keyword, "lifecycle": lifecycle, "verified": verified_raw},
+        "items": items,
+    }
+    if total == 0:
+        result["message"] = "没有匹配的知识条目，调整关键词或生命周期后重试"
+    return result
+
+
+def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
+    """工具目录（Phase 1 Registry 面）：?tool_id= 详情含 input/output Schema
+    与 tool_version 行；数据面 aux 优先、主库回退，缺表返回真实空态说明。"""
+    src = phase14_source(conn, "tool")
+    if src is None:
+        return phase14_unavailable(conn, "tool")
+
+    tool_id = clean_str(params, "tool_id")
+    if tool_id:
+        tool = query_one(conn, f"SELECT * FROM {src}.tool WHERE tool_id = ?", (tool_id,))
+        detail_src = src
+        # 列表口径固定在主库注册面；详情按 id 精确查找，主库未命中且 aux 挂载
+        # 时回退 aux（Phase 1 契约工具暂存开发库副本，含真实 input/output Schema）。
+        if (
+            tool is None
+            and src == "main"
+            and "aux" in attached_schemas(conn)
+            and table_exists(conn, "aux", "tool")
+        ):
+            tool = query_one(conn, "SELECT * FROM aux.tool WHERE tool_id = ?", (tool_id,))
+            detail_src = "aux"
+        if tool is None:
+            raise ApiError(404, "no_tool", f"工具不存在：{tool_id}")
+        versions = query_all(
+            conn,
+            f"SELECT tv_id, tool_id, version, status, provenance_json, content_hash, validated_at, created_at"
+            f" FROM {detail_src}.tool_version WHERE tool_id = ? ORDER BY created_at DESC, tv_id DESC",
+            (tool_id,),
+        )
+        for version in versions:
+            version["provenance"] = parse_json_or_none(version.pop("provenance_json", None))
+        return {
+            "available": True,
+            "source": detail_src,
+            "tool": tool,
+            "input_schema": parse_json_or_none(tool.get("input_schema")),
+            "output_schema": parse_json_or_none(tool.get("output_schema")),
+            "versions": versions,
+        }
+
+    keyword = clean_str(params, "keyword")
+    lifecycle = check_enum(params, "lifecycle", TOOL_LIFECYCLE)
+    limit = parse_limit(params)
+    where, args = [], []
+    if keyword:
+        needle = f"%{like_escape(keyword)}%"
+        where.append("(name LIKE ? ESCAPE '\\' OR tool_id LIKE ? ESCAPE '\\')")
+        args.extend([needle, needle])
+    if lifecycle:
+        where.append("lifecycle = ?")
+        args.append(lifecycle)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = conn.execute(f"SELECT COUNT(*) FROM {src}.tool {where_sql}", args).fetchone()[0]
+    items = query_all(
+        conn,
+        f"SELECT {TOOL_LIST_COLUMNS} FROM {src}.tool {where_sql}"
+        " ORDER BY updated_at DESC, name COLLATE NOCASE ASC LIMIT ?",
+        tuple(args) + (limit,),
+    )
+    return {
+        "available": True,
+        "source": src,
+        "total": total,
+        "returned": len(items),
+        "limit": limit,
+        "filters": {"keyword": keyword, "lifecycle": lifecycle},
+        "items": items,
+    }
+
+
+def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
+    """工具运行列表（Phase 2 Run 面）：?run_id= 详情含全字段（JSON 列解析）
+    与 artifact 列表；数据面 aux 优先、主库回退，缺表返回真实空态说明。"""
+    src = phase14_source(conn, "tool_run")
+    if src is None:
+        return phase14_unavailable(conn, "tool_run")
+
+    run_id = clean_str(params, "run_id")
+    if run_id:
+        run = query_one(conn, f"SELECT * FROM {src}.tool_run WHERE run_id = ?", (run_id,))
+        if run is None:
+            raise ApiError(404, "no_run", f"Run 不存在：{run_id}")
+        for column in ("input_refs_json", "permission_ctx", "budget_json", "error_json",
+                       "usage_json", "environment_json", "replay_json"):
+            if column in run:
+                run[column] = parse_json_or_none(run[column])
+        artifacts: list = []
+        artifacts_note = None
+        artifact_src = phase14_source(conn, "artifact")
+        if artifact_src:
+            artifacts = query_all(
+                conn,
+                f"SELECT artifact_id, run_id, role, uri, sha256, size_bytes, mime_type, provenance, created_at"
+                f" FROM {artifact_src}.artifact WHERE run_id = ? ORDER BY created_at ASC",
+                (run_id,),
+            )
+        else:
+            artifacts_note = "artifact 表不存在（对应迁移未应用），返回空列表"
+        result = {"available": True, "source": src, "run": run, "artifacts": artifacts}
+        if artifacts_note:
+            result["artifacts_note"] = artifacts_note
+        return result
+
+    status = check_enum(params, "status", RUN_STATUS)
+    tool_filter = clean_str(params, "tool_id")
+    limit = parse_limit(params)
+    where, args = [], []
+    if status:
+        where.append("status = ?")
+        args.append(status)
+    if tool_filter:
+        where.append("tool_id = ?")
+        args.append(tool_filter)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = conn.execute(f"SELECT COUNT(*) FROM {src}.tool_run {where_sql}", args).fetchone()[0]
+    items = query_all(
+        conn,
+        f"SELECT {RUN_LIST_COLUMNS} FROM {src}.tool_run {where_sql}"
+        " ORDER BY created_at DESC, run_id DESC LIMIT ?",
+        tuple(args) + (limit,),
+    )
+    return {
+        "available": True,
+        "source": src,
+        "total": total,
+        "returned": len(items),
+        "limit": limit,
+        "filters": {"status": status, "tool_id": tool_filter},
+        "items": items,
+    }
+
+
+def handle_runtime(conn: sqlite3.Connection, params: dict) -> dict:
+    """运行时节点与心跳（Phase 2 Gateway 面）：节点行 + 心跳时龄推导；
+    数据面 aux 优先、主库回退，缺表返回真实空态说明。"""
+    src = phase14_source(conn, "runtime_node")
+    if src is None:
+        return phase14_unavailable(conn, "runtime_node")
+
+    kind = check_enum(params, "kind", ("python_worker", "podman_host", "podman_vm"))
+    limit = parse_limit(params)
+    where, args = [], []
+    if kind:
+        where.append("kind = ?")
+        args.append(kind)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = conn.execute(f"SELECT COUNT(*) FROM {src}.runtime_node {where_sql}", args).fetchone()[0]
+    items = query_all(
+        conn,
+        f"SELECT node_id, kind, endpoint, health, version, last_heartbeat_at, created_at, updated_at"
+        f" FROM {src}.runtime_node {where_sql} ORDER BY updated_at DESC, node_id ASC LIMIT ?",
+        tuple(args) + (limit,),
+    )
+    for item in items:
+        item["heartbeat_age_seconds"] = heartbeat_age_seconds(item.get("last_heartbeat_at"))
+    result = {
+        "available": True,
+        "source": src,
+        "total": total,
+        "returned": len(items),
+        "limit": limit,
+        "filters": {"kind": kind},
+        "items": items,
+    }
+    if total == 0:
+        result["message"] = "暂无运行时节点：runtime_node 为空（Gateway 心跳尚未接入或节点未登记）"
+    return result
+
+
 API_ROUTES = {
     "/api/stats": lambda conn, params: handle_stats(conn),
     "/api/resources": handle_resources,
     "/api/reviews": handle_reviews,
     "/api/tasks": handle_tasks,
+    "/api/overview": handle_overview,
+    "/api/knowledge": handle_knowledge,
+    "/api/tools": handle_tools,
+    "/api/runs": handle_runs,
+    "/api/runtime": handle_runtime,
 }
 
 
@@ -348,7 +791,7 @@ API_ROUTES = {
 
 
 class RpHandler(BaseHTTPRequestHandler):
-    server_version = "rp-server/0.2.0-m7-auth"
+    server_version = "rp-server/0.3.0-phase5"
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: A002
         sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -458,6 +901,10 @@ def main() -> int:
         return 1
     server = ThreadingHTTPServer((HOST, PORT), RpHandler)
     print(f"[rp-server] listening http://{HOST}:{PORT}  (db: {DB_PATH}, mode=ro)")
+    if AUX_DB_PATH:
+        print(f"[rp-server] aux db (Phase 1-4 数据面, ro attach): {AUX_DB_PATH}")
+    else:
+        print("[rp-server] aux db: 未配置（/api/tools|runs|runtime 按守卫降级为空态说明）")
     print(f"[rp-server] static dir: {STATIC_DIR}")
     if AUTH_ENABLED:
         print("[rp-server] 鉴权：已启用（Bearer Token）")

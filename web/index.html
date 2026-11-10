@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="rip-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>RIP 研究情报平台工作台</title>
+    <script>
+      /* 首帧主题内联（机制沿自参照实现 admin index.html 的防闪烁片段，
+       * 映射与 src/theme.ts 保持一致：已知 id 白名单 + 退役 id 归一化 +
+       * 默认 rip-dark）。首绘前解析 localStorage 并设置 data-theme，
+       * 避免默认深空主题在首帧闪白。theme.ts 在启动时按同一映射重设一次。 */
+      (function () {
+        var known = ["rip-dark", "rip-light"];
+        var legacy = { system: "rip-dark" };
+        var theme = "rip-dark";
+        try {
+          var stored = localStorage.getItem("rip_theme");
+          if (stored) theme = legacy[stored] || (known.indexOf(stored) !== -1 ? stored : theme);
+        } catch (error) {}
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

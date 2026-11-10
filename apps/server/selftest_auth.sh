@@ -52,8 +52,15 @@ code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/../../et
 ck "路径穿越仍被拒" "404" "${code}"
 
 # 7. 鉴权关闭模式（开发态）：清空令牌来源重启
+# 2026-11-10 修正：仓库根 .rp-workbench-token 存在时，原「只清环境变量」的
+# 重启仍会从默认令牌文件加载令牌（401），永远进不了无鉴权分支；显式把
+# RP_AUTH_TOKEN_FILE 指到空文件才真正清空来源。测试架修复，服务端行为不变。
 kill "${SRV}" 2>/dev/null; wait "${SRV}" 2>/dev/null
-RP_PORT="${PORT}" RP_DB_PATH="${REPO}/migrations/platform.db" python3 "${HERE}/rp_server.py" > "${LOG}" 2>&1 &
+EMPTY_TOKEN_FILE="$(mktemp /tmp/rp_empty_token.XXXX)"
+trap 'kill ${SRV} 2>/dev/null; wait ${SRV} 2>/dev/null; rm -f "${LOG}" "${EMPTY_TOKEN_FILE}"' EXIT
+RP_PORT="${PORT}" RP_DB_PATH="${REPO}/migrations/platform.db" \
+  RP_AUTH_TOKEN="" RP_AUTH_TOKEN_FILE="${EMPTY_TOKEN_FILE}" \
+  python3 "${HERE}/rp_server.py" > "${LOG}" 2>&1 &
 SRV=$!
 sleep 0.6
 code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/api/stats")

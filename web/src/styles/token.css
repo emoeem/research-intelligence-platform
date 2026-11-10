@@ -1,0 +1,121 @@
+@import "tailwindcss" source("../..");
+
+/* daisyUI 5：不启用任何内置主题，只使用下方两个 RIP 自定义主题。
+ * 色板按 RIP 品牌重新定义（青碧色系情报工作台），不搬参照实现的
+ * foxgold 金色系；机制沿自参照实现的「daisyUI 变量契约层 + @theme 应用层」
+ * 双层结构与首帧 data-theme 切换（docs/phase0 的 UI 复用盘点 §2.3）。 */
+
+/* RIP 深空（默认暗色主题）。
+ * 对比度设计目标：各 *-content 对其底色 ≥4.5:1；当前为设计目标值，
+ * 逐对实测复核放在 P5-9 的 axe AA 门禁，本批未实测，待验证。 */
+@plugin "daisyui/theme" {
+  name: "rip-dark";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: oklch(0.21 0.025 255);
+  --color-base-200: oklch(0.18 0.025 255);
+  --color-base-300: oklch(0.15 0.025 255);
+  --color-base-content: oklch(0.93 0.01 250);
+  --color-primary: oklch(0.8 0.125 195);
+  --color-primary-content: oklch(0.2 0.04 230);
+  --color-secondary: oklch(0.72 0.13 305);
+  --color-secondary-content: oklch(0.19 0.05 305);
+  --color-accent: oklch(0.82 0.14 160);
+  --color-accent-content: oklch(0.2 0.05 160);
+  --color-neutral: oklch(0.3 0.02 255);
+  --color-neutral-content: oklch(0.9 0.01 255);
+  --color-info: oklch(0.74 0.11 235);
+  --color-info-content: oklch(0.19 0.04 235);
+  --color-success: oklch(0.76 0.15 155);
+  --color-success-content: oklch(0.18 0.05 155);
+  --color-warning: oklch(0.83 0.14 85);
+  --color-warning-content: oklch(0.22 0.05 85);
+  --color-error: oklch(0.68 0.19 25);
+  --color-error-content: oklch(0.15 0.04 25);
+  --radius-selector: 0.625rem;
+  --radius-field: 0.625rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* RIP 晨白（明亮主题），同一色相家族的浅色映射。 */
+@plugin "daisyui/theme" {
+  name: "rip-light";
+  default: false;
+  color-scheme: light;
+  --color-base-100: oklch(0.985 0.003 240);
+  --color-base-200: oklch(0.955 0.005 240);
+  --color-base-300: oklch(0.91 0.008 240);
+  --color-base-content: oklch(0.24 0.02 255);
+  --color-primary: oklch(0.55 0.11 215);
+  --color-primary-content: oklch(0.985 0.005 215);
+  --color-secondary: oklch(0.5 0.12 300);
+  --color-secondary-content: oklch(0.985 0.005 300);
+  --color-accent: oklch(0.54 0.12 165);
+  --color-accent-content: oklch(0.985 0.005 165);
+  --color-neutral: oklch(0.3 0.02 255);
+  --color-neutral-content: oklch(0.96 0.005 255);
+  --color-info: oklch(0.55 0.1 240);
+  --color-info-content: oklch(0.98 0.005 240);
+  --color-success: oklch(0.54 0.13 155);
+  --color-success-content: oklch(0.98 0.005 155);
+  --color-warning: oklch(0.6 0.12 75);
+  --color-warning-content: oklch(0.17 0.04 75);
+  --color-error: oklch(0.55 0.2 25);
+  --color-error-content: oklch(0.98 0.005 25);
+  --radius-selector: 0.625rem;
+  --radius-field: 0.625rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* 应用层 token（第二层）：随主题切换的语义面颜色，写在自己的
+ * data-theme 块里，经下方 @theme inline 映射成 Tailwind 工具类
+ * （bg-surface-2、border-edge 之类）。 */
+[data-theme="rip-dark"] {
+  --edge: oklch(0.32 0.02 255);
+  --edge-soft: oklch(0.26 0.02 255);
+  --sidebar: oklch(0.18 0.025 255);
+  --surface-2: oklch(0.27 0.02 255);
+}
+
+[data-theme="rip-light"] {
+  --edge: oklch(0.88 0.01 240);
+  --edge-soft: oklch(0.93 0.006 240);
+  --sidebar: oklch(0.965 0.005 240);
+  --surface-2: oklch(0.935 0.007 240);
+}
+
+@theme inline {
+  --color-edge: var(--edge);
+  --color-edge-soft: var(--edge-soft);
+  --color-sidebar: var(--sidebar);
+  --color-surface-2: var(--surface-2);
+}
+
+@theme {
+  /* 语义圆角两档 + 统一控件高度（沿自参照实现的语义化设计决策：
+   * 卡面用 rounded-surface、控件用 rounded-control，不再各写各的数值）。 */
+  --radius-surface: 1rem;
+  --radius-control: 0.625rem;
+  --control-h: 2.5rem;
+  --control-h-sm: 2rem;
+
+  /* 确定性 CJK 字体栈：本地与 CI 解析到同一字族，P5-9 视觉回归快照不漂移
+   * （教训来自参照项目提交 a1796e8：快照基线只能由统一字体环境生成）。 */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC",
+    monospace;
+}
