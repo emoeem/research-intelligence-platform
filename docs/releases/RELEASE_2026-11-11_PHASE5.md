@@ -4,7 +4,7 @@
 
 | 项         | 值                                                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 阶段交付   | git `PH5_COMMIT_HASH`（02:31 CST 收口入库：egress 门禁修复、react-query 迁移、文档；前序实施快照 25d101e、2b65cf2、55e72ea；短哈希提交后回填本行与 docs/README.md Phase 5 行） |
+| 阶段交付   | git `c0a4284`（02:31 CST 收口入库：egress 门禁修复、react-query 迁移、文档；前序实施快照 25d101e、2b65cf2、55e72ea；本行短哈希由 docs 索引回填提交落定） |
 | 数据库迁移 | 无新增（`git status --short migrations/` 当日实测仅 dev-p13.db-journal 运行时产物清出一行；生产 platform*.db 零写入）                  |
 | 自动化测试 | cargo test `--offline --workspace` 一次性实测 passed=273 failed=0 ignored=0（59 个测试二进制全 ok）；worker unittest Ran 125 OK skipped=11；selftest_phase5 PASS=31 FAIL=0；selftest_auth PASS=11 FAIL=0 |
 | 五道门禁   | web 五门禁当日实测：typecheck 零错误；vite build 成功 17 个 JS chunk（8 个路由页独立 chunk + vendor-react/query/icons/echarts 分组，入口 20.06 kB，626ms）；vitest 11 文件 69 用例全过；test:visual:gate 30 用例全过（22.2s）；prettier format:check 通过 |
