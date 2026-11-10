@@ -4,16 +4,17 @@ RIP（Research Intelligence Platform）Web 工作台前端，Phase 5 车道 B �
 
 ## 命令
 
-| 命令                    | 作用                                          |
-| ----------------------- | --------------------------------------------- |
-| `npm run dev`           | 开发服务器（`/api` 代理到 127.0.0.1:7800）    |
-| `npm run build`         | `tsc --noEmit` + vite build                   |
-| `npm run typecheck`     | 仅类型检查                                    |
-| `npm run test -- --run` | vitest 单次运行（不带 `--run` 为 watch 模式） |
-| `npm run format`        | prettier 写回                                 |
-| `npm run format:check`  | prettier 检查（格式门）                       |
+| 命令                       | 作用                                                                       |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `npm run dev`              | 开发服务器（`/api` 代理到 127.0.0.1:7800）                                 |
+| `npm run build`            | `tsc --noEmit` + vite build                                                |
+| `npm run typecheck`        | 仅类型检查                                                                 |
+| `npm run test -- --run`    | vitest 单次运行（不带 `--run` 为 watch 模式）                              |
+| `npm run format`           | prettier 写回                                                              |
+| `npm run format:check`     | prettier 检查（格式门）                                                    |
+| `npm run test:visual:gate` | build + Playwright 视觉矩阵（6 页 x 2 主题 x 2 视口 + axe AA，无快照基线） |
 
-`/api` 代理目标默认 7800（apps/server rp_server.py），本机端口被占用时用 `RP_API_TARGET=http://127.0.0.1:<port> npm run dev` 覆盖。
+`/api` 代理目标默认 7800（apps/server rp_server.py），本机端口被占用时用 `RP_API_TARGET=http://127.0.0.1:<port> npm run dev` 覆盖。视觉门禁默认驱动系统 chromium（/usr/sbin/chromium），可用 `PW_CHROMIUM=<路径>` 覆盖；快照基线不本地生成（ROADMAP 风险 3），详见 docs/phase5/PHASE5-ACCEPTANCE.md。
 
 ## 技术栈（版本精确锁定，2026-11-10 实测安装）
 
@@ -61,4 +62,4 @@ web/
 
 - 依赖只进 `web/node_modules` 与 `package-lock.json`，不全局安装（npm 全局基线不因本工程变化）。
 - 开发期数据一律走 `/api` 代理（apps/server 的 rp_server.py 九个只读端点），不直连数据库；新页面数据不得新增直连 SQL 的端点。
-- 页面数据接入批次：总览已接真实数据（/api/overview + /api/stats，KPI 卡可点击跳列表页，Skeleton/Error/Empty 三态统一），Projects/Knowledge/ToolCenter/Runs/Runtime 占位中（P5-6 到 P5-8）。
+- 页面数据接入批次：六个页面全部接真实只读端点。总览（/api/overview + /api/stats）、知识库（/api/knowledge?q= 检索 + 详情侧栏）、工具中心（/api/tools 列表 + 过滤 + /tools/:toolId 详情，试运行为禁用占位）、运行记录（/api/runs 列表 + status 过滤 + /runs/:runId 详情含 usage/environment JSON 块与 artifact 预览入口）、运行时（/api/runtime 节点与心跳，实时心跳待 Gateway 常驻编排属待验证）、项目（/api/tasks 列表 + by_state/by_type 计数，P5-9 最小版，任务详情与时间线裁剪），Skeleton/Error/Empty 三态统一。

@@ -80,7 +80,7 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
     const toolItems = (tools.data?.items ?? []).map((tool) => ({
       text: `${tool.name} ${tool.tool_id}`,
       title: tool.name,
-      to: `/tools?tool_id=${encodeURIComponent(tool.tool_id)}`,
+      to: `/tools/${encodeURIComponent(tool.tool_id)}`,
       ...(tool.lifecycle ? { meta: tool.lifecycle } : {}),
     }));
     if (toolItems.length > 0) groups.push({ group: "tools", label: "工具", items: toolItems });

@@ -11,7 +11,7 @@ kind: "tool"
 family: "utility"
 runtime:
   type: "podman_host"
-  image: "localhost/rip-tool-coreutils:latest@sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb"
+  image: "localhost/rip-tool-coreutils:latest@sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf"
   readonly_rootfs: true
   mounts:
       role: "input"
@@ -52,7 +52,7 @@ provenance:
   source_repo: "containerfiles/rip-tool-coreutils（本仓库，自研纯标准库入口）"
   license: "repo-internal"
   dependencies: []
-  image_digest: "sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb"
+  image_digest: "sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf"
   known_limits:
     - "untar 固定 filter=data（拒绝绝对路径与 .. 成员）"
   tested: "P3-4 批次端到端实测（crates/tool-engine/tests/core_utils_e2e.rs：五 run 经 Gateway::dispatch 全链 + artifact sha256 对账 + 坏输入/截断负例）"

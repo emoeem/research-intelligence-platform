@@ -11,6 +11,7 @@
 
 use database::{discover_migrations, migrate, DbPath, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 fn repo_migrations_dir() -> PathBuf {
@@ -89,8 +90,14 @@ fn reset_dev_copy() {
     }
 }
 
+/// 本文件各用例共用同一开发库副本（reset 会互删对方打开中的文件，
+/// 并行时触发 SQLITE_READONLY / disk I/O，第 1 轮门禁在
+/// migrations_context_broker.rs 实测同款竞态），进程内串行化访问。
+static DEV_COPY_LOCK: Mutex<()> = Mutex::new(());
+
 #[test]
 fn p1_3_migrate_twice_no_diff_on_dev_copy() {
+    let _guard = DEV_COPY_LOCK.lock().unwrap();
     let dir = repo_migrations_dir();
     let discovered = discover_migrations(&dir).unwrap();
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
@@ -152,6 +159,7 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
 
 #[test]
 fn p1_3_ddl_covers_contract_3_3_and_5_2() {
+    let _guard = DEV_COPY_LOCK.lock().unwrap();
     reset_dev_copy();
     let pool = open_dev_pool();
     migrate(&pool, &repo_migrations_dir()).unwrap();

@@ -21,7 +21,13 @@ const KnowledgePage = lazy(() =>
 const ToolCenterPage = lazy(() =>
   import("./routes/ToolCenterPage").then((m) => ({ default: m.ToolCenterPage })),
 );
+const ToolDetailPage = lazy(() =>
+  import("./routes/ToolDetailPage").then((m) => ({ default: m.ToolDetailPage })),
+);
 const RunsPage = lazy(() => import("./routes/RunsPage").then((m) => ({ default: m.RunsPage })));
+const RunDetailPage = lazy(() =>
+  import("./routes/RunDetailPage").then((m) => ({ default: m.RunDetailPage })),
+);
 const RuntimePage = lazy(() =>
   import("./routes/RuntimePage").then((m) => ({ default: m.RuntimePage })),
 );
@@ -42,7 +48,9 @@ export function App() {
             <Route path="projects" element={lazyElement(<ProjectsPage />)} />
             <Route path="knowledge" element={lazyElement(<KnowledgePage />)} />
             <Route path="tools" element={lazyElement(<ToolCenterPage />)} />
+            <Route path="tools/:toolId" element={lazyElement(<ToolDetailPage />)} />
             <Route path="runs" element={lazyElement(<RunsPage />)} />
+            <Route path="runs/:runId" element={lazyElement(<RunDetailPage />)} />
             <Route path="runtime" element={lazyElement(<RuntimePage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -357,7 +357,7 @@ fn manifest_matches_contract_section_9_1_shape() {
     assert_eq!(manifest["runtime"]["type"], json!("podman_host"));
     let image = manifest["runtime"]["image"].as_str().unwrap();
     assert!(
-        image.ends_with("@sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91"),
+        image.ends_with("@sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58"),
         "manifest image must be digest-pinned to the local build: {image}"
     );
     assert_eq!(

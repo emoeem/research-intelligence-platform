@@ -8,7 +8,7 @@
   "description": "podman_host 通道端到端冒烟：stdin 一行 JSON 请求 stdout 一行 JSON 结果（D-TC-03），自证非 root 用户、capabilities 收敛、只读根、tmpfs 与 keep-id 产物属主",
   "runtime": {
     "type": "podman_host",
-    "image": "localhost/rip-tool-base:smoke@sha256:84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a",
+    "image": "localhost/rip-tool-base:smoke@sha256:1dbc67084d5c1a1f6c31720752e64730da3524a83b5ba3efba5dadb9589cbe60",
     "entrypoint": [
       "python3",
       "/app/smoke_tool.py"
@@ -109,7 +109,7 @@
     "source_repo": "containerfiles/rip-tool-base（本仓库，自研冒烟载具）",
     "license": "repo-internal",
     "dependencies": [],
-    "image_digest": "sha256:84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a",
+    "image_digest": "sha256:1dbc67084d5c1a1f6c31720752e64730da3524a83b5ba3efba5dadb9589cbe60",
     "known_limits": [
       "冒烟载具，无外部副作用；T0 仅覆盖容器内自证行为"
     ],

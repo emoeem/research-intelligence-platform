@@ -12,7 +12,13 @@
 
 use database::{discover_migrations, migrate, DbPath, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// 两个用例共用 migrations/dev-p4.db（reset 会互删对方打开中的文件，
+/// 并行时触发 SQLITE_READONLY / disk I/O，第 1 轮门禁实测），进程内
+/// 串行化共享副本的全部访问；路径契约不变（头注释口径）。
+static DEV_COPY_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_migrations_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -92,6 +98,7 @@ fn reset_dev_copy() {
 
 #[test]
 fn p4_1_migrate_twice_no_diff_on_dev_copy() {
+    let _guard = DEV_COPY_LOCK.lock().unwrap();
     let dir = repo_migrations_dir();
     let discovered = discover_migrations(&dir).unwrap();
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
@@ -153,6 +160,7 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
 
 #[test]
 fn p4_1_ddl_columns_check_domains_and_fk_cascade() {
+    let _guard = DEV_COPY_LOCK.lock().unwrap();
     let dir = repo_migrations_dir();
     reset_dev_copy();
     let pool = open_dev_pool();

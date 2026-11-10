@@ -443,6 +443,7 @@ def handle_tasks(conn: sqlite3.Connection, params: dict) -> dict:
 
 KNOWLEDGE_LIFECYCLE = ("DISCOVERED", "FETCHED", "PARSED", "CANDIDATE", "VERIFIED", "INDEXED", "STALE")
 TOOL_LIFECYCLE = ("REGISTERED", "VALIDATED", "ENABLED", "DISABLED", "DEPRECATED")
+TOOL_GOVERNANCE = ("ACTIVE", "QUARANTINED", "REJECTED", "ARCHIVED")
 RUN_STATUS = ("QUEUED", "WAITING_FOR_RUNNER", "PREPARING", "RUNNING",
               "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED")
 
@@ -644,6 +645,8 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
 
     keyword = clean_str(params, "keyword")
     lifecycle = check_enum(params, "lifecycle", TOOL_LIFECYCLE)
+    # governance 过滤（Phase 5 Web 前端 Tool Center 契约，P5-7 起提供）
+    governance = check_enum(params, "governance", TOOL_GOVERNANCE)
     limit = parse_limit(params)
     where, args = [], []
     if keyword:
@@ -653,6 +656,9 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
     if lifecycle:
         where.append("lifecycle = ?")
         args.append(lifecycle)
+    if governance:
+        where.append("governance = ?")
+        args.append(governance)
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
     total = conn.execute(f"SELECT COUNT(*) FROM {src}.tool {where_sql}", args).fetchone()[0]
@@ -668,7 +674,7 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
         "total": total,
         "returned": len(items),
         "limit": limit,
-        "filters": {"keyword": keyword, "lifecycle": lifecycle},
+        "filters": {"keyword": keyword, "lifecycle": lifecycle, "governance": governance},
         "items": items,
     }
 

@@ -36,9 +36,9 @@
 
 | 镜像 | digest（podman inspect 实测） | 构建日期 | 批次 |
 |---|---|---|---|
-| `localhost/rip-tool-base:smoke` | `sha256:84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a` | 2026-11-10 复核（P2-5 首建） | P2-5 |
-| `localhost/rip-tool-webresearch:latest` | `sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91` | 2026-11-10 | P3-1 |
-| `localhost/rip-tool-coreutils:latest` | `sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb` | 2026-11-10 | P3-1 |
+| `localhost/rip-tool-base:smoke` | `sha256:1dbc67084d5c1a1f6c31720752e64730da3524a83b5ba3efba5dadb9589cbe60` | 2026-11-11 重建（P2-5 首建；2026-11-10 夜间外部清理致三族镜像丢失，按 §31 行流程重取同步，原值 84877bf6 见 git 历史） | P2-5 / P5-10 重建 |
+| `localhost/rip-tool-webresearch:latest` | `sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58` | 2026-11-11 重建（同上事件；原值 bf910119 见 git 历史） | P3-1 / P5-10 重建 |
+| `localhost/rip-tool-coreutils:latest` | `sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf` | 2026-11-11 重建（同上事件；原值 c90631b9 见 git 历史） | P3-1 / P5-10 重建 |
 
 构建口径（P3-1 实测）：两族镜像内零包安装（工具本体 Python 纯标准库，基础镜像自带能力），构建全程离线（基础镜像 digest 已在本地 containers-storage）；构建期宿主 `pacman -Q` 基线 2415 行无变化。工具本体功能在容器内验证（hash 与宿主 sha256sum 对账一致、gzip 回读一致、json 转 csv、filemeta、YAML 显式不支持负向、路径穿越拒绝负向、GET example.com 200 且 body sha256 宿主对账一致、无网与非 GET 拒绝负向）。
 

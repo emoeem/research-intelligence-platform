@@ -117,6 +117,36 @@ ROADMAP §6.3 的批次表（最小可验证单元与并行性照录，P5-1 已�
 
 ## 验收
 
+### P5-9 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-8 Projects 最小版裁剪）
+
+1. `npm run test -- --run`：退出码 0，11 个测试文件 69 用例全过（本批新增 tests/projects-smoke.test.tsx 5 用例：列表渲染 total/by_state/by_type chips 与行字段、?task_id= 定位高亮、Loading 骨架、Error 可重试、Empty 显服务端真实文案）。
+2. 真实对账（dev rp_server 7801 + vite 代理）：页面显「共 42 个任务（显示 42）」与 curl /api/tasks?limit=200 total=42（items 42）一致；by_state 六态计数（CREATED 28 / AUTHORIZATION_REVIEW 7 / WORKFLOW_PLANNING 3 / COMPLETED 2 / AUTHORIZED_EXECUTION 1 / LOCAL_KNOWLEDGE_RETRIEVAL 1）与 by_type 三类（recon 19 / vuln 17 / full 6）逐项一致（浏览器截图留档）。
+3. 高亮契约实测：/projects?task_id=rtis-20261106-034508-9517（真实存量 id）对应行 aria-current 高亮；Run 详情页 task 链接与 ⌘K 任务命中（/projects?task_id=）的落点契约成立。
+4. 裁剪声明（ask 明确）：任务详情与研究时间线不做，本页为列表占位页（ROADMAP P5-8 最小版的裁剪形态）；PagePlaceholder 占位组件随本页落地退役（ProjectsPage 不再引用）。
+
+### P5-8 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-7 Runs/Runtime 部分）
+
+1. `npm run test -- --run`：退出码 0，10 个测试文件 64 用例全过（本批新增 tests/runs-smoke.test.tsx 9 用例：Run 列表 3 条与 aux 数据源标注、status 过滤服务端参数、aux 未配置真实空态、Loading 骨架、详情概要字段与 usage/environment JSON 块、artifact 存在时预览入口链接、404 ErrorPanel、Runtime 节点渲染含从未心跳诚实显示、零行与表缺失两种真实空态）。
+2. 真实对账（dev rp_server 7801 挂 dev-b5.db + vite 代理）：页面列表显「共 3 条（显示 3，数据源：RP_AUX_DB 开发库副本）」，三个 run_id（rn-b5-eri/rn-b5-rt-py/rn-b5-kb-mjs）与 curl /api/runs 一致（均 SUCCEEDED，duration 927/221/208 ms）；详情页 /runs/rn-b5-rt-py 与 curl 逐项一致（SUCCEEDED、221 ms、input_hash b921d750…、usage elapsed_ms 221/output_bytes 609、environment runtime_node_id host-cachyos、budget timeout_seconds 30、replay cached false 四个 JSON 块）；artifact 列表真实空态（dev-b5 artifact 表存在但 0 行）；Runtime 页 runtime_node=0 显真实空态「暂无运行时节点：runtime_node 为空（Gateway 心跳尚未接入或节点未登记）。」+「实时心跳待 Gateway 常驻编排（待验证）」徽标与 PHASE2-ACCEPTANCE §7 引用说明（浏览器截图留档）。
+3. 手核发现并修复的真实 bug：详情接口 JSON 列字段名带 *_json 后缀（rp_server.py detail 分支解析后保留原名），前端接口误写为 usage/environment 等无后缀名导致 JSON 块不渲染，浏览器对账暴露后已对齐（RunDetailPage + 测试桩同步修正）。
+4. 数据诚实口径：runtime 实时心跳依赖 Gateway 常驻编排（PHASE2-ACCEPTANCE §7 第 2 条载明未落地，心跳为按需探测 + 600s 间隔守卫），本批页面展示登记节点与最近心跳快照，实时性属待验证；artifact 预览入口仅在有 artifact 行时渲染（uri 新标签打开），dev-b5 现无 artifact 数据故不出现，不造假入口。
+
+### P5-7 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-6 Tool Center 部分）
+
+1. `npm run test -- --run`：退出码 0，9 个测试文件 55 用例全过（本批新增 tests/tools-smoke.test.tsx 8 用例：列表总数与 badge、行 href 指向 /tools/:toolId、lifecycle/governance 过滤走服务端参数、过滤无命中真实空态、Loading 骨架、详情 Schema 原始 JSON 渲染、Schema 未登记诚实文案（null 不造数据）、404 ErrorPanel、详情 Loading 骨架）。
+2. 服务端 governance 过滤（apps/server 只读增量，P5-6 q 别名同模式）：handle_tools 加 governance 参数（枚举校验 ACTIVE/QUARANTINED/REJECTED/ARCHIVED）+ selftest 行；`bash apps/server/selftest_phase5.sh` 退出码 0（PASS=31 FAIL=0），`bash apps/server/selftest_auth.sh` 退出码 0（PASS=11 FAIL=0）。
+3. 真实对账（dev rp_server 7801 挂 dev-b5.db + vite 代理）：页面列表显「共 20 个工具（显示 20，数据源：主库注册面）」与 curl /api/tools?limit=200 total=20 一致；curl governance=ACTIVE total=20（主库全 ACTIVE）；详情 /api/tools?tool_id=rip.kb.rtis 主库未命中回退 aux，页面渲染真实 JSON Schema（additionalProperties/properties/limit/q/surface 等后端原文），tool_version 历史 v0.1.0 current，试运行按钮 disabled=true + 说明「依赖 Phase 1/3 派发链（本阶段只读 API 无执行面）」（浏览器截图留档）。
+4. 路由与索引接线：App.tsx 新增 /tools/:toolId 懒加载路由；⌘K 面板工具命中链接从 /tools?tool_id= 改为 /tools/:toolId（详情页落地后消费）。
+5. 数据诚实口径：M 期盘点工具（input/output Schema 为 NULL）显示「该工具未登记 Schema（M 期盘点面记录，Phase 1 契约登记后此处显示真实 JSON Schema）」；health 为 NULL 不渲染；purpose/provenance_ref 字段不在 M 期 tool 表模型中（Phase 1 契约面），详情以 binary_ref/source_system/source_pk 呈现、provenance 从 tool_version.provenance_json 解析渲染，不造假字段。
+
+### P5-6 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-5 Knowledge 部分）
+
+1. `npm run test -- --run`：退出码 0，8 个测试文件 47 用例全过（本批新增 tests/knowledge-smoke.test.tsx 5 用例：列表渲染徽标与总数、检索走 q= 且防抖 300ms 窗口内不发带关键词请求、无命中显服务端真实空态文案、Loading 骨架与 Error 可重试、点击条目按 knowledge_id= 拉详情并呈现来源/元数据/正文摘要）。
+2. 服务端 q 别名（apps/server 增量，P5-3 端点上的参数扩展）：/api/knowledge 的 q 为 keyword 等价别名（handle_knowledge 内两行，q 优先、keyword 兜底）；`bash apps/server/selftest_phase5.sh` 退出码 0（PASS=30 FAIL=0，新增 q=hex2bin 命中=库直查五字段 LIKE 对账行），`bash apps/server/selftest_auth.sh` 退出码 0（PASS=11 FAIL=0）零回归。
+3. 真实对账（dev rp_server 7801 + vite 代理）：curl q=hex2bin total=3、q=重定向 total=3、q=zzz不存在 total=0 + 真实空态 message「没有匹配的知识条目，调整关键词或生命周期后重试」；页面检索 hex2bin 显「共 3 条（显示 3）」且标题列表与 curl 一致；浏览器截图确认无命中空态按服务端文案渲染。
+4. 详情侧栏实测：点击列表项按 ?knowledge_id= 全字段拉取，侧栏呈现来源（source + source_url 外链）、元数据（组件/CVE/等级/语言/证据级/命中/更新时间/验证注记/tags chips）、正文摘要（content 截断 1200 字符，无 content 回退 usage）。
+5. 三态统一：loading= SkeletonPanel（侧栏小骨架）、error= ErrorPanel 可重试、空= EmptyPanel（服务端 message 优先）；检索 300ms 防抖（vitest 实测防抖窗口内无带 q= 请求）。
+
 ### P5-5 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-5 Overview 部分）
 
 1. `npm run test -- --run`：退出码 0，7 个测试文件 42 用例全过（本批新增 tests/overview-smoke.test.tsx 6 用例：KPI 渲染来自 /api/overview 与 /api/stats 双端点桩、评审队列 note 逐队列计数、Run note 按 by_status、可点击卡 href 断言与真实点击跳转、证据/评审队列无专属页面为静态卡、Loading 挂起渲染 SkeletonPanel、500 渲染 ErrorPanel 且重试后数据落地、全零渲染 EmptyPanel 且功能地图仍在）。

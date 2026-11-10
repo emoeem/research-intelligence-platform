@@ -4,7 +4,7 @@
   "family": "utility",
   "runtime": {
     "type": "podman_host",
-    "image": "localhost/rip-tool-coreutils:latest@sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb",
+    "image": "localhost/rip-tool-coreutils:latest@sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf",
     "readonly_rootfs": true,
     "mounts": [
       {
@@ -57,7 +57,7 @@
     "source_repo": "containerfiles/rip-tool-coreutils（本仓库，自研纯标准库入口）",
     "license": "repo-internal",
     "dependencies": [],
-    "image_digest": "sha256:c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb",
+    "image_digest": "sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf",
     "known_limits": [
       "md5/sha1 仅用于既有系统对账，不用于安全用途"
     ],

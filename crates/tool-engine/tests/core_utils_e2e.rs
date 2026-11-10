@@ -32,7 +32,7 @@ use tool_registry::{Options, Registry};
 
 const IMAGE_TAG: &str = "localhost/rip-tool-coreutils:latest";
 /// P3-1 首建、P3-4 op 分派改造后重建的 digest（containerfiles/README.md 台账）。
-const IMAGE_DIGEST: &str = "c90631b9269d42cb6a7f237dbbfd888f41df970152fd8c8121033089603b2eeb";
+const IMAGE_DIGEST: &str = "49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf";
 
 const FIVE_TOOLS: [&str; 5] = [
     "rip.core.file_meta",

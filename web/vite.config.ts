@@ -62,6 +62,9 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: "jsdom",
       globals: true,
+      // vitest 只跑单测目录；qa/visual/*.spec.ts 属 Playwright 视觉门禁
+      // （npm run test:visual:gate），两套 runner 互不越界。
+      include: ["tests/**/*.{test,spec}.{ts,tsx}"],
     },
   };
 });

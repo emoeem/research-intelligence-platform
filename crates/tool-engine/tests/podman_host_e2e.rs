@@ -33,7 +33,7 @@ use tool_registry::{Options, Registry};
 
 const IMAGE_TAG: &str = "localhost/rip-tool-base:smoke";
 /// tool-manifest.yaml 的 json 孪生（仓库 json/yaml 双份惯例）。
-const MANIFEST_DIGEST: &str = "84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a";
+const MANIFEST_DIGEST: &str = "1dbc67084d5c1a1f6c31720752e64730da3524a83b5ba3efba5dadb9589cbe60";
 
 static IMAGE_LOCK: Mutex<()> = Mutex::new(());
 /// 容器生成类用例串行执行（run 结束清零断言与按名等待都依赖独占容器面）。
@@ -599,7 +599,7 @@ fn tag_ref_image_rejected_in_preparing() {
 #[test]
 fn adapter_unit_helpers() {
     assert!(PodmanHostAdapter::image_ref_ok(
-        "localhost/rip-tool-base:smoke@sha256:84877bf60e8a768c08f5b7a9b334eac48231b70f8b1c248008723590f79dc81a"
+        "localhost/rip-tool-base:smoke@sha256:1dbc67084d5c1a1f6c31720752e64730da3524a83b5ba3efba5dadb9589cbe60"
     ));
     assert!(!PodmanHostAdapter::image_ref_ok(
         "localhost/rip-tool-base:smoke"

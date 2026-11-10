@@ -35,7 +35,7 @@ use tool_registry::{Options, Registry};
 const IMAGE_TAG: &str = "localhost/rip-tool-webresearch:latest";
 /// P3-1 构建产物 digest（containerfiles/README.md 台账同步值；P3-2 批次内
 /// 工具脚本补 stderr 镜像后重建更新）。
-const IMAGE_DIGEST: &str = "bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91";
+const IMAGE_DIGEST: &str = "085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58";
 
 static IMAGE_LOCK: Mutex<()> = Mutex::new(());
 /// 容器生成类用例串行执行（容器面清零断言依赖独占）。

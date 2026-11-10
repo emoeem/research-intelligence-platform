@@ -8,7 +8,7 @@
   "description": "T1 只读 HTTP 检查：GET/HEAD 请求与结构化响应信息提取（TOOL-CONTRACT §9.1 形状落地），出站经 egress_proxy 白名单代理（P3-2）",
   "runtime": {
     "type": "podman_host",
-    "image": "localhost/rip-tool-webresearch:latest@sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91",
+    "image": "localhost/rip-tool-webresearch:latest@sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58",
     "entrypoint": [
       "python3",
       "/app/http_inspector.py"
@@ -151,7 +151,7 @@
     "source_repo": "containerfiles/rip-tool-webresearch（本仓库，自研纯标准库包装，P3-1 镜像 + P3-2 代理面 + P3-3 登记）",
     "license": "repo-internal",
     "dependencies": [],
-    "image_digest": "sha256:bf910119b26426c107e9b1adfd722def3473fa1e260e0f447a9514e57f365f91",
+    "image_digest": "sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58",
     "known_limits": [
       "仅 80/443 出站且经白名单代理；非 HTTP(S) 目标不适用",
       "method 收敛为 GET/HEAD（T1 只读面），§9.1 草案的 POST 枚举不登记",
