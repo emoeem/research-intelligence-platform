@@ -53,6 +53,10 @@ ck "POST /api/overview 仍为 405（只读语义）" "405" "${code}"
 body=$(api "/api/knowledge?limit=5")
 ck "/api/knowledge total=库直查" "$(dbcount "${MIGRATIONS}/platform.db" knowledge)" "$(jget "${body}" "d['total']")"
 ck "/api/knowledge available=true source=main" "True main" "$(jget "${body}" "d['available']") $(jget "${body}" "d['source']")"
+# q 为 keyword 的别名（P5-6 Web 前端契约）：q=hex2bin 命中数=库直查 LIKE
+q_total=$(jget "$(api "/api/knowledge?q=hex2bin")" "d['total']")
+db_q=$(python3 -c "import sqlite3; print(sqlite3.connect('file:${MIGRATIONS}/platform.db?mode=ro',uri=True).execute(\"SELECT COUNT(*) FROM knowledge WHERE title LIKE '%hex2bin%' OR knowledge_id LIKE '%hex2bin%' OR component LIKE '%hex2bin%' OR cve LIKE '%hex2bin%' OR category LIKE '%hex2bin%'\").fetchone()[0])")
+ck "/api/knowledge q= 别名检索命中=库直查" "${db_q}" "${q_total}"
 body=$(api "/api/tasks?limit=1")
 ck "/api/tasks total=库直查（42 存量）" "$(dbcount "${MIGRATIONS}/platform.db" research_task)" "$(jget "${body}" "d['total']")"
 

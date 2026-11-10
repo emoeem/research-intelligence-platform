@@ -88,7 +88,7 @@ ROADMAP §6.3 的批次表（最小可验证单元与并行性照录，P5-1 已�
 | P5-8  | Projects 页最小版                                                                                         | 【串行】依赖 P5-3 与 P5-4                            |
 | P5-9  | 视觉回归与 a11y 门禁（playwright 静态服务器 + 页面矩阵 + axe AA 并轨 + CI 接线）                           | 【并行】可与 P5-5 到 P5-8 同步搭骨架，逐页入矩阵      |
 
-本阶段的执行编排把 P5-1 切为 10 个实施批次（第 1/10 批即本文件所属批），阶段级切分以上表为准，批次合并与顺序以各批次验收结果为准，不与本表冲突。
+本阶段的执行编排切为 10 个实施批次（第 1/10 批起），执行批次号与上表的映射存在两处次序对调（2026-11-10 实际执行记录）：执行第 3 批（编 P5-3）落地的是上表 P5-4 的过渡形态（apps/server 只读 API 增量，见偏差登记 1）；执行第 4 批（编 P5-4）落地的是上表 P5-3（壳层）。其余执行批次按上表顺序推进，第 10 批为阶段收口。阶段级切分以上表为准，批次合并与顺序以各批次验收结果为准，不与本表冲突。
 
 ### 偏差登记 1：api-server crate 顺延
 
@@ -116,6 +116,28 @@ ROADMAP §6.3 的批次表（最小可验证单元与并行性照录，P5-1 已�
 7. npm install 未做逐包许可审计（可参考 telegram-bot admin/DEPENDENCIES.md 的口径，待验证项）。
 
 ## 验收
+
+### P5-5 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-5 Overview 部分）
+
+1. `npm run test -- --run`：退出码 0，7 个测试文件 42 用例全过（本批新增 tests/overview-smoke.test.tsx 6 用例：KPI 渲染来自 /api/overview 与 /api/stats 双端点桩、评审队列 note 逐队列计数、Run note 按 by_status、可点击卡 href 断言与真实点击跳转、证据/评审队列无专属页面为静态卡、Loading 挂起渲染 SkeletonPanel、500 渲染 ErrorPanel 且重试后数据落地、全零渲染 EmptyPanel 且功能地图仍在）。
+2. 真实端点逐项对账（dev rp_server 7801 挂 aux 库 + vite 代理，curl vs 页面 DOM 提取）：知识条目 46=46、研究任务 42=42、证据 700=700、评审队列 165=165（note「D5 68 · License 79 · Mapping 18」与 /api/stats by_queue 逐队列一致）、工具 20=20（available=true）、运行 3=3（note「SUCCEEDED 3」与 runs.by_status 一致）。
+3. 卡片跳转实测：知识条目卡点击 → /knowledge（tab 条 1.2 高亮），href 断言 /tools、/runs 在位；证据与评审队列为静态卡（Phase 5 六页无对应列表页，不造假跳转）。
+4. 统一三态接线：loading= SkeletonPanel、error= ErrorPanel（重试按钮实测切回正常桩后数据落地）、empty= EmptyPanel（全零判据：knowledge/tasks/evidence/resources 全 0；功能地图为静态导航辅助，三态下均保留）。
+5. 数据口径：/api/overview 为主源（KPI 与生命周期分布），/api/stats 为评审队列细分源；stats 失败时评审卡降级显示「/api/stats 不可用」不致命。
+
+### P5-4 批次判据（已执行，2026-11-10，对应 ROADMAP §6.3 P5-3 壳层）
+
+1. `npm run test -- --run`：退出码 0，6 个测试文件 36 用例全过（workspaces 稳定编号坐标 6 用例：序号连续、过滤不漂移、图标键全键覆盖、六页路由一一对应、buildFeatureMap 推导；壳层冒烟 9 用例：图标轨与页头、tab 条带 2.1 到 2.3 编号、总览无 tab 条、抽屉滚动锁 + Esc、路由变化收起、⌘K 空态与真实端点桩命中、Esc 关面板、ErrorBoundary 按路由 re-key）。
+2. `npm run build`：退出码 0；dist/assets 出现 vendor-icons（7.55 kB）、vendor-echarts（558.81 kB）、vendor-react（255.51 kB）、vendor-query（24.87 kB）分组；入口 chunk index-M7lkkTcy.js 19.52 kB 不含页面代码（六路由仍是独立 chunk 0.25 到 6.05 kB）。
+3. 真实双服务手核（rp_server 7801 无鉴权 dev 实例 + `RP_API_TARGET=http://127.0.0.1:7801 npm run dev`，浏览器实测）：
+   - 1440x900：56px 图标轨归位（transform none、x=0）、页头 + 搜索钮在位、总览 KPI 全真实数据（知识 46 / 任务 42 / 资源 81 / 证据 700 / 工具 20 / 运行面诚实显示「未接入 aux_db_not_configured」）、知识生命周期柱图 3 柱渲染（VERIFIED 37 / CANDIDATE 7 / DISCOVERED 2，fill #5070dd）、功能地图编号 1.1 到 2.3 与 workspaces 数据一致。
+   - 390x844：抽屉打开（rail is-open、x=0、body overflow hidden、遮罩在）、Esc 关闭（遮罩撤、滚动解锁）、路由变化自动收起（开抽屉点「研究」→ /projects 后 is-open 消失）。
+   - ⌘K 面板：打开显 4 个热门入口 chip、输入 nmap 命中「工具」分组（真实 /api/tools 端点数据，非假索引）、Esc 关闭。
+   - 主题切换：rip-dark 与 rip-light 往返，data-theme 与 localStorage 同步。
+4. 手核发现并修复的两处实测问题（记录教训）：
+   - echarts-for-react 绑定层在 Vite dev 下内部容器 init 时测得 width 0、svg 从未生成（size-sensor 测量链在预打包 + 非绘制标签页下失效）：EChart 重写为直连 echarts/core 的薄封装（echarts-install.ts 静态具名注册 + ResizeObserver resize + dispose），echarts-for-react 依赖移除；vendor-echarts 从 namespace 动态 import 的 1085 kB 降到具名静态 import 的 558.81 kB。
+   - 壳层 .rail 的 transform 过渡在桌面端无意义且会在非绘制标签页留下冻结过渡帧：transition 移入 max-width 639.9px 媒体查询（只属移动抽屉）。
+   - rAF 等待教训：非前台绘制标签页 requestAnimationFrame 永不触发，EChart 内任何「等下一帧再 init」的逻辑都会挂死，直接 init + ResizeObserver 才是可依赖模式（代码内注释留档）。
 
 ### P5-3 批次判据（已执行，2026-11-10）
 

@@ -545,8 +545,8 @@ def handle_overview(conn: sqlite3.Connection, params: dict) -> dict:
 
 
 def handle_knowledge(conn: sqlite3.Connection, params: dict) -> dict:
-    """知识条目列表：主库 knowledge（M 面数据），keyword/lifecycle/verified 过滤；
-    ?knowledge_id= 返回单条全字段详情。"""
+    """知识条目列表：主库 knowledge（M 面数据），q（keyword 别名）/lifecycle/verified
+    过滤；?knowledge_id= 返回单条全字段详情。"""
     knowledge_id = clean_str(params, "knowledge_id")
     if knowledge_id:
         item = query_one(conn, "SELECT * FROM knowledge WHERE knowledge_id = ?", (knowledge_id,))
@@ -555,7 +555,9 @@ def handle_knowledge(conn: sqlite3.Connection, params: dict) -> dict:
         item["tags"] = parse_json_or_none(item.get("tags"))
         return {"available": True, "source": "main", "item": item}
 
-    keyword = clean_str(params, "keyword")
+    # q 为 keyword 的别名（Phase 5 Web 前端契约口径，P5-6 起两者等价）
+    q_raw = clean_str(params, "q")
+    keyword = q_raw if q_raw is not None else clean_str(params, "keyword")
     lifecycle = check_enum(params, "lifecycle", KNOWLEDGE_LIFECYCLE)
     verified_raw = clean_str(params, "verified")
     if verified_raw is not None and verified_raw not in ("true", "false"):

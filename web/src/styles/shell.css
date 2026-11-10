@@ -36,7 +36,14 @@
   padding: 16px 12px;
   background: var(--sidebar);
   transform: translateX(-100%);
-  transition: transform var(--fx-dur) var(--fx-ease);
+}
+
+/* 过渡只属于移动抽屉：桌面固定轨是静态布局，任何 transform 过渡残留
+ * （如非绘制标签页冻结的过渡帧）都不该影响它。 */
+@media (max-width: 639.9px) {
+  .rail {
+    transition: transform var(--fx-dur) var(--fx-ease);
+  }
 }
 
 .rail.is-open {
