@@ -4,7 +4,7 @@
 
 | 项         | 值                                                                                                          |
 | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| 阶段交付   | git `f77e7b5`（04:52 CST）                                                                                  |
+| 阶段交付   | git `f77e7b5`（04:37 CST）                                                                                  |
 | 数据库迁移 | 无新增迁移（消费 011 knowledge_source_entry，SK-1 批次已建）；实跑用开发库副本 /tmp/sk2.db，生产 platform*.db 未触及 |
 | 自动化测试 | cargo test plugin-registry + plugin-runtime 全绿（61 个 test result: ok，新增 static_chain 2 项 + sk2_source_ingest 4 项）；web vitest 73 全绿 |
 | 静态检查   | cargo clippy --workspace 零告警；web tsc --noEmit 零错误                                                     |
