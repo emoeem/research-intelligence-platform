@@ -285,6 +285,11 @@ fn submit_probe(engine: &Engine, run_id: &str, input: Value, timeout_seconds: u6
 }
 
 fn rip_containers() -> Vec<String> {
+    if !podman_available() {
+        // V-9：podman 不可用时用例在入口 SKIP，这里返回空集避免
+        // 守卫前的清理调用先 panic（2026-11-12 门禁修复）。
+        return Vec::new();
+    }
     let out = Command::new("podman")
         .args([
             "ps",
@@ -304,6 +309,10 @@ fn rip_containers() -> Vec<String> {
 }
 
 fn force_cleanup_rip_containers() {
+    if !podman_available() {
+        // V-9：podman 不可用时空操作，SKIP 判定留给用例入口。
+        return;
+    }
     let out = Command::new("podman")
         .args([
             "ps",

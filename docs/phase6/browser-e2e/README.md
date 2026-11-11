@@ -36,3 +36,14 @@
 | sk2-04-knowledge-sources-tongui-filter.png | 按 tongui 过滤：75 条，UNLICENSED + 仅元数据与哈希 + 45a12a7，分类「渗透测试全套（74 篇，13 章）」，blob URL 可点跳回原始来源 |
 
 实测环境：browser-use 真实浏览器 1280x800，vite dev（/api 代理）到 rp_server 127.0.0.1:7823（RP_PLUGIN_DB=/tmp/sk2.db 开发库，本地无鉴权模式）；页面导航与过滤均为真实 UI 操作（视图切换按钮经页面脚本触发点击，IAB 高层 click 对该 SPA 连续超时的替代路径，见 SK2-SOURCES-NOTES.md §八）。方法与对账记录：docs/phase6/SK2-SOURCES-NOTES.md。
+
+## SK 扩展独立验收复测截图（2026-11-12，验收员实测，与批次截图相互独立）
+
+| 文件 | 内容 |
+| --- | --- |
+| skverify-01-plugins-three-sources-licenses.png | 插件中心三卡片复测：ENABLED + 许可证徽章 CC0-1.0 / Apache-2.0 / UNLICENSED、快照短 Commit 440486f / 1867eb6 / 45a12a7、来源 85 / 102 / 75 条全带 APPROVED 计数 |
+| skverify-02-knowledge-sources-search-strix-hit.png | 知识来源视图检索 strix：共 1 条命中，APPROVED / Apache-2.0 / 仅目录元数据 / 1867eb6 徽章，原始链接 https://github.com/usestrix/strix |
+| skverify-03-knowledge-sources-tongui-75-unlicensed.png | 按 tongui 过滤复测：75 条，UNLICENSED + 仅元数据与哈希 + 45a12a7，逐条带 GitHub blob 链接 |
+| skverify-04-plugin-detail-tongui-license-commit-review.png | tongui 详情页复测：许可证 UNLICENSED、来源主页链接、快照 Commit 全 40 位、lock sha256、catalog_entry · metadata_only、审核状态 APPROVED: 75、审计 trail 含 plugin.knowledge.ingest |
+
+复测环境：browser-use 真实浏览器（ZCode IAB，1280x800），vite dev 5181（/api 代理）到 rp_server 127.0.0.1:7831（RP_PLUGIN_DB=/tmp/sk2.db，本地无鉴权模式）；数据面只读，零写库。跳转实证：strix 条目链接点击后新页落在 github.com/usestrix/strix（tab title 实查为该项目 GitHub 页），tongui「01 计算机发展史」blob 链接点击后新页落在 tongui66/Cyber-Security-Course-Notes 对应 blob 路径。视图切换与清空检索沿用页面脚本触发路径（同上 IAB 高层 click 现象）。
