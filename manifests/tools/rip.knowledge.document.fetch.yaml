@@ -1,0 +1,118 @@
+# SK-3 批次登记文件（P6-11 第 2 步，安全知识源计划 §6.2C）：T1 定点文档抓取。
+# 只接受 Registry 已批准 canonical URL；域名 allowlist + DNS 全址私网复核
+# （禁 localhost/loopback/RFC1918/link-local 含 169.254.169.254 metadata/
+# CGNAT/ULA）+ 重定向逐跳复核 + 大小/MIME/超时上限；默认只读 GET 不带
+# Cookie/Authorization，不执行页面脚本；内容 sha256 与抓取时间记录进
+# 012 knowledge_document_fetch（受控写面唯一写者 document_fetch.rs）。
+# 传输面复用 crates/tool-engine/src/adapter/egress_proxy.rs（host_from_url/
+# EgressProxy 白名单代理，不重写）。已知边界：workspace 无 TLS 依赖栈，
+# 本批传输面仅 http 明文，https 请求按结构化错误码拒绝（不静默降级），
+# TLS 引入待独立批次评估。与同名 .json 双份等价。
+schema_version: "1"
+id: "rip.knowledge.document.fetch"
+name: "Knowledge Document Fetcher"
+version: "0.1.0"
+kind: "tool"
+family: "knowledge"
+description: "按已审核来源定点抓取文档正文（allowlist + 私网拒绝 + 重定向逐跳复核 + 哈希落库），只读 GET 无凭据"
+runtime:
+  type: "native_rust"
+  binary: "rp-knowledge-fetch"
+  subcommand: "fetch"
+input_schema:
+  type: "object"
+  additionalProperties: false
+  required: ["url"]
+  properties:
+    url:
+      type: "string"
+      description: "待抓取 URL；必须等于 Registry 已批准条目的 canonical_url（approved 闸默认开）"
+    source_id:
+      type: "string"
+      description: "来源插件 id（与 entry_key 一起定位已批准条目）"
+    entry_key:
+      type: "string"
+      description: "knowledge_source_entry.item_key；给出时 URL 必须与该 APPROVED 条目的 canonical_url 相等"
+    allow_domain:
+      type: "array"
+      items:
+        type: "string"
+      description: "本 run 域名 allowlist（精确匹配，无通配；派发面可按 approved 条目 host 生成）"
+    max_bytes:
+      type: "integer"
+      minimum: 1024
+      maximum: 8388608
+      description: "响应体上限，缺省 2 MiB，硬帽 8 MiB"
+    max_redirects:
+      type: "integer"
+      minimum: 0
+      maximum: 10
+      description: "重定向逐跳复核次数上限，缺省 3"
+    require_approved:
+      type: "boolean"
+      description: "缺省 true（有 --db 时强制）；false 仅限显式测试面"
+output_schema:
+  type: "object"
+  required: ["fetch_id", "requested_url", "final_url", "hops", "status", "content_sha256", "content_bytes", "mime_type", "fetched_at", "elapsed_ms"]
+  properties:
+    fetch_id:
+      type: "string"
+    hops:
+      type: "array"
+      items:
+        type: "string"
+      description: "逐跳 URL 链（每跳都过 allowlist + 私网复核）"
+    status:
+      type: "string"
+      enum: ["ok", "rejected"]
+    reject_reason:
+      type: ["string", "null"]
+      description: "host_not_allowlisted/private_network_blocked/port_not_allowed/scheme_unsupported/http_status/redirect_host_not_allowlisted/mime_not_allowed/body_too_large/not_approved_rejected 等"
+    content_sha256:
+      type: ["string", "null"]
+    content_bytes:
+      type: ["integer", "null"]
+    mime_type:
+      type: ["string", "null"]
+    fetched_at:
+      type: "string"
+    elapsed_ms:
+      type: "integer"
+resources:
+  cpu: "1"
+  memory: "128Mi"
+  timeout_seconds: 120
+  max_output_bytes: 1048576
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80]
+    domains: []
+    note: "端口按本批 http 明文传输面取 80；allowlist 域名在派发面按 approved 条目 host 动态生成临时条目，run 结束失效"
+secrets: []
+permission_level: "T1"
+idempotent: false
+health:
+  probe:
+    type: "none"
+  on_run_recover: false
+provenance:
+  origin: "rip-native"
+  source_path: "crates/tool-engine/src/document_fetch.rs"
+  license: "repo-internal"
+  dependencies: []
+  known_limits:
+    - "传输面仅 http 明文（workspace 无 TLS 依赖栈）；https 按 scheme_unsupported 结构化拒绝"
+    - "SSRF 面：DNS 解析后全地址私网复核，且连接用已复核 IP（防 DNS rebinding TOCTOU）"
+    - "GET 无 Cookie/Authorization；不执行页面脚本；正文默认不落盘（只落哈希与元数据）"
+  tested: "crates/tool-engine tests sk3_document_fetch/document_fetch 单元与集成（私网拒绝矩阵 + 重定向逐跳 + 012 落库 + approved 闸）+ 真实出网冒烟 example.com（2026-11-12 本会话实测）"
+context:
+  summary: "定点抓取已审核来源文档（T1，allowlist + 私网拒绝）"
+  docs: "crates/tool-engine/src/document_fetch.rs 模块头注"
+  tags: ["knowledge", "fetch", "egress", "ssrf-guard"]
+examples:
+  - input:
+      url: "http://example.com/"
+      allow_domain: ["example.com"]
+    output_hint:
+      status: "ok"

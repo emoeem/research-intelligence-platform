@@ -29,6 +29,96 @@ impl SqliteResourceRepository {
         Self { pool }
     }
 
+    // ------------------------------------------------------------------
+    // SK-3 候选映射（P6-11 第 3 步）：knowledge_source_entry 的
+    // skill_candidate 行到 Resource 候选的受控映射写面。审核闸：只映射
+    // review_status='APPROVED' 行（与 Search/Context 双闸同口径），
+    // DISCOVERED/UNREVIEWED 不映射，REJECTED/DEPRECATED 永不映射。落点
+    // resource 表：lifecycle=CANDIDATE、governance=ACTIVE、
+    // resource_type='skill_candidate'，resource_id/identity =
+    // `kse:<plugin_id>:<item_key>`（可回跳 knowledge_source_entry 源行）。
+    // 幂等：INSERT OR IGNORE（既有行不覆盖），重跑只计 skipped_existing。
+    // ------------------------------------------------------------------
+
+    /// 把指定知识插件的 APPROVED skill_candidate 映射为 Resource 候选。
+    pub fn promote_knowledge_candidates(
+        &self,
+        plugin_id: &str,
+        limit: u64,
+    ) -> DbResult<CandidateMappingReport> {
+        type Row = (String, Option<String>, Option<String>, String, Option<String>, Option<String>, Option<String>);
+        let rows: Vec<Row> = self.pool.with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT item_key, title, description, review_status, canonical_url,
+                        source_url, source_commit
+                 FROM knowledge_source_entry
+                 WHERE plugin_id = ?1 AND entry_kind = 'skill_candidate'
+                 ORDER BY entry_id LIMIT ?2",
+            )?;
+            let it = stmt.query_map(rusqlite::params![plugin_id, limit], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                ))
+            })?;
+            it.collect::<Result<Vec<_>, _>>()
+        })?;
+        let mut report = CandidateMappingReport {
+            plugin_id: plugin_id.to_string(),
+            ..CandidateMappingReport::default()
+        };
+        report.scanned = rows.len() as u64;
+        let now = domain::time::now_iso();
+        for (item_key, title, description, review, canonical_url, source_url, _commit) in rows {
+            if review != "APPROVED" {
+                report.skipped_not_approved += 1;
+                continue;
+            }
+            // resource.canonical_url NOT NULL：条目无 canonical_url 时回落
+            // 插件 source_url（两者皆缺 = 缺溯源，拒映射不猜造）。
+            let canonical = canonical_url
+                .clone()
+                .or_else(|| source_url.clone())
+                .unwrap_or_default();
+            if canonical.is_empty() {
+                report.skipped_missing_url += 1;
+                continue;
+            }
+            let resource_id = format!("kse:{plugin_id}:{item_key}");
+            let inserted = self.pool.with_conn(|c| -> rusqlite::Result<bool> {
+                let n = c.execute(
+                    "INSERT OR IGNORE INTO resource
+                     (resource_id, identity, canonical_url, resource_type, name,
+                      description, lifecycle, governance, source_system,
+                      first_seen, last_seen, created_at, updated_at)
+                     VALUES (?1, ?1, ?2, 'skill_candidate', ?3, ?4,
+                             'CANDIDATE', 'ACTIVE', 'knowledge-plugin',
+                             ?5, ?5, ?5, ?5)",
+                    rusqlite::params![
+                        resource_id,
+                        canonical,
+                        title.unwrap_or_else(|| item_key.clone()),
+                        description,
+                        now,
+                    ],
+                )?;
+                Ok::<bool, rusqlite::Error>(n > 0)
+            })?;
+            if inserted {
+                report.mapped += 1;
+                report.resource_ids.push(resource_id);
+            } else {
+                report.skipped_existing += 1;
+            }
+        }
+        Ok(report)
+    }
+
     fn load_all_where(&self, extra_where: &str, params: &[String]) -> DbResult<Vec<Resource>> {
         let sql = format!(
             "SELECT {RESOURCE_COLUMNS} FROM resource WHERE {extra_where} ORDER BY resource_id"
@@ -232,6 +322,25 @@ pub struct CitationVerification {
     /// 源侧互核：Some(true)=verified / Some(false)=内容漂移 /
     /// None=源行缺失或 ref 词形不匹配（unverifiable，不伪装通过）。
     pub source_ok: Option<bool>,
+}
+
+/// skill_candidate 到 Resource 候选的映射报告（SK-3 受控写面）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct CandidateMappingReport {
+    /// 来源插件 id。
+    pub plugin_id: String,
+    /// 扫描的 skill_candidate 行数（含未过审）。
+    pub scanned: u64,
+    /// 新插入的 Resource 候选数。
+    pub mapped: u64,
+    /// 已存在（幂等跳过）。
+    pub skipped_existing: u64,
+    /// 未过审核闸（非 APPROVED）。
+    pub skipped_not_approved: u64,
+    /// 缺 URL 溯源（canonical_url 与 source_url 皆空）。
+    pub skipped_missing_url: u64,
+    /// 本次新映射的 resource_id 列表。
+    pub resource_ids: Vec<String>,
 }
 
 fn row_to_citation_evidence(
@@ -627,5 +736,118 @@ mod tests {
         assert_eq!(tail.len(), 6);
         let ts = qid.trim_start_matches("erq-").split('-').next().unwrap();
         assert_eq!(ts.len(), 20);
+    }
+
+    // ------------------------------------------------------------------ SK-3
+
+    /// SK-3 候选映射 fixture：resource + knowledge_source_entry 最小 schema。
+    fn repo_with_kse_fixtures() -> SqliteResourceRepository {
+        let pool = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(1),
+        })
+        .unwrap();
+        pool.with_conn(|c| {
+            c.execute_batch(
+                "CREATE TABLE resource (
+                   resource_id TEXT PRIMARY KEY, identity TEXT UNIQUE, canonical_url TEXT NOT NULL,
+                   resource_type TEXT NOT NULL, name TEXT NOT NULL, description TEXT,
+                   owner TEXT, repo_name TEXT, lifecycle TEXT NOT NULL DEFAULT 'DISCOVERED',
+                   governance TEXT NOT NULL DEFAULT 'ACTIVE', source_status TEXT,
+                   quality_score REAL, trust_level TEXT,
+                   quality_final_score REAL, quality_grade TEXT, quality_adoption_blocked INTEGER,
+                   quality_reasons TEXT, first_seen TEXT, last_seen TEXT,
+                   source_system TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                   schema_version INTEGER NOT NULL DEFAULT 1);
+                 CREATE TABLE knowledge_source_entry (
+                   entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   plugin_id TEXT NOT NULL, plugin_version TEXT NOT NULL, corpus_id TEXT NOT NULL,
+                   entry_kind TEXT NOT NULL, item_key TEXT NOT NULL, title TEXT NOT NULL,
+                   description TEXT, body TEXT NOT NULL DEFAULT '', body_bytes INTEGER NOT NULL DEFAULT 0,
+                   content_sha256 TEXT NOT NULL DEFAULT '', metadata_sha256 TEXT NOT NULL DEFAULT '',
+                   canonical_url TEXT, source_url TEXT NOT NULL DEFAULT '',
+                   source_commit TEXT, review_status TEXT NOT NULL DEFAULT 'DISCOVERED');
+                 INSERT INTO knowledge_source_entry
+                   (plugin_id, plugin_version, corpus_id, entry_kind, item_key, title,
+                    description, review_status, canonical_url, source_url) VALUES
+                   ('knowledge.sk3-skill-pack', '0.1.0', 'sk3', 'skill_candidate',
+                    'skills/alpha/SKILL.md', 'static-analyzer-alpha', '静态分析候选',
+                    'APPROVED', NULL, 'https://github.com/fixture/skill-pack'),
+                   ('knowledge.sk3-skill-pack', '0.1.0', 'sk3', 'skill_candidate',
+                    'skills/beta/SKILL.md', 'dependency-checker-beta', '依赖检查候选',
+                    'DISCOVERED', NULL, 'https://github.com/fixture/skill-pack'),
+                   ('knowledge.sk3-skill-pack', '0.1.0', 'sk3', 'skill_candidate',
+                    'skills/gamma/SKILL.md', 'rejected-candidate', '已拒绝候选',
+                    'REJECTED', NULL, 'https://github.com/fixture/skill-pack');",
+            )
+        })
+        .unwrap();
+        SqliteResourceRepository::new(pool)
+    }
+
+    #[test]
+    fn promote_candidates_maps_only_approved() {
+        let repo = repo_with_kse_fixtures();
+        let report = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 100).unwrap();
+        assert_eq!(report.scanned, 3);
+        assert_eq!(report.mapped, 1, "只映射 APPROVED 行（审核闸）");
+        assert_eq!(report.skipped_not_approved, 2);
+        assert_eq!(report.resource_ids, vec!["kse:knowledge.sk3-skill-pack:skills/alpha/SKILL.md"]);
+        // 落点形态：lifecycle=CANDIDATE / governance=ACTIVE / type=skill_candidate
+        let (lifecycle, governance, rtype, canonical): (String, String, String, String) = repo
+            .pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT lifecycle, governance, resource_type, canonical_url
+                     FROM resource WHERE resource_id = ?1",
+                    ["kse:knowledge.sk3-skill-pack:skills/alpha/SKILL.md"],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+            })
+            .unwrap();
+        assert_eq!((lifecycle.as_str(), governance.as_str(), rtype.as_str()),
+                   ("CANDIDATE", "ACTIVE", "skill_candidate"));
+        assert_eq!(canonical, "https://github.com/fixture/skill-pack",
+                   "条目无 canonical_url 时回落 source_url");
+        // 幂等二跑：skipped_existing，不覆盖既有行
+        let report2 = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 100).unwrap();
+        assert_eq!(report2.mapped, 0);
+        assert_eq!(report2.skipped_existing, 1);
+        assert_eq!(report2.skipped_not_approved, 2);
+        let total: i64 = repo
+            .pool
+            .with_conn(|c| c.query_row("SELECT COUNT(*) FROM resource", [], |r| r.get(0)))
+            .unwrap();
+        assert_eq!(total, 1);
+    }
+
+    #[test]
+    fn promote_candidates_missing_url_is_skipped() {
+        let repo = repo_with_kse_fixtures();
+        repo.pool
+            .with_conn(|c| {
+                c.execute(
+                    "INSERT INTO knowledge_source_entry
+                     (plugin_id, plugin_version, corpus_id, entry_kind, item_key, title,
+                      review_status, canonical_url, source_url)
+                     VALUES ('knowledge.sk3-skill-pack', '0.1.0', 'sk3', 'skill_candidate',
+                             'skills/delta/SKILL.md', 'no-url-candidate', 'APPROVED', '', '')",
+                    [],
+                )
+            })
+            .unwrap();
+        let report = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 100).unwrap();
+        assert_eq!(report.mapped, 1); // alpha 仍映射
+        assert_eq!(report.skipped_missing_url, 1, "缺 URL 溯源拒映射不猜造");
+    }
+
+    #[test]
+    fn promote_candidates_limit_bounds_scan() {
+        let repo = repo_with_kse_fixtures();
+        let report = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 1).unwrap();
+        assert_eq!(report.scanned, 1);
+        assert_eq!(report.mapped, 1);
     }
 }

@@ -15,6 +15,7 @@
 #![deny(missing_docs)]
 
 pub mod adapter;
+pub mod document_fetch;
 pub mod envelope;
 pub mod mock_runner;
 pub mod request;

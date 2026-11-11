@@ -20,6 +20,8 @@ WORKER_SCRIPTS = {
     "parsing": WORKERS_PY / "parsing_worker.py",
     "embedding": WORKERS_PY / "embedding_worker.py",
     "evaluation": WORKERS_PY / "evaluation_worker.py",
+    "catalog": WORKERS_PY / "catalog_worker.py",
+    "audit": WORKERS_PY / "extension_audit_worker.py",
 }
 
 # 每个 worker 的"常规任务"与"大输出任务"（用于截断用例）
@@ -29,6 +31,11 @@ HAPPY_TASKS = {
     "embedding": {"task": {"text": "hello world 安全研究"}},
     "evaluation": {"task": {"entries": [
         {"id": "e1", "title": "t", "content": "c", "source": "https://a"}]}},
+    "catalog": {"task": {"source_id": "sk3-contract",
+                         "text": "# A\n\n- [x](https://a.example/x): d\n",
+                         "format": "md"}},
+    "audit": {"task": {"text": "# benign\nnothing to flag here\n",
+                       "name": "README.md"}},
 }
 
 BIG_TASKS = {
@@ -39,6 +46,13 @@ BIG_TASKS = {
         {"id": f"x{i}", "title": f"title {i}",
          "content": "body text " * 30, "source": f"https://src/{i}"}
         for i in range(200)]}},
+    "catalog": {"task": {"source_id": "sk3-big",
+                         "text": "# Big\n"
+                                 + "".join(f"- [n{i}](https://h.example/{i}): d\n"
+                                           for i in range(600)),
+                         "format": "md"}},
+    "audit": {"task": {"text": "sudo rm -rf / --no-preserve-root\n" * 400,
+                       "name": "probe.md"}},
 }
 
 

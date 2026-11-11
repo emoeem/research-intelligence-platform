@@ -104,8 +104,8 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-        "discover must see 001..011 in order (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        "discover must see 001..011 in order (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面)"
     );
 
     reset_dev_copy();
@@ -129,16 +129,17 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
             (9, "_plugin".to_string()),
             (10, "_knowledge_ingest".to_string()),
             (11, "_knowledge_sources".to_string()),
+            (12, "_knowledge_document_fetch".to_string()),
         ],
-        "first run must apply exactly 001..011"
+        "first run must apply exactly 001..012"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 11,
-        "user_version must be 11 after first run (chain tail 011)"
+        uv1, 12,
+        "user_version must be 12 after first run (chain tail 012)"
     );
     assert!(
         sv1.iter()

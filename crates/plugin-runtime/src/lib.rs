@@ -34,6 +34,7 @@ pub mod knowledge_review;
 pub mod paths;
 pub mod retention;
 pub mod source_fetch;
+pub mod source_sync;
 pub mod state_store;
 pub mod store;
 pub mod upgrade;
@@ -58,6 +59,7 @@ pub use paths::{
     STATE_FILE_NAME, TRANSITIONS_FILE_NAME,
 };
 pub use retention::{RetentionAction, RetentionItem, RetentionReport};
+pub use source_sync::{SyncAttempt, SyncOptions, SyncReport};
 pub use state_store::{snapshot_of, transition_record, StateStore};
 pub use store::{capabilities_from_manifest, PluginStore};
 pub use upgrade::{UpgradeOutcome, UpgradePlan};

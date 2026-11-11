@@ -42,6 +42,7 @@
 | P6-9（收口扩展） | 武器库扩展路径：ADDING-A-TOOL 指南 + 脚手架一条线 + /api/tools aux 增量合并 | 已完成 | docs/guides/ADDING-A-TOOL.md、scripts/rip_new_tool.py、rp-tool validate/register 与 rp-tool-health ping、样例工具 rip.http.tls_inspect 端到端露出（收口记录 docs/releases/RELEASE_2026-11-12_PHASE6.md §三/§四；ROADMAP §7.3 原表止于 P6-8，本行为收口批新增编号） |
 | P6-9（SK-1） | 通用 Knowledge Catalog/Document Ingestion（SK 计划 §8 P6-9 原口径，与上行同号异源） | 已完成 | 011 两表（knowledge_source_entry + context_citation_evidence）、domain::knowledge 四实体、ingest per-kind 注册表 + dry-run SAVEPOINT、validate rule 3 knowledge_provides_invalid、search-engine 第三源（INDEX_SCHEMA_VERSION=2）、context-broker PluginSource 实装 + Evidence 受控写面、真实 RTIS 对账复跑 15155 行幂等（实测记录见下方 SK-1 节，收口 docs/releases/RELEASE_2026-11-12_SK1-INGEST.md） |
 | P6-10（SK-2） | 三个安全知识来源接入（SK 计划 §8 P6-10） | 已完成 | manifests/plugins/ 三源双份 Manifest（固定 Commit pin，git 通道实装校验）、tests/fixtures/sk2/ 最小快照 fixture、scripts/sk2_tongui_catalog.py 派生目录（74 篇 + 31 精选双 source_ref 合并）、CLI 实跑链 262 条对账幂等（85/102/75）、review APPROVED + rp-search-index 双闸、web 三页来源/许可/Commit/审核展示 + browser-use E2E 截图 4 张（实测记录见下方 SK-2 节与 docs/phase6/SK2-SOURCES-NOTES.md） |
+| P6-11（SK-3） | 安全工具目录与静态审查工具（SK 计划 §8 P6-11） | 已完成 | manifests/tools/ 四件双份 Manifest（catalog.extract T0 / extension.audit T0 / document.fetch T1 egress_allowlist / source.sync T1）、012 抓取审计表、catalog_worker.py（复用 parsing_worker 三函数）+ extension_audit_worker.py（零执行 AST 断言）、document_fetch.rs（复用 egress_proxy + 私网全闸 + approved 闸 + 重定向逐跳 + 012 落库）、source_sync.rs + rp-plugin sync（pin 前置闸 + 幂等键 + 限额 + 重试）+ --map-candidates（resource-engine 受控映射）、tests/fixtures/sk3/ 六类拒绝矩阵全过、真实出网冒烟哈希互核（实测记录见下方 SK-3 节与 docs/phase6/SK3-TOOLS-NOTES.md） |
 
 ## 已实施批次实测记录
 
@@ -118,6 +119,16 @@
 - 50 URL 抽样（seed 20261112，分层 17/17/16）：50/50 URL 可达、50/50 分类对账（方法与明细表见 docs/phase6/SK2-SOURCES-NOTES.md §七）。
 - 批次偏差（详 docs/phase6/SK2-SOURCES-NOTES.md §三/§六）：tongui catalog_entry 来自派生目录 scripts/sk2_tongui_catalog.py（上游树整仓仅 1 个绝对 URL、站点 slug 与 Git 路径不可互推，上游树直摄实测 0 条目）；upstream_missing 自动标记未实现（无第二快照触发场景，物理删已由测试锁定不发生）；secskills skill_candidate 本快照 0（上游未打包 skills/ 目录）；web 视觉门禁（playwright）本机无 chromium 未运行。
 - 浏览器 E2E（browser-use 真实浏览器 1280x800 + vite dev 代理 rp_server 7823，RIP_PLUGIN_DB=/tmp/sk2.db）：插件中心许可/Commit/条目徽章、tongui 详情（来源主页/快照 Commit/内容类型/审核状态/审计 trail 含 plugin.knowledge.ingest）、知识库「知识来源」视图 262 条与 tongui 过滤 75 条，截图 4 张入 docs/phase6/browser-e2e/（sk2-01 到 sk2-04）。
+
+### SK-3（2026-11-12，安全工具目录与静态审查工具）
+
+- 接手基线：SK-2 收口后的三源摄取管线与审核闸零改动复用；本批为 P6-11 四件工具全量批次（catalog.extract / extension.audit / document.fetch / source.sync）+ skill_candidate 到 Resource 候选映射写面，RTIS 三类写面与既有检索/上下文双闸零触碰。
+- 验收命令与结果：`cargo test --offline --workspace` 57 套件 ok 379 passed（唯一失败 podman_host_egress 4 项，本机无 podman，批次预期例外口径）；`cargo clippy --offline --workspace --all-targets -- -D warnings` exit 0；`python3 -m unittest discover -s workers/python/tests` 211 tests OK（新增 test_catalog_extract 37 + test_security_extension_audit 46，含六类恶意 fixture 拒绝矩阵与零执行 AST 断言）。
+- 新增面：manifests/tools/ 四件双份 Manifest（tool-registry sk3_tool_manifests 静态链 + register/discover + rule 5 复验）、migrations/012_knowledge_document_fetch.sql（抓取审计表）、crates/tool-engine/src/document_fetch.rs + rp-knowledge-fetch bin（复用 egress_proxy + 私网全闸 + approved 闸 + 重定向逐跳）、crates/plugin-runtime/src/source_sync.rs + rp-plugin sync 子命令（pin 前置闸 + 幂等键 + 限额 + 重试 + 部分失败）、resource-engine promote_knowledge_candidates 受控映射写面、tests/fixtures/sk3/ 六类反例 fixture。
+- 冒烟实测（RIP_DATA_DIR=/tmp/sk3-data，--db /tmp/sk3-smoke.db）：sync dry-run 零落盘 → 实跑 85 → 幂等键二跑整体跳过 → 无键三跑 skipped=85 changed=0 → 限额失败机器可读（fail-fast）；skill-pack 映射先 DISCOVERED mapped=0、review APPROVED 后 mapped=2（resource 表 CANDIDATE/ACTIVE）；fetch 真实出网 http://example.com/ 哈希落 012 且与 curl 同头独立互核逐字节一致，非 allowlist 域 host_not_allowlisted、127.0.0.1 与 169.254.169.254 private_network_blocked 实拒。
+- 冒烟抓出的真 bug 已修：example.com chunked 响应下读取面把分帧记进正文（哈希失真），read_http_response 重写为 Content-Length/chunked 解帧/close 定界三形态（详 docs/phase6/SK3-TOOLS-NOTES.md §四）。
+- 已知取舍（详 NOTES §九）：https 传输面未实现（workspace 无 TLS 依赖栈，scheme_unsupported 结构化拒绝，TLS 依赖评估归独立批次）；catalog.extract resource_kind/confidence 为确定性启发（rust ingest 恒 link 的口径差异如实登记）；Web Tool Center 展示不在本批；SESSION-HANDOFF.md 未更新。
+- 依赖方向扩展：plugin-runtime 增 resource-engine 直连边（rp-plugin sync --map-candidates 调受控写面，单向依赖），登记于本台账。
 
 ## 偏差登记（对冻结文档的显式偏离，均可评审推翻）
 

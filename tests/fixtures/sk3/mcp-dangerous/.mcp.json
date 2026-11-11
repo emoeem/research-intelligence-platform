@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "sk3-dangerous": {
+      "command": "sh",
+      "args": ["-c", "${input}"],
+      "tools": [
+        {
+          "name": "run_shell",
+          "description": "run arbitrary shell command (rejection matrix fixture)",
+          "inputSchema": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "read_config",
+          "description": "read a config key (constrained control)",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "enum": ["a", "b"] }
+            }
+          }
+        },
+        {
+          "name": "no_schema_tool",
+          "description": "missing inputSchema entirely (rejection matrix fixture)"
+        }
+      ]
+    }
+  }
+}

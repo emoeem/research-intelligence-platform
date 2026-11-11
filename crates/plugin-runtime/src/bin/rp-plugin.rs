@@ -50,7 +50,7 @@ fn die_paths(err: plugin_runtime::PathsError) -> ! {
 fn usage() -> ! {
     eprintln!(
         "usage: rp-plugin --db <path> [--migrations <dir>] [--data-dir <dir>] [--plugins-dir <dir>] \
-         [--data-root <dir>] <install|enable|disable|uninstall|upgrade|update-check|ingest [--dry-run]|review <id> --keys k1,k2 --status APPROVED|load|activate|deactivate|mark-error|list> ..."
+         [--data-root <dir>] <install|enable|disable|uninstall|upgrade|update-check|ingest [--dry-run]|sync <id> [--dry-run] [--idempotency-key K] [--max-files N] [--max-bytes N] [--max-seconds S] [--retries N] [--new-version V] [--package DIR] [--map-candidates]|review <id> --keys k1,k2 --status APPROVED|load|activate|deactivate|mark-error|list> ..."
     );
     std::process::exit(2);
 }
@@ -469,6 +469,160 @@ fn main() {
                 .unwrap_or_else(|e| die(e));
             let state = ctx.sync_state(&[]);
             json!({"command": "review", "plugin_id": id, "to": to.as_str(), "updated": updated, "counts": counts, "state_files": state})
+        }
+        "sync" => {
+            // SK-3（P6-11 第 2 步）：rip.knowledge.source.sync 受控入口
+            // （update-check + ingest via 受控 API，可选候选映射）。
+            let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let dry_run = args.rest.iter().any(|a| a == "--dry-run");
+            let map_candidates = args.rest.iter().any(|a| a == "--map-candidates");
+            let idempotency_key = flag_value(&args.rest, "--idempotency-key");
+            let max_files = flag_value(&args.rest, "--max-files").and_then(|v| v.parse().ok());
+            let max_bytes = flag_value(&args.rest, "--max-bytes").and_then(|v| v.parse().ok());
+            let max_seconds = flag_value(&args.rest, "--max-seconds").and_then(|v| v.parse().ok());
+            let retries = flag_value(&args.rest, "--retries").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let new_version = flag_value(&args.rest, "--new-version");
+
+            let plugin = ctx.runtime.store().get_active(&id).unwrap_or_else(|e| {
+                die(plugin_runtime::RuntimeError {
+                    code: "db".into(),
+                    message: e.to_string(),
+                    details: None,
+                })
+            });
+            let plugin = match plugin {
+                Some(p) => p,
+                None => die(plugin_runtime::RuntimeError {
+                    code: "unknown_plugin".into(),
+                    message: format!("plugin {id:?} not installed"),
+                    details: None,
+                }),
+            };
+            let manifest: Value = serde_json::from_str(&plugin.manifest_json).unwrap_or_else(|e| {
+                die(plugin_runtime::RuntimeError {
+                    code: "manifest_corrupt".into(),
+                    message: format!("stored manifest: {e}"),
+                    details: None,
+                })
+            });
+
+            // update-check（受控 API；--new-version 给出时执行）。
+            let update_check_result = match &new_version {
+                Some(v) => Some(
+                    ctx.runtime
+                        .update_check(&id, v)
+                        .unwrap_or_else(|e| die(e)),
+                ),
+                None => None,
+            };
+
+            // 取包路径：--package 本地 staging（离线面）；省略时按
+            // source_fetch::verify + fetch_into（P6-4 git 通道，先固定完整
+            // Commit 再取包，不执行仓库中任何脚本）。
+            let package_dir = match package_from(&args.rest) {
+                Some(pkg) => pkg,
+                None => {
+                    plugin_runtime::source_sync::verify_pin(&manifest)
+                        .unwrap_or_else(|e| die(e));
+                    plugin_runtime::source_fetch::verify(&manifest).unwrap_or_else(|e| die(e));
+                    let target = ctx
+                        .paths
+                        .installed_plugin_dir(&id, &plugin.version)
+                        .unwrap_or_else(|e| die_paths(e));
+                    plugin_runtime::source_fetch::fetch_into(&manifest, &target)
+                        .unwrap_or_else(|e| die(e));
+                    target
+                }
+            };
+
+            let prior_keys = plugin_runtime::source_sync::read_sync_keys(&ctx.paths.state_dir());
+            let opts = plugin_runtime::SyncOptions {
+                dry_run,
+                idempotency_key,
+                max_files,
+                max_bytes,
+                max_seconds,
+                retries,
+                update_check_result,
+                map_candidates,
+                prior_sync_keys: prior_keys.clone(),
+            };
+            let report = plugin_runtime::source_sync::sync_knowledge_source(
+                &ctx.pool,
+                &manifest,
+                &package_dir,
+                &opts,
+            )
+            .unwrap_or_else(|e| die(e));
+
+            // 实跑成功且非 dry-run：幂等键入账（侧车文件，非数据库）。
+            if !report.dry_run && report.ok && !report.idempotent_skipped {
+                if let Some(key) = &opts.idempotency_key {
+                    plugin_runtime::source_sync::append_sync_key(
+                        &ctx.paths.state_dir(),
+                        key,
+                        &id,
+                    )
+                    .unwrap_or_else(|e| die(e));
+                }
+            }
+
+            // 审计：sync 动作留痕（成功与部分失败都落，detail 机器可读）。
+            let audit = audit_engine::AuditEngine::new(ctx.pool.clone());
+            audit.emit_best_effort(
+                domain::audit::AuditEvent::new(
+                    "user:cli",
+                    audit_engine::plugin_actions::KNOWLEDGE_SYNC,
+                )
+                .with_entity("plugin", &format!("{}@{}", report.plugin_id, report.plugin_version))
+                .with_detail(
+                    serde_json::json!({
+                        "ok": report.ok,
+                        "dry_run": report.dry_run,
+                        "idempotency_key": report.idempotency_key,
+                        "idempotent_skipped": report.idempotent_skipped,
+                        "attempts": report.attempts,
+                        "limits_exceeded": report.limits_exceeded,
+                        "partial_failures": report.partial_failures,
+                        "counts": report.final_report.as_ref().map(|r| r.counts.clone()),
+                    })
+                    .to_string(),
+                ),
+            );
+
+            // 候选映射（受控写面：resource-engine 唯一写者 + 审计留痕）。
+            let mapping = if map_candidates && !report.dry_run && report.ok {
+                let repo = resource_engine::SqliteResourceRepository::new(ctx.pool.clone());
+                let m = repo
+                    .promote_knowledge_candidates(&id, 500)
+                    .unwrap_or_else(|e| {
+                        die(plugin_runtime::RuntimeError {
+                            code: "db".into(),
+                            message: e.to_string(),
+                            details: None,
+                        })
+                    });
+                audit.emit_best_effort(
+                    domain::audit::AuditEvent::new(
+                        "user:cli",
+                        audit_engine::plugin_actions::KNOWLEDGE_MAP_CANDIDATES,
+                    )
+                    .with_entity("plugin", &id)
+                    .with_detail(serde_json::to_string(&m).unwrap_or_default()),
+                );
+                Some(m)
+            } else {
+                None
+            };
+
+            let state = ctx.sync_state(&[transition_record(
+                "sync",
+                &id,
+                &report.plugin_version,
+                None,
+                if report.ok { "SYNCED" } else { "SYNC_FAILED" },
+            )]);
+            json!({"command": "sync", "report": report, "candidate_mapping": mapping, "state_files": state})
         }
         "update-check" => {
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());

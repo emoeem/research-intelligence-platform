@@ -1,0 +1,139 @@
+# SK-3 批次登记文件（P6-11 第 2 步，安全知识源计划 §6.2D）：T1 来源同步。
+# 只调 Plugin Runtime 受控 API（update-check + ingest），不直写 SQLite；
+# 支持 dry-run、idempotency_key、最大文件数/字节数/耗时上限、失败重试与
+# 部分失败报告；Git 更新先固定解析到的完整 Commit（浮动分支前置闸），
+# 不执行仓库中的脚本。与同名 .json 双份等价（static chain 测试断言）。
+schema_version: "1"
+id: "rip.knowledge.source.sync"
+name: "Knowledge Source Sync"
+version: "0.1.0"
+kind: "tool"
+family: "knowledge"
+description: "触发已安装知识插件的 update-check 与受控摄取（dry-run/幂等键/限额/重试/部分失败报告），可选候选资源映射"
+runtime:
+  type: "native_rust"
+  binary: "rp-plugin"
+  subcommand: "sync"
+input_schema:
+  type: "object"
+  additionalProperties: false
+  required: ["plugin_id"]
+  properties:
+    plugin_id:
+      type: "string"
+      minLength: 1
+      description: "已安装知识插件 id"
+    dry_run:
+      type: "boolean"
+      description: "true 时完整解析 + 去重判定，写步 SAVEPOINT 回滚零落盘"
+    idempotency_key:
+      type: "string"
+      maxLength: 512
+      description: "幂等键：与既有成功 sync 键相同则整体跳过（零落盘）"
+    max_files:
+      type: "integer"
+      minimum: 1
+      description: "包内文件数上限，超出按限额拒绝（不摄取）"
+    max_bytes:
+      type: "integer"
+      minimum: 1
+      description: "包内字节总量上限，超出按限额拒绝（不摄取）"
+    max_seconds:
+      type: "integer"
+      minimum: 1
+      description: "墙钟耗时上限（摄取不可中断，超限计入部分失败报告）"
+    retries:
+      type: "integer"
+      minimum: 0
+      maximum: 5
+      description: "失败额外重试次数，缺省 0；attempts 逐次机器可读"
+    new_version:
+      type: "string"
+      description: "update-check 的新版本号（受控 API，结果进报告）"
+    map_candidates:
+      type: "boolean"
+      description: "摄取成功后把 APPROVED skill_candidate 映射为 Resource 候选（resource-engine 受控写面，audit 留痕）"
+output_schema:
+  type: "object"
+  required: ["plugin_id", "pin_kind", "dry_run", "attempts", "limits", "limits_exceeded", "partial_failures", "ok"]
+  properties:
+    plugin_id:
+      type: "string"
+    pin_kind:
+      type: ["string", "null"]
+      description: "source.pinned.kind（commit/tag/release；floating 分支在 pin 前置闸拒绝）"
+    pinned_commit:
+      type: ["string", "null"]
+    dry_run:
+      type: "boolean"
+    idempotency_key:
+      type: ["string", "null"]
+    idempotent_skipped:
+      type: "boolean"
+    update_check_new_version:
+      type: ["boolean", "null"]
+    package_stats:
+      type: "object"
+      description: "files/bytes（限额核对面）"
+    attempts:
+      type: "array"
+      items:
+        type: "object"
+      description: "逐次尝试 index/ok/error_code/error_message"
+    final_report:
+      type: ["object", "null"]
+      description: "IngestReport（counts/skipped/changed/filtered/dry_run）"
+    limits:
+      type: "object"
+    limits_exceeded:
+      type: "array"
+      items:
+        type: "string"
+    partial_failures:
+      type: "array"
+      items:
+        type: "string"
+    candidate_mapping:
+      type: ["object", "null"]
+      description: "map_candidates=true 时的映射报告（scanned/mapped/skipped_*）"
+    ok:
+      type: "boolean"
+resources:
+  cpu: "1"
+  memory: "256Mi"
+  timeout_seconds: 600
+  max_output_bytes: 4194304
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80, 443]
+    domains: []
+    note: "仅 Git 通道（无 --package 时）经 source_fetch 按固定 Commit 拉取；域名 allowlist 由派发面按 plugin source.host 生成临时条目；不执行仓库中的任何脚本"
+secrets: []
+permission_level: "T1"
+idempotent: true
+health:
+  probe:
+    type: "none"
+  on_run_recover: false
+provenance:
+  origin: "rip-native"
+  source_path: "crates/plugin-runtime/src/source_sync.rs"
+  license: "repo-internal"
+  dependencies: []
+  known_limits:
+    - "不直写 SQLite：写面只有受控 Ingest API（SAVEPOINT dry-run）与 state 文件流水；候选映射走 resource-engine 受控方法"
+    - "max_seconds 不可中断摄取（同步调用），超限计入 limits_exceeded 部分失败报告"
+    - "浮动分支（pinned.kind 非 commit/tag/release）在 pin 前置闸拒绝，fail-fast 不触源"
+  tested: "crates/plugin-runtime tests sk3_source_sync.rs（dry-run 零落盘/实跑幂等二跑 skipped=全量/浮动分支拒绝/限额部分失败/重试 attempts/幂等键跳过/候选映射）2026-11-12 本会话实测全绿"
+context:
+  summary: "知识插件受控同步（T1：update-check + ingest + 可选候选映射）"
+  docs: "crates/plugin-runtime/src/source_sync.rs 模块头注"
+  tags: ["knowledge", "sync", "ingest", "controlled"]
+examples:
+  - input:
+      plugin_id: "knowledge.awesome-hacking"
+      dry_run: true
+    output_hint:
+      ok: true
+      dry_run: true

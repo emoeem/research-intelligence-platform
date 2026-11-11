@@ -10,6 +10,8 @@ description = "Phase 1 工具引擎骨架：ToolCallRequest 受理（D-TC-05 提
 database = { workspace = true }
 domain = { workspace = true }
 tool-registry = { workspace = true }
+# SK-3 文档抓取审计记录（document_fetch.rs FetchRecord 序列化面）。
+serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
 
@@ -21,3 +23,7 @@ runtime-gateway = { workspace = true }
 [[bin]]
 name = "rp-tool-health"
 path = "src/bin/rp-tool-health.rs"
+
+[[bin]]
+name = "rp-knowledge-fetch"
+path = "src/bin/rp-knowledge-fetch.rs"

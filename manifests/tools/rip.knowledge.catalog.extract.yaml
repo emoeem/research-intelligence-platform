@@ -1,0 +1,124 @@
+# SK-3 批次登记文件（P6-11 第 1 步，安全知识源计划 §6.2A）：T0 链接目录
+# 条目抽取。复用 parsing_worker 既有 extract_markdown_links/_link_scheme/
+# extract_frontmatter（SK-1 落地面，不重写）；纯解析不访问链接，scheme
+# 白名单 http/https，保留原始 URL，HTML 剥 script/style，超量分页截断报告。
+# 与同名 .json 双份等价（static chain 测试断言）。
+schema_version: "1"
+id: "rip.knowledge.catalog.extract"
+name: "Knowledge Catalog Extractor"
+version: "0.1.0"
+kind: "tool"
+family: "knowledge"
+description: "从 Markdown/HTML 目录文档抽取链接条目（name/描述/规范 URL/分类路径/去重键/置信度），纯解析不访问链接"
+runtime:
+  type: "python_worker"
+  protocol_version: "1"
+  worker_name: "catalog-extract-worker"
+  command: ["python3", "-I", "workers/python/catalog_worker.py"]
+  working_dir: "repo://research-platform"
+  restart: "pooled"
+input_schema:
+  type: "object"
+  additionalProperties: false
+  oneOf:
+    - required: ["text"]
+    - required: ["path"]
+  properties:
+    source_id:
+      type: "string"
+      minLength: 1
+      maxLength: 512
+      description: "来源标识（进每条 entry 的溯源面）"
+    text:
+      type: "string"
+      maxLength: 10485760
+      description: "内联目录文档，与 path 二选一"
+    path:
+      type: "string"
+      description: "输入文件路径（Artifact 暂存后相对路径），与 text 二选一"
+    format:
+      type: "string"
+      enum: ["md", "html", "txt"]
+      description: "缺省 md（path 按扩展名推断，未知扩展回落 md）"
+    category_map:
+      type: "object"
+      description: "分类重映射（原标题文本到规范分类），可选"
+    max_entries:
+      type: "integer"
+      minimum: 1
+      maximum: 100000
+      description: "单页条目上限，超出截断并给 next_offset 分页"
+    offset:
+      type: "integer"
+      minimum: 0
+      description: "分页起始偏移（作用于去重后的条目序列）"
+output_schema:
+  type: "object"
+  required: ["source_id", "format", "entries", "stats", "truncated", "next_offset", "paging", "source"]
+  properties:
+    source_id:
+      type: "string"
+    format:
+      type: "string"
+      enum: ["md", "html", "txt"]
+    entries:
+      type: "array"
+      items:
+        type: "object"
+      description: "目录条目：name/description/canonical_url/raw_url/raw_link_text/category_path/resource_kind/source_location/dedupe_key/confidence/meta"
+    stats:
+      type: "object"
+      description: "total/kept/scheme_rejected/no_scheme/deduped/scheme_rejected_final/returned/unique"
+    truncated:
+      type: "boolean"
+    next_offset:
+      type: ["integer", "null"]
+    paging:
+      type: "object"
+    source:
+      type: "object"
+      description: "输入来源 kind(inline|file)/path/bytes/sha256"
+    frontmatter:
+      type: "object"
+      description: "md 专属：frontmatter 围栏解析"
+resources:
+  cpu: "1"
+  memory: "256Mi"
+  timeout_seconds: 60
+  max_output_bytes: 8388608
+network:
+  mode: "none"
+secrets: []
+permission_level: "T0"
+idempotent: true
+health:
+  probe:
+    type: "worker_ping"
+    timeout_ms: 2000
+    interval_seconds: 300
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "rip-native"
+  source_path: "workers/python/catalog_worker.py"
+  license: "repo-internal"
+  dependencies: []
+  known_limits:
+    - "纯解析：不访问链接、不执行内容；只输出条目元数据"
+    - "resource_kind 按 URL 形状启发（github/gitlab/gitee owner/repo 两段 = repo，其余 link），不猜内容类型"
+    - "extract_markdown_links 在抽取层剥 URL 尾斜杠（SK-1 既有行为），raw_url 与 canonical 一致"
+    - "输入硬上限 10 MiB；max_entries 硬上限 100000"
+  tested: "workers/python/tests/test_catalog_extract.py 37 项（契约 24 + 单元 13）+ 套件 211 项全绿（2026-11-12 本会话实测）"
+context:
+  summary: "目录文档链接条目抽取（T0 纯解析）"
+  docs: "workers/python/catalog_worker.py 模块头注"
+  tags: ["knowledge", "catalog", "extract", "parse"]
+examples:
+  - input:
+      source_id: "awesome-hacking"
+      text: "# 工具\n\n- [Nucleus](https://github.com/abc/nucleus): fuzzing\n"
+      format: "md"
+    output_hint:
+      stats:
+        kept: 1

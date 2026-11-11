@@ -1,0 +1,35 @@
+# SK-3 拒绝矩阵 fixture（floating-branch 类）：git 来源 pinned.kind=branch
+# 的浮动分支 Manifest。本 fixture 任何环节都不允许被安装或摄取：
+# plugin-registry rule 5 floating_branch_rejected（validate.rs P6-4 语义）+
+# plugin-runtime sync 的 pin 前置闸（source_sync.rs floating_ref_rejected）。
+# 只用于静态审查与拒绝断言，不触网络。
+schema_version: "1"
+id: "knowledge.sk3-floating"
+name: "SK3 Floating Branch Probe"
+version: "0.1.0"
+kind: "knowledge"
+description: "拒绝矩阵反例：浮动分支 Manifest"
+authors: ["rip-fixture"]
+license: "MIT"
+source:
+  type: "git"
+  url: "https://github.com/example/sk3-floating"
+  host: "github"
+  pinned:
+    kind: "branch"
+    value: "main"
+capabilities:
+  - id: "knowledge-source.sk3-floating"
+    type: "knowledge_source"
+    entry: "README.md"
+    provides:
+      corpus_id: "sk3-floating"
+      content_kinds: ["catalog_entry"]
+      kinds:
+        catalog_entry:
+          source_path: "README.md"
+          parser: "markdown_links"
+          license_policy: "catalog_only"
+dependencies: []
+permissions:
+  data_access: "ingest_via_api"

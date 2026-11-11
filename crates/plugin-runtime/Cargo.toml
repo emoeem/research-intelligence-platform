@@ -19,6 +19,10 @@ plugin-registry = { workspace = true }
 # 新增 tool-registry 直连边（P6-2 批次的四依赖约束为其批次内口径；本扩展
 # 随 P6-6 批次声明，登记于 PHASE6-PLAN 批次台账）。
 tool-registry = { workspace = true }
+# SK-3：rp-plugin sync --map-candidates 调 resource-engine 受控写面
+# （promote_knowledge_candidates 是 resource 表该映射的唯一写者）；依赖方向
+# 单向（resource-engine 不反向依赖本 crate），登记于 PHASE6-PLAN 批次台账。
+resource-engine = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

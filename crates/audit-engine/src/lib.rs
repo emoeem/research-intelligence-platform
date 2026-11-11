@@ -38,6 +38,12 @@ pub mod plugin_actions {
     pub const KNOWLEDGE_REVIEW: &str = "plugin.knowledge.review";
     /// 知识摄取（SK-1：ingest 动作审计，dry-run 亦留痕标注 dry_run=true）。
     pub const KNOWLEDGE_INGEST: &str = "plugin.knowledge.ingest";
+    /// 知识来源同步（SK-3：rip.knowledge.source.sync，含 dry-run/幂等跳过/
+    /// 部分失败全留痕，detail 机器可读）。
+    pub const KNOWLEDGE_SYNC: &str = "plugin.knowledge.sync";
+    /// 候选资源映射（SK-3：APPROVED skill_candidate 到 Resource 候选，
+    /// resource-engine 受控写面）。
+    pub const KNOWLEDGE_MAP_CANDIDATES: &str = "plugin.knowledge.map_candidates";
 }
 
 /// 审计引擎。

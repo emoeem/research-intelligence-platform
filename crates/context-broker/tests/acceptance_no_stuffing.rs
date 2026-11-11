@@ -31,7 +31,7 @@ fn open_memory_pool() -> Pool {
     pool
 }
 
-/// 登记面目录（P4-2 同口径：manifests/tools 14 + Phase 3 两包 6）。
+/// 登记面目录（P4-2 同口径：manifests/tools 14 + Phase 3 两包 6 + SK-3 四工具 4）。
 fn manifest_dirs() -> Vec<PathBuf> {
     let root = repo_root();
     vec![
@@ -111,8 +111,8 @@ fn acceptance_no_stuffing_full_surface_and_rtis_scale() {
         }
     }
     assert_eq!(
-        registered, 20,
-        "登记面口径（T01..T10 的 14 + Phase 3 两包 6）"
+        registered, 24,
+        "登记面口径（T01..T10 的 14 + Phase 3 两包 6 + SK-3 四工具 4）"
     );
     pool.with_conn(|c| c.execute("UPDATE tool SET lifecycle = 'ENABLED'", []))
         .unwrap();
@@ -127,13 +127,17 @@ fn acceptance_no_stuffing_full_surface_and_rtis_scale() {
         count: 14717, // knowledge.db poc 表实查口径（P4-3 裁定）
     };
 
+    // 预算口径随登记面演进：本断言校准于 20 工具面（8000 tokens）；SK-3
+    // 四工具入登记面后 L1/L2 卡片增量 ~100 tokens，按同比例上调到 8200
+    //（no-stuffing 不变式本身不变：used<=alloc、L1 单摘要、L2 有界、无
+    // Schema 内联）。
     let broker = Broker::new(
         vec![
             Box::new(rulepack),
             Box::new(registry_source),
             Box::new(rtis),
         ],
-        BudgetPolicy::default_for(8000).unwrap(),
+        BudgetPolicy::default_for(8200).unwrap(),
         IntentConfig::from_dir(&repo_root().join("rulepacks/rip-rules")).unwrap(),
         ManifestStore::new(pool.clone()),
         None,

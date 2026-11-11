@@ -1,0 +1,37 @@
+# SK-3 候选映射 fixture（skill-pack）：两个本地静态分析/依赖检查类 Skill
+# 候选 + 一个待审候选，用于 resource-engine promote_knowledge_candidates
+# 受控写面测试（skill_candidate → Resource 候选，review_status 审核闸）。
+# source.type=local_dir（非远程来源，无 pinned 也可）；摄取走受控 Ingest API。
+schema_version: "1"
+id: "knowledge.sk3-skill-pack"
+name: "SK3 Static-Analysis Skill Pack"
+version: "0.1.0"
+kind: "knowledge"
+description: "本地静态分析/代码审计/依赖检查类 Skill 候选映射 fixture"
+authors: ["rip-fixture"]
+license: "MIT"
+source:
+  type: "local_dir"
+  path: "."
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+capabilities:
+  - id: "knowledge-source.sk3-skill-pack"
+    type: "knowledge_source"
+    entry: "skills/alpha/SKILL.md"
+    summary: "两个静态分析/依赖检查类 Skill 候选的 frontmatter 元数据摄取（metadata_only）"
+    provides:
+      corpus_id: "sk3-skill-pack"
+      content_kinds: ["skill_candidate"]
+      kinds:
+        skill_candidate:
+          source_path: "skills/"
+          parser: "skill_frontmatter"
+          license_policy: "metadata_only"
+context:
+  summary: "SK-3 候选映射 fixture（静态分析/依赖检查类 Skill 候选）"
+  docs: "skills/"
+dependencies: []
+permissions:
+  data_access: "ingest_via_api"
