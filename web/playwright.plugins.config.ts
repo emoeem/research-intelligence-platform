@@ -17,28 +17,17 @@ export default defineConfig({
   reporter: [["list"]],
   outputDir: "qa/plugins/.run",
   use: {
-    baseURL: e2e ? (process.env.RP_P6_BASE_URL ?? "http://127.0.0.1:7893") : "http://127.0.0.1:4178",
+    baseURL: "http://127.0.0.1:4178",
     headless: true,
     launchOptions: {
       executablePath: process.env.PW_CHROMIUM ?? "/usr/sbin/chromium",
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     },
-    ...(e2e
-      ? {
-          extraHTTPHeaders: {
-            Authorization: `Bearer ${process.env.RP_P6_TOKEN ?? ""}`,
-          },
-        }
-      : {}),
   },
-  ...(e2e
-    ? {}
-    : {
-        webServer: {
-          command: "node scripts/visual-server.mjs 4178",
-          port: 4178,
-          reuseExistingServer: false,
-          timeout: 15000,
-        },
-      }),
+  webServer: {
+    command: "node scripts/visual-server.mjs 4178",
+    port: 4178,
+    reuseExistingServer: false,
+    timeout: 15000,
+  },
 });

@@ -40,3 +40,12 @@ integrations/rtis/*.log
 # 库，目录可经 rip.data_dir/RIP_DATA_DIR 重定位到任意位置，故按目录名全路径
 # 级忽略；快照/流水为可再生旁路留存，同 eri.py db 重建口径）
 rip-data/
+
+# Playwright 测试输出目录（错误上下文与 trace 等运行时工件，不入库）
+web/qa/plugins/.run/
+web/qa/visual/.run/
+
+# 仓库根层 node_modules：web 的 npm 依赖只进 web/node_modules（web/.gitignore
+# 覆盖）；根层出现的是误跑 npx/vitest 落下的缓存目录（.vite/.vitest-cache），
+# 不属于任何交付物，不入库
+/node_modules/

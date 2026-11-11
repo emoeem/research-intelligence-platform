@@ -40,6 +40,7 @@
 - **Phase 3 完成（2026-11-10），验收通过**：本会话三道门禁实测 cargo test `--offline --workspace` 207 全绿（Phase 2 基线 194 + 13 新用例）、clippy `-D warnings` 零告警、worker unittest 125 全绿（跳过 11）。关键落地物：首批 Tool Packs 两包六工具（rip.http.inspect + rip.core 五工具，容器化登记与 Gateway 全链端到端，Artifact sha256 双向对账）、egress 白名单代理（network.mode=egress_allowlist 真实生效，跨 host 重定向拒）、pack-plan v1 Schema + 五份 planned 存根（三包 + TPscan + Browser Automation，解锁条件随存根）、TOOL-CONTRACT digest 占位全部回填（V-10 关闭）、零新增迁移；更新记录 docs/releases/RELEASE_2026-11-10_PHASE3.md。
 - **Phase 4 完成（2026-11-10），验收通过**：本会话三道门禁实测 cargo test `--offline --workspace` 273 全绿（0 失败 0 忽略）、clippy `-D warnings` 零告警、worker unittest 125 全绿（跳过 11）。关键落地物：crates/context-broker（L0 到 L3 四级装配、七分项预算与降级驱逐、citations 引用集、内容寻址缓存 + 七类失效触发器、六源 ContextSource 端口）、migrations/008_context_broker.sql 三表、确定性意图面（rulepacks/rip-rules 版本化配置 + classify 纯函数）、rp-context 验收 CLI 四子命令、est_tokens 校准留痕（中位数 0.9333）；验收三条（不默认塞入/可解释选择/Artifact 引用）全部有测试落证；更新记录 docs/releases/RELEASE_2026-11-10_PHASE4.md，实施差异全量见 docs/phase4/PHASE4-IMPLEMENTATION-DIFF.md。
 - **Phase 5 完成（2026-11-11），验收通过**：Web Workbench 基础版五页面接真实 API（Overview/Knowledge/Tool Center/Runs/Runtime 五页走本阶段新增五个只读端点 + Projects 最小版走既有 /api/tasks，全局搜索 ⌘K 接真实后端）；门禁当日复测全绿（cargo test 273 全绿、clippy 零告警、worker unittest 125 全绿跳过 11、web 五门禁 typecheck/build 17 chunk/vitest 69 用例/视觉门 30 用例/prettier 全过、selftest 31+11 零 FAIL）。关键落地物：web/ 独立 npm 工程（React 19 + Vite 8 + Tailwind 4 + daisyUI 5，六路由 lazy + vendor 分组 + 双主题双视口）、apps/server 五端点 + RP_AUX_DB 只读 ATTACH 通道、focus-trap 等基础件与 telegram-bot admin 同构、useApi 迁移 @tanstack/react-query（对外形状不变）、egress 代理三处时序竞态修复与外网瞬断重试；更新记录 docs/releases/RELEASE_2026-11-11_PHASE5.md，阶段验收 docs/phase5/PHASE5-ACCEPTANCE.md。
+- **Phase 6 完成（2026-11-12 收口入库），验收通过**：Plugin Runtime 与 Plugin Center 全交付（P6-1 到 P6-9 含武器库扩展路径）：插件生命周期全回路经真实 API 实测（install/enable/disable/upgrade 0.1.0→0.2.0/ingest/uninstall）、两插件接入（knowledge.rtis-redteam + tool.rip.python-workers + project.rtis-mcp 三 capability 形态）、Plugin Center 网页四级信息（四分类目录 + 三级加载 + 审计 trail + 写操作）、/api/plugins 读写端点经 rp-plugin 子进程零直连 SQL 写；门禁当日复测全绿（cargo test 379 全绿、clippy 零告警、worker unittest 125 全绿跳过 11、web 五门禁 tsc/build 19 chunk/vitest 73 用例/视觉门 30 用例/prettier 全过、selftest 31+49 零 FAIL）；浏览器实测三面证据（docs/phase6/browser-e2e/ 独立验收 7 截图 + selftest 内嵌真实后端 E2E 4 截图 + mock 视觉矩阵 8 passed）；收口当日修复三处（workers 守卫 untracked 误报、selftest_phase6 夹具残留误报、prettier 六文件）；更新记录 docs/releases/RELEASE_2026-11-12_PHASE6.md，阶段验收 docs/phase6/PHASE6-ACCEPTANCE.md。
 
 ## 四、Flutterfox/Voicefox（第二项目，Phase 0-8 完成，v0.9.0 已发布）
 
@@ -74,6 +75,7 @@
 
 - 项目完成（Phase 5 到 10）后：另开「全面审阅与优化」工作流，审阅整个已完成项目：对照 2.0 计划 §17 最终验收标准逐条核验、架构与计划一致性、五道门禁健康度、安全姿态（鉴权、容器边界、路径穿越面）、文档完备度（DOC-STANDARD 合规）；产出优化批次逐批实施并入库（每批 commit+push）。
 - 武器库扩展路径（用户硬性要求）：平台必须让「添加新工具」成为一条可复制路径。Phase 6 实施时交付 docs/guides/ADDING-A-TOOL.md 扩展指南与脚手架命令（新增工具 = 写 Tool Manifest + 放入对应 pack 或 python worker + 登记注册 + 健康检查一条线）；Phase 6 验收用「实际添加一个新工具并端到端露出（Registry 到 Tool Center 到 MCP 目录）」作为测试；审阅工作流复验该路径。
+- **武器库扩展路径交付注记（2026-11-12 收口实测）**：指南 docs/guides/ADDING-A-TOOL.md + 脚手架 `python3 -I scripts/rip_new_tool.py --id <tool_id> --name <名称> --family <family> --description <描述> --db <开发副本>` 一条线（D-TC-02 校验 + Manifest/worker 生成 + rp-tool validate/register + rp-tool-health ping + 露出核验）；端到端实测以样例工具 rip.http.tls_inspect（TLS Inspector v0.1.1，stdlib ssl）跑通：validate ok=true、ping ok=true（Worker Protocol v1 握手）、注册进 aux 开发副本后经 /api/tools 增量合并在 Tool Center 露出（工具中心 21 个工具，独立验收 browser-use 截图 docs/phase6/browser-e2e/06/07）；指南红线四条（禁写 platform*.db、禁手写 SQL、command 不经 shell、network.mode=none 缺省）。MCP 目录同源露出归 Phase 9（ROADMAP §十）。
 
 ## 九、浏览器实测硬性要求（2026-11-11 用户追加）
 
@@ -106,3 +108,21 @@
 收尾审阅工作流新增批次「ChatGPT 外部审阅」：用 browser-use 驱动真实浏览器打开网页版 ChatGPT（复用浏览器里用户已登录会话；未登录则停下请用户登录一次），提交仓库地址 github.com/emoeem/research-intelligence-platform（公开仓库）与提问（找 bug 与可优化点，可附 PHASE-ROADMAP 与阶段 RELEASE 清单供其定位），等待其浏览分析并回收回答；整理为建议清单逐条 triage（与 §十采纳映射同口径）后并入优化批次实施。前提：仓库保持公开（用户已决定）；敏感信息纪律照旧。
 
 ChatGPT 外部审阅链路已于 2026-11-11 实测通过（用户登录后全自动跑通）：browser-use 打开 chatgpt.com 复用登录会话（账号 eme333emoemo 免费版）→ fill 提问后 Enter 不触发发送，必须点击「发送」按钮 → 轮询判断方式：按钮「停止」消失即生成完成（本次含仓库浏览约 70 秒）→ 用对话 region innerText 回收全文。ChatGPT 免费版可自主浏览公开 GitHub 仓库，实测正确读出 README、SESSION-HANDOFF、M8_READINESS 与 releases，产出含依据文件的发现清单。正式审阅批次直接复用本配方；本次测试会话「仓库快速审阅」保留在账号内可续问。
+
+## 十三、安全知识源接入计划采纳（2026-11-11 用户提供）
+
+docs/RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md（commit 68e0f51）为 P6-9/10/11 的执行规格：通用 Knowledge Catalog/Document 摄取（补 CONTENT_KINDS 白名单与 PluginSource 空实现，先 ADR 后迁移）→ 三源插件（Awesome-Hacking CC0 目录项、SecSkills Apache-2.0 目录项加 skill_candidate、tongui 课程无 LICENSE 只索引元数据按需读）→ 目录抽取与静态审查工具（rip.knowledge.catalog.extract、rip.security.extension.audit、T1 的 document.fetch 与 source.sync）。接线方式：活体工作流到达「Phase 7 起逐阶段实施」尾洞时，先执行 Phase 6 扩展（P6-9 到 P6-11，按该计划 §8 批次与 §10 验收清单）再进 Phase 7；实施必须复用既有 Registry/Runtime/Search/Context/Egress，不建平行系统，RTIS 旧链 15,155 条对账不回归。§9 每周更新监控在 P6-10 落地后以定时自动化实现（周报含无变化来源）。
+
+## 十四、实战校验闭环（2026-11-12 用户要求，项目完成后的最终循环）
+
+目标：Phase 5-10 与 P6-9/10/11 全部完成后，RIP 必须达到「立马投入生产」状态，以实战使用校验，循环直到无重大问题。
+
+循环步骤（每轮产出问题清单，问 ChatGPT 后优化修复，修复入库后进下一轮）：
+1. ChatGPT 全面审阅（§十二配方）：仓库地址 + ROADMAP + RELEASE 清单，找 bug 与优化点，回答 triage 分配。
+2. GitHub 知识库与武器库补齐：知识侧提交三个来源插件的 Manifest、catalog_entry 元数据与 checksums（许可红线不变：课程原文不批量镜像，28MB knowledge.db 仍不入库）；武器侧提交 Tool Pack Containerfile、Manifest 与首批安全工具（静态分析、代码审计、依赖检查类为 T0/T1 先行），确保 ADDING-A-TOOL 指南指引下武器库开箱可用。
+3. 实战校验三面（每面跑 RIP 端到端：建研究任务 → Context Broker 检索 → Tool Engine 派发 → Evidence 固化 → 报告生成，记录效果与不足）：
+   a. 本地靶场：podman 容器化靶场（vulhub/DVWA/pikachu 类，本机 rootless Podman 即执行面），验证 Web 研究工具链（HTTP 检查、目录发现、指纹、payload 助手）真实可用；
+   b. 在线靶场：公开授权的练习平台（HackTheBox/TryHackMe 类或 vulhub 云实例），验证远程目标场景下的知识检索与工具编排；
+   c. 公益 SRC：补天等已注册平台的授权项目，按 AGENTS.md 纪律（低并发、间隔不小于 1s、只打授权范围、发现按平台规则提交）真实挖掘，验证平台对真实资产研究全流程的支撑度。
+4. 每轮后：问题清单 + 效果评估再问 ChatGPT，按其建议与本机实测修订优化批次，逐批实施入库（commit+push），直到 §17 生产就绪清单全绿。
+红线：实战校验不改变既有安全边界（容器隔离、出口白名单、T0/T1/T2 权限闸照常生效）；SRC 目标严格限授权范围，漏洞细节仅提交平台不进公开仓库。

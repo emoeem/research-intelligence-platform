@@ -243,7 +243,10 @@ export function PluginDetailPage() {
         }
       />
       {actionError ? (
-        <div role="alert" className="mb-4 rounded-control border border-error bg-error/10 p-3 text-sm">
+        <div
+          role="alert"
+          className="mb-4 rounded-control border border-error bg-error/10 p-3 text-sm"
+        >
           {actionError}
         </div>
       ) : null}
@@ -260,7 +263,11 @@ export function PluginDetailPage() {
           </button>
         ))}
         <span className="opacity-60">
-          {level === 1 ? "目录级元数据" : level === 2 ? "匹配级摘要与清单" : "调用级完整 Manifest 与 docs"}
+          {level === 1
+            ? "目录级元数据"
+            : level === 2
+              ? "匹配级摘要与清单"
+              : "调用级完整 Manifest 与 docs"}
         </span>
       </div>
 
@@ -298,17 +305,26 @@ export function PluginDetailPage() {
 
         <section className="rounded-control border border-edge bg-base-100 p-4">
           <h2 className="mb-2 text-sm font-semibold">兼容性</h2>
-          {data.compatibility ? <CompatTable compat={data.compatibility} /> : <p className="text-sm opacity-70">未声明</p>}
+          {data.compatibility ? (
+            <CompatTable compat={data.compatibility} />
+          ) : (
+            <p className="text-sm opacity-70">未声明</p>
+          )}
         </section>
 
         <section className="rounded-control border border-edge bg-base-100 p-4">
-          <h2 className="mb-2 text-sm font-semibold">capability 清单（{(data.capabilities ?? []).length}）</h2>
+          <h2 className="mb-2 text-sm font-semibold">
+            capability 清单（{(data.capabilities ?? []).length}）
+          </h2>
           {(data.capabilities ?? []).length === 0 ? (
             <p className="text-sm opacity-70">L2 起展示（capability 行随版本落库）</p>
           ) : (
             <ul className="space-y-2" data-testid="capability-list">
               {(data.capabilities ?? []).map((cap) => (
-                <li key={cap.capability_id} className="rounded-control border border-edge p-2 text-sm">
+                <li
+                  key={cap.capability_id}
+                  className="rounded-control border border-edge p-2 text-sm"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-xs">{cap.capability_id}</span>
                     <span className="badge badge-sm badge-ghost">{cap.capability_type}</span>

@@ -981,6 +981,7 @@ dependencies = [
  "domain",
  "runtime-gateway",
  "serde_json",
+ "serde_yaml_ng",
  "tool-registry",
 ]
 
@@ -991,7 +992,9 @@ dependencies = [
  "database",
  "domain",
  "jsonschema",
+ "serde",
  "serde_json",
+ "serde_yaml_ng",
  "sha2",
 ]
 

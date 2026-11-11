@@ -63,8 +63,11 @@ AUX_DB_PATH = (os.environ.get("RP_AUX_DB") or "").strip() or None
 PLUGIN_DB_PATH = (os.environ.get("RIP_PLUGIN_DB") or "").strip() \
     or os.path.join(REPO_ROOT, "migrations", "dev-p6.db")
 PLUGIN_BIN = (os.environ.get("RP_PLUGIN_BIN") or "cargo").strip()
-PLUGIN_BIN_ARGS = (os.environ.get("RP_PLUGIN_BIN_ARGS")
-                   or "run --offline -q -p plugin-runtime --bin rp-plugin --").split()
+# RP_PLUGIN_BIN_ARGS 语义：显式空串 = 无前置参数（直用预编译二进制时）；
+# 未设置 = cargo run 默认前置。
+_raw_bin_args = os.environ.get("RP_PLUGIN_BIN_ARGS")
+PLUGIN_BIN_ARGS = (_raw_bin_args if _raw_bin_args is not None
+                   else "run --offline -q -p plugin-runtime --bin rp-plugin --").split()
 AUTH_FAIL_DELAY = 0.3
 
 
@@ -626,6 +629,8 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
     src = phase14_source(conn, "tool")
     if src is None:
         return phase14_unavailable(conn, "tool")
+    # P6-9：aux 库 tool 表增量合并（Phase 6 工具脚手架注册面在开发副本；
+    # 主库 tool 是 ETL 全量注册面，aux 只补主库没有的行）。
 
     tool_id = clean_str(params, "tool_id")
     if tool_id:
@@ -685,6 +690,21 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
         " ORDER BY updated_at DESC, name COLLATE NOCASE ASC LIMIT ?",
         tuple(args) + (limit,),
     )
+    # P6-9：aux 库 tool 表增量合并（工具脚手架注册面在开发副本；主库 tool
+    # 是 ETL 全量注册面，aux 只补主库没有的行，不重复主库已有条目）。
+    aux_ids = {item["tool_id"] for item in items}
+    if "aux" in attached_schemas(conn) and table_exists(conn, "aux", "tool"):
+        aux_total = conn.execute("SELECT COUNT(*) FROM aux.tool").fetchone()[0]
+        aux_items = query_all(
+            conn,
+            f"SELECT {TOOL_LIST_COLUMNS} FROM aux.tool"
+            " ORDER BY updated_at DESC, name COLLATE NOCASE ASC",
+        )
+        for row in aux_items:
+            if row["tool_id"] not in aux_ids:
+                items.append(row)
+                total += 1
+                aux_ids.add(row["tool_id"])
     return {
         "available": True,
         "source": src,
@@ -1003,12 +1023,7 @@ def handle_plugin_detail(conn: sqlite3.Connection, params: dict, plugin_id: str)
         ro.close()
 
 
-PLUGIN_WRITE_ACTIONS = {
-    "enable": ["enable", "{plugin_id}"],
-    "disable": ["disable", "{plugin_id}"],
-    "uninstall": ["uninstall", "{plugin_id}"],
-    "ingest": ["ingest", "{plugin_id}"],
-}
+PLUGIN_WRITE_ACTIONS = ("enable", "disable", "uninstall", "ingest")
 
 
 def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
@@ -1043,7 +1058,7 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
                            f"manifest_path 必须是仓库内的真实文件：{manifest_path}")
         args += ["upgrade", plugin_id, "--manifest", os.path.relpath(real, root)]
     else:
-        args += [*PLUGIN_WRITE_ACTIONS[action]]
+        args += [action, plugin_id]
     try:
         proc = subprocess.run(
             [PLUGIN_BIN, *PLUGIN_BIN_ARGS, "--db", PLUGIN_DB_PATH, *args],

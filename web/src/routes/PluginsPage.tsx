@@ -71,7 +71,9 @@ function PluginCard({ plugin }: { plugin: PluginRow }) {
           <span className="badge badge-sm badge-ghost">来源已卸载</span>
         ) : null}
         <span className="opacity-70">{plugin.capabilities_count ?? 0} capabilities</span>
-        {plugin.updated_at ? <span className="ml-auto opacity-50">{formatDateTime(plugin.updated_at)}</span> : null}
+        {plugin.updated_at ? (
+          <span className="ml-auto opacity-50">{formatDateTime(plugin.updated_at)}</span>
+        ) : null}
       </div>
     </Link>
   );
@@ -117,9 +119,7 @@ export function PluginsPage() {
   }
 
   const items = data.items ?? [];
-  const active = items.filter(
-    (p) => p.is_active && !["DISABLED", "UNINSTALLED"].includes(p.state),
-  );
+  const active = items.filter((p) => p.is_active && !["DISABLED", "UNINSTALLED"].includes(p.state));
   const updatable = items.filter((p) => p.update_pending);
   const disabled = items.filter((p) => p.state === "DISABLED");
   const others = items.filter(

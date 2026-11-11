@@ -103,15 +103,24 @@ const DETAIL_STUB = {
   ],
   compatibility: { rip_core: ">=0.2.0, <1.0.0", manifest_schema: ["1"] },
   dependencies: [],
-  audit: [{ event_id: 1, ts: "2026-11-11T10:00:00Z", actor: "user:cli", action: "plugin.install", entity_id: "knowledge.rtis-redteam@0.1.0" }],
+  audit: [
+    {
+      event_id: 1,
+      ts: "2026-11-11T10:00:00Z",
+      actor: "user:cli",
+      action: "plugin.install",
+      entity_id: "knowledge.rtis-redteam@0.1.0",
+    },
+  ],
 };
 
 function stubFetch(handler: (path: string) => unknown): void {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL) =>
-      Promise.resolve(new Response(JSON.stringify(handler(String(input)))), { status: 200 })),
-    );
+      Promise.resolve(new Response(JSON.stringify(handler(String(input))), { status: 200 })),
+    ),
+  );
 }
 
 describe("插件中心（P6-8）", () => {
@@ -139,7 +148,9 @@ describe("插件中心（P6-8）", () => {
     expect(screen.getAllByTestId("update-pending").length).toBeGreaterThanOrEqual(1);
     // 行点击进详情路由
     expect(
-      (screen.getByTestId("plugin-card-knowledge.rtis-redteam") as HTMLAnchorElement).getAttribute("href"),
+      (screen.getByTestId("plugin-card-knowledge.rtis-redteam") as HTMLAnchorElement).getAttribute(
+        "href",
+      ),
     ).toBe("/plugins/knowledge.rtis-redteam");
   });
 
@@ -157,7 +168,12 @@ describe("插件中心（P6-8）", () => {
   });
 
   it("数据面未就绪：诚实空态（available=false 不造假数据）", async () => {
-    stubFetch(() => ({ available: false, reason: "plugin_db_not_configured", items: [], total: 0 }));
+    stubFetch(() => ({
+      available: false,
+      reason: "plugin_db_not_configured",
+      items: [],
+      total: 0,
+    }));
     window.history.pushState({}, "", "/plugins");
     render(<App />);
     expect(await screen.findByText(/插件数据面/)).toBeTruthy();

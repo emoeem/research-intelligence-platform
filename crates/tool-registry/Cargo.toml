@@ -9,6 +9,7 @@ description = "Phase 1 工具注册表：Manifest 校验九条（TOOL-CONTRACT �
 [dependencies]
 database = { workspace = true }
 domain = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 # JSON Schema draft 2020-12 校验（TOOL-CONTRACT 2.5 第 3/8 条）：复用维护中的
 # 成熟实现，不手写子集校验器；default-features 关闭远程与文件 $ref 解析，
@@ -19,3 +20,8 @@ serde_json = { workspace = true }
 jsonschema = { version = "0.56", default-features = false }
 # SHA-256（content_hash，2.5 第 9 条）：复用 RustCrypto 稳定线实现。
 sha2 = "0.10"
+serde_yaml_ng = { workspace = true }
+
+[[bin]]
+name = "rp-tool"
+path = "src/bin/rp-tool.rs"

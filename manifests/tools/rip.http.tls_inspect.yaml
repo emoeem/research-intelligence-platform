@@ -1,0 +1,99 @@
+# TLS Inspector（rip_new_tool.py 脚手架生成，语义实现按 ADDING-A-TOOL §三，v0.1.1）
+schema_version: "1"
+id: "rip.http.tls_inspect"
+name: "TLS Inspector"
+version: "0.1.1"
+kind: "tool"
+family: "web_http"
+description: "TLS 证书信息检查：对目标 host:port 完成 TLS 握手并返回协议版本、加密套件、证书校验结果与证书详情（subject、issuer、有效期、SAN、sha256 指纹、PEM），stdlib ssl 实现"
+runtime:
+  type: "python_worker"
+  protocol_version: "1"
+  worker_name: "tls_inspect-worker"
+  command: ["python3", "-I", "workers/python/tls_inspect_worker.py"]
+  working_dir: "repo://research-platform"
+  restart: "pooled"
+input_schema:
+  type: "object"
+  required: ["host"]
+  properties:
+    host:
+      type: "string"
+      description: "目标主机名或 IP"
+    port:
+      type: "integer"
+      minimum: 1
+      maximum: 65535
+      default: 443
+      description: "目标 TLS 端口，缺省 443"
+    server_name:
+      type: "string"
+      description: "可选 SNI 覆盖，缺省用 host"
+    verify:
+      type: "boolean"
+      default: true
+      description: "true 走系统信任库校验；校验失败自动降级为不校验握手并明示 verified=false"
+    timeout_seconds:
+      type: "number"
+      minimum: 0.1
+      maximum: 55
+      default: 10
+      description: "连接与握手超时秒数"
+output_schema:
+  type: "object"
+  required: ["target", "verified"]
+  properties:
+    target:
+      type: "string"
+      description: "host:port"
+    protocol:
+      type: "string"
+      description: "协商 TLS 版本（如 TLSv1.3）"
+    cipher:
+      type: "object"
+      description: "加密套件（name/protocol/bits）"
+    verified:
+      type: "boolean"
+      description: "证书是否通过系统信任库校验"
+    error:
+      type: "string"
+      description: "握手失败原因（无失败为 null）"
+    note:
+      type: "string"
+      description: "降级说明（无降级为 null）"
+    fingerprint_sha256:
+      type: "string"
+      description: "叶子证书 DER 的 sha256 指纹"
+    cert:
+      type: "object"
+      description: "证书详情（subject/issuer/notBefore/notAfter/subjectAltName/pem，校验通过时为解析字段，降级时仅 pem）"
+resources:
+  cpu: "1"
+  memory: "256Mi"
+  timeout_seconds: 60
+  max_output_bytes: 1048576
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [443]
+    note: "TLS 证书检查专用出站；动态目标域名白名单由 Tool Policy Resolver 派发时生成临时条目，正式网络策略评审待办（ADDING-A-TOOL 红线 4）"
+secrets: []
+permission_level: "T1"
+idempotent: true
+health:
+  probe:
+    type: "worker_ping"
+    timeout_ms: 2000
+    interval_seconds: 300
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "rip-native"
+  source_path: "workers/python/tls_inspect_worker.py"
+  license: "repo-internal"
+  dependencies: []
+  tested: "stdlib ssl 真实语义冒烟：loopback 自签证书 TLSv1.3 握手（verified=false 降级路径 + 指纹/PEM）与公网 example.com:443（verified=true 全字段）双路径实测"
+context:
+  summary: "TLS 证书信息检查：对目标 host:port 完成 TLS 握手并返回协议版本、加密套件、证书校验结果与证书详情，stdlib ssl 实现"
+  docs: "workers/python/tls_inspect_worker.py 模块头注"

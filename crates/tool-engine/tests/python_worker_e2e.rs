@@ -580,10 +580,12 @@ fn section_5_3_mapping_table_fully_asserted() {
 
 #[test]
 fn workers_directory_untouched_by_tests() {
-    // 测试运行不修改 workers/：git status 对 workers/ 路径必须为零输出
-    //（缓存已重定向到临时目录，双保险）。
+    // 测试运行不修改 workers/：git status 对 workers/ 路径的已跟踪文件必须
+    // 零输出（缓存已重定向到临时目录，双保险）。untracked 排除：批次新增的
+    // worker 脚本（如 P6-9 脚手架产物）是交付物而非测试污染，`??` 条目
+    // 不构成本守卫的目标回归；已跟踪文件的改动/删除才可能是测试副作用。
     let output = Command::new("git")
-        .args(["status", "--porcelain", "--", "workers/"])
+        .args(["status", "--porcelain", "--untracked-files=no", "--", "workers/"])
         .current_dir(repo_root())
         .output()
         .unwrap();

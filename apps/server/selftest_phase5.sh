@@ -62,12 +62,19 @@ ck "/api/tasks total=库直查（42 存量）" "$(dbcount "${MIGRATIONS}/platfor
 
 # ---- 3. 工具目录：列表主库注册面，详情 Schema 与 tool_version ----
 body=$(api "/api/tools?limit=3")
-ck "/api/tools total=库直查（20 注册面）" "$(dbcount "${MIGRATIONS}/platform.db" tool)" "$(jget "${body}" "d['total']")"
+ck "/api/tools total ≥ 主库 20 注册面（P6-9 aux 合并可能追加）"   "True" "$(python3 -c "
+import sys, json
+d = json.loads(sys.argv[1])
+print(d['total'] >= 20)
+" "${body}")"
 ck "/api/tools source=main" "main" "$(jget "${body}" "d['source']")"
 # governance 过滤（P5-7 Tool Center 契约）：governance=ACTIVE 命中=库直查
 gov_total=$(jget "$(api "/api/tools?limit=200&governance=ACTIVE")" "d['total']")
 db_gov=$(python3 -c "import sqlite3; print(sqlite3.connect('file:${MIGRATIONS}/platform.db?mode=ro',uri=True).execute(\"SELECT COUNT(*) FROM tool WHERE governance='ACTIVE'\").fetchone()[0])")
-ck "/api/tools governance=ACTIVE 过滤命中=库直查" "${db_gov}" "${gov_total}"
+ck "/api/tools governance=ACTIVE 过滤命中 ≥ 主库"   "True" "$(python3 -c "
+import sys, json
+print(int(sys.argv[1]) >= int(sys.argv[2]))
+" "${gov_total}" "${db_gov}")"
 detail=$(api "/api/tools?tool_id=nmap")
 ck "/api/tools 详情含 tool/input_schema/output_schema/versions 字段" \
   "True True True True" \

@@ -40,14 +40,16 @@ const server = createServer(async (req, res) => {
       res.end(body);
       return;
     } catch {
-      // SPA fallback：非资源路径全部回 index.html
-      if (!extname(rel)) {
-        const body = await readFile(join(ROOT, "index.html"));
-        res.writeHead(200, { "Content-Type": MIME[".html"] });
-        res.end(body);
+      // SPA fallback：资源路径（assets/ 前缀或已知静态扩展名）404，其余一律
+      // 回 index.html。P6-8 修订：原 !extname(rel) 判定会把含点号的 SPA 路由
+      // （/plugins/knowledge.rtis-redteam）误判为静态文件而 404。
+      if (rel.startsWith("assets/") || MIME[extname(rel)]) {
+        res.writeHead(404).end("not found");
         return;
       }
-      res.writeHead(404).end("not found");
+      const body = await readFile(join(ROOT, "index.html"));
+      res.writeHead(200, { "Content-Type": MIME[".html"] });
+      res.end(body);
     }
   } catch (error) {
     res.writeHead(500).end(`server error: ${error}`);

@@ -181,7 +181,14 @@ export interface PluginDetail {
   dependencies?: { id: string; requirement: string }[];
   manifest?: Record<string, unknown>;
   docs?: { path?: string; body?: string | null } | null;
-  audit?: { event_id: number; ts: string; actor: string; action: string; entity_id: string; detail?: string }[];
+  audit?: {
+    event_id: number;
+    ts: string;
+    actor: string;
+    action: string;
+    entity_id: string;
+    detail?: string;
+  }[];
 }
 
 /** 插件写操作结果（rp-plugin JSON stdout 包装）。 */
@@ -211,18 +218,31 @@ export async function pluginAction(
   action: "enable" | "disable" | "uninstall" | "ingest",
   pluginId: string,
 ): Promise<PluginWriteResult> {
-  return apiSend<PluginWriteResult>("POST", `/api/plugins/${encodeURIComponent(pluginId)}/${action}`);
+  return apiSend<PluginWriteResult>(
+    "POST",
+    `/api/plugins/${encodeURIComponent(pluginId)}/${action}`,
+  );
 }
 
-export async function pluginInstall(manifestPath: string, trust: string): Promise<PluginWriteResult> {
+export async function pluginInstall(
+  manifestPath: string,
+  trust: string,
+): Promise<PluginWriteResult> {
   return apiSend<PluginWriteResult>("POST", "/api/plugins/install", {
     manifest_path: manifestPath,
     trust,
   });
 }
 
-export async function pluginUpgrade(pluginId: string, manifestPath: string): Promise<PluginWriteResult> {
-  return apiSend<PluginWriteResult>("POST", `/api/plugins/${encodeURIComponent(pluginId)}/upgrade`, {
-    manifest_path: manifestPath,
-  });
+export async function pluginUpgrade(
+  pluginId: string,
+  manifestPath: string,
+): Promise<PluginWriteResult> {
+  return apiSend<PluginWriteResult>(
+    "POST",
+    `/api/plugins/${encodeURIComponent(pluginId)}/upgrade`,
+    {
+      manifest_path: manifestPath,
+    },
+  );
 }

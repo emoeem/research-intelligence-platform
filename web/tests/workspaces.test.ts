@@ -57,7 +57,15 @@ describe("workspaces 数据模型（P5-4）", () => {
     const routes = ["/", ...WORKSPACES.flatMap((workspace) => workspace.tabs.map((tab) => tab.to))];
     expect(routes).toHaveLength(7);
     expect(new Set(routes).size).toBe(7);
-    for (const route of ["/", "/projects", "/knowledge", "/tools", "/runs", "/runtime", "/plugins"]) {
+    for (const route of [
+      "/",
+      "/projects",
+      "/knowledge",
+      "/tools",
+      "/runs",
+      "/runtime",
+      "/plugins",
+    ]) {
       expect(routes).toContain(route);
     }
   });

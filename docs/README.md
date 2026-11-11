@@ -5,7 +5,7 @@
 | 项       | 值                   |
 | -------- | -------------------- |
 | 状态     | 生效中               |
-| 日期     | 2026-11-11           |
+| 日期     | 2026-11-12           |
 
 ## 日常看
 
@@ -15,6 +15,7 @@
 | 下一步做什么、阶段依赖 | [phase0/PHASE-ROADMAP.md](phase0/PHASE-ROADMAP.md)           |
 | 每阶段交付了什么   | [releases/](releases/) 下按日期取最新                         |
 | 文档怎么写才算合格 | [DOC-STANDARD.md](DOC-STANDARD.md)                            |
+| 怎么给平台加新工具（武器库扩展） | [guides/ADDING-A-TOOL.md](guides/ADDING-A-TOOL.md)      |
 
 ## 目标与设计
 
@@ -39,3 +40,4 @@
 | Phase 3 | docs/phase3/   | 完成（批次 P3-0 到 P3-6，收口记录见 [releases/RELEASE_2026-11-10_PHASE3.md](releases/RELEASE_2026-11-10_PHASE3.md) 与 [phase3/PHASE3-ACCEPTANCE.md](phase3/PHASE3-ACCEPTANCE.md)；设计冻结 [phase3/PHASE3-DESIGN.md](phase3/PHASE3-DESIGN.md)） |
 | Phase 4 | docs/phase4/   | 完成（批次 P4-0 到 P4-6，收口记录见 [releases/RELEASE_2026-11-10_PHASE4.md](releases/RELEASE_2026-11-10_PHASE4.md) 与 [phase4/PHASE4-ACCEPTANCE.md](phase4/PHASE4-ACCEPTANCE.md)；设计冻结 [phase4/PHASE4-DESIGN.md](phase4/PHASE4-DESIGN.md)，实施差异 [phase4/PHASE4-IMPLEMENTATION-DIFF.md](phase4/PHASE4-IMPLEMENTATION-DIFF.md)） |
 | Phase 5 | docs/phase5/   | 完成（commit c0a4284，批次 P5-1 到 P5-10，收口记录见 [releases/RELEASE_2026-11-11_PHASE5.md](releases/RELEASE_2026-11-11_PHASE5.md) 与 [phase5/PHASE5-ACCEPTANCE.md](phase5/PHASE5-ACCEPTANCE.md)；阶段计划与偏差登记 [phase5/PHASE5-PLAN.md](phase5/PHASE5-PLAN.md)） |
+| Phase 6 | docs/phase6/   | 完成（批次 P6-1 到 P6-9 含武器库扩展路径，收口入库记录见 [releases/RELEASE_2026-11-12_PHASE6.md](releases/RELEASE_2026-11-12_PHASE6.md) 与 [phase6/PHASE6-ACCEPTANCE.md](phase6/PHASE6-ACCEPTANCE.md)；批次实施快照 [releases/RELEASE_2026-11-11_PHASE6.md](releases/RELEASE_2026-11-11_PHASE6.md)，浏览器实测证据 [phase6/browser-e2e/](phase6/browser-e2e/)） |
