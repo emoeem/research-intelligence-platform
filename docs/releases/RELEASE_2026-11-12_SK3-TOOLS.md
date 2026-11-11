@@ -4,7 +4,7 @@
 
 | 项         | 值                                                                                                                                                    |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 阶段交付   | git 本批提交（见 git log，本行短哈希由回填提交落定）                                                                                                    |
+| 阶段交付   | git `ff9e93e`（SK-3 四件工具 + 拒绝矩阵 + 012 迁移；本行短哈希由回填提交落定）                                                                          |
 | 数据库迁移 | 012_knowledge_document_fetch.sql（新增 knowledge_document_fetch 抓取审计表，ok/rejected 双态只追加，唯一写面 document_fetch.rs::record_fetch；只在开发库副本与测试内存库执行，platform*.db 与 integrations/rtis 零触碰） |
 | 自动化测试 | `cargo test --offline --workspace` 57 套件 ok，379 passed / 4 failed（唯一失败 podman_host_egress 4 项：本机无 podman，panic 原文 podman ps spawn NotFound，与 SK-1/SK-2 批次预期例外同口径）；`python3 -m unittest discover -s workers/python/tests` 211 tests OK（128 既有 + catalog 37 + audit 46） |
 | 静态检查   | `cargo clippy --offline --workspace --all-targets -- -D warnings` exit 0 零告警                                                                        |
