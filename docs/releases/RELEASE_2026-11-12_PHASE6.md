@@ -9,7 +9,7 @@
 
 | 项         | 值                                                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 阶段交付   | git `<短哈希>`（02:2x CST 收口入库；批次实施前序快照 de327c3、68e0f51；本行短哈希由 docs 索引回填提交落定）                            |
+| 阶段交付   | git `49b9377`（02:16 CST 收口入库；批次实施前序快照 de327c3、68e0f51；本行短哈希由 docs 索引回填提交落定）                              |
 | 数据库迁移 | 无新增（009_plugin.sql 与 010_knowledge_ingest.sql 已随 de327c3 在库；`git status --short migrations/` 当日实测零输出；生产库 platform*.db 零写入，selftest_phase6 core_snapshot 九核心表行数启停前后一致实测通过） |
 | 自动化测试 | cargo test `--offline --workspace` exit 0（74 个 test result: ok，379 passed / 0 failed）；worker unittest Ran 125 OK skipped=11；selftest_phase5 PASS=31 FAIL=0；selftest_phase6 PASS=49 FAIL=0（内含真实浏览器操作回路） |
 | 五道门禁   | web 五门禁当日实测：typecheck（tsc --noEmit）零错误；vite build 成功 19 个 JS chunk（551ms）；vitest 12 文件 73 用例全过；test:visual:gate 30 用例全过（21.8s）；prettier --check 通过 |
