@@ -11,6 +11,8 @@ members = [
     "crates/tool-engine",
     "crates/runtime-gateway",
     "crates/context-broker",
+    "crates/plugin-registry",
+    "crates/plugin-runtime",
     "tests",
 ]
 
@@ -26,6 +28,11 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
+# YAML 解析（P6-1 起仓库首个 yaml 依赖；本仓 Cargo.lock 与 vendor 此前 grep
+# 实测零 yaml 条目）。选型 serde_yaml_ng 0.10：dtolnay serde_yaml 0.9 的
+# 维护中 fork（原版 2024-10 归档停更），保留 serde 数据模型、duplicate key
+# 拒绝与 error 语义，MSRV 1.64；YAML 解析属通用逻辑，按复用优先纪律不手写。
+serde_yaml_ng = "0.10"
 
 # workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
 domain = { path = "crates/domain" }
@@ -38,6 +45,8 @@ tool-registry = { path = "crates/tool-registry" }
 tool-engine = { path = "crates/tool-engine" }
 runtime-gateway = { path = "crates/runtime-gateway" }
 context-broker = { path = "crates/context-broker" }
+plugin-registry = { path = "crates/plugin-registry" }
+plugin-runtime = { path = "crates/plugin-runtime" }
 
 
 [profile.release]

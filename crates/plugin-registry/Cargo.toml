@@ -1,0 +1,21 @@
+[package]
+name = "plugin-registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 6 插件注册表（静态面，ROADMAP P6-1）：Manifest strict 解析（未知字段拒绝，PLUGIN-CONTRACT D4）、§4.2 校验顺序七条、DISCOVERED→VALIDATED→INSTALLED 静态链、checksums.sha256 与 plugin.lock（§6）"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+
+# archive 来源解包（P6-4，PLUGIN-CONTRACT ¦6 解压后逐文件 checksums）：复用
+# 维护中的成熟实现不手写 tar 解析器；纯 Rust，fixture 用无压缩 .tar 免引
+# flate2（gz 支持按需再加）。
+tar = "0.4"
+# 校验器与哈希复用（复用优先纪律，不手写重复轮子）：jsonschema_lite（draft
+# 2020-12 校验门面，P1-4 已 vendor）承担 v1.json 全文校验与 capability 内嵌
+# input/output Schema 文档校验；hash::sha256_hex 承担 checksums 与 lock 指纹。
+tool-registry = { workspace = true }

@@ -80,3 +80,29 @@
 - 凡浏览器端开发（Web Workbench、Workflow Studio 画布等 UI 阶段），必须用真实浏览器亲自逐页逐功能点查看，不以代码检查和构建通过替代实测。
 - 工具链：browser-use 插件（skills: browser-use:control-browser 驱动真实浏览器、browser-use:web-gui-tester GUI 测试流程）；autoresearch 插件（性能与优化实验：init_experiment/run_experiment/log_experiment 计量闭环）用于 Phase 10 性能基准与收尾审阅。
 - 执行点：Phase 5 入库前补一轮浏览器 E2E（起服后逐页对账、全局搜索、三态、移动视口，留截图证据）；Phase 8 画布开发全程浏览器实测；Phase 10 用 autoresearch 跑性能基准；收尾审阅工作流对全部页面再走一轮浏览器实测。
+
+## 十、外部审阅采纳清单（2026-11-11，用户转交 ChatGPT 公开仓库审阅 + Yuxi 架构参考）
+
+仓库已公开是用户决定。卫生纪律不变：无凭据、无生产库、无内部敏感信息入库（已有 gitignore 与 DOC-STANDARD 约束）。
+
+审阅建议按剩余阶段分配：
+- Phase 7（Agent Engine）新增验收：统一 trace 关联（trace_id/task_id/agent_run_id/tool_run_id/artifact_id/evidence_id 贯穿并可查询）；研究能力以输入输出契约加测试交付（Research Planner/Source Discovery/Evidence Extraction/Verification/Synthesis/Citation/Evaluator），不只是 prompt；Context Broker 增 Context Memory 雏形（可追溯研究成果，与聊天记忆分离）。
+- Phase 8（Workflow Studio）新增验收：持久化状态、checkpoint、恢复、重试、超时、并行、人工介入节点；参考 LangGraph 状态机与 Temporal 持久化执行的设计（不替换 Rust 自研方向）。
+- Phase 9 新增：外部接口暴露 correlation id；MCP 工具目录含 Tool Center 同源。
+- Phase 10 新增：database backup/restore API 实现（当前 crate 未实现）、FTS 重建校验、数据保留归档、依赖许可证逐包清单（参照 admin/DEPENDENCIES.md 口径）、axe 无障碍对比度修复（前审 13 节点）、视觉基线统一字体后建立。
+- 收尾审阅工作流（§八）扩充审计维度：容器退出残留清理、文件系统越界、代理绕过与 DNS 边界、并发资源耗尽、Artifact 路径穿越、worker 崩溃恢复、Gateway 重启幂等（工具执行安全清单）；README/ARCHITECTURE/PROJECT-STATUS 三件套文档重组；八个参考项目深研（DeerFlow/Haystack/RAGFlow/GPT Researcher/LangGraph/Dify/Temporal/GraphRAG，吸收设计不搬代码）；Yuxi 参考点（文档解析管线插件链、SSE 事件流、per-thread sandbox、API Key 访问）。
+- Phase 5 遗留项澄清：真实后端浏览器 E2E 已于 6217ca8 前实测通过（浏览器实测员逐页对账），审阅所见 PHASE5-ACCEPTANCE 为其前置版本。
+
+## 十一、WebUI 工作台目标形态（2026-11-11 用户拍板采纳）
+
+硬性要求：Web Workbench 从管理面板升级为 VS Code 式工作平台，按 2.0 计划 §10.2 布局加外部审阅 §6 工作区清单执行：
+1. 布局五区：顶部栏（工作区切换、全局搜索/命令面板、运行任务、Runner 状态、通知）、左侧主导航、中央多标签工作区（固定/关闭/最近访问/深链接）、右侧 Inspector（当前对象属性、关联知识/工具、运行配置，可折叠）、底部 Activity 面板（任务队列、Tool Runs、日志、输出、状态）。
+2. 十一个工作区：Dashboard、Projects、Research、Knowledge、Tools、Plugins、Agents、Workflows、Runs、Runtime、Settings；每区按 2.0 计划 §10.3 与 §10.4 的页面设计落地。
+3. 概念分离（数据模型与 UI 同步）：Workspace 是工作界面与上下文的组织方式；Project 是研究对象；Agent 是执行主体；Workflow 是执行过程。四者不得混用实体。
+4. 接入点：Phase 7 首批做壳层升级（多标签 + Inspector + Activity + workspaces 纯数据模型，参照 telegram-bot workspaces.ts 模式），Agent Studio 落新壳；Plugin Center 在 Phase 7 壳层升级批次中迁移；Phase 8 Workflow Studio 画布直接落新壳；收尾审阅工作流用真实浏览器对全部工作区复验（browser-use）。
+
+## 十二、ChatGPT 外部审阅批次（2026-11-11 用户要求，项目完成后执行）
+
+收尾审阅工作流新增批次「ChatGPT 外部审阅」：用 browser-use 驱动真实浏览器打开网页版 ChatGPT（复用浏览器里用户已登录会话；未登录则停下请用户登录一次），提交仓库地址 github.com/emoeem/research-intelligence-platform（公开仓库）与提问（找 bug 与可优化点，可附 PHASE-ROADMAP 与阶段 RELEASE 清单供其定位），等待其浏览分析并回收回答；整理为建议清单逐条 triage（与 §十采纳映射同口径）后并入优化批次实施。前提：仓库保持公开（用户已决定）；敏感信息纪律照旧。
+
+ChatGPT 外部审阅链路已于 2026-11-11 实测通过（用户登录后全自动跑通）：browser-use 打开 chatgpt.com 复用登录会话（账号 eme333emoemo 免费版）→ fill 提问后 Enter 不触发发送，必须点击「发送」按钮 → 轮询判断方式：按钮「停止」消失即生成完成（本次含仓库浏览约 70 秒）→ 用对话 region innerText 回收全文。ChatGPT 免费版可自主浏览公开 GitHub 仓库，实测正确读出 README、SESSION-HANDOFF、M8_READINESS 与 releases，产出含依据文件的发现清单。正式审阅批次直接复用本配方；本次测试会话「仓库快速审阅」保留在账号内可续问。

@@ -1,0 +1,65 @@
+{
+  "schema_version": "1",
+  "id": "knowledge.rtis-redteam",
+  "name": "RTIS 红队知识包",
+  "version": "0.1.0",
+  "kind": "knowledge",
+  "description": "RTIS kit 的 POC 知识库、技能方法论与编排案例作为 RIP 知识源接入",
+  "authors": [
+    "emoeem"
+  ],
+  "license": "UNLICENSED",
+  "source": {
+    "type": "local_dir",
+    "path": "integrations/rtis",
+    "pinned": {
+      "kind": "commit",
+      "value": "6217ca807c68974ad1541d8017ed7d9e76b58e3c"
+    }
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": [
+      "1"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "knowledge-source.rtis.poc-corpus",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "POC 正文与技能文档语料，中文 2-gram 检索与证据等级排序由 kit 自带引擎承担",
+      "provides": {
+        "corpus_id": "rtis-redteam",
+        "content_kinds": [
+          "poc",
+          "skill_md",
+          "method_case"
+        ],
+        "index": {
+          "fts": true,
+          "vector": false
+        },
+        "parse_pipeline": "tool.rip.text.parse"
+      }
+    },
+    {
+      "id": "knowledge-source.rtis.orchestration-cases",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "任务状态机与站型画像案例，条数口径待验证（README 与 rtis.py 头注不一致）"
+    }
+  ],
+  "dependencies": [],
+  "permissions": {
+    "data_access": "ingest_via_api"
+  },
+  "data_retention": {
+    "ingested_policy": "retain_with_provenance",
+    "persistent": []
+  },
+  "context": {
+    "summary": "红队 POC 与技能知识源，安全研究类任务 L2 命中后按需加载",
+    "docs": "docs/usage.md"
+  }
+}

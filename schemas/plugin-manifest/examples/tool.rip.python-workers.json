@@ -1,0 +1,146 @@
+{
+  "schema_version": "1",
+  "id": "tool.rip.python-workers",
+  "name": "RIP Python Workers",
+  "version": "0.1.0",
+  "kind": "tool",
+  "description": "把 parsing、embedding、evaluation 三个 Python Worker 登记为 Tool Engine 可调度工具",
+  "authors": ["emoeem"],
+  "license": "UNLICENSED",
+  "source": {
+    "type": "local_dir",
+    "path": "workers/python",
+    "pinned": {
+      "kind": "commit",
+      "value": "6217ca807c68974ad1541d8017ed7d9e76b58e3c"
+    }
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": ["1"],
+    "runtimes": ["python_worker"],
+    "worker_protocol": "v1"
+  },
+  "capabilities": [
+    {
+      "id": "tool.rip.text.parse",
+      "type": "tool",
+      "entry": "parsing_worker.py",
+      "summary": "md、txt、html 解析，输出 sections、heading_tree、stats",
+      "runtime": {
+        "type": "python_worker",
+        "protocol": "worker-protocol/v1",
+        "method": "execute"
+      },
+      "input_schema": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": { "type": "string" },
+          "format": { "type": "string", "enum": ["md", "txt", "html"] }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "sections": { "type": "array" },
+          "heading_tree": { "type": "object" },
+          "stats": { "type": "object" }
+        }
+      },
+      "resources": {
+        "cpu": "1",
+        "memory": "512Mi",
+        "timeout_seconds": 60,
+        "input_max_bytes": 10485760
+      },
+      "permissions": {
+        "network": "none",
+        "filesystem": "task_workspace_ro"
+      }
+    },
+    {
+      "id": "tool.rip.text.embed",
+      "type": "tool",
+      "entry": "embedding_worker.py",
+      "summary": "双后端向量嵌入：hashing-ngram-v1 默认，bge-small-zh-v1.5 ONNX 可选，维度显式协商",
+      "runtime": {
+        "type": "python_worker",
+        "protocol": "worker-protocol/v1",
+        "method": "execute"
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "oneOf": [
+          { "required": ["text"] },
+          { "required": ["texts"] }
+        ],
+        "properties": {
+          "text": { "type": "string" },
+          "texts": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "type": "string" } },
+          "model": { "type": "string", "enum": ["hashing-ngram-v1", "bge-small-zh-v1.5"] },
+          "dim": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["backend", "dim", "vectors"],
+        "properties": {
+          "backend": { "type": "string" },
+          "dim": { "type": "integer" },
+          "vectors": { "type": "array" }
+        }
+      },
+      "resources": { "cpu": "2", "memory": "1Gi", "timeout_seconds": 120 },
+      "permissions": {
+        "network": "none",
+        "filesystem": "model_dir_ro"
+      }
+    },
+    {
+      "id": "tool.rip.knowledge.evaluate",
+      "type": "tool",
+      "entry": "evaluation_worker.py",
+      "summary": "规则集三层判定，只输出建议不改写知识状态",
+      "runtime": {
+        "type": "python_worker",
+        "protocol": "worker-protocol/v1",
+        "method": "execute"
+      },
+      "input_schema": {
+        "type": "object",
+        "required": ["entries"],
+        "additionalProperties": false,
+        "properties": {
+          "entries": { "type": "array", "maxItems": 500, "items": { "type": "object" } },
+          "rules": { "type": "object" }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["ruleset_version", "results", "summary"],
+        "properties": {
+          "ruleset_version": { "type": "string" },
+          "results": { "type": "array" },
+          "summary": { "type": "object" }
+        }
+      },
+      "resources": { "cpu": "1", "memory": "256Mi", "timeout_seconds": 60 },
+      "permissions": { "network": "none", "filesystem": "task_workspace_ro" }
+    }
+  ],
+  "dependencies": [],
+  "data_retention": {
+    "persistent": []
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "timeout_seconds": 60
+  },
+  "context": {
+    "summary": "平台自带 Python Worker 工具包，经 Worker Protocol v1 五方法调用",
+    "docs": "workers/python/README.md"
+  }
+}

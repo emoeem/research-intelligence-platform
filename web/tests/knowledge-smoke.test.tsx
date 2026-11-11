@@ -219,4 +219,41 @@ describe("Knowledge 页（P5-6）", () => {
     expect(aside.textContent).toContain("正文摘要");
     expect(aside.textContent).toContain("第二段：参数矩阵。");
   });
+
+  it("深链契约：?knowledge_id= 直接打开详情侧栏并同步选中态", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("knowledge_id=")
+        ? DETAIL_STUB
+        : url.includes("q=")
+          ? { ...LIST_STUB, total: 1, returned: 1, items: [LIST_STUB.items[0]] }
+          : LIST_STUB;
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    // ⌘K 面板知识命中的落点形态：/knowledge?knowledge_id=k-redirect
+    window.history.pushState({}, "", "/knowledge?knowledge_id=k-redirect");
+    render(<App />);
+    const aside = await screen.findByRole("complementary", { name: "条目详情" });
+    await waitFor(() => {
+      const called = fetchMock.mock.calls.some((call) =>
+        String(call[0]).includes("knowledge_id=k-redirect"),
+      );
+      if (!called) throw new Error("深链详情请求未发出");
+    });
+    // 详情侧栏呈现深链条目
+    expect(aside.textContent).toContain("站群/落地页开放重定向专项测试法");
+    // 等列表渲染完成后再断言选中态与 URL 同步（高亮属性在行按钮上）
+    await screen.findByText("共 2 条（显示 2）");
+    const activeRow = document.querySelector('button[aria-current="true"]');
+    expect(activeRow?.textContent).toContain("站群/落地页开放重定向专项测试法");
+    // 点击另一行：URL 参数同步更新（replace 语义）
+    fireEvent.click(screen.getByText("hex2bin 解码技巧在参数矩阵中的应用"));
+    await waitFor(() => {
+      if (!window.location.search.includes("knowledge_id=k-hex2bin")) {
+        throw new Error("URL 未随选中同步");
+      }
+    });
+    expect(window.location.search).toContain("knowledge_id=k-hex2bin");
+  });
 });

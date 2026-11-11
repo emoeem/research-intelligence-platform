@@ -79,8 +79,8 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8],
-        "discover must see 001..008 in order (006 = next available by merge order, 007 = P2-4a RuntimeNode 数据面, 008 = P4-1 Context Broker 三表)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "discover must see 001..010 in order (006 = next available by merge order, 007 = P2-4a RuntimeNode 数据面, 008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面)"
     );
 
     reset_dev_copy();
@@ -95,8 +95,8 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (8, "_context_broker"),
-        "chain tail is now 008 (P4-1)，006/007 落于链中段"
+        (10, "_knowledge_ingest"),
+        "chain tail is now 010 (P6-5)，006/007/008/009 落于链中段"
     );
 
     let dump1 = schema_dump(&pool);
@@ -104,8 +104,8 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
     assert_eq!(
-        uv, 8,
-        "user_version must be 8 after first run (chain tail 008)"
+        uv, 10,
+        "user_version must be 10 after first run (chain tail 010)"
     );
 
     // 第二次：执行器按 user_version 全跳过，零变更。

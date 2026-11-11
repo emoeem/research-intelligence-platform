@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>RIP 研究情报平台工作台</title>
+    <!-- 内联 SVG favicon（雷达图形，主题色 currentColor 由浏览器默认填充）：
+         消除每会话一条 favicon 404 console error（生产 rp_server 静态服务同样 404）。 -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2331c48d' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M19.07 4.93A10 10 0 0 0 6.99 3.34'/%3E%3Cpath d='M4 6h.01'/%3E%3Cpath d='M2.29 9.62A10 10 0 1 0 21.31 8.35'/%3E%3Cpath d='M16.24 7.76A6 6 0 1 0 8.23 16.67'/%3E%3Cpath d='M12 18h.01'/%3E%3Cpath d='M17.99 11.66A6 6 0 0 1 15.77 16.67'/%3E%3Ccircle cx='12' cy='12' r='2'/%3E%3C/svg%3E"
+    />
     <script>
       /* 首帧主题内联（机制沿自参照实现 admin index.html 的防闪烁片段，
        * 映射与 src/theme.ts 保持一致：已知 id 白名单 + 退役 id 归一化 +

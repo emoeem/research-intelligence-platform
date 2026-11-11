@@ -1,0 +1,28 @@
+# P6-4 fixture：git 来源最小插件包（测试运行时替换占位符）。
+schema_version: "1"
+id: "knowledge.fixture.git"
+name: "Fixture git source"
+version: "0.1.0"
+kind: "knowledge"
+description: "P6-4 五类来源最小插件包"
+authors: ["emoeem"]
+license: "MIT"
+source:
+  type: "git"
+  url: "__URL__"
+  host: "self"
+  pinned:
+    kind: "commit"
+    value: "__COMMIT__"
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+capabilities:
+  - id: "knowledge-source.fixture.git"
+    type: "knowledge_source"
+    entry: "capabilities/knowledge_source.yaml"
+    summary: "最小 fixture capability"
+dependencies: []
+context:
+  summary: "fixture"
+  docs: "docs/usage.md"

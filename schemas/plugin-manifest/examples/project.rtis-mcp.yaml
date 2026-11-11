@@ -1,0 +1,45 @@
+# P6-6 示例：外部 Project 插件（rtis_mcp.mjs 以 project_endpoint 接入，
+# ROADMAP P6-6）。双 MCP 边界见 docs/phase6/DUAL-MCP-BOUNDARY.md：本插件
+# 是 kit 层 MCP（redteam_* 前缀）经 project_endpoint 接入对象，不是 Phase 9
+# 平台 MCP 面（rip.* 前缀）。
+# entry 为 install 握手阶段生成的快照描述文件（capabilities/<capability_id>.yaml）。
+schema_version: "1"
+id: "project.rtis-mcp"
+name: "RTIS MCP Endpoint"
+version: "0.1.0"
+kind: "project"
+description: "RTIS kit 的 MCP server 接入点：redteam_* 知识库工具面经 mcp_client 映射进 Tool Registry"
+authors: ["emoeem"]
+license: "UNLICENSED"
+source:
+  type: "local_dir"
+  path: "integrations/rtis"
+  pinned:
+    kind: "commit"
+    value: "6217ca807c68974ad1541d8017ed7d9e76b58e3c"
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+  runtimes: ["mcp_client"]
+capabilities:
+  - id: "project-endpoint.rtis.mcp"
+    type: "project_endpoint"
+    entry: "capabilities/project-endpoint.rtis.mcp.yaml"
+    summary: "rtis_mcp.mjs stdio MCP 接入点：initialize 握手 + 工具列表快照哈希进 plugin.lock，工具映射为 mcp_client runtime"
+    runtime:
+      type: "mcp_client"
+      protocol: "mcp/2024-11-05"
+    provides:
+      endpoint: "[\"node\", \"rtis_mcp.mjs\"]"
+      tool_id_prefix: "rtis.mcp"
+      health_check:
+        kind: "stdio_handshake"
+        interval_seconds: 300
+dependencies: []
+permissions:
+  data_access: "none"
+data_retention:
+  persistent: []
+context:
+  summary: "RTIS 知识库 MCP 接入点（kit 层 redteam_* 工具面）"
+  docs: "README.md"

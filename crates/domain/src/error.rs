@@ -77,6 +77,31 @@ pub enum DomainError {
         /// 被拒绝的原始值。
         value: String,
     },
+    /// PluginId 非法（P6-2：小写点分 namespace.name，草案 D1，上限 128 字节）。
+    InvalidPluginId(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// PluginState 出现未知变体（PLUGIN-CONTRACT §5.1 十二态之外的值）。
+    UnknownPluginState(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// PluginKind 出现未知变体（§4.1 六类之外的值）。
+    InvalidPluginKind(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// CapabilityType 出现未知变体（§3.1 七种之外的值）。
+    InvalidCapabilityType(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// PluginTrust 出现未知变体（§6 四档之外的值）。
+    InvalidPluginTrust(
+        /// 被拒绝的原始值。
+        String,
+    ),
 }
 
 impl fmt::Display for DomainError {
@@ -126,6 +151,24 @@ impl fmt::Display for DomainError {
             }
             DomainError::UnknownContextVariant { field, value } => {
                 write!(f, "unknown context variant in {field:?}: {value:?}")
+            }
+            DomainError::InvalidPluginId(value) => {
+                write!(
+                    f,
+                    "invalid plugin id {value:?} (dot-separated lowercase namespace.name, D1)"
+                )
+            }
+            DomainError::UnknownPluginState(v) => {
+                write!(f, "unknown plugin state: {v:?}")
+            }
+            DomainError::InvalidPluginKind(v) => {
+                write!(f, "invalid plugin kind: {v:?}")
+            }
+            DomainError::InvalidCapabilityType(v) => {
+                write!(f, "invalid capability type: {v:?}")
+            }
+            DomainError::InvalidPluginTrust(v) => {
+                write!(f, "invalid plugin trust level: {v:?}")
             }
         }
     }

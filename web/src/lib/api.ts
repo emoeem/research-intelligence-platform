@@ -94,3 +94,135 @@ export async function apiSend<T>(
     signal: options.signal,
   });
 }
+
+// ---------------------------------------------------------------------------
+// P6-8 插件面（/api/plugins，apps/server rp_server.py；写端点经 rp-plugin
+// 子进程走 plugin-runtime 状态机与 audit-engine，服务端零直连 SQL 写）。
+// ---------------------------------------------------------------------------
+
+/** L1/L2 共享的插件目录行（/api/plugins）。 */
+export interface PluginRow {
+  plugin_id: string;
+  version: string;
+  name: string;
+  kind: string;
+  description: string;
+  license: string;
+  trust_level: string;
+  state: string;
+  update_pending: boolean;
+  is_active: boolean;
+  governance?: string | null;
+  source_type?: string | null;
+  source_ref?: string | null;
+  installed_dir?: string | null;
+  source_uninstalled?: boolean;
+  capabilities_count?: number;
+  updated_at?: string | null;
+}
+
+export interface PluginList {
+  available: boolean;
+  reason?: string;
+  message?: string;
+  db?: string;
+  total: number;
+  items: PluginRow[];
+  categories?: {
+    installed: string[];
+    updatable: string[];
+    disabled: string[];
+    uninstalled: string[];
+  };
+  audit_summary?: { action: string; n: number }[];
+}
+
+/** capability 清单行（L2）。 */
+export interface PluginCapabilityRow {
+  capability_id: string;
+  capability_type: string;
+  entry: string;
+  summary: string;
+  runtime?: string | null;
+  requires: string[];
+}
+
+/** 兼容声明（L2）。 */
+export interface PluginCompatibility {
+  rip_core?: string;
+  manifest_schema?: string[];
+  runtimes?: string[];
+  worker_protocol?: string;
+}
+
+/** L3：完整 Manifest + docs 正文。 */
+export interface PluginDetail {
+  level: 1 | 2 | 3;
+  plugin_id: string;
+  version: string;
+  name: string;
+  kind: string;
+  description: string;
+  license: string;
+  trust_level: string;
+  state: string;
+  update_pending: boolean;
+  is_active: boolean;
+  governance?: string | null;
+  source_type?: string | null;
+  source_ref?: string | null;
+  lock_sha256?: string | null;
+  installed_dir?: string | null;
+  source_uninstalled?: boolean;
+  updated_at?: string | null;
+  context?: { summary?: string; docs?: string } | null;
+  capabilities?: PluginCapabilityRow[];
+  compatibility?: PluginCompatibility;
+  dependencies?: { id: string; requirement: string }[];
+  manifest?: Record<string, unknown>;
+  docs?: { path?: string; body?: string | null } | null;
+  audit?: { event_id: number; ts: string; actor: string; action: string; entity_id: string; detail?: string }[];
+}
+
+/** 插件写操作结果（rp-plugin JSON stdout 包装）。 */
+export interface PluginWriteResult {
+  ok: boolean;
+  action: string;
+  plugin_id: string;
+  result: Record<string, unknown>;
+}
+
+export async function fetchPlugins(options: { signal?: AbortSignal } = {}): Promise<PluginList> {
+  return apiGet<PluginList>("/api/plugins", options);
+}
+
+export async function fetchPluginDetail(
+  pluginId: string,
+  level: 1 | 2 | 3 = 2,
+  options: { signal?: AbortSignal } = {},
+): Promise<PluginDetail> {
+  return apiGet<PluginDetail>(
+    `/api/plugins/${encodeURIComponent(pluginId)}?level=${level}`,
+    options,
+  );
+}
+
+export async function pluginAction(
+  action: "enable" | "disable" | "uninstall" | "ingest",
+  pluginId: string,
+): Promise<PluginWriteResult> {
+  return apiSend<PluginWriteResult>("POST", `/api/plugins/${encodeURIComponent(pluginId)}/${action}`);
+}
+
+export async function pluginInstall(manifestPath: string, trust: string): Promise<PluginWriteResult> {
+  return apiSend<PluginWriteResult>("POST", "/api/plugins/install", {
+    manifest_path: manifestPath,
+    trust,
+  });
+}
+
+export async function pluginUpgrade(pluginId: string, manifestPath: string): Promise<PluginWriteResult> {
+  return apiSend<PluginWriteResult>("POST", `/api/plugins/${encodeURIComponent(pluginId)}/upgrade`, {
+    manifest_path: manifestPath,
+  });
+}

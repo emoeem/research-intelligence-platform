@@ -17,6 +17,24 @@ use std::sync::Mutex;
 /// 缓冲上限（超过即丢最旧，旁路不反压业务）。
 pub const BUFFER_CAP: usize = 1024;
 
+/// 插件生命周期审计动作词形（P6-2 接线，PLUGIN-CONTRACT §11.4：install/
+/// enable/disable/upgrade/uninstall 全事件走本 crate 唯一 Emit 出口，不新增
+/// JSONL 分叉）。调用方只引用常量，防词形漂移。
+pub mod plugin_actions {
+    /// 安装（含静态校验、checksums、lock、capability 登记）。
+    pub const INSTALL: &str = "plugin.install";
+    /// 启用 / 重启用（重过静态检查，§5.3）。
+    pub const ENABLE: &str = "plugin.enable";
+    /// 禁用（数据不动，capability 撤出匹配面）。
+    pub const DISABLE: &str = "plugin.disable";
+    /// 升级（result=switched / rolled_back，§5.3）。
+    pub const UPGRADE: &str = "plugin.upgrade";
+    /// 卸载（来源已卸载标记 + §5.4 保留处置报告）。
+    pub const UNINSTALL: &str = "plugin.uninstall";
+    /// capability 登记（INSTALLED → REGISTERED，系统步；install 内完成）。
+    pub const REGISTER: &str = "plugin.register";
+}
+
 /// 审计引擎。
 pub struct AuditEngine {
     pool: Pool,

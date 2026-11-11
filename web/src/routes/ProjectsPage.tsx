@@ -89,7 +89,7 @@ export function ProjectsPage() {
                     highlighted ? "border-primary bg-primary/5" : "border-edge"
                   }`}
                 >
-                  <div className="flex flex-wrap items-center gap-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1">
                     {task.state ? (
                       <span
                         className={`badge badge-sm ${STATE_BADGE[task.state] ?? "badge-ghost"}`}
@@ -101,7 +101,9 @@ export function ProjectsPage() {
                       <span className="badge badge-sm badge-outline">{task.task_type}</span>
                     ) : null}
                     {task.target ? (
-                      <span className="text-[11px] text-base-content/50">{task.target}</span>
+                      <span className="min-w-0 text-[11px] break-all text-base-content/50">
+                        {task.target}
+                      </span>
                     ) : null}
                   </div>
                   <p className="mt-1.5 text-sm font-medium leading-5">{task.title}</p>

@@ -1,0 +1,29 @@
+[package]
+name = "plugin-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 6 插件运行时（ROADMAP P6-2）：REGISTERED→ENABLED→LOADED→ACTIVE 主链 + disable/uninstall/upgrade 语义（PLUGIN-CONTRACT §5.1/§5.2/§5.3）+ §5.4 数据保留 + 全量审计事件经 audit-engine 唯一出口（§11.4 不新增 JSONL 分叉）"
+
+[dependencies]
+# 依赖方向（本批约束：仅向 domain、database、audit-engine、plugin-registry，
+# 不反向）：domain 承载 Plugin/PluginCapability 实体与状态词表；database 承载
+# 连接池与 009 迁移；audit-engine 是生命周期事件唯一 Emit 出口（§11.4）；
+# plugin-registry 复用其 strict 校验器 / checksums / plugin-lock 面（P6-1）。
+database = { workspace = true }
+domain = { workspace = true }
+audit-engine = { workspace = true }
+plugin-registry = { workspace = true }
+# P6-6：tool/tool_pack capability 落 Tool Registry（ROADMAP P6-6 任务要求），
+# 新增 tool-registry 直连边（P6-2 批次的四依赖约束为其批次内口径；本扩展
+# 随 P6-6 批次声明，登记于 PHASE6-PLAN 批次台账）。
+tool-registry = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# INVALID 处置接线测试（quality-engine PluginGovernor，§11.5 既有裁定）仅在
+# 测试环消费：dev-dep 环允许（tool-engine dev-dep runtime-gateway 同款先例），
+# 运行期 plugin-runtime 不依赖 quality-engine，依赖方向约束不受影响。
+quality-engine = { workspace = true }

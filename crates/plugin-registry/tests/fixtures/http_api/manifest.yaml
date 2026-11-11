@@ -1,0 +1,25 @@
+# P6-4 fixture：http_api 来源最小插件包（测试运行时替换占位符）。
+schema_version: "1"
+id: "knowledge.fixture.http"
+name: "Fixture http_api source"
+version: "0.1.0"
+kind: "knowledge"
+description: "P6-4 五类来源最小插件包"
+authors: ["emoeem"]
+license: "MIT"
+source:
+  type: "http_api"
+  base_url: "__BASE_URL__"
+  api_version: "v1"
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+capabilities:
+  - id: "knowledge-source.fixture.http"
+    type: "knowledge_source"
+    entry: "capabilities/http-contract.yaml"
+    summary: "最小 fixture capability"
+dependencies: []
+context:
+  summary: "fixture"
+  docs: "docs/usage.md"

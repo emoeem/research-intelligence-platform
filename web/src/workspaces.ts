@@ -16,7 +16,7 @@ export type WorkspaceId = "research" | "ops";
 
 /** 图标键 → Layout 侧 ICONS 表映射为 lucide-react 组件（Record 全键覆盖，漏键 tsc 报错）。 */
 export type WorkspaceIconKey =
-  "radar" | "cpu" | "folderKanban" | "database" | "wrench" | "circlePlay" | "serverCog";
+  "radar" | "cpu" | "folderKanban" | "database" | "wrench" | "circlePlay" | "serverCog" | "puzzle";
 
 /** 键全集（测试用：数据里出现的图标键必须都在其中）。 */
 export const WORKSPACE_ICON_KEYS: readonly WorkspaceIconKey[] = [
@@ -27,6 +27,7 @@ export const WORKSPACE_ICON_KEYS: readonly WorkspaceIconKey[] = [
   "wrench",
   "circlePlay",
   "serverCog",
+  "puzzle",
 ];
 
 export interface WorkspaceNavItem {
@@ -89,6 +90,13 @@ export const WORKSPACES: readonly Workspace[] = [
         hint: "Run 列表与 Artifact 预览",
       },
       { order: 3, to: "/runtime", label: "运行时", icon: "serverCog", hint: "节点在线状态与心跳" },
+      {
+        order: 4,
+        to: "/plugins",
+        label: "插件中心",
+        icon: "puzzle",
+        hint: "插件目录、生命周期与 Manifest 详情",
+      },
     ],
   },
 ];

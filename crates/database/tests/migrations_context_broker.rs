@@ -104,14 +104,14 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8],
-        "discover must see 001..008 in order (008 = P4-1 Context Broker 三表，编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "discover must see 001..010 in order (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1)"
     );
 
     reset_dev_copy();
     let pool = open_dev_pool();
 
-    // 第一次：全链 001..008 落地，链尾 008_context_broker。
+    // 第一次：全链 001..009 落地，链尾 009_plugin。
     let first = migrate(&pool, &dir).unwrap();
     let first_summary: Vec<(i64, String)> =
         first.iter().map(|m| (m.version, m.name.clone())).collect();
@@ -126,16 +126,18 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
             (6, "_agent_data_plane".to_string()),
             (7, "_runtime_node".to_string()),
             (8, "_context_broker".to_string()),
+            (9, "_plugin".to_string()),
+            (10, "_knowledge_ingest".to_string()),
         ],
-        "first run must apply exactly 001..008"
+        "first run must apply exactly 001..009"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 8,
-        "user_version must be 8 after first run (chain tail 008)"
+        uv1, 10,
+        "user_version must be 10 after first run (chain tail 010)"
     );
     assert!(
         sv1.iter()

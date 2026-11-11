@@ -53,11 +53,11 @@ describe("workspaces 数据模型（P5-4）", () => {
     }
   });
 
-  it("六页路由与工作区数据一一对应且无重复", () => {
+  it("路由与工作区数据一一对应且无重复（P6-8 增量 /plugins）", () => {
     const routes = ["/", ...WORKSPACES.flatMap((workspace) => workspace.tabs.map((tab) => tab.to))];
-    expect(routes).toHaveLength(6);
-    expect(new Set(routes).size).toBe(6);
-    for (const route of ["/", "/projects", "/knowledge", "/tools", "/runs", "/runtime"]) {
+    expect(routes).toHaveLength(7);
+    expect(new Set(routes).size).toBe(7);
+    for (const route of ["/", "/projects", "/knowledge", "/tools", "/runs", "/runtime", "/plugins"]) {
       expect(routes).toContain(route);
     }
   });
@@ -73,9 +73,9 @@ describe("workspaces 数据模型（P5-4）", () => {
       { label: "工具", value: 20 },
       { label: "运行", value: 3 },
     ]);
-    expect(ops.tabs.map((tab) => tab.number)).toEqual(["2.1", "2.2", "2.3"]);
+    expect(ops.tabs.map((tab) => tab.number)).toEqual(["2.1", "2.2", "2.3", "2.4"]);
     expect(research.tabs.map((tab) => tab.number)).toEqual(["1.1", "1.2"]);
     // tab 芯片与 tab 条共用同一数据源：路由一致。
-    expect(ops.tabs.map((tab) => tab.to)).toEqual(["/tools", "/runs", "/runtime"]);
+    expect(ops.tabs.map((tab) => tab.to)).toEqual(["/tools", "/runs", "/runtime", "/plugins"]);
   });
 });

@@ -105,6 +105,12 @@ ROADMAP §6.3 的批次表（最小可验证单元与并行性照录，P5-1 已�
 - 实际口径：包管理器固定为 npm（npm 12.2.2 实测在位、`npm ping` PONG；宿主机未装 pnpm，红线不在宿主机安装任何工具）。命令一一映射：`pnpm typecheck` 对应 `npm run typecheck`，`pnpm build` 对应 `npm run build`，`pnpm test:visual:gate` 在 P5-9 按同口径接线（脚本名保留 test:visual:gate）。
 - 影响面：仅命令与 lockfile 形态（`package-lock.json`）不同，工程行为等价；后续 CI 接线统一 npm 口径，不再出现 pnpm 命令。
 
+### 技术选型收敛记录（第 1 轮验收意见整改，2026-11-11）
+
+- **react-query 二选一：选 (a) useQuery 迁移（已落地）**。P5-2 的手写 useApi 已完成向 `@tanstack/react-query useQuery` 的迁移（src/lib/hooks.ts，唯一消费面），Provider 此前已在 App.tsx 挂载。语义映射逐条登记在 hooks.ts 头注释（staleTime 0 对应无跨挂载缓存、retry false 对应仅手动 retry、keepPreviousData 对应 SWR 旧数据留屏、IDENTITY_EVENT 对应 reloadKey 失效重取、refetchOnWindowFocus/Reconnect 关闭对应对原实现无监听）。选 (a) 不选 (b) 的理由：Provider 与 24.87kB vendor-query chunk 已存在且被真实消费（不再空转）；abort 竞态、失效去重、retry 语义由库承担，删依赖反要重写这部分。vendor-query 分组与依赖保留。
+- **zod 4.6.7 死依赖：移除**。全仓零 import（grep 实测 0），其预装说明中的消费批次（P5-4 契约、P5-5 表单）已过未用，且 P5-10 为本阶段末批。已从 dependencies 与 lockfile 移除；后续批次确需 Schema 校验时再按当时版本引入（P5-1 判据 6 中「vendor-zod 分组不出现」的核验口径随之固化为永久事实）。
+- **配套整改**（同轮验收意见）：ProjectsPage target 长串横向溢出修复（min-w-0 + break-all，真实库最长 141 字符 scope 清单 rtis-20261103-023603-7373 实测）；视觉门禁 /api/tasks 桩补长 target 行覆盖该形态；KnowledgePage ?knowledge_id= 深链契约闭合（初始化 + URL 同步 + 深链组件测试），⌘K 知识命中落点真正打开详情侧栏；index.html 加内联 SVG favicon 消除 favicon 404 console error；ACCEPTANCE 回滚节的 npm 全局包计数改为逐包核验口径。
+
 ## 风险
 
 1. 架构债复发（ROADMAP §6.5 风险 1）：新页面图省事直连 SQL 会复制 rp_server.py 模式；约束见偏差登记 1 的「不变的约束」。

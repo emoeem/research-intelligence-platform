@@ -127,7 +127,7 @@ const API_STUBS: Record<string, unknown> = {
     total: 42,
     by_state: { CREATED: 28, COMPLETED: 2 },
     by_type: { recon: 19, vuln: 17 },
-    returned: 2,
+    returned: 3,
     items: [
       {
         task_id: "rtis-20261106-034508-9517",
@@ -143,6 +143,18 @@ const API_STUBS: Record<string, unknown> = {
         task_type: "recon",
         state: "WORKFLOW_PLANNING",
         updated_at: "2026-11-06T03:44:00Z",
+      },
+      {
+        // 回归形态（P5-10 验收意见 1）：真实库最长 target 为 141 字符 scope
+        // 清单（rtis-20261103-023603-7373，airbnb.com scope 列表），无空格长串
+        // 曾致移动端 /projects 横向溢出 156px。此行让门禁持续覆盖该形态。
+        task_id: "rtis-20261103-023603-7373",
+        title: "站群开放重定向专项（长 scope 清单）",
+        target:
+          "airbnb.com（scope: www/support-api/one/next/m/api/assets/callbacks.airbnb.com, *.airbnb.com, airbnb.ca, airbnb.de, airbnb.es, airbnb.fr）",
+        task_type: "vuln",
+        state: "COMPLETED",
+        updated_at: "2026-11-03T02:36:00Z",
       },
     ],
   },

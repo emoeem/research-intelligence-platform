@@ -23,11 +23,13 @@
 
 pub mod error;
 pub mod governor;
+pub mod plugin_governance;
 pub mod review;
 pub mod state;
 
 pub use error::GovernanceError;
 pub use governor::{Governor, ResourceUpdate};
+pub use plugin_governance::{InvalidDisposition, PluginGovernor};
 pub use review::{
     proposals_from_quarantine_dir, Proposal, ProposeOutcome, QuarantineProposeReport, ReviewRow,
     ReviewStore,

@@ -15,6 +15,7 @@ import {
   Radar,
   Search,
   ServerCog,
+  Puzzle,
   Sun,
   Wrench,
   type LucideIcon,
@@ -33,6 +34,7 @@ const ICONS: Record<WorkspaceIconKey, LucideIcon> = {
   wrench: Wrench,
   circlePlay: CirclePlay,
   serverCog: ServerCog,
+  puzzle: Puzzle,
 };
 
 /**

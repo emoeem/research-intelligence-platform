@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
 import { formatDateTime } from "../lib/format";
@@ -202,9 +203,30 @@ function DetailSidebar({
 }
 
 export function KnowledgePage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [rawQuery, setRawQuery] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // 深链契约：?knowledge_id= 初始化选中态（⌘K 面板与外部链接的落点），
+  // 选中变化同步回 URL（replace，不产生历史噪音），对齐 ProjectsPage 的
+  // ?task_id= 模式。
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    new URLSearchParams(location.search).get("knowledge_id"),
+  );
+
+  const selectKnowledge = useCallback(
+    (id: string | null) => {
+      setSelectedId(id);
+      const params = new URLSearchParams(location.search);
+      if (id) params.set("knowledge_id", id);
+      else params.delete("knowledge_id");
+      navigate(
+        { pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : "" },
+        { replace: true },
+      );
+    },
+    [location.search, location.pathname, navigate],
+  );
 
   // 检索防抖 300ms：输入停稳后才改路径触发 useApi 重取。
   useEffect(() => {
@@ -261,7 +283,7 @@ export function KnowledgePage() {
                     <li key={item.knowledge_id}>
                       <button
                         type="button"
-                        onClick={() => setSelectedId(item.knowledge_id)}
+                        onClick={() => selectKnowledge(item.knowledge_id)}
                         aria-current={active ? "true" : undefined}
                         className={`w-full rounded-surface border p-3 text-left transition-colors ${
                           active

@@ -35,3 +35,8 @@ integrations/rtis/*.log
 # 门禁 cwd 兼容自引 symlink（编排 world.run cwd=内层时解析外层相对路径用；
 # 环境级工件不入库，见 PHASE2-ACCEPTANCE.md 收口说明）
 /research-platform
+
+# RIP 2.0 插件运行时数据根（P6-3 / ROADMAP §7.5.1：rip-data 为运行时数据不入
+# 库，目录可经 rip.data_dir/RIP_DATA_DIR 重定位到任意位置，故按目录名全路径
+# 级忽略；快照/流水为可再生旁路留存，同 eri.py db 重建口径）
+rip-data/

@@ -74,7 +74,7 @@
 ## 六、回滚
 
 - web/ 与 docs/phase5/ 为新增目录，删除即完全回滚；apps/server 变更（rp_server.py 五端点 + 参数扩展、selftest_phase5.sh 新增、selftest_auth.sh 测试架修正）可按 git 历史单文件还原，均为只读增量。
-- migrations/ 零变更（红线核验）；npm 全局包基线 6 个不变（`npm ls -g --depth=0` 各批次复核）；浏览器二进制零安装（系统 chromium 复用）。
+- migrations/ 零变更（红线核验）；npm 全局目录无 RIP web 相关包（2026-11-11 逐包核验 `npm ls -g --depth=0`：@mnemon-dev/mnemon、agent-browser、billion-context、docx、novel-writer-skills、pptxgenjs、remotion 共 7 个，其中 billion-context 为外部于 11-10 后新装、与 rip-web 无关；计数口径不作断言，避免外部安装导致基线漂移）；浏览器二进制零安装（系统 chromium 复用）。
 
 ## 七、交付物清单
 

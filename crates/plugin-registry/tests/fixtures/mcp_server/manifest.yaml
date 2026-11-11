@@ -1,0 +1,25 @@
+# P6-4 fixture：mcp_server 来源最小插件包（测试运行时替换占位符）。
+schema_version: "1"
+id: "knowledge.fixture.mcp"
+name: "Fixture mcp_server source"
+version: "0.1.0"
+kind: "knowledge"
+description: "P6-4 五类来源最小插件包"
+authors: ["emoeem"]
+license: "MIT"
+source:
+  type: "mcp_server"
+  endpoint: "__ENDPOINT__"
+  protocol_version: "2024-11-05"
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+capabilities:
+  - id: "knowledge-source.fixture.mcp"
+    type: "knowledge_source"
+    entry: "capabilities/mcp-tools.yaml"
+    summary: "最小 fixture capability"
+dependencies: []
+context:
+  summary: "fixture"
+  docs: "docs/usage.md"

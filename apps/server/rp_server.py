@@ -15,6 +15,14 @@
 - RP_AUX_DB 只读 ATTACH 通道：Phase 1-4 数据面（tool_run/artifact/
   runtime_node 等）尚未并入主库时，经只读 ATTACH 挂载开发库副本读取；
   缺库缺表按 sqlite_master 守卫返回真实空态说明，不造假数据。
+- P6-8 插件面增量（ROADMAP P6-8，计划 §10.4 E）：
+  * 读端点 /api/plugins 与 /api/plugins/<id>（三级加载 ?level=1|2|3）：
+    打开 RIP_PLUGIN_DB（插件数据面开发副本，009/010 迁移）只读直查，
+    缺库守卫降级为真实空态说明，不造假数据；
+  * 写端点 /api/plugins/*（enable/disable/uninstall/install/upgrade/ingest）：
+    一律经 subprocess 调 rp-plugin CLI（plugin-runtime 状态机 + audit-engine
+    唯一出口），本文件不新增任何直连 SQL 写（写面零 SQL，selftest 有静态断言）；
+  * 写端点强制 Bearer Token（与 GET 同一 require_auth），鉴权关闭时拒绝写。
 
 环境变量：
 - RP_PORT            监听端口，默认 7800
@@ -23,6 +31,10 @@
 - RP_AUX_DB          Phase 1-4 数据面只读库（如 migrations/dev-b5.db），缺省不挂载
 - RP_AUTH_TOKEN      明文令牌（优先）
 - RP_AUTH_TOKEN_FILE 令牌文件路径（默认仓库根 .rp-workbench-token，权限应为 600）
+- RIP_PLUGIN_DB       插件数据面开发副本（默认 migrations/dev-p6.db）
+- RP_PLUGIN_BIN       rp-plugin 可执行（默认 cargo）
+- RP_PLUGIN_BIN_ARGS  rp-plugin 前置参数（默认 run --offline -q -p plugin-runtime
+                      --bin rp-plugin --；预编译后可换 target/debug/rp-plugin）
 """
 
 from __future__ import annotations
@@ -48,6 +60,11 @@ HOST = os.environ.get("RP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("RP_PORT", "7800"))
 DB_PATH = os.environ.get("RP_DB_PATH", DEFAULT_DB)
 AUX_DB_PATH = (os.environ.get("RP_AUX_DB") or "").strip() or None
+PLUGIN_DB_PATH = (os.environ.get("RIP_PLUGIN_DB") or "").strip() \
+    or os.path.join(REPO_ROOT, "migrations", "dev-p6.db")
+PLUGIN_BIN = (os.environ.get("RP_PLUGIN_BIN") or "cargo").strip()
+PLUGIN_BIN_ARGS = (os.environ.get("RP_PLUGIN_BIN_ARGS")
+                   or "run --offline -q -p plugin-runtime --bin rp-plugin --").split()
 AUTH_FAIL_DELAY = 0.3
 
 
@@ -780,7 +797,283 @@ def handle_runtime(conn: sqlite3.Connection, params: dict) -> dict:
     return result
 
 
+
+
+# ---------------------------------------------------------------------------
+# P6-8 插件面（ROADMAP P6-8，计划 §10.4 E）：读端点直查 RIP_PLUGIN_DB
+# （mode=ro，缺库守卫降级），写端点经 rp-plugin 子进程走 plugin-runtime
+# 状态机与 audit-engine，本文件零直连 SQL 写（selftest 静态断言）。
+# ---------------------------------------------------------------------------
+
+
+def connect_plugin_ro() -> sqlite3.Connection:
+    """打开插件数据面只读连接；缺库抛 503（调用侧守卫降级）。"""
+    if not os.path.isfile(PLUGIN_DB_PATH):
+        raise ApiError(503, "plugin_db_missing", f"插件数据面不存在：{PLUGIN_DB_PATH}")
+    try:
+        conn = sqlite3.connect(f"file:{PLUGIN_DB_PATH}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        raise ApiError(503, "plugin_db_unavailable", f"插件数据面打开失败：{exc}") from exc
+    conn.execute("PRAGMA query_only = ON")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def plugin_db_ready() -> bool:
+    return os.path.isfile(PLUGIN_DB_PATH) and os.path.getsize(PLUGIN_DB_PATH) > 0
+
+
+def plugin_unavailable() -> dict:
+    return {
+        "available": False,
+        "reason": "plugin_db_not_configured",
+        "message": f"插件数据面不存在或为空：{PLUGIN_DB_PATH}（rp-plugin install 会创建）",
+        "items": [],
+        "total": 0,
+    }
+
+
+def plugin_rows(conn: sqlite3.Connection) -> list:
+    return query_all(
+        conn,
+        "SELECT plugin_id, version, name, kind, description, license, trust_level, state,"
+        " update_pending, is_active, governance, source_type, source_ref, installed_dir,"
+        " ingested_policy, source_uninstalled, updated_at"
+        " FROM plugin ORDER BY plugin_id, version",
+    )
+
+
+def handle_plugins_list(conn: sqlite3.Connection, params: dict) -> dict:  # noqa: ARG001
+    """/api/plugins：L1 目录级（元数据卡片：id/版本/state/kind/trust，无正文）。"""
+    if not plugin_db_ready():
+        return plugin_unavailable()
+    try:
+        ro = connect_plugin_ro()
+    except ApiError as exc:
+        return {**plugin_unavailable(), "reason": exc.code, "message": exc.message}
+    try:
+        rows = plugin_rows(ro)
+        caps = query_all(
+            ro,
+            "SELECT plugin_id, plugin_version, capability_id, capability_type, summary"
+            " FROM plugin_capability ORDER BY plugin_id, capability_id",
+        )
+        audits = query_all(
+            ro,
+            "SELECT action, COUNT(*) AS n FROM audit_event WHERE action LIKE 'plugin.%'"
+            " GROUP BY action",
+        )
+    finally:
+        ro.close()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["capabilities_count"] = sum(
+            1 for c in caps
+            if c["plugin_id"] == row["plugin_id"] and c["plugin_version"] == row["version"]
+        )
+        items.append(item)
+    # 分类（计划 §10.4 E）：已安装 / 可更新 / 已禁用 / 其他（含已卸载）。
+    categories = {
+        "installed": [p["plugin_id"] for p in rows if p["is_active"] and p["state"] not in ("DISABLED", "UNINSTALLED")],
+        "updatable": [p["plugin_id"] for p in rows if p["update_pending"]],
+        "disabled": [p["plugin_id"] for p in rows if p["state"] == "DISABLED"],
+        "uninstalled": [p["plugin_id"] for p in rows if p["state"] == "UNINSTALLED"],
+    }
+    return {
+        "available": True,
+        "db": PLUGIN_DB_PATH,
+        "total": len(items),
+        "items": items,
+        "categories": categories,
+        "audit_summary": audits,
+    }
+
+
+def _plugin_detail(conn: sqlite3.Connection, plugin_id: str, level: int) -> dict:
+    """详情：L1 元数据卡片 → L2 +context.summary/capability 清单 → L3 +完整
+    Manifest 与 docs 正文（三级按需加载，PLUGIN-CONTRACT §9）。"""
+    row = query_one(
+        conn,
+        "SELECT plugin_id, version, name, kind, description, license, trust_level, state,"
+        " update_pending, is_active, governance, source_type, source_ref, pinned_json,"
+        " lock_sha256, manifest_json, installed_dir, ingested_policy, source_uninstalled,"
+        " created_at, updated_at"
+        " FROM plugin WHERE plugin_id = ?1 AND is_active = 1",
+        (plugin_id,),
+    )
+    if row is None:
+        raise ApiError(404, "plugin_not_found", f"插件不存在或非 active：{plugin_id}")
+    detail = {
+        "level": level,
+        "plugin_id": row["plugin_id"],
+        "version": row["version"],
+        "name": row["name"],
+        "kind": row["kind"],
+        "description": row["description"],
+        "license": row["license"],
+        "trust_level": row["trust_level"],
+        "state": row["state"],
+        "update_pending": bool(row["update_pending"]),
+        "is_active": bool(row["is_active"]),
+        "governance": row["governance"],
+        "source_type": row["source_type"],
+        "source_ref": row["source_ref"],
+        "lock_sha256": row["lock_sha256"],
+        "installed_dir": row["installed_dir"],
+        "source_uninstalled": bool(row["source_uninstalled"]),
+        "updated_at": row["updated_at"],
+    }
+    if level >= 2:
+        manifest = json.loads(row["manifest_json"])
+        capability_rows = query_all(
+            conn,
+            "SELECT capability_id, capability_type, entry, summary, runtime, requires_json"
+            " FROM plugin_capability WHERE plugin_id = ?1 AND plugin_version = ?2"
+            " ORDER BY capability_id",
+            (row["plugin_id"], row["version"]),
+        )
+        capabilities = []
+        for cap in capability_rows:
+            requires = []
+            if cap["requires_json"]:
+                try:
+                    requires = json.loads(cap["requires_json"])
+                except json.JSONDecodeError:
+                    requires = []
+            capabilities.append({
+                "capability_id": cap["capability_id"],
+                "capability_type": cap["capability_type"],
+                "entry": cap["entry"],
+                "summary": cap["summary"],
+                "runtime": cap["runtime"],
+                "requires": requires,
+            })
+        detail["context"] = manifest.get("context")
+        detail["capabilities"] = capabilities
+        detail["compatibility"] = manifest.get("compatibility")
+        detail["dependencies"] = manifest.get("dependencies", [])
+    if level >= 3:
+        detail["manifest"] = manifest
+        docs_body = None
+        docs_path = manifest.get("context", {}).get("docs")
+        installed_dir = row["installed_dir"]
+        if docs_path and installed_dir:
+            candidate = os.path.join(installed_dir, docs_path)
+            if os.path.isfile(candidate) and os.path.realpath(candidate).startswith(
+                os.path.realpath(installed_dir) + os.sep
+            ):
+                try:
+                    with open(candidate, encoding="utf-8", errors="replace") as fh:
+                        docs_body = fh.read(65536)
+                except OSError as exc:
+                    docs_body = f"(docs 读取失败：{exc})"
+            else:
+                docs_body = "(docs 文件不在安装目录内或超出读取上限)"
+        detail["docs"] = {"path": docs_path, "body": docs_body}
+    audit = query_all(
+        conn,
+        "SELECT event_id, ts, actor, action, entity_id, detail FROM audit_event"
+        " WHERE entity_type = 'plugin' AND entity_id LIKE ?1"
+        " ORDER BY event_id DESC LIMIT 50",
+        (f"{row['plugin_id']}@%",),
+    )
+    detail["audit"] = audit
+    return detail
+
+
+def handle_plugin_detail(conn: sqlite3.Connection, params: dict, plugin_id: str) -> dict:
+    """/api/plugins/<id>?level=1|2|3：三级按需加载。"""
+    if not plugin_db_ready():
+        return {**plugin_unavailable(), "plugin_id": plugin_id}
+    try:
+        ro = connect_plugin_ro()
+    except ApiError as exc:
+        return {**plugin_unavailable(), "reason": exc.code, "plugin_id": plugin_id}
+    try:
+        raw_level = (params.get("level", ["2"])[0] or "2").strip()
+        try:
+            level = int(raw_level)
+        except ValueError:
+            raise ApiError(400, "bad_level", f"level 必须是 1|2|3，收到：{raw_level!r}")
+        if level not in (1, 2, 3):
+            raise ApiError(400, "bad_level", f"level 必须是 1|2|3，收到：{level}")
+        return _plugin_detail(ro, plugin_id, level)
+    finally:
+        ro.close()
+
+
+PLUGIN_WRITE_ACTIONS = {
+    "enable": ["enable", "{plugin_id}"],
+    "disable": ["disable", "{plugin_id}"],
+    "uninstall": ["uninstall", "{plugin_id}"],
+    "ingest": ["ingest", "{plugin_id}"],
+}
+
+
+def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
+    """写操作统一走 rp-plugin 子进程（plugin-runtime 状态机 + audit-engine），
+    本进程零直连 SQL 写。返回 CLI 的 JSON stdout；非零退出 → 502 带错误 JSON。"""
+    import subprocess
+
+    args = [*PLUGIN_BIN_ARGS]
+    if action == "install":
+        manifest_path = (body.get("manifest_path") or "").strip()
+        if not manifest_path:
+            raise ApiError(400, "manifest_path_required", "install 需要 manifest_path")
+        real = os.path.realpath(os.path.join(REPO_ROOT, manifest_path))
+        root = os.path.realpath(REPO_ROOT)
+        if not (real.startswith(root + os.sep) and os.path.isfile(real)):
+            raise ApiError(400, "manifest_path_outside_repo",
+                           f"manifest_path 必须是仓库内的真实文件：{manifest_path}")
+        rel = os.path.relpath(real, root)
+        args += ["install", "--manifest", rel]
+        trust = (body.get("trust") or "local").strip()
+        if trust not in ("official", "community", "local", "remote"):
+            raise ApiError(400, "bad_trust", f"trust 取值非法：{trust!r}")
+        args += ["--trust", trust]
+    elif action == "upgrade":
+        manifest_path = (body.get("manifest_path") or "").strip()
+        if not manifest_path:
+            raise ApiError(400, "manifest_path_required", "upgrade 需要 manifest_path（新版本 Manifest）")
+        real = os.path.realpath(os.path.join(REPO_ROOT, manifest_path))
+        root = os.path.realpath(REPO_ROOT)
+        if not (real.startswith(root + os.sep) and os.path.isfile(real)):
+            raise ApiError(400, "manifest_path_outside_repo",
+                           f"manifest_path 必须是仓库内的真实文件：{manifest_path}")
+        args += ["upgrade", plugin_id, "--manifest", os.path.relpath(real, root)]
+    else:
+        args += [*PLUGIN_WRITE_ACTIONS[action]]
+    try:
+        proc = subprocess.run(
+            [PLUGIN_BIN, *PLUGIN_BIN_ARGS, "--db", PLUGIN_DB_PATH, *args],
+            capture_output=True, text=True, timeout=600,
+            cwd=REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "plugin_cmd_timeout", f"rp-plugin {action} 超时：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "plugin_cmd_spawn_failed", f"rp-plugin 启动失败：{exc}") from exc
+    payload: dict = {}
+    if proc.stdout.strip():
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            payload = {"raw": proc.stdout[-4000:]}
+    if proc.returncode != 0:
+        err = {}
+        if proc.stderr.strip():
+            try:
+                err = json.loads(proc.stderr)
+            except json.JSONDecodeError:
+                err = {"code": "plugin_cmd_failed", "message": proc.stderr[-2000:]}
+        raise ApiError(502, err.get("code", "plugin_cmd_failed"),
+                       err.get("message", f"rp-plugin {action} 退出码 {proc.returncode}"))
+    return {"ok": True, "action": action, "plugin_id": plugin_id, "result": payload}
+
+
 API_ROUTES = {
+    "/api/plugins": handle_plugins_list,
     "/api/stats": lambda conn, params: handle_stats(conn),
     "/api/resources": handle_resources,
     "/api/reviews": handle_reviews,
@@ -799,7 +1092,7 @@ API_ROUTES = {
 
 
 class RpHandler(BaseHTTPRequestHandler):
-    server_version = "rp-server/0.3.0-phase5"
+    server_version = "rp-server/0.4.0-phase6"
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: A002
         sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -875,14 +1168,20 @@ class RpHandler(BaseHTTPRequestHandler):
             if parsed.path.startswith("/api/"):
                 self.require_auth()
                 handler = API_ROUTES.get(parsed.path)
-                if handler is None:
-                    raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
-                conn = connect_ro()
-                try:
-                    self.send_json(handler(conn, params))
-                finally:
-                    conn.close()
-                return
+                if handler is not None:
+                    conn = connect_ro()
+                    try:
+                        self.send_json(handler(conn, params))
+                    finally:
+                        conn.close()
+                    return
+                # P6-8 插件详情动态路径：/api/plugins/<id>?level=1|2|3
+                if parsed.path.startswith("/api/plugins/"):
+                    plugin_id = unquote(parsed.path[len("/api/plugins/"):]).strip("/")
+                    if plugin_id and "/" not in plugin_id:
+                        self.send_json(handle_plugin_detail(None, params, plugin_id))
+                        return
+                raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
             file_path = self.resolve_static(parsed.path)
             if file_path is None:
                 raise ApiError(404, "not_found", f"路径不存在或越界：{parsed.path}")
@@ -896,11 +1195,45 @@ class RpHandler(BaseHTTPRequestHandler):
 
     def _reject_write(self) -> None:
         self.send_json(
-            {"error": {"code": "readonly", "message": "只读工作台：本服务不提供写端点"}},
+            {"error": {"code": "readonly", "message": "只读工作台：该路径不提供写端点"}},
             status=405,
         )
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = _reject_write
+    def do_POST(self) -> None:  # noqa: N802
+        """P6-8：唯一放行的写面是 /api/plugins/*（经 rp-plugin 子进程走
+        plugin-runtime 状态机与 audit-engine，本文件零直连 SQL 写）；
+        其余路径保持只读 405。写端点强制 Bearer（鉴权关闭时明确拒绝写）。"""
+        parsed = urlparse(self.path)
+        try:
+            if not parsed.path.startswith("/api/plugins/"):
+                raise ApiError(405, "readonly", "只读工作台：该路径不提供写端点")
+            self.require_auth()
+            if not AUTH_ENABLED:
+                raise ApiError(403, "auth_required_for_write",
+                               "插件写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                raise ApiError(400, "bad_json", "请求体不是合法 JSON")
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 3 and parts[2] == "install":
+                self.send_json(plugin_write("install", body.get("plugin_id") or "", body))
+                return
+            if len(parts) == 4:
+                plugin_id, action = unquote(parts[2]), parts[3]
+                if action not in PLUGIN_WRITE_ACTIONS and action != "upgrade":
+                    raise ApiError(404, "no_route", f"未知插件写操作：{action}")
+                self.send_json(plugin_write(action, plugin_id, body))
+                return
+            raise ApiError(404, "no_route", f"未知写端点：{parsed.path}")
+        except ApiError as exc:
+            self.send_api_error(exc)
+        except Exception as exc:  # 兜底：不泄露堆栈
+            self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
+
+    do_PUT = do_DELETE = do_PATCH = _reject_write
 
 
 def main() -> int:
@@ -909,6 +1242,8 @@ def main() -> int:
         return 1
     server = ThreadingHTTPServer((HOST, PORT), RpHandler)
     print(f"[rp-server] listening http://{HOST}:{PORT}  (db: {DB_PATH}, mode=ro)")
+    print(f"[rp-server] plugin db (P6-8 插件数据面, ro): {PLUGIN_DB_PATH}"
+          f" | rp-plugin: {PLUGIN_BIN} {' '.join(PLUGIN_BIN_ARGS)}")
     if AUX_DB_PATH:
         print(f"[rp-server] aux db (Phase 1-4 数据面, ro attach): {AUX_DB_PATH}")
     else:

@@ -5,7 +5,7 @@ import { Layout } from "./components/Layout";
 import { RouteFallback } from "./routes/RouteFallback";
 
 /**
- * 六个一级路由全部走动态 import：初始包只带壳层 + 当前路由（计划 §10.6 的
+ * 一级路由全部走动态 import：初始包只带壳层 + 当前路由（计划 §10.6 的
  * route-level lazy 要求，模式沿自参照实现 App 的 lazy + lazyElement）。
  * 页面由 P5-5 到 P5-8 逐页补全；壳层见 components/Layout.tsx。
  */
@@ -30,6 +30,12 @@ const RunDetailPage = lazy(() =>
 );
 const RuntimePage = lazy(() =>
   import("./routes/RuntimePage").then((m) => ({ default: m.RuntimePage })),
+);
+const PluginsPage = lazy(() =>
+  import("./routes/PluginsPage").then((m) => ({ default: m.PluginsPage })),
+);
+const PluginDetailPage = lazy(() =>
+  import("./routes/PluginDetailPage").then((m) => ({ default: m.PluginDetailPage })),
 );
 
 function lazyElement(node: ReactNode) {
@@ -71,6 +77,8 @@ export function App() {
             <Route path="runs" element={lazyElement(<RunsPage />)} />
             <Route path="runs/:runId" element={lazyElement(<RunDetailPage />)} />
             <Route path="runtime" element={lazyElement(<RuntimePage />)} />
+            <Route path="plugins" element={lazyElement(<PluginsPage />)} />
+            <Route path="plugins/:pluginId" element={lazyElement(<PluginDetailPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

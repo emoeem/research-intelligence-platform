@@ -29,6 +29,7 @@ pub mod context;
 pub mod error;
 pub mod ids;
 pub mod node;
+pub mod plugin;
 pub mod resource;
 pub mod time;
 pub mod tool;
@@ -41,5 +42,8 @@ pub use context::{
 pub use error::DomainError;
 pub use ids::{ArtifactId, ResourceId, RunId};
 pub use node::{NodeHealth, RuntimeNode, RuntimeNodeKind};
+pub use plugin::{
+    CapabilityType, Plugin, PluginCapability, PluginId, PluginKind, PluginState, PluginTrust,
+};
 pub use resource::{GovernanceStatus, LifecycleStatus, QualityGrade, Resource};
 pub use tool::ToolRunStatus;
