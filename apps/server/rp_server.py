@@ -857,14 +857,51 @@ def plugin_rows(conn: sqlite3.Connection) -> list:
     return query_all(
         conn,
         "SELECT plugin_id, version, name, kind, description, license, trust_level, state,"
-        " update_pending, is_active, governance, source_type, source_ref, installed_dir,"
-        " ingested_policy, source_uninstalled, updated_at"
+        " update_pending, is_active, governance, source_type, source_ref, pinned_json,"
+        " installed_dir, ingested_policy, source_uninstalled, updated_at"
         " FROM plugin ORDER BY plugin_id, version",
     )
 
 
+def knowledge_source_stats(conn: sqlite3.Connection) -> dict:
+    """SK-2：knowledge_source_entry 审核与策略统计（表缺失按空态守卫，
+    迁移前的旧插件库不造数据）。"""
+    table = query_one(
+        conn,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_source_entry'",
+    )
+    if table is None:
+        return {"available": False, "reason": "knowledge_source_entry_missing"}
+    by_review = query_all(
+        conn,
+        "SELECT plugin_id, review_status, COUNT(*) AS n FROM knowledge_source_entry"
+        " GROUP BY plugin_id, review_status",
+    )
+    by_kind = query_all(
+        conn,
+        "SELECT plugin_id, entry_kind, COUNT(*) AS n FROM knowledge_source_entry"
+        " GROUP BY plugin_id, entry_kind",
+    )
+    last_seen = query_all(
+        conn,
+        "SELECT plugin_id, MAX(last_seen_at) AS last_seen_at FROM knowledge_source_entry"
+        " GROUP BY plugin_id",
+    )
+    stats: dict[str, dict] = {}
+    for row in by_review:
+        slot = stats.setdefault(row["plugin_id"], {})
+        slot.setdefault("review", {})[row["review_status"]] = row["n"]
+    for row in by_kind:
+        slot = stats.setdefault(row["plugin_id"], {})
+        slot.setdefault("entry_kinds", {})[row["entry_kind"]] = row["n"]
+    for row in last_seen:
+        stats.setdefault(row["plugin_id"], {})["last_seen_at"] = row["last_seen_at"]
+    return {"available": True, "stats": stats}
+
+
 def handle_plugins_list(conn: sqlite3.Connection, params: dict) -> dict:  # noqa: ARG001
-    """/api/plugins：L1 目录级（元数据卡片：id/版本/state/kind/trust，无正文）。"""
+    """/api/plugins：L1 目录级（元数据卡片：id/版本/state/kind/trust，无正文）。
+    SK-2 增量：pinned（快照 Commit）与 knowledge_stats（审核/类型计数）。"""
     if not plugin_db_ready():
         return plugin_unavailable()
     try:
@@ -883,8 +920,10 @@ def handle_plugins_list(conn: sqlite3.Connection, params: dict) -> dict:  # noqa
             "SELECT action, COUNT(*) AS n FROM audit_event WHERE action LIKE 'plugin.%'"
             " GROUP BY action",
         )
+        kse_stats = knowledge_source_stats(ro)
     finally:
         ro.close()
+    stats_map = kse_stats.get("stats", {}) if kse_stats.get("available") else {}
     items = []
     for row in rows:
         item = dict(row)
@@ -892,6 +931,15 @@ def handle_plugins_list(conn: sqlite3.Connection, params: dict) -> dict:  # noqa
             1 for c in caps
             if c["plugin_id"] == row["plugin_id"] and c["plugin_version"] == row["version"]
         )
+        # SK-2：快照 Commit（009 pinned_json {kind, value}）与来源知识统计。
+        if row["pinned_json"]:
+            try:
+                item["pinned"] = json.loads(row["pinned_json"])
+            except json.JSONDecodeError:
+                item["pinned"] = None
+        else:
+            item["pinned"] = None
+        item["knowledge_stats"] = stats_map.get(row["plugin_id"])
         items.append(item)
     # 分类（计划 §10.4 E）：已安装 / 可更新 / 已禁用 / 其他（含已卸载）。
     categories = {
@@ -944,6 +992,14 @@ def _plugin_detail(conn: sqlite3.Connection, plugin_id: str, level: int) -> dict
         "source_uninstalled": bool(row["source_uninstalled"]),
         "updated_at": row["updated_at"],
     }
+    # SK-2：快照 Commit（pinned）与来源主页（manifest homepage）。
+    if row["pinned_json"]:
+        try:
+            detail["pinned"] = json.loads(row["pinned_json"])
+        except json.JSONDecodeError:
+            detail["pinned"] = None
+    else:
+        detail["pinned"] = None
     if level >= 2:
         manifest = json.loads(row["manifest_json"])
         capability_rows = query_all(
@@ -973,6 +1029,30 @@ def _plugin_detail(conn: sqlite3.Connection, plugin_id: str, level: int) -> dict
         detail["capabilities"] = capabilities
         detail["compatibility"] = manifest.get("compatibility")
         detail["dependencies"] = manifest.get("dependencies", [])
+        # SK-2：来源主页、内容类型与 per-kind 许可/持久化策略（manifest provides）。
+        detail["homepage"] = manifest.get("homepage")
+        knowledge_provides = {}
+        for cap in manifest.get("capabilities", []) or []:
+            if cap.get("type") == "knowledge_source":
+                provides = cap.get("provides") or {}
+                knowledge_provides = {
+                    "corpus_id": provides.get("corpus_id"),
+                    "content_kinds": provides.get("content_kinds", []),
+                    "kinds": {
+                        k: {
+                            "license_policy": v.get("license_policy"),
+                            "source_path": v.get("source_path"),
+                            "parser": v.get("parser"),
+                        }
+                        for k, v in (provides.get("kinds") or {}).items()
+                    },
+                }
+                break
+        detail["knowledge_provides"] = knowledge_provides
+        kse_stats = knowledge_source_stats(conn)
+        detail["knowledge_stats"] = (
+            kse_stats.get("stats", {}).get(row["plugin_id"]) if kse_stats.get("available") else None
+        )
     if level >= 3:
         detail["manifest"] = manifest
         docs_body = None
@@ -1087,8 +1167,137 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
     return {"ok": True, "action": action, "plugin_id": plugin_id, "result": payload}
 
 
+def handle_knowledge_sources(_conn: sqlite3.Connection, params: dict) -> dict:
+    """SK-2 知识来源条目（knowledge_source_entry，011 迁移）：插件摄取的
+    catalog_entry / document_markdown / skill_candidate 元数据列表，展示
+    来源、分类、许可状态、快照 Commit 与审核状态（P6-10 第 6 条）。
+    数据面 = RIP_PLUGIN_DB（只读直查，与 /api/plugins 同一守卫模式）。
+    过滤：plugin_id / entry_kind / review_status / q（标题与 URL LIKE）；
+    附 per-plugin 汇总。表缺失按真实空态守卫（旧插件库不造数据）。"""
+    if not plugin_db_ready():
+        return {
+            **plugin_unavailable(),
+            "items": [],
+            "total": 0,
+            "plugins": [],
+            "summary": [],
+        }
+    try:
+        conn = connect_plugin_ro()
+    except ApiError as exc:
+        return {
+            "available": False,
+            "reason": exc.code,
+            "message": exc.message,
+            "items": [],
+            "total": 0,
+            "plugins": [],
+            "summary": [],
+        }
+    try:
+        return _knowledge_sources_payload(conn, params)
+    finally:
+        conn.close()
+
+
+def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
+    table = query_one(
+        conn,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_source_entry'",
+    )
+    plugins = query_all(
+        conn,
+        "SELECT plugin_id, name, version, state, license FROM plugin WHERE is_active = 1"
+        " ORDER BY plugin_id",
+    )
+    if table is None:
+        return {
+            "available": False,
+            "reason": "knowledge_source_entry_missing",
+            "message": "knowledge_source_entry 表不存在（需 011 迁移的插件库副本）",
+            "plugins": [{"plugin_id": p["plugin_id"], "name": p["name"],
+                         "state": p["state"], "license": p["license"]} for p in plugins],
+            "items": [],
+            "total": 0,
+        }
+
+    plugin_id = clean_str(params, "plugin_id")
+    entry_kind = check_enum(params, "entry_kind",
+                            ("catalog_entry", "document_markdown", "skill_candidate"))
+    review_status = check_enum(params, "review_status",
+                               ("DISCOVERED", "UNREVIEWED", "APPROVED", "REJECTED", "DEPRECATED"))
+    q_raw = clean_str(params, "q")
+    limit = parse_limit(params)
+
+    where, args = [], []
+    if plugin_id:
+        where.append("plugin_id = ?")
+        args.append(plugin_id)
+    if entry_kind:
+        where.append("entry_kind = ?")
+        args.append(entry_kind)
+    if review_status:
+        where.append("review_status = ?")
+        args.append(review_status)
+    if q_raw:
+        needle = f"%{like_escape(q_raw)}%"
+        where.append("(title LIKE ? ESCAPE '\\' OR canonical_url LIKE ? ESCAPE '\\'"
+                     " OR description LIKE ? ESCAPE '\\')")
+        args.extend([needle, needle, needle])
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM knowledge_source_entry {where_sql}", args
+    ).fetchone()[0]
+    items = query_all(
+        conn,
+        "SELECT plugin_id, plugin_version, corpus_id, entry_kind, item_key, title,"
+        " description, category_path_json, canonical_url, license_status, rights_policy,"
+        " review_status, source_commit, source_url, source_location_json, body_bytes,"
+        " first_seen_at, last_seen_at"
+        " FROM knowledge_source_entry"
+        f" {where_sql} ORDER BY plugin_id, entry_kind, item_key LIMIT ?",
+        tuple(args) + (limit,),
+    )
+    for item in items:
+        item["category_path"] = parse_json_or_none(item.get("category_path_json")) or []
+        item["source_location"] = parse_json_or_none(item.get("source_location_json")) or {}
+        item.pop("category_path_json", None)
+        item.pop("source_location_json", None)
+    summary = query_all(
+        conn,
+        "SELECT plugin_id, entry_kind, review_status, COUNT(*) AS n FROM knowledge_source_entry"
+        " GROUP BY plugin_id, entry_kind, review_status ORDER BY plugin_id",
+    )
+    return {
+        "available": True,
+        "total": total,
+        "returned": len(items),
+        "limit": limit,
+        "filters": {
+            "plugin_id": plugin_id,
+            "entry_kind": entry_kind,
+            "review_status": review_status,
+            "q": q_raw,
+        },
+        "plugins": [
+            {
+                "plugin_id": p["plugin_id"],
+                "name": p["name"],
+                "version": p["version"],
+                "state": p["state"],
+                "license": p["license"],
+            }
+            for p in plugins
+        ],
+        "summary": summary,
+        "items": items,
+    }
+
+
 API_ROUTES = {
     "/api/plugins": handle_plugins_list,
+    "/api/knowledge_sources": handle_knowledge_sources,
     "/api/stats": lambda conn, params: handle_stats(conn),
     "/api/resources": handle_resources,
     "/api/reviews": handle_reviews,

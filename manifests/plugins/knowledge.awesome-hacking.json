@@ -1,0 +1,69 @@
+{
+  "schema_version": "1",
+  "id": "knowledge.awesome-hacking",
+  "name": "Awesome Hacking 目录",
+  "version": "0.1.0",
+  "kind": "knowledge",
+  "description": "黑客与渗透测试 awesome 列表聚合目录：只登记分类、名称、描述与原始链接条目元数据",
+  "authors": [
+    "Hack-with-Github"
+  ],
+  "homepage": "https://github.com/Hack-with-Github/Awesome-Hacking",
+  "license": "CC0-1.0",
+  "source": {
+    "type": "git",
+    "url": "https://github.com/Hack-with-Github/Awesome-Hacking",
+    "host": "github",
+    "pinned": {
+      "kind": "commit",
+      "value": "440486fd08b0a0d9ad9a041a0bb234dcdf65dee2"
+    }
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": [
+      "1"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "knowledge-source.awesome-hacking.catalog",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "README 分类目录条目（Awesome Repositories 与 Other Useful Repositories 两级分类）的链接元数据摄取",
+      "provides": {
+        "corpus_id": "awesome-hacking",
+        "content_kinds": [
+          "catalog_entry"
+        ],
+        "kinds": {
+          "catalog_entry": {
+            "source_path": "README.md",
+            "parser": "markdown_links",
+            "license_policy": "catalog_only",
+            "max_entries": 500,
+            "source_commit": "440486fd08b0a0d9ad9a041a0bb234dcdf65dee2",
+            "description": "分类目录条目：只登记条目元数据与原始 URL，不持久化外链项目正文，不自动 clone 安装或执行"
+          }
+        },
+        "index": {
+          "fts": true,
+          "vector": false
+        },
+        "parse_pipeline": "tool.rip.doc.parse"
+      }
+    }
+  ],
+  "dependencies": [],
+  "permissions": {
+    "data_access": "ingest_via_api"
+  },
+  "data_retention": {
+    "ingested_policy": "retain_with_provenance",
+    "persistent": []
+  },
+  "context": {
+    "summary": "安全工具与专题 awesome 目录聚合源，安全研究类任务 L2 命中后按需加载",
+    "docs": "README.md"
+  }
+}

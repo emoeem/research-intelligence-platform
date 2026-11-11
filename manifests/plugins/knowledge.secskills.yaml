@@ -1,0 +1,63 @@
+# SK-2 三源接入之二（P6-10，安全知识源计划 §3.2/§5）：SecSkills Agent/Skills/
+# MCP 目录。catalog_only：目录条目只登记元数据；skill_candidate 用
+# metadata_only（候选不代表已安装）。skill_candidate 的 source_path 指向
+# skills/ 目录：本固定 Commit 快照仓库只有 README.md/LICENSE/图片（计划 §3.2
+# 仓库结构核实值），该目录不存在，摄取计数为 0 是本快照的如实结果；候选以
+# catalog_entry 形态登记（Agent/代码审计/MCP 等分类），待上游打包 Skill 正文
+# 目录后无需改 Manifest 即可接管。娱乐分类与推广内容（模型中转站、mseep
+# 徽章、公众号）入库为 DISCOVERED，review 受控面裁决，不进检索面。
+# 与同名 .json 双份等价。
+schema_version: "1"
+id: "knowledge.secskills"
+name: "SecSkills 目录"
+version: "0.1.0"
+kind: "knowledge"
+description: "渗透测试、代码审计、CTF、逆向等安全方向 Agent/Skills/MCP 目录：登记条目元数据与 Skill 候选"
+authors: ["DaoYiSec"]
+homepage: "https://github.com/DaoYiSec/SecSkills"
+license: "Apache-2.0"
+source:
+  type: "git"
+  url: "https://github.com/DaoYiSec/SecSkills"
+  host: "github"
+  pinned:
+    kind: "commit"
+    value: "1867eb6b71889af8632107884e9d0235510f9f78"
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+capabilities:
+  - id: "knowledge-source.secskills.catalog"
+    type: "knowledge_source"
+    entry: "README.md"
+    summary: "README 分类目录条目（Agent 46、代码审计 12、渗透测试漏洞扫描 16 等 17 分类 102 条）的链接元数据摄取"
+    provides:
+      corpus_id: "secskills"
+      content_kinds: ["catalog_entry", "skill_candidate"]
+      kinds:
+        catalog_entry:
+          source_path: "README.md"
+          parser: "markdown_links"
+          license_policy: "catalog_only"
+          max_entries: 500
+          source_commit: "1867eb6b71889af8632107884e9d0235510f9f78"
+          description: "分类目录条目：只登记条目元数据与上游链接；娱乐与推广条目由 review 裁决，不进检索面"
+        skill_candidate:
+          source_path: "skills/"
+          parser: "skill_frontmatter"
+          license_policy: "metadata_only"
+          source_commit: "1867eb6b71889af8632107884e9d0235510f9f78"
+          description: "Skill/Agent/MCP 候选元数据（frontmatter）；本快照上游未打包 skills/ 目录，计数 0，候选先以 catalog_entry 登记"
+      index:
+        fts: true
+        vector: false
+      parse_pipeline: "tool.rip.doc.parse"
+dependencies: []
+permissions:
+  data_access: "ingest_via_api"
+data_retention:
+  ingested_policy: "retain_with_provenance"
+  persistent: []
+context:
+  summary: "安全 Agent/Skills/MCP 候选目录源，安全研究类任务 L2 命中后按需加载"
+  docs: "README.md"

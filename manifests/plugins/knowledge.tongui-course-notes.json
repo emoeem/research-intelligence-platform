@@ -1,0 +1,69 @@
+{
+  "schema_version": "1",
+  "id": "knowledge.tongui-course-notes",
+  "name": "tongui 安全课程目录",
+  "version": "0.1.0",
+  "kind": "knowledge",
+  "description": "渗透测试全套 74 篇 13 章课程与精选站点 31 篇：只登记章节/标题/URL/路径元数据，正文不批量持久化",
+  "authors": [
+    "tongui"
+  ],
+  "homepage": "https://tongui66.github.io/course-notes/",
+  "license": "UNLICENSED",
+  "source": {
+    "type": "git",
+    "url": "https://github.com/tongui66/Cyber-Security-Course-Notes",
+    "host": "github",
+    "pinned": {
+      "kind": "commit",
+      "value": "45a12a759e82adec13c3d171a34d1cbeea1a15b3"
+    }
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": [
+      "1"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "knowledge-source.tongui-course-notes.catalog",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "课程目录条目（74 篇 13 章 + 精选站点合并，双 source_ref）的元数据摄取；正文按许可状态按需读取",
+      "provides": {
+        "corpus_id": "tongui-course-notes",
+        "content_kinds": [
+          "catalog_entry"
+        ],
+        "kinds": {
+          "catalog_entry": {
+            "source_path": "catalog/articles.md",
+            "parser": "markdown_links",
+            "license_policy": "metadata_only",
+            "max_entries": 500,
+            "source_commit": "45a12a759e82adec13c3d171a34d1cbeea1a15b3",
+            "description": "课程条目元数据（派生目录）：章节/标题/站点 URL/Git 路径/blob URL；UNLICENSED，正文不批量持久化"
+          }
+        },
+        "index": {
+          "fts": true,
+          "vector": false
+        },
+        "parse_pipeline": "tool.rip.doc.parse"
+      }
+    }
+  ],
+  "dependencies": [],
+  "permissions": {
+    "data_access": "ingest_via_api"
+  },
+  "data_retention": {
+    "ingested_policy": "retain_with_provenance",
+    "persistent": []
+  },
+  "context": {
+    "summary": "渗透测试课程目录元数据源，安全研究类任务 L2 命中后按需加载；全文需作者许可",
+    "docs": "README.md"
+  }
+}

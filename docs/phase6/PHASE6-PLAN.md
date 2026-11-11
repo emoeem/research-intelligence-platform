@@ -41,6 +41,7 @@
 | P6-8 | Plugin Center 页面                                        | 已完成 | web PluginsPage/PluginDetailPage（四分类 + 三级加载 + 兼容性列 + 依赖图 + 审计 trail）、rp_server /api/plugins 读写端点（Bearer 强制、零直连 SQL 写）、selftest_phase6 PASS=49 FAIL=0、Playwright 真实后端 E2E + 截图 12 张（验收报告 docs/phase6/PHASE6-ACCEPTANCE.md；本行原「未开工」为陈旧状态，2026-11-12 SK-1 批次按验收报告修正） |
 | P6-9（收口扩展） | 武器库扩展路径：ADDING-A-TOOL 指南 + 脚手架一条线 + /api/tools aux 增量合并 | 已完成 | docs/guides/ADDING-A-TOOL.md、scripts/rip_new_tool.py、rp-tool validate/register 与 rp-tool-health ping、样例工具 rip.http.tls_inspect 端到端露出（收口记录 docs/releases/RELEASE_2026-11-12_PHASE6.md §三/§四；ROADMAP §7.3 原表止于 P6-8，本行为收口批新增编号） |
 | P6-9（SK-1） | 通用 Knowledge Catalog/Document Ingestion（SK 计划 §8 P6-9 原口径，与上行同号异源） | 已完成 | 011 两表（knowledge_source_entry + context_citation_evidence）、domain::knowledge 四实体、ingest per-kind 注册表 + dry-run SAVEPOINT、validate rule 3 knowledge_provides_invalid、search-engine 第三源（INDEX_SCHEMA_VERSION=2）、context-broker PluginSource 实装 + Evidence 受控写面、真实 RTIS 对账复跑 15155 行幂等（实测记录见下方 SK-1 节，收口 docs/releases/RELEASE_2026-11-12_SK1-INGEST.md） |
+| P6-10（SK-2） | 三个安全知识来源接入（SK 计划 §8 P6-10） | 已完成 | manifests/plugins/ 三源双份 Manifest（固定 Commit pin，git 通道实装校验）、tests/fixtures/sk2/ 最小快照 fixture、scripts/sk2_tongui_catalog.py 派生目录（74 篇 + 31 精选双 source_ref 合并）、CLI 实跑链 262 条对账幂等（85/102/75）、review APPROVED + rp-search-index 双闸、web 三页来源/许可/Commit/审核展示 + browser-use E2E 截图 4 张（实测记录见下方 SK-2 节与 docs/phase6/SK2-SOURCES-NOTES.md） |
 
 ## 已实施批次实测记录
 
@@ -106,6 +107,17 @@
 - 依赖增量：零新外部依赖（plugin-runtime 仅新增 workspace 内部 dev-dependencies 四条 context-broker/resource-engine/search-engine/tool-registry，仅测试环消费，Cargo.lock 相应四行）。
 - 台账修正：P6-8 行「未开工」与 PHASE6-ACCEPTANCE.md 已验收矛盾，按验收报告修正；收口批 P6-9（武器库扩展路径）与 SK 计划 §8 P6-9（SK-1）两个同号异源批次分别登记。
 - 浏览器级验证归 SK-2（本批只收 fixture 级与真实语料对账，sk1_extended_ingest.rs 四项已覆盖：三类 dry-run、100% 幂等、禁用即不可见、历史 Evidence 可读）。
+
+### SK-2（2026-11-12，三源接入）
+
+- 接手基线：SK-1 收口后的通用摄取管线（ingest.rs per-kind 注册表、011 knowledge_source_entry、search-engine 第三源双闸）零改动复用；本批为纯消费批次 + web 展示补全，RTIS 三类写面与 knowledge_ingest 表零触碰。
+- 验收命令与结果：`cargo test --offline -p plugin-registry --test static_chain` exit 0（13 tests：既有 11 + 三源 Manifest 七条校验 + rule 3/rule 2/rule 5 反例拒绝）；`cargo test --offline -p plugin-registry -p plugin-runtime` exit 0（42+6+13 与 18+8+5+5+6+3+4+4+5 全绿，含新增 sk2_source_ingest 四项：三源条数对账幂等、tongui 合并双 ref、changed 不覆盖历史行 + 不物理删、审核/检索双闸）；`cargo clippy --offline --workspace` exit 0；web `npm run build`（tsc --noEmit）与 `npm run test`（vitest 73）全绿。
+- 三源固定 Commit 实查：`git ls-remote` 三仓 HEAD/分支与计划 §3 值逐一相等（440486fd... / 1867eb6b... / 45a12a75...）；git 通道 install 实跑 plugin.lock pinned 全 40 位且 negotiation.resolved_commit 相等（ah/secs 主环境 + tongui 一次性验证环境）。
+- CLI 实跑链对账（RIP_DATA_DIR=/tmp/sk2-data，--db /tmp/sk2.db）：ah 85（no_scheme 2）、secs 102（no_scheme 17，首跑 skipped 1 = 上游第 98/99 行同 URL 重复条目去重）、tongui 75（74 篇 + 主页）；dry-run 与实跑逐数一致；二跑 skipped=85/103/75、changed=0；enable + review APPROVED（85/102/75）后 rp-search-index rebuild doc_count=262；disable secskills 重建 160 且 strix 命中 0（复 enable 恢复 262）。
+- 只读断言全过（python3 file:ro）：tongui document_markdown=0、策略分组 (CC0-1.0,catalog_only,85)/(Apache-2.0,catalog_only,102)/(UNLICENSED,metadata_only,75)、Git 路径条目 74、精选双 ref 31、source_commit 全行 40 位、review 全量 APPROVED 262、RTIS knowledge.db sha256 前缀 f8580feb 未变、git status integrations/rtis + platform.db 零输出。
+- 50 URL 抽样（seed 20261112，分层 17/17/16）：50/50 URL 可达、50/50 分类对账（方法与明细表见 docs/phase6/SK2-SOURCES-NOTES.md §七）。
+- 批次偏差（详 docs/phase6/SK2-SOURCES-NOTES.md §三/§六）：tongui catalog_entry 来自派生目录 scripts/sk2_tongui_catalog.py（上游树整仓仅 1 个绝对 URL、站点 slug 与 Git 路径不可互推，上游树直摄实测 0 条目）；upstream_missing 自动标记未实现（无第二快照触发场景，物理删已由测试锁定不发生）；secskills skill_candidate 本快照 0（上游未打包 skills/ 目录）；web 视觉门禁（playwright）本机无 chromium 未运行。
+- 浏览器 E2E（browser-use 真实浏览器 1280x800 + vite dev 代理 rp_server 7823，RIP_PLUGIN_DB=/tmp/sk2.db）：插件中心许可/Commit/条目徽章、tongui 详情（来源主页/快照 Commit/内容类型/审核状态/审计 trail 含 plugin.knowledge.ingest）、知识库「知识来源」视图 262 条与 tongui 过滤 75 条，截图 4 张入 docs/phase6/browser-e2e/（sk2-01 到 sk2-04）。
 
 ## 偏差登记（对冻结文档的显式偏离，均可评审推翻）
 

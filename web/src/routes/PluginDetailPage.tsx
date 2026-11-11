@@ -278,13 +278,37 @@ export function PluginDetailPage() {
             <dt className="opacity-70">版本</dt>
             <dd className="font-mono">{data.version}</dd>
             <dt className="opacity-70">许可证</dt>
-            <dd>{data.license}</dd>
+            <dd data-testid="detail-license">{data.license}</dd>
             <dt className="opacity-70">信任级</dt>
             <dd>{data.trust_level}</dd>
             <dt className="opacity-70">来源</dt>
             <dd className="font-mono text-xs">
               {data.source_type}:{data.source_ref}
             </dd>
+            {data.homepage ? (
+              <>
+                <dt className="opacity-70">来源主页</dt>
+                <dd className="text-xs">
+                  <a
+                    href={data.homepage}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all text-primary underline underline-offset-2"
+                    data-testid="detail-homepage"
+                  >
+                    {data.homepage}
+                  </a>
+                </dd>
+              </>
+            ) : null}
+            {data.pinned?.value ? (
+              <>
+                <dt className="opacity-70">快照 Commit</dt>
+                <dd className="font-mono text-xs" data-testid="detail-commit">
+                  {data.pinned.kind}: {data.pinned.value}
+                </dd>
+              </>
+            ) : null}
             <dt className="opacity-70">lock sha256</dt>
             <dd className="font-mono text-xs">{data.lock_sha256 ?? "-"}</dd>
             <dt className="opacity-70">更新时间</dt>
@@ -296,6 +320,48 @@ export function PluginDetailPage() {
               </>
             ) : null}
           </dl>
+          {level >= 2 && data.knowledge_provides?.content_kinds?.length ? (
+            <div className="mt-3" data-testid="detail-knowledge-provides">
+              <h3 className="text-xs font-semibold text-base-content/60">
+                内容类型与许可策略
+              </h3>
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                {data.knowledge_provides.content_kinds.map((kind) => (
+                  <span
+                    key={kind}
+                    className="badge badge-sm badge-outline"
+                    title={
+                      data.knowledge_provides?.kinds?.[kind]?.license_policy
+                        ? `${kind} policy: ${data.knowledge_provides?.kinds?.[kind]?.license_policy}`
+                        : kind
+                    }
+                  >
+                    {kind}
+                    {data.knowledge_provides?.kinds?.[kind]?.license_policy
+                      ? ` · ${data.knowledge_provides?.kinds?.[kind]?.license_policy}`
+                      : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {level >= 2 && data.knowledge_stats ? (
+            <div className="mt-3" data-testid="detail-knowledge-stats">
+              <h3 className="text-xs font-semibold text-base-content/60">审核状态</h3>
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                {Object.entries(data.knowledge_stats.review ?? {}).map(([status, n]) => (
+                  <span key={status} className="badge badge-sm badge-ghost">
+                    {status}: {n}
+                  </span>
+                ))}
+                {data.knowledge_stats.last_seen_at ? (
+                  <span className="text-[11px] opacity-50">
+                    最近摄取 {formatDateTime(data.knowledge_stats.last_seen_at)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {level >= 2 && data.context?.summary ? (
             <p className="mt-3 text-sm" data-testid="context-summary">
               {data.context.summary}

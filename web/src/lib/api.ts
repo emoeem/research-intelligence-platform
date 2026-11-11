@@ -119,6 +119,14 @@ export interface PluginRow {
   source_uninstalled?: boolean;
   capabilities_count?: number;
   updated_at?: string | null;
+  /** SK-2：快照 Commit（009 pinned_json）。 */
+  pinned?: { kind?: string; value?: string } | null;
+  /** SK-2：来源知识统计（knowledge_source_entry 审核与类型计数）。 */
+  knowledge_stats?: {
+    review?: Record<string, number>;
+    entry_kinds?: Record<string, number>;
+    last_seen_at?: string | null;
+  } | null;
 }
 
 export interface PluginList {
@@ -156,6 +164,13 @@ export interface PluginCompatibility {
 }
 
 /** L3：完整 Manifest + docs 正文。 */
+/** SK-2：per-kind 许可与持久化策略声明（manifest provides.kinds）。 */
+export interface PluginKindPolicy {
+  license_policy?: string;
+  source_path?: string;
+  parser?: string;
+}
+
 export interface PluginDetail {
   level: 1 | 2 | 3;
   plugin_id: string;
@@ -175,6 +190,20 @@ export interface PluginDetail {
   installed_dir?: string | null;
   source_uninstalled?: boolean;
   updated_at?: string | null;
+  /** SK-2：快照 Commit 与来源主页。 */
+  pinned?: { kind?: string; value?: string } | null;
+  homepage?: string | null;
+  /** SK-2：knowledge_source capability 的内容类型与 per-kind 策略声明。 */
+  knowledge_provides?: {
+    corpus_id?: string | null;
+    content_kinds?: string[];
+    kinds?: Record<string, PluginKindPolicy>;
+  } | null;
+  knowledge_stats?: {
+    review?: Record<string, number>;
+    entry_kinds?: Record<string, number>;
+    last_seen_at?: string | null;
+  } | null;
   context?: { summary?: string; docs?: string } | null;
   capabilities?: PluginCapabilityRow[];
   compatibility?: PluginCompatibility;
@@ -245,4 +274,76 @@ export async function pluginUpgrade(
       manifest_path: manifestPath,
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// SK-2 知识来源条目（/api/knowledge_sources，knowledge_source_entry 011）。
+// ---------------------------------------------------------------------------
+
+/** 知识来源条目行（catalog_entry / document_markdown / skill_candidate）。 */
+export interface KnowledgeSourceEntry {
+  plugin_id: string;
+  plugin_version: string;
+  corpus_id: string;
+  entry_kind: string;
+  item_key: string;
+  title: string;
+  description?: string | null;
+  category_path: string[];
+  canonical_url?: string | null;
+  license_status: string;
+  rights_policy: string;
+  review_status: string;
+  source_commit?: string | null;
+  source_url?: string | null;
+  source_location?: Record<string, unknown>;
+  body_bytes?: number;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+}
+
+export interface KnowledgeSourcePlugin {
+  plugin_id: string;
+  name: string;
+  version: string;
+  state: string;
+  license: string;
+}
+
+export interface KnowledgeSourceList {
+  available: boolean;
+  reason?: string;
+  message?: string;
+  total: number;
+  returned?: number;
+  limit?: number;
+  filters?: {
+    plugin_id?: string | null;
+    entry_kind?: string | null;
+    review_status?: string | null;
+    q?: string | null;
+  };
+  plugins: KnowledgeSourcePlugin[];
+  summary?: { plugin_id: string; entry_kind: string; review_status: string; n: number }[];
+  items: KnowledgeSourceEntry[];
+}
+
+export async function fetchKnowledgeSources(
+  params: {
+    plugin_id?: string;
+    entry_kind?: string;
+    review_status?: string;
+    q?: string;
+    limit?: number;
+  } = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<KnowledgeSourceList> {
+  const search = new URLSearchParams();
+  if (params.plugin_id) search.set("plugin_id", params.plugin_id);
+  if (params.entry_kind) search.set("entry_kind", params.entry_kind);
+  if (params.review_status) search.set("review_status", params.review_status);
+  if (params.q) search.set("q", params.q);
+  if (params.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return apiGet<KnowledgeSourceList>(`/api/knowledge_sources${qs ? `?${qs}` : ""}`, options);
 }

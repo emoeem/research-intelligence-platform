@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import {
+  type KnowledgeSourceEntry,
+  type KnowledgeSourceList,
+  type KnowledgeSourcePlugin,
+} from "../lib/api";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
 import { formatDateTime } from "../lib/format";
@@ -8,7 +13,10 @@ import { formatDateTime } from "../lib/format";
  *  q 为 keyword 别名）+ 详情侧栏（来源/元数据/正文摘要）。
  *  检索 300ms 防抖（useApi 按路径重取，SWR 旧数据留屏）；三态统一：
  *  loading= SkeletonPanel、error= ErrorPanel（可重试）、无命中= EmptyPanel
- *  显服务端真实空态文案。详情按 ?knowledge_id= 全字段拉取。 */
+ *  显服务端真实空态文案。详情按 ?knowledge_id= 全字段拉取。
+ *  SK-2（P6-10 第 6 条）：新增「知识来源」视图，展示插件知识条目
+ *  （knowledge_source_entry）的来源主页、分类、许可证状态、快照 Commit 与
+ *  审核状态；平台知识面（M 库 knowledge 表）行为不变。 */
 
 interface KnowledgeRow {
   knowledge_id: string;
@@ -202,7 +210,189 @@ function DetailSidebar({
   );
 }
 
+const REVIEW_BADGE: Record<string, string> = {
+  APPROVED: "badge-success",
+  DISCOVERED: "badge-ghost",
+  UNREVIEWED: "badge-warning",
+  REJECTED: "badge-error",
+  DEPRECATED: "badge-ghost",
+};
+
+const RIGHTS_LABEL: Record<string, string> = {
+  catalog_only: "仅目录元数据",
+  approved_only: "审核后正文",
+  metadata_only: "仅元数据与哈希",
+};
+
+const ENTRY_KIND_LABEL: Record<string, string> = {
+  catalog_entry: "目录条目",
+  document_markdown: "文档正文",
+  skill_candidate: "Skill 候选",
+};
+
+function SourceEntriesView() {
+  const [pluginId, setPluginId] = useState("");
+  const [review, setReview] = useState("");
+  const [rawQuery, setRawQuery] = useState("");
+  const [keyword, setKeyword] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setKeyword(rawQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [rawQuery]);
+
+  const qs = new URLSearchParams({ limit: "100" });
+  if (pluginId) qs.set("plugin_id", pluginId);
+  if (review) qs.set("review_status", review);
+  if (keyword) qs.set("q", keyword);
+  const list = useApi<KnowledgeSourceList>(`/api/knowledge_sources?${qs.toString()}`);
+
+  const plugins: KnowledgeSourcePlugin[] = list.data?.plugins ?? [];
+  const items: KnowledgeSourceEntry[] = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+
+  return (
+    <section aria-label="知识来源条目">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select
+          className="select select-sm rounded-control border border-edge bg-base-100"
+          aria-label="按来源插件过滤"
+          value={pluginId}
+          onChange={(e) => setPluginId(e.target.value)}
+        >
+          <option value="">全部来源（{plugins.length} 个插件）</option>
+          {plugins.map((p) => (
+            <option key={p.plugin_id} value={p.plugin_id}>
+              {p.name}（{p.license}）
+            </option>
+          ))}
+        </select>
+        <select
+          className="select select-sm rounded-control border border-edge bg-base-100"
+          aria-label="按审核状态过滤"
+          value={review}
+          onChange={(e) => setReview(e.target.value)}
+        >
+          <option value="">全部审核状态</option>
+          {Object.keys(REVIEW_BADGE).map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          className="input input-sm w-52 rounded-control border border-edge bg-base-100"
+          placeholder="检索标题 / URL / 描述…"
+          aria-label="检索知识来源条目"
+          value={rawQuery}
+          onChange={(e) => setRawQuery(e.target.value)}
+        />
+        <span className="text-xs opacity-50" data-testid="source-total">
+          共 {total} 条（显示 {items.length}）
+        </span>
+      </div>
+      {list.loading ? (
+        <SkeletonPanel lines={6} />
+      ) : list.error !== null ? (
+        <ErrorPanel error={list.error} onRetry={list.retry} />
+      ) : !list.data?.available ? (
+        <EmptyPanel
+          text={list.data?.message ?? "知识来源数据面不可用（需 011 迁移的插件库副本）"}
+        />
+      ) : items.length === 0 ? (
+        <EmptyPanel text="没有匹配的知识来源条目，调整过滤条件后重试。" />
+      ) : (
+        <ul className="space-y-2" data-testid="source-entry-list">
+          {items.map((item) => (
+            <li key={`${item.plugin_id}@${item.entry_kind}:${item.item_key}`}>
+              <div className="rounded-surface border border-edge bg-base-100 p-3">
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className={`badge badge-sm ${REVIEW_BADGE[item.review_status] ?? "badge-ghost"}`}>
+                    {item.review_status}
+                  </span>
+                  <span className="badge badge-sm badge-outline">
+                    {ENTRY_KIND_LABEL[item.entry_kind] ?? item.entry_kind}
+                  </span>
+                  <span className="badge badge-sm badge-info" data-testid="source-license">
+                    {item.license_status}
+                  </span>
+                  <span className="badge badge-sm badge-ghost">
+                    {RIGHTS_LABEL[item.rights_policy] ?? item.rights_policy}
+                  </span>
+                  {item.source_commit ? (
+                    <span
+                      className="badge badge-sm badge-ghost font-mono"
+                      title={`快照 Commit: ${item.source_commit}`}
+                    >
+                      {item.source_commit.slice(0, 7)}
+                    </span>
+                  ) : null}
+                  <span className="text-[11px] text-base-content/50">{item.plugin_id}</span>
+                </div>
+                <p className="mt-1.5 text-sm font-medium leading-5" data-testid="source-title">
+                  {item.title}
+                </p>
+                {item.category_path.length > 0 ? (
+                  <p className="mt-1 text-[11px] text-base-content/50" data-testid="source-category">
+                    分类：{item.category_path.join(" / ")}
+                  </p>
+                ) : null}
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-base-content/40">
+                  {item.canonical_url ? (
+                    <a
+                      href={item.canonical_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="max-w-md truncate text-primary underline underline-offset-2"
+                    >
+                      {item.canonical_url}
+                    </a>
+                  ) : null}
+                  <span>更新 {item.last_seen_at ? formatDateTime(item.last_seen_at) : "-"}</span>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function KnowledgePage() {
+  const [view, setView] = useState<"platform" | "sources">("platform");
+  return (
+    <div>
+      <PageHeader
+        title="知识库"
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1" data-testid="knowledge-view-switch">
+              <button
+                type="button"
+                className={`btn btn-xs ${view === "platform" ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setView("platform")}
+              >
+                平台知识
+              </button>
+              <button
+                type="button"
+                className={`btn btn-xs ${view === "sources" ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setView("sources")}
+              >
+                知识来源
+              </button>
+            </div>
+          </div>
+        }
+      />
+      {view === "sources" ? <SourceEntriesView /> : <PlatformKnowledgeView />}
+    </div>
+  );
+}
+
+function PlatformKnowledgeView() {
   const location = useLocation();
   const navigate = useNavigate();
   const [rawQuery, setRawQuery] = useState("");
@@ -245,19 +435,16 @@ export function KnowledgePage() {
 
   return (
     <div>
-      <PageHeader
-        title="知识库"
-        actions={
-          <input
-            type="text"
-            className="input input-sm w-56 rounded-control border border-edge bg-base-100"
-            placeholder="检索标题 / 组件 / CVE…"
-            aria-label="检索知识条目"
-            value={rawQuery}
-            onChange={(event) => setRawQuery(event.target.value)}
-          />
-        }
-      />
+      <div className="mb-3 flex items-center justify-end">
+        <input
+          type="text"
+          className="input input-sm w-56 rounded-control border border-edge bg-base-100"
+          placeholder="检索标题 / 组件 / CVE…"
+          aria-label="检索知识条目"
+          value={rawQuery}
+          onChange={(event) => setRawQuery(event.target.value)}
+        />
+      </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section aria-label="知识条目列表">
           {list.loading ? (

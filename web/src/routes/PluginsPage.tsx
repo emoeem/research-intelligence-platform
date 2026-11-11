@@ -40,6 +40,21 @@ const TRUST_BADGE: Record<string, string> = {
   remote: "badge-warning",
 };
 
+/** SK-2：来源知识统计徽章（审核计数与条目类型，knowledge_source_entry）。 */
+function KnowledgeStatsBadges({ plugin }: { plugin: PluginRow }) {
+  const stats = plugin.knowledge_stats;
+  if (!stats) return null;
+  const total = Object.values(stats.review ?? {}).reduce((a, b) => a + b, 0);
+  if (total === 0) return null;
+  const approved = stats.review?.APPROVED ?? 0;
+  return (
+    <span className="badge badge-sm badge-outline" data-testid="knowledge-stats">
+      来源 {total} 条
+      {approved > 0 ? ` · APPROVED ${approved}` : ""}
+    </span>
+  );
+}
+
 function PluginCard({ plugin }: { plugin: PluginRow }) {
   const stateBadge = STATE_BADGE[plugin.state] ?? "badge-ghost";
   return (
@@ -62,6 +77,20 @@ function PluginCard({ plugin }: { plugin: PluginRow }) {
         <span className={`badge badge-sm ${TRUST_BADGE[plugin.trust_level] ?? "badge-ghost"}`}>
           {plugin.trust_level}
         </span>
+        {/* SK-2：许可证状态与快照 Commit（来源主页在详情页）。 */}
+        <span className="badge badge-sm badge-info" data-testid="plugin-license">
+          {plugin.license}
+        </span>
+        {plugin.pinned?.value ? (
+          <span
+            className="badge badge-sm badge-ghost font-mono"
+            title={`快照 ${plugin.pinned.kind}: ${plugin.pinned.value}`}
+            data-testid="plugin-commit"
+          >
+            {plugin.pinned.value.slice(0, 7)}
+          </span>
+        ) : null}
+        <KnowledgeStatsBadges plugin={plugin} />
         {plugin.update_pending ? (
           <span className="badge badge-sm badge-warning" data-testid="update-pending">
             可更新

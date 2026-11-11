@@ -14,7 +14,7 @@
 //! migrations/ 与任何 platform*.db，不在宿主机安装依赖。
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use plugin_registry::{
@@ -422,6 +422,147 @@ fn tamper_recovery_allows_fresh_chain_to_install() {
     fs::write(&target, &original).unwrap();
     plugin_registry::verify_checksums(&pkg).expect("restored content verifies");
     let _ = fs::remove_dir_all(&pkg);
+}
+
+// ---------------------------------------------------------------------------
+// SK-2：三源真实 Manifest（manifests/plugins/）七条校验 + rule 3 反例拒绝
+// （P6-10，安全知识源计划 §3/§5；git 来源固定 Commit，fixture 为最小快照）
+// ---------------------------------------------------------------------------
+
+const SK2_MANIFESTS_DIR: &str = "../../manifests/plugins";
+const SK2_FIXTURES_DIR: &str = "../../tests/fixtures/sk2";
+
+fn sk2_manifest_text(name: &str, ext: &str) -> String {
+    fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(SK2_MANIFESTS_DIR)
+            .join(format!("{name}.{ext}")),
+    )
+    .unwrap_or_else(|e| panic!("read sk2 manifest {name}.{ext}: {e}"))
+}
+
+/// fixture 递归拷贝进临时目录（install 落 checksums/plugin.lock，不得污染仓库 fixture）。
+fn sk2_package(fixture: &str) -> PathBuf {
+    fn copy_tree(src: &Path, dst: &Path) {
+        fs::create_dir_all(dst).unwrap();
+        for entry in fs::read_dir(src).unwrap() {
+            let entry = entry.unwrap();
+            let target = dst.join(entry.file_name());
+            if entry.path().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(SK2_FIXTURES_DIR)
+        .join(fixture);
+    let dir = temp_pkg(fixture);
+    copy_tree(&src, &dir);
+    dir
+}
+
+/// 三源 Manifest：yaml/json 双份解析一致 + 七条校验通过 + 固定 Commit pin 在位。
+#[test]
+fn sk2_source_manifests_pass_seven_rules() {
+    for (name, fixture, _license) in [
+        ("knowledge.awesome-hacking", "awesome-hacking", "CC0-1.0"),
+        ("knowledge.secskills", "secskills", "Apache-2.0"),
+        ("knowledge.tongui-course-notes", "tongui-course-notes", "UNLICENSED"),
+    ] {
+        let yaml_doc = sk2_manifest_text(name, "yaml");
+        let json_doc = sk2_manifest_text(name, "json");
+        assert_eq!(
+            parse_document(&yaml_doc).unwrap(),
+            parse_document(&json_doc).unwrap(),
+            "{name}: json/yaml twins must parse to identical values"
+        );
+        let pkg = sk2_package(fixture);
+        let report = validate_document(&yaml_doc, Some(&pkg), &existing(&[]), &Default::default());
+        assert_seven_checks_pass(&report, name);
+        assert_eq!(report.plugin_id.as_deref(), Some(name));
+        assert_eq!(report.kind.as_deref(), Some("knowledge"));
+        assert_eq!(report.version.as_deref(), Some("0.1.0"));
+        let parsed: Value =
+            serde_json::from_str(&report.to_json_string()).expect("report is valid JSON");
+        assert_eq!(parsed["ok"], Value::Bool(true));
+        let _ = fs::remove_dir_all(&pkg);
+    }
+}
+
+/// rule 3 反例：parser 配错与 source_path 路径穿越以 knowledge_provides_invalid
+/// 精确拒绝（license_policy 词表由 v1.json enum 在 rule 2 先拒，一并断言双处
+/// 防御）；附带 rule 5 浮动分支拒绝。
+#[test]
+fn sk2_rule3_counterexamples_rejected() {
+    // 反例 1：skill_candidate 的 parser 配成 markdown_links（配对表要求
+    // skill_frontmatter）。
+    let doc = sk2_manifest_text("knowledge.secskills", "yaml");
+    let mut manifest = parse_document(&doc).unwrap();
+    manifest.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]
+        ["skill_candidate"]["parser"] = Value::from("markdown_links");
+    let pkg = sk2_package("secskills");
+    let report =
+        validate_document(&serde_json::to_string(&manifest).unwrap(), Some(&pkg), &existing(&[]), &Default::default());
+    assert!(!report.ok);
+    assert_eq!(report.errors[0].rule, 3);
+    assert_eq!(report.errors[0].code, "knowledge_provides_invalid");
+    assert!(
+        report.errors[0].message.contains("skill_frontmatter"),
+        "message names the expected parser: {}",
+        report.errors[0].message
+    );
+
+    // 反例 2：license_policy 出词表（v1.json enum 冻结词表，rule 2 先拒，
+    // ingest 侧 LICENSE_POLICIES 为双处防御）。
+    let mut manifest2 = parse_document(&doc).unwrap();
+    manifest2.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]
+        ["catalog_entry"]["license_policy"] = Value::from("copy_everything");
+    let pkg2 = sk2_package("secskills");
+    let report2 = validate_document(
+        &serde_json::to_string(&manifest2).unwrap(),
+        Some(&pkg2),
+        &existing(&[]),
+        &Default::default(),
+    );
+    assert!(!report2.ok);
+    assert_eq!(report2.errors[0].rule, 2, "policy vocabulary is schema-frozen");
+    assert_eq!(report2.errors[0].code, "schema_violation");
+
+    // 反例 3：source_path 路径穿越（.. 上跳拒绝）。
+    let tongui = sk2_manifest_text("knowledge.tongui-course-notes", "yaml");
+    let mut manifest3 = parse_document(&tongui).unwrap();
+    manifest3.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]
+        ["catalog_entry"]["source_path"] = Value::from("../escape.md");
+    let pkg3 = sk2_package("tongui-course-notes");
+    let report3 = validate_document(
+        &serde_json::to_string(&manifest3).unwrap(),
+        Some(&pkg3),
+        &existing(&[]),
+        &Default::default(),
+    );
+    assert!(!report3.ok);
+    assert_eq!(report3.errors[0].rule, 3);
+    assert_eq!(report3.errors[0].code, "knowledge_provides_invalid");
+
+    // 反例 4（rule 5 附带复核）：浮动分支安装被拒（pinned.kind=branch）。
+    let mut manifest4 = parse_document(&tongui).unwrap();
+    manifest4.as_object_mut().unwrap()["source"]["pinned"] =
+        serde_json::json!({"kind": "branch", "value": "master"});
+    let report4 = validate_document(
+        &serde_json::to_string(&manifest4).unwrap(),
+        Some(&pkg3),
+        &existing(&[]),
+        &Default::default(),
+    );
+    assert!(!report4.ok);
+    assert_eq!(report4.errors[0].rule, 5);
+    assert_eq!(report4.errors[0].code, "floating_branch_rejected");
+
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&pkg2);
+    let _ = fs::remove_dir_all(&pkg3);
 }
 
 // ---------------------------------------------------------------------------
