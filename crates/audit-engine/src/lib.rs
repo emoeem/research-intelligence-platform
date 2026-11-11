@@ -33,6 +33,11 @@ pub mod plugin_actions {
     pub const UNINSTALL: &str = "plugin.uninstall";
     /// capability 登记（INSTALLED → REGISTERED，系统步；install 内完成）。
     pub const REGISTER: &str = "plugin.register";
+    /// 知识条目审核状态翻转（SK-1：APPROVED 才进 Search/Context 面，
+    /// 翻转走 plugin-runtime knowledge_review 受控写面）。
+    pub const KNOWLEDGE_REVIEW: &str = "plugin.knowledge.review";
+    /// 知识摄取（SK-1：ingest 动作审计，dry-run 亦留痕标注 dry_run=true）。
+    pub const KNOWLEDGE_INGEST: &str = "plugin.knowledge.ingest";
 }
 
 /// 审计引擎。

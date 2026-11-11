@@ -11,6 +11,9 @@ database = { workspace = true }
 domain = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# SK-1 引用证据固化（P6-9 第 7 步）用 sha256_hex：tool_registry::hash 复用
+# （context-broker cache/assemble 同款先例，workspace 单一哈希口径）。
+tool-registry = { workspace = true }
 
 [[bin]]
 name = "rp-resolve"

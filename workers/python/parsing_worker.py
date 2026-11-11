@@ -32,6 +32,117 @@ _ATX_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff]")
 _WORD_RE = re.compile(r"[A-Za-z0-9_']+")
 
+# SK-1（P6-9 第 4 步）：Markdown link extraction / frontmatter（可选输出，
+# extract_links=true 才产出，既有输出零回归）。纯解析纪律：不访问链接、
+# 不执行内容；scheme 白名单 http/https，javascript:/data:/file: 等一律过滤
+# 并计数；保留原始 URL，不从文字猜造。
+_MD_LINK_RE = re.compile(r"!?\[([^\]]*)\]\(([^)\s]+)[^)]*\)")
+_MD_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n(?:---|\.\.\.)\s*\n?", re.S)
+_KV_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s*:\s*(.*)$")
+_SCHEME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
+
+
+def _link_scheme(url: str):
+    """返回小写 scheme；无 scheme（相对路径/纯锚点）返回 None。"""
+    colon = url.find(":")
+    if colon <= 0:
+        return None
+    scheme = url[:colon]
+    if not set(scheme) <= _SCHEME_CHARS:
+        return None
+    return scheme.lower()
+
+
+def extract_markdown_links(raw: str) -> tuple:
+    """行内链接 [text](url) 抽取（跳过围栏代码块与 frontmatter）。
+
+    返回 (links, stats)：links 每项 {line, text, url, description, in_table,
+    heading_path}，只保留 http/https；stats 记 {total, kept, scheme_rejected,
+    no_scheme}。表格行（行首 |）单独标记；heading_path 为所在 ATX 标题路径
+    （自顶向下，1 起始行号）。
+    """
+    fm_match = _MD_FRONTMATTER_RE.match(raw)
+    fm_lines = 0
+    if fm_match:
+        fm_lines = fm_match.group(0).count("\n")
+        body = raw[fm_match.end():]
+    else:
+        body = raw
+    # 标题路径表：line -> [h1, h2, ...]
+    headings = []
+    in_fence = False
+    for i, line in enumerate(body.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _ATX_RE.match(line)
+        if m:
+            headings.append((i + 1, len(m.group(1)), m.group(2)))
+
+    def heading_path_at(line_no: int) -> list:
+        path = []
+        for h_line, level, text in headings:
+            if h_line > line_no:
+                break
+            while path and path[-1][0] >= level:
+                path.pop()
+            path.append((level, text))
+        return [t for _, t in path]
+
+    links = []
+    stats = {"total": 0, "kept": 0, "scheme_rejected": 0, "no_scheme": 0}
+    in_fence = False
+    for i, line in enumerate(body.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        in_table = stripped.startswith("|")
+        for m in _MD_LINK_RE.finditer(line):
+            stats["total"] += 1
+            text, url = m.group(1), m.group(2)
+            # 同行链接后缀描述：](url) 后的 `: desc` / `- desc` 形态
+            tail = line[m.end():].lstrip()
+            description = tail[1:].strip() if tail[:1] in (":", "-") else ""
+            scheme = _link_scheme(url)
+            if scheme is None:
+                stats["no_scheme"] += 1
+                continue
+            if scheme not in ("http", "https"):
+                stats["scheme_rejected"] += 1
+                continue
+            stats["kept"] += 1
+            links.append({
+                "line": fm_lines + i + 1,
+                "text": text.strip(),
+                "url": url.rstrip("/"),
+                "description": description,
+                "in_table": in_table,
+                "heading_path": heading_path_at(i + 1),
+            })
+    return links, stats
+
+
+def extract_frontmatter(raw: str) -> dict:
+    """frontmatter（`---` 围栏 `key: value` 平面键值对）解析。"""
+    m = _MD_FRONTMATTER_RE.match(raw)
+    if not m:
+        return {"present": False, "pairs": {}}
+    pairs = {}
+    for line in m.group(1).splitlines():
+        kv = _KV_RE.match(line.strip())
+        if kv:
+            value = kv.group(2).strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("\"", "'"):
+                value = value[1:-1]
+            pairs[kv.group(1)] = value
+    return {"present": True, "pairs": pairs}
+
 
 def tokenize(text: str) -> list[str]:
     """ASCII 词（小写）+ 逐个 CJK/假名字符，统一作为词元。"""
@@ -262,7 +373,27 @@ class ParsingWorker(WorkerRuntime):
             "sections": sections,
             "heading_tree": tree,
             "stats": stats,
+            **self._optional_extracts(task, text, fmt),
         }
+
+    @staticmethod
+    def _optional_extracts(task: dict, text: str, fmt: str) -> dict:
+        """可选扩展输出（SK-1）：extract_links=true 时产出链接抽取与
+        frontmatter；缺省不产键（既有输出与契约零回归）。"""
+        if not task.get("extract_links"):
+            return {}
+        out = {}
+        if fmt == "md":
+            links, link_stats = extract_markdown_links(text)
+            out["links"] = links
+            out["link_stats"] = link_stats
+            out["frontmatter"] = extract_frontmatter(text)
+        else:
+            out["links"] = []
+            out["link_stats"] = {"total": 0, "kept": 0,
+                                 "scheme_rejected": 0, "no_scheme": 0}
+            out["frontmatter"] = {"present": False, "pairs": {}}
+        return out
 
     def _load_input(self, task: dict) -> tuple[str, str, dict]:
         fmt = task.get("format")

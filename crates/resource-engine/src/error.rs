@@ -13,6 +13,8 @@ pub enum EngineError {
     Domain(DomainError),
     /// 查询参数不合法。
     InvalidQuery(String),
+    /// 目标行不存在（SK-1 引用证据复核面）。
+    NotFound(String),
 }
 
 impl fmt::Display for EngineError {
@@ -22,6 +24,9 @@ impl fmt::Display for EngineError {
             EngineError::Domain(e) => write!(f, "resource-engine domain error: {e}"),
             EngineError::InvalidQuery(reason) => {
                 write!(f, "invalid resolve query: {reason}")
+            }
+            EngineError::NotFound(reason) => {
+                write!(f, "not found: {reason}")
             }
         }
     }

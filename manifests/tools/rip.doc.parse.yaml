@@ -33,6 +33,9 @@ input_schema:
       type: "string"
       enum: ["md", "txt", "html"]
       description: "缺省时 text 按 txt，path 按扩展名推断"
+    extract_links:
+      type: "boolean"
+      description: "SK-1 可选扩展：true 时额外产出 links/link_stats/frontmatter（md 专属，txt/html 回空值形态）；缺省 false 不产键，既有输出零回归"
 output_schema:
   type: "object"
   required: ["format", "source", "sections", "heading_tree", "stats"]
@@ -56,6 +59,17 @@ output_schema:
     stats:
       type: "object"
       description: "chars/lines/words/unique_words/cjk_chars/ascii_words/tokens_est/sections/headings"
+    links:
+      type: "array"
+      description: "SK-1 可选（extract_links=true 才产出）：行内链接抽取，每项 line/text/url/description/in_table/heading_path；只保留 http/https，javascript:/data:/file: 等过滤并计数，纯解析不访问链接"
+      items:
+        type: "object"
+    link_stats:
+      type: "object"
+      description: "SK-1 可选：链接抽取计数 total/kept/scheme_rejected/no_scheme"
+    frontmatter:
+      type: "object"
+      description: "SK-1 可选：frontmatter 围栏解析（present + 平面键值对 pairs）"
 resources:
   cpu: "1"
   memory: "256Mi"

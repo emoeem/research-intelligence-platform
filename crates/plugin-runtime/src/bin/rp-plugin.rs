@@ -50,7 +50,7 @@ fn die_paths(err: plugin_runtime::PathsError) -> ! {
 fn usage() -> ! {
     eprintln!(
         "usage: rp-plugin --db <path> [--migrations <dir>] [--data-dir <dir>] [--plugins-dir <dir>] \
-         [--data-root <dir>] <install|enable|disable|uninstall|upgrade|update-check|ingest|load|activate|deactivate|mark-error|list> ..."
+         [--data-root <dir>] <install|enable|disable|uninstall|upgrade|update-check|ingest [--dry-run]|review <id> --keys k1,k2 --status APPROVED|load|activate|deactivate|mark-error|list> ..."
     );
     std::process::exit(2);
 }
@@ -384,6 +384,7 @@ fn main() {
         }
         "ingest" => {
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let dry_run = args.rest.iter().any(|a| a == "--dry-run");
             let plugin = ctx.runtime.store().get_active(&id).unwrap_or_else(|e| {
                 die(plugin_runtime::RuntimeError {
                     code: "db".into(),
@@ -413,14 +414,61 @@ fn main() {
                     details: None,
                 })
             });
-            let report = plugin_runtime::ingest_knowledge_source(
+            let report = plugin_runtime::ingest_knowledge_source_with_opts(
                 &ctx.pool,
                 &manifest,
                 Path::new(&package_dir),
+                &plugin_runtime::IngestOptions { dry_run },
             )
             .unwrap_or_else(|e| die(e));
+            // SK-1：摄取动作审计（dry-run 亦留痕，KNOWLEDGE_INGEST 词形）。
+            let audit = audit_engine::AuditEngine::new(ctx.pool.clone());
+            audit.emit_best_effort(
+                domain::audit::AuditEvent::new(
+                    "user:cli",
+                    audit_engine::plugin_actions::KNOWLEDGE_INGEST,
+                )
+                .with_entity("plugin", &format!("{}@{}", report.plugin_id, report.plugin_version))
+                .with_detail(
+                    serde_json::json!({
+                        "counts": report.counts,
+                        "skipped": report.skipped,
+                        "changed": report.changed,
+                        "dry_run": report.dry_run,
+                    })
+                    .to_string(),
+                ),
+            );
             let state = ctx.sync_state(&[]);
             json!({"command": "ingest", "report": report, "state_files": state})
+        }
+        "review" => {
+            // SK-1：审核状态翻转（Search/Context 只收 APPROVED，受控写面 + 审计）。
+            let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let keys_raw = flag_value(&args.rest, "--keys").unwrap_or_else(|| usage());
+            let status_raw = flag_value(&args.rest, "--status").unwrap_or_else(|| usage());
+            let to = domain::knowledge::ReviewStatus::parse(&status_raw).unwrap_or_else(|e| {
+                die(plugin_runtime::RuntimeError {
+                    code: "review_status_invalid".into(),
+                    message: e.to_string(),
+                    details: None,
+                })
+            });
+            let keys: Vec<&str> = keys_raw.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+            let audit = audit_engine::AuditEngine::new(ctx.pool.clone());
+            let updated = plugin_runtime::knowledge_review::set_review_status(
+                &ctx.pool,
+                &audit,
+                "user:cli",
+                &id,
+                &keys,
+                to,
+            )
+            .unwrap_or_else(|e| die(e));
+            let counts = plugin_runtime::knowledge_review::review_counts(&ctx.pool, &id)
+                .unwrap_or_else(|e| die(e));
+            let state = ctx.sync_state(&[]);
+            json!({"command": "review", "plugin_id": id, "to": to.as_str(), "updated": updated, "counts": counts, "state_files": state})
         }
         "update-check" => {
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());

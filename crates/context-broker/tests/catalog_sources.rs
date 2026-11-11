@@ -297,26 +297,36 @@ fn p4_2_rulepack_source_loads_versioned_rules() {
 }
 
 #[test]
-fn p4_2_plugin_source_is_empty_by_design() {
-    let source = PluginSource;
+fn p6_9_plugin_source_fail_closed_without_data() {
+    // SK-1 实装后的空集语义：无插件表/无条目（内存库未迁移）即候选空集
+    // （合法结果，设计稿 §9.2 第 4 条），load 拒绝（无可见插件可展开）。
+    let pool = Pool::open(PoolConfig {
+        path: DbPath::Memory,
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .unwrap();
+    let source = PluginSource::new(pool, "knowledge.x");
+    assert_eq!(source.id(), "plugin:knowledge.x");
     let candidates = source
         .candidates(&empty_intent(), 10)
         .expect("empty is legal");
     assert!(
         candidates.is_empty(),
-        "Phase 6 前返回空集（设计稿 §4.3 原文）"
+        "no plugin table = fail-closed empty candidates"
     );
     let load = source.load(&ContentRef {
-        source: "plugin".to_string(),
-        ref_id: "plugin:x".to_string(),
+        source: "plugin:knowledge.x".to_string(),
+        ref_id: "kse:knowledge.x:catalog_entry:https://a".to_string(),
         ref_version: None,
         content_hash: None,
         uri: None,
     });
-    let err = load.expect_err("empty source cannot resolve refs");
+    let err = load.expect_err("no visible plugin cannot resolve refs");
     assert!(
-        err.to_string().contains("Phase 6"),
-        "error names the landing phase: {err}"
+        err.to_string().contains("not visible"),
+        "access control names the visibility gate: {err}"
     );
 }
 
@@ -370,9 +380,19 @@ fn p4_2_mock_is_test_vehicle_only_and_trait_object_usable() {
         }
     }
 
-    let sources: Vec<Box<dyn ContextSource>> = vec![Box::new(MockSource), Box::new(PluginSource)];
+    let plugin_pool = Pool::open(PoolConfig {
+        path: DbPath::Memory,
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .unwrap();
+    let sources: Vec<Box<dyn ContextSource>> = vec![
+        Box::new(MockSource),
+        Box::new(PluginSource::new(plugin_pool, "knowledge.x")),
+    ];
     let ids: Vec<&str> = sources.iter().map(|s| s.id()).collect();
-    assert_eq!(ids, vec!["mock", "plugin"]);
+    assert_eq!(ids, vec!["mock", "plugin:knowledge.x"]);
     let mock_candidates = sources[0].candidates(&empty_intent(), 10).expect("mock");
     assert_eq!(mock_candidates.len(), 2);
 }

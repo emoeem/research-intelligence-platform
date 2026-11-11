@@ -67,7 +67,7 @@ pub struct AssembleRequest {
 }
 
 /// 装配引擎（设计稿 §10 Broker：sources + policy + intent config + manifest
-/// store + audit；cache 面 P4-5 加入）。
+/// store + audit；cache 面 P4-5 加入；evidence 固化面 SK-1/P6-9 加入）。
 pub struct Broker {
     sources: Vec<Box<dyn ContextSource>>,
     policy: BudgetPolicy,
@@ -75,6 +75,7 @@ pub struct Broker {
     store: ManifestStore,
     audit: Option<AuditEngine>,
     cache: Option<Arc<BrokerCache>>,
+    evidence: Option<Arc<resource_engine::sqlite::SqliteResourceRepository>>,
 }
 
 impl Broker {
@@ -93,7 +94,18 @@ impl Broker {
             store,
             audit,
             cache: None,
+            evidence: None,
         }
+    }
+
+    /// 挂引用证据固化写面（SK-1/P6-9 第 7 步：装配 L2 装入与 L3 expand 时把
+    /// 实际给模型的片段 + 哈希 + 来源位置固化到 context_citation_evidence）。
+    pub fn with_evidence_store(
+        mut self,
+        repo: resource_engine::sqlite::SqliteResourceRepository,
+    ) -> Self {
+        self.evidence = Some(Arc::new(repo));
+        self
     }
 
     /// 挂内容寻址缓存（expand 的源读载荷缓存；设计稿 §7.1「只加速读源与
@@ -262,10 +274,10 @@ impl Broker {
                     // L0 段已消费（见上）；此分支防重复入桶。
                 }
                 (ContextItemKind::Plugin, _) => {
-                    warnings.push(format!(
-                        "plugin:{} deferred to Phase 6",
-                        s.candidate.item_id
-                    ));
+                    // SK-1（P6-9 第 6 步）：插件知识条目随知识桶取舍（L2 摘要
+                    // 形态，L3 经 PluginSource::load 按需展开）；源侧已过
+                    // APPROVED + 插件可见双闸，此处不再 deferred。
+                    knowledge_bucket.push(s);
                 }
                 (ContextItemKind::Doc, _) | (ContextItemKind::Schema, _) => {
                     // 内容类候选随知识桶取舍（设计稿 §5.3 第 3 条摘要形态）。
@@ -421,6 +433,7 @@ impl Broker {
                                     ContextItemKind::Knowledge
                                         | ContextItemKind::Doc
                                         | ContextItemKind::Schema
+                                        | ContextItemKind::Plugin
                                 )
                         })
                         .map(|i| KnowledgeSummary {
@@ -547,6 +560,36 @@ impl Broker {
                 included: item.included,
                 content_hash: item.candidate.reference.content_hash.clone(),
             })?;
+            // SK-1 Evidence 固化（P6-9 第 7 步）：L2 摘要装入即把「实际给模型
+            // 的片段 + 内容哈希 + 来源引用」落 context_citation_evidence
+            // （fail-closed：证据写失败即装配失败，不允许无证引用）。
+            if let Some(ev) = &self.evidence {
+                if item.layer == ContextLayer::L2
+                    && item.included == InclusionForm::Summary
+                    && item.candidate.reference.content_hash.is_some()
+                {
+                    ev.insert_citation_evidence(
+                        &resource_engine::sqlite::CitationEvidenceRow {
+                            manifest_id: manifest_row.manifest_id.clone(),
+                            item_id: item.item_id.clone(),
+                            event_kind: "assembled".to_string(),
+                            ref_source: item.candidate.reference.source.clone(),
+                            ref_id: item.candidate.reference.ref_id.clone(),
+                            ref_version: item.candidate.reference.ref_version.clone(),
+                            excerpt: item.summary.clone(),
+                            content_sha256: item.candidate.reference.content_hash.clone(),
+                            source_id: item.candidate.reference.source.clone(),
+                            plugin_version: item.candidate.reference.ref_version.clone(),
+                            canonical_url: item.candidate.reference.uri.clone(),
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| ContextBrokerError::Source {
+                        source: "assemble".to_string(),
+                        reason: format!("citation evidence persist failed: {e}"),
+                    })?;
+                }
+            }
             self.store.append_ref_event(
                 &manifest_row.manifest_id,
                 &item.item_id,
@@ -663,6 +706,30 @@ impl Broker {
             })
             .to_string(),
         )?;
+        // SK-1 Evidence 固化：L3 展开的正文片段（头部 4KiB 截断保存，整段
+        // content_sha256 为全量哈希），压缩/重试后凭哈希复核。
+        if let Some(ev) = &self.evidence {
+            const EXCERPT_CAP: usize = 4096;
+            let excerpt: String = content.body.chars().take(EXCERPT_CAP).collect();
+            ev.insert_citation_evidence(&resource_engine::sqlite::CitationEvidenceRow {
+                manifest_id: manifest_id.to_string(),
+                item_id: item_id.to_string(),
+                event_kind: "expanded".to_string(),
+                ref_source: content.reference.source.clone(),
+                ref_id: content.reference.ref_id.clone(),
+                ref_version: content.reference.ref_version.clone(),
+                excerpt,
+                content_sha256: content.reference.content_hash.clone(),
+                source_id: content.reference.source.clone(),
+                plugin_version: content.reference.ref_version.clone(),
+                canonical_url: content.reference.uri.clone(),
+                ..Default::default()
+            })
+            .map_err(|e| ContextBrokerError::Source {
+                source: "assemble".to_string(),
+                reason: format!("expanded evidence persist failed: {e}"),
+            })?;
+        }
         Ok(Expanded {
             manifest_id: manifest_id.to_string(),
             item_id: item_id.to_string(),

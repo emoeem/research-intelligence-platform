@@ -200,8 +200,32 @@
             "minLength": 1
           },
           "provides": {
-            "description": "插件声明 payload（4.1 provides/requires 的 provides 侧），形状按 capability type 由插件自定义，平台侧键在 register 阶段消费（P6-2 起），validate 阶段只要求对象结构。",
-            "type": "object"
+            "description": "插件声明 payload（4.1 provides/requires 的 provides 侧），形状按 capability type 由插件自定义，平台侧键在 register 阶段消费（P6-2 起），validate 阶段只要求对象结构。knowledge_source 的平台侧键：corpus_id、content_kinds、kinds、index、parse_pipeline（SK-1 扩展，裁决见 docs/phase6/SK1-INGEST-ADR.md 第五节）。",
+            "type": "object",
+            "properties": {
+              "content_kinds": {
+                "description": "知识内容类型词表（SK-1 扩展为六值）：RTIS 既有三类 poc/skill_md/method_case（落 knowledge_ingest，010 词表）与 SK-1 新增三类 catalog_entry/document_markdown/skill_candidate（落 knowledge_source_entry，011 迁移）。词表闭集不在本 Schema 用 enum 冻结（v1.json P6-1 冻结纪律：provides 为插件自定义 payload，词表外值由摄取面 ingest_kind_unknown 拒绝，RTIS 白名单回归测试依赖该语义）；三类新值任一出现在声明中时，provides.kinds.<kind> 每类型声明必填（缺失在 validate rule 3 以 knowledge_provides_invalid 精确归因）。",
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "kinds": {
+                "description": "每内容类型摄取声明（SK-1，计划 §8 P6-9 第 2 步）：键为内容类型，值为对象 source_path（包内相对路径，目录或单文件）、parser（平台内置 per-kind 解析器词表）、license_policy（许可与持久化策略词表）、max_entries（可选摄取条数上限）。三类新内容的 parser 与内容类型一一对应：catalog_entry=markdown_links、document_markdown=markdown_doc、skill_candidate=skill_frontmatter（配错同样在 rule 3 归因）。",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "required": ["source_path", "parser", "license_policy"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "source_path": { "description": "包内相对解析入口（单文件或目录，目录即递归 *.md），安全检查（拒绝绝对路径与 .. 上跳）在 validate rule 3。", "type": "string", "minLength": 1 },
+                    "parser": { "description": "平台内置解析器词表（per-kind parser 注册表键）。", "type": "string", "enum": ["markdown_links", "markdown_doc", "skill_frontmatter"] },
+                    "license_policy": { "description": "许可与持久化策略：catalog_only（只登记条目元数据）、approved_only（仅审核通过条目进检索面）、metadata_only（只存元数据与哈希）。", "type": "string", "enum": ["catalog_only", "approved_only", "metadata_only"] },
+                    "max_entries": { "description": "单类型摄取条数硬上限（超限即截断并在报告过滤计数中显式暴露）。", "type": "integer", "minimum": 1 },
+                    "source_commit": { "description": "来源快照基准 Commit（Git 来源固定快照语义，缺省回落顶层 source.pinned.value）。", "type": "string", "minLength": 1 },
+                    "description": { "description": "该内容类型的语料说明。", "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
           },
           "requires": {
             "description": "依赖的其他 capability provides 引用（7 节激活层解析，环检测 P6-7）。",

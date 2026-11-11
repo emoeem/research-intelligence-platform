@@ -1,0 +1,62 @@
+# SK-1 契约示例（P6-9 第 2 步）：通用 Knowledge Catalog/Document 摄取的
+# 三类新内容类型声明样例（catalog_entry / document_markdown / skill_candidate）。
+# 校验语义：validate rule 3 的 knowledge_provides_invalid（per-kind 声明、
+# parser 配对、license_policy 词表、source_path 路径安全），结构层见 v1.json
+# provides.content_kinds / provides.kinds（SK-1 扩展，裁决
+# docs/phase6/SK1-INGEST-ADR.md 第五节）。与同名 .json 双份等价。
+schema_version: "1"
+id: "knowledge.catalog.example"
+name: "Catalog Ingest Example"
+version: "0.1.0"
+kind: "knowledge"
+description: "链接目录与 Markdown 文档知识插件的 SK-1 契约示例（占位语料，非真实来源）"
+authors: ["emoeem"]
+license: "CC0-1.0"
+source:
+  type: "local_dir"
+  path: "tests/fixtures/catalog-plugin-example"
+  pinned:
+    kind: "commit"
+    value: "0000000000000000000000000000000000000000"
+compatibility:
+  rip_core: ">=0.2.0, <1.0.0"
+  manifest_schema: ["1"]
+capabilities:
+  - id: "knowledge-source.catalog.example"
+    type: "knowledge_source"
+    entry: "README.md"
+    summary: "链接目录条目、审核后 Markdown 文档与 Skill 候选元数据的通用摄取示例"
+    provides:
+      corpus_id: "catalog-example"
+      content_kinds: ["catalog_entry", "document_markdown", "skill_candidate"]
+      kinds:
+        catalog_entry:
+          source_path: "catalog/links.md"
+          parser: "markdown_links"
+          license_policy: "catalog_only"
+          max_entries: 500
+          source_commit: "0000000000000000000000000000000000000000"
+          description: "目录链接条目：只登记元数据与原始 URL，不持久化外链正文"
+        document_markdown:
+          source_path: "docs/"
+          parser: "markdown_doc"
+          license_policy: "approved_only"
+          description: "Markdown 文档正文：仅审核通过（APPROVED）条目进检索与上下文面"
+        skill_candidate:
+          source_path: "skills/"
+          parser: "skill_frontmatter"
+          license_policy: "metadata_only"
+          description: "Skill/Agent/MCP 候选元数据：只存 frontmatter 与哈希，不代表已安装"
+      index:
+        fts: true
+        vector: false
+      parse_pipeline: "tool.rip.doc.parse"
+dependencies: []
+permissions:
+  data_access: "ingest_via_api"
+data_retention:
+  ingested_policy: "retain_with_provenance"
+  persistent: []
+context:
+  summary: "通用目录与文档知识源示例，安全研究类任务 L2 命中后按需加载"
+  docs: "docs/usage.md"

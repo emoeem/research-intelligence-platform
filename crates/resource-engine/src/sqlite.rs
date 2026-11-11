@@ -51,6 +51,216 @@ impl SqliteResourceRepository {
             None => "governance NOT IN ('QUARANTINED','REJECTED','ARCHIVED')".to_string(),
         }
     }
+
+    // ------------------------------------------------------------------
+    // SK-1 引用证据固化（P6-9 第 7 步；011 context_citation_evidence 表）：
+    // 把「实际给模型的引用片段 + 内容哈希 + 来源位置」固化成只追加行，
+    // 压缩/重试后凭 excerpt_sha256/content_sha256 复核。context-broker 是
+    // 唯一调用方（装配 L2 装入与 L3 expand），本模块是该表唯一写面。
+    // ------------------------------------------------------------------
+
+    /// 固化一条引用证据（内容寻址幂等：同 manifest+item+event+excerpt 重试
+    /// no-op；返回是否新插入）。
+    pub fn insert_citation_evidence(&self, row: &CitationEvidenceRow) -> DbResult<bool> {
+        let excerpt_sha = sha256_hex(row.excerpt.as_bytes());
+        let evidence_id = format!(
+            "ciev-{}",
+            &sha256_hex(
+                format!(
+                    "{}|{}|{}|{}|{excerpt_sha}",
+                    row.manifest_id, row.item_id, row.event_kind, row.ref_id
+                )
+                .as_bytes()
+            )[..24]
+        );
+        let inserted = self.pool.with_conn(|c| -> rusqlite::Result<bool> {
+            let n = c.execute(
+                "INSERT OR IGNORE INTO context_citation_evidence (evidence_id, manifest_id,
+                    item_id, event_kind, ref_source, ref_id, ref_version, excerpt,
+                    excerpt_sha256, content_sha256, source_id, plugin_version, source_commit,
+                    canonical_url, section_anchor, source_location_json, created_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                rusqlite::params![
+                    evidence_id,
+                    row.manifest_id,
+                    row.item_id,
+                    row.event_kind,
+                    row.ref_source,
+                    row.ref_id,
+                    row.ref_version,
+                    row.excerpt,
+                    excerpt_sha,
+                    row.content_sha256,
+                    row.source_id,
+                    row.plugin_version,
+                    row.source_commit,
+                    row.canonical_url,
+                    row.section_anchor,
+                    row.source_location_json,
+                    domain::time::now_iso(),
+                ],
+            )?;
+            Ok::<bool, rusqlite::Error>(n > 0)
+        })?;
+        Ok(inserted)
+    }
+
+    /// 按装配清单读证据行（对账与 manifest-show 消费）。
+    pub fn list_citation_evidence(&self, manifest_id: &str) -> DbResult<Vec<CitationEvidenceRow>> {
+        self.pool.with_conn(|c| -> rusqlite::Result<Vec<CitationEvidenceRow>> {
+            let mut stmt = c.prepare(
+                "SELECT evidence_id, manifest_id, item_id, event_kind, ref_source, ref_id,
+                        ref_version, excerpt, excerpt_sha256, content_sha256, source_id,
+                        plugin_version, source_commit, canonical_url, section_anchor,
+                        source_location_json, created_at
+                 FROM context_citation_evidence WHERE manifest_id = ?1 ORDER BY rowid",
+            )?;
+            let rows = stmt
+                .query_map([manifest_id], row_to_citation_evidence)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// 证据复核（压缩/重试后仍可验证的落点）：excerpt 与落库哈希互核；
+    /// ref_source 为 `plugin:<id>` 词形时再对 knowledge_source_entry 源行
+    /// content_sha256 互核（源行不存在按 unverifiable 报告，不伪装通过）。
+    pub fn verify_citation_evidence(&self, evidence_id: &str) -> DbResult<CitationVerification> {
+        let row = self
+            .pool
+            .with_conn(|c| -> rusqlite::Result<Option<CitationEvidenceRow>> {
+                let mut stmt = c.prepare(
+                    "SELECT evidence_id, manifest_id, item_id, event_kind, ref_source, ref_id,
+                            ref_version, excerpt, excerpt_sha256, content_sha256, source_id,
+                            plugin_version, source_commit, canonical_url, section_anchor,
+                            source_location_json, created_at
+                     FROM context_citation_evidence WHERE evidence_id = ?1",
+                )?;
+                let mut rows = stmt
+                    .query_map([evidence_id], row_to_citation_evidence)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok::<_, rusqlite::Error>(rows.pop())
+            })?
+            .ok_or_else(|| {
+                crate::error::EngineError::NotFound(format!("citation evidence {evidence_id:?}"))
+            })
+            .map_err(|e: crate::error::EngineError| database::DbError::Validation(e.to_string()))?;
+        let excerpt_ok = sha256_hex(row.excerpt.as_bytes()) == row.excerpt_sha256;
+        let mut source_ok: Option<bool> = None;
+        if let Some(plugin_id) = row
+            .ref_source
+            .strip_prefix("plugin:")
+            .map(str::to_string)
+        {
+            // ref_id 词形：kse:<plugin_id>:<entry_kind>:<item_key>。
+            let tail = row.ref_id.strip_prefix(&format!("kse:{plugin_id}:"));
+            if let Some((kind, key)) = tail.and_then(|t| t.split_once(':')) {
+                let source_sha: Option<String> = self.pool.with_conn(|c| -> rusqlite::Result<Option<String>> {
+                    c.query_row(
+                        "SELECT content_sha256 FROM knowledge_source_entry
+                         WHERE plugin_id = ?1 AND entry_kind = ?2 AND item_key = ?3",
+                        rusqlite::params![plugin_id, kind, key],
+                        |r| r.get(0),
+                    )
+                    .map(Some)
+                    .or_else(|e| match e {
+                        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                        other => Err(other),
+                    })
+                })?;
+                // 源行存在且哈希一致 = verified；存在但哈希不一致 = drift；
+                // 源行缺失（插件禁用不删行，通常为误配 ref）= unverifiable。
+                source_ok = source_sha.as_ref().map(|s| {
+                    *s == row.content_sha256.clone().unwrap_or_default()
+                });
+            }
+        }
+        Ok(CitationVerification {
+            evidence_id: row.evidence_id,
+            excerpt_ok,
+            source_ok,
+        })
+    }
+}
+
+/// 引用证据行（011 context_citation_evidence；只追加）。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CitationEvidenceRow {
+    /// 证据 id（ciev-<sha24>，内容寻址）。
+    pub evidence_id: String,
+    /// 装配清单 id。
+    pub manifest_id: String,
+    /// 装配条目 id。
+    pub item_id: String,
+    /// assembled（L2 装入）| expanded（L3 展开）。
+    pub event_kind: String,
+    /// 引用来源（plugin:<id> 词形等）。
+    pub ref_source: String,
+    /// 引用对象（kse:<plugin>:<kind>:<key>）。
+    pub ref_id: String,
+    /// 引用版本（插件版本）。
+    pub ref_version: Option<String>,
+    /// 实际给模型的引用片段（expand 场景头部 4KiB 截断保存，整段哈希另存）。
+    pub excerpt: String,
+    /// 片段哈希（写入时计算，复核互核）。
+    pub excerpt_sha256: String,
+    /// 源侧完整内容哈希（与来源行互核）。
+    pub content_sha256: Option<String>,
+    /// Source ID（= plugin_id）。
+    pub source_id: String,
+    /// Plugin Version。
+    pub plugin_version: Option<String>,
+    /// 来源快照 Commit。
+    pub source_commit: Option<String>,
+    /// 原始 URL。
+    pub canonical_url: Option<String>,
+    /// 章节锚点。
+    pub section_anchor: Option<String>,
+    /// 源位置 JSON（file/line）。
+    pub source_location_json: String,
+    /// 固化时刻（ISO8601 UTC）。
+    pub created_at: String,
+}
+
+/// 证据复核结论（压缩/重试后的可验证性面）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CitationVerification {
+    /// 证据 id。
+    pub evidence_id: String,
+    /// excerpt 与 excerpt_sha256 互核通过。
+    pub excerpt_ok: bool,
+    /// 源侧互核：Some(true)=verified / Some(false)=内容漂移 /
+    /// None=源行缺失或 ref 词形不匹配（unverifiable，不伪装通过）。
+    pub source_ok: Option<bool>,
+}
+
+fn row_to_citation_evidence(
+    r: &rusqlite::Row<'_>,
+) -> rusqlite::Result<CitationEvidenceRow> {
+    Ok(CitationEvidenceRow {
+        evidence_id: r.get(0)?,
+        manifest_id: r.get(1)?,
+        item_id: r.get(2)?,
+        event_kind: r.get(3)?,
+        ref_source: r.get(4)?,
+        ref_id: r.get(5)?,
+        ref_version: r.get(6)?,
+        excerpt: r.get(7)?,
+        excerpt_sha256: r.get(8)?,
+        content_sha256: r.get(9)?,
+        source_id: r.get(10)?,
+        plugin_version: r.get(11)?,
+        source_commit: r.get(12)?,
+        canonical_url: r.get(13)?,
+        section_anchor: r.get(14)?,
+        source_location_json: r.get(15)?,
+        created_at: r.get(16)?,
+    })
+}
+
+/// sha256 hex（tool-registry::hash 复用，与 workspace 哈希口径一致）。
+fn sha256_hex(data: &[u8]) -> String {
+    tool_registry::hash::sha256_hex(data)
 }
 
 impl ResourceRepository for SqliteResourceRepository {

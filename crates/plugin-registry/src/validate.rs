@@ -122,6 +122,20 @@ fn allowed_capability_types(kind: &str) -> Option<&'static [&'static str]> {
 
 const SOURCE_TYPES: [&str; 5] = ["local_dir", "git", "archive", "mcp_server", "http_api"];
 
+/// SK-1 三类新知识内容类型（010 词表之外的扩展，落 knowledge_source_entry，
+/// 011 迁移；裁决 docs/phase6/SK1-INGEST-ADR.md 第五节）。
+pub const EXTENDED_CONTENT_KINDS: [&str; 3] = ["catalog_entry", "document_markdown", "skill_candidate"];
+
+/// 每类新内容的必配内置解析器（per-kind parser 注册表键，一一对应）。
+pub const KIND_PARSER: [(&str, &str); 3] = [
+    ("catalog_entry", "markdown_links"),
+    ("document_markdown", "markdown_doc"),
+    ("skill_candidate", "skill_frontmatter"),
+];
+
+/// license/rights policy 词表（SK-1）。
+pub const LICENSE_POLICIES: [&str; 3] = ["catalog_only", "approved_only", "metadata_only"];
+
 /// 远程来源（§4.2 rule 5：远程来源必须带版本固定）；local_dir 不在此列。
 fn is_remote_source(source_type: &str) -> bool {
     matches!(source_type, "git" | "archive" | "mcp_server" | "http_api")
@@ -413,6 +427,12 @@ fn rule3_identity(manifest: &Map<String, Value>, existing_ids: &HashSet<String>)
                     ),
                 ));
             }
+            // SK-1：knowledge_source 声明三类新内容类型时，每类型声明必须
+            // 完整（source_path/parser/license_policy，schema 层管结构，这里
+            // 管语义配对与路径安全），RTIS 三类不触发（零回归）。
+            if cap_type == "knowledge_source" {
+                check_knowledge_provides(cap_obj, cap_id)?;
+            }
         }
     }
     if let Some(deps) = manifest.get("dependencies").and_then(Value::as_array) {
@@ -435,6 +455,109 @@ fn rule3_identity(manifest: &Map<String, Value>, existing_ids: &HashSet<String>)
                     format!("dependency {dep_id:?} requirement {req:?}: {e}"),
                 ));
             }
+        }
+    }
+    Ok(())
+}
+
+/// knowledge_source capability 的三类新内容声明语义检查（rule 3 内联步骤，
+/// SK-1：计划 §8 P6-9 第 2 步「每类 source_path/parser/license policy 声明」）。
+/// 结构形状由 v1.json rule 2 全文校验表达；这里给 knowledge_provides_invalid
+/// 的精确归因：声明三类新值任一而缺 kinds.<kind>、parser 与内容类型不配对、
+/// license_policy 出词表、source_path 路径不安全，均在此拒绝。
+fn check_knowledge_provides(cap_obj: &Map<String, Value>, cap_id: &str) -> RuleResult {
+    let Some(provides) = cap_obj.get("provides").and_then(Value::as_object) else {
+        return Ok(());
+    };
+    let declared: Vec<String> = provides
+        .get("content_kinds")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let extended: Vec<&String> = declared
+        .iter()
+        .filter(|k| EXTENDED_CONTENT_KINDS.contains(&k.as_str()))
+        .collect();
+    if extended.is_empty() {
+        return Ok(());
+    }
+    let kinds = match provides.get("kinds").and_then(Value::as_object) {
+        Some(k) => k,
+        None => {
+            return Err(issue(
+                3,
+                "knowledge_provides_invalid",
+                format!(
+                    "capability {cap_id:?} declares extended content kinds {extended:?} but provides.kinds is missing; each extended kind requires a per-kind declaration (source_path/parser/license_policy, SK-1 ADR §5)"
+                ),
+            ))
+        }
+    };
+    for kind in extended {
+        let decl = match kinds.get(kind.as_str()).and_then(Value::as_object) {
+            Some(d) => d,
+            None => {
+                return Err(issue(
+                    3,
+                    "knowledge_provides_invalid",
+                    format!(
+                        "capability {cap_id:?} declares content kind {:?} but provides.kinds.{kind} is missing",
+                        kind
+                    ),
+                ))
+            }
+        };
+        let required = ["source_path", "parser", "license_policy"];
+        for key in required {
+            if str_field(decl, key).is_none() {
+                return Err(issue(
+                    3,
+                    "knowledge_provides_invalid",
+                    format!(
+                        "provides.kinds.{kind}.{key} is required for capability {cap_id:?} (SK-1 per-kind declaration)"
+                    ),
+                ));
+            }
+        }
+        let parser = str_field(decl, "parser").unwrap_or_default();
+        let expected = KIND_PARSER
+            .iter()
+            .find(|(k, _)| *k == kind.as_str())
+            .map(|(_, p)| *p)
+            .unwrap_or_default();
+        if parser != expected {
+            return Err(issue(
+                3,
+                "knowledge_provides_invalid",
+                format!(
+                    "provides.kinds.{kind}.parser {parser:?} must be {expected:?} (per-kind parser pairing)"
+                ),
+            ));
+        }
+        let policy = str_field(decl, "license_policy").unwrap_or_default();
+        if !LICENSE_POLICIES.contains(&policy) {
+            return Err(issue(
+                3,
+                "knowledge_provides_invalid",
+                format!(
+                    "provides.kinds.{kind}.license_policy {policy:?} not in {LICENSE_POLICIES:?}"
+                ),
+            ));
+        }
+        let source_path = str_field(decl, "source_path").unwrap_or_default();
+        if !entry_relpath_ok(source_path) {
+            return Err(issue(
+                3,
+                "knowledge_provides_invalid",
+                format!(
+                    "provides.kinds.{kind}.source_path {source_path:?} is not a safe package-relative path (traversal rejected)"
+                ),
+            ));
         }
     }
     Ok(())

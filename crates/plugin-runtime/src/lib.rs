@@ -29,6 +29,8 @@ pub mod compat;
 pub mod deps;
 pub mod health;
 pub mod ingest;
+pub mod knowledge_parse;
+pub mod knowledge_review;
 pub mod paths;
 pub mod retention;
 pub mod source_fetch;
@@ -46,8 +48,9 @@ pub use health::{
     ProbeOutcome, MIN_INTERVAL,
 };
 pub use ingest::{
-    ingest_knowledge_source, report_json as ingest_report_json, IngestReport,
-    INGEST_PERMISSION_REQUIRED,
+    ingest_knowledge_source, ingest_knowledge_source_with_opts,
+    report_json as ingest_report_json, IngestOptions, IngestReport, CONTENT_KINDS,
+    EXTENDED_CONTENT_KINDS, INGEST_PERMISSION_REQUIRED, RTIS_CONTENT_KINDS,
 };
 pub use paths::{
     LayoutReport, PathsError, PluginPaths, ResolveOptions, CONFIG_KEY_DATA_DIR,

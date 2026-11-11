@@ -28,6 +28,7 @@ pub mod audit;
 pub mod context;
 pub mod error;
 pub mod ids;
+pub mod knowledge;
 pub mod node;
 pub mod plugin;
 pub mod resource;

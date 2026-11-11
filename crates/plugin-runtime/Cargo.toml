@@ -27,3 +27,9 @@ serde_json = { workspace = true }
 # 测试环消费：dev-dep 环允许（tool-engine dev-dep runtime-gateway 同款先例），
 # 运行期 plugin-runtime 不依赖 quality-engine，依赖方向约束不受影响。
 quality-engine = { workspace = true }
+# SK-1 集成测试（P6-9 验收：Search 第三源 + Context PluginSource + Evidence
+# 固化的跨模块接线）仅在测试环消费，运行期 plugin-runtime 不依赖三 crate
+# （依赖方向：它们消费 domain/database，不反向依赖 plugin-runtime）。
+context-broker = { workspace = true }
+resource-engine = { workspace = true }
+search-engine = { workspace = true }

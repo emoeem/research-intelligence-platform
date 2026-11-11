@@ -143,18 +143,27 @@ fn build_broker(flags: &Flags) -> Broker {
         eprintln!("policy: {e}");
         exit(1);
     });
+    // SK-1（P6-9 第 6 步）：插件知识源挂载（库内插件逐个挂 plugin:<id> 源；
+    // 禁用/未审插件候选空集合法，准入闸逐查询重读即失效信号，无缓存窗口）。
+    let mut sources: Vec<Box<dyn context_broker::ContextSource>> = vec![
+        Box::new(rulepack),
+        Box::new(registry_source),
+        Box::new(ArtifactSource::new(pool.clone())),
+    ];
+    for plugin_source in context_broker::PluginSource::mount_all(&pool) {
+        sources.push(Box::new(plugin_source));
+    }
     Broker::new(
-        vec![
-            Box::new(rulepack),
-            Box::new(registry_source),
-            Box::new(ArtifactSource::new(pool.clone())),
-        ],
+        sources,
         policy,
         intent_config,
         ManifestStore::new(pool.clone()),
         None,
     )
     .with_cache(cache)
+    // SK-1（P6-9 第 7 步）：引用证据固化写面（011 context_citation_evidence，
+    // resource-engine 受控写面；装配 L2 装入与 L3 expand 即固化）。
+    .with_evidence_store(resource_engine::sqlite::SqliteResourceRepository::new(pool.clone()))
 }
 
 fn run() -> i32 {

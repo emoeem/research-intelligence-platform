@@ -23,7 +23,10 @@ use rusqlite::OptionalExtension;
 use std::time::Instant;
 
 /// 索引库 schema 版本（结构变更即升版，查询端拒绝旧版）。
-pub const INDEX_SCHEMA_VERSION: i64 = 1;
+/// v2（SK-1/P6-9）：数据源双源扩三源（platform resource/resource_source +
+/// catalog github_metadata + platform knowledge_source_entry 审核通过行），
+/// 旧索引必须整库重建。
+pub const INDEX_SCHEMA_VERSION: i64 = 2;
 
 /// 索引库 DDL（头注声明可重建，MODULE_BOUNDARIES §8.2.3）。
 pub const INDEX_SCHEMA: &str = r#"
@@ -350,7 +353,135 @@ fn load_docs(platform: &Pool, catalog: &Pool) -> DbResult<Vec<IndexDoc>> {
         Ok(())
     })?;
 
+    // 4) SK-1 第三源：插件知识条目（platform 库 knowledge_source_entry，
+    //    011 迁移）。准入双闸（ADR 第七节）：审核通过（review_status=
+    //    APPROVED）且来源插件处于可见状态（is_active=1 且 state 在
+    //    ENABLED/LOADED/ACTIVE 且来源未卸载）；禁用即撤出匹配面（重建即刷新，
+    //    索引为可整库重建派生物）。表缺失（旧库/内存夹具未迁移）按空源跳过。
+    load_plugin_entries(platform, &mut docs)?;
+
     Ok(docs)
+}
+
+/// 第三源装载（知识条目 + 可见插件过滤；两表任一缺失即空集跳过）。
+fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()> {
+    platform.with_conn(|c| -> rusqlite::Result<()> {
+        let kse_table: Option<String> = c
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_source_entry'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let plugin_table: Option<String> = c
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='plugin'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if kse_table.as_deref() != Some("knowledge_source_entry") {
+            return Ok(());
+        }
+        // 可见插件集（缺 plugin 表 = 全部不可见，fail-closed）。
+        let mut visible: std::collections::HashSet<String> = std::collections::HashSet::new();
+        if plugin_table.as_deref() == Some("plugin") {
+            let mut stmt = c.prepare(
+                "SELECT DISTINCT plugin_id FROM plugin
+                 WHERE is_active = 1
+                   AND state IN ('ENABLED','LOADED','ACTIVE')
+                   AND source_uninstalled = 0",
+            )?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+            visible.extend(rows);
+        }
+        if visible.is_empty() {
+            return Ok(());
+        }
+        let mut stmt = c.prepare(
+            "SELECT plugin_id, plugin_version, entry_kind, item_key, title, description,
+                    body, canonical_url, category_path_json, license_status,
+                    source_location_json
+             FROM knowledge_source_entry
+             WHERE review_status = 'APPROVED'
+             ORDER BY plugin_id, entry_kind, item_key",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, Option<String>>(7)?,
+                    r.get::<_, String>(8)?,
+                    r.get::<_, String>(9)?,
+                    r.get::<_, String>(10)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+        for (
+            plugin_id,
+            plugin_version,
+            entry_kind,
+            item_key,
+            title,
+            description,
+            body,
+            canonical_url,
+            category_path_json,
+            license_status,
+            source_location_json,
+        ) in rows {
+            if !visible.contains(&plugin_id) {
+                continue;
+            }
+            let category_path = parse_topics(Some(category_path_json.as_str()));
+            let source_file = parse_source_file(&source_location_json);
+            let snippet: String = body.chars().take(200).collect();
+            docs.push(IndexDoc {
+                resource_id: format!("kse:{plugin_id}@{plugin_version}:{entry_kind}:{item_key}"),
+                name: title,
+                description: description.or_else(|| {
+                    if snippet.trim().is_empty() {
+                        None
+                    } else {
+                        Some(snippet)
+                    }
+                }),
+                canonical_url: canonical_url.unwrap_or_else(|| format!("plugin://{plugin_id}")),
+                resource_type: entry_kind,
+                lifecycle: "INDEXED".to_string(),
+                governance: "ACTIVE".to_string(),
+                quality_final_score: None,
+                quality_grade: None,
+                license_status: if license_status.is_empty() {
+                    "UNKNOWN".to_string()
+                } else {
+                    license_status
+                },
+                maintenance_status: "UNKNOWN".to_string(),
+                topics: category_path,
+                language: None,
+                source_sections: source_file.into_iter().collect(),
+                source_repositories: vec![format!("plugin:{plugin_id}")],
+            });
+        }
+        Ok(())
+    })
+}
+
+/// source_location_json 的 file 字段抽取（坏 JSON 归空，宽容度与 parse_topics 同）。
+fn parse_source_file(raw: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|v| v.get("file").and_then(|f| f.as_str()).map(str::to_string))
+        .filter(|s| !s.is_empty())
 }
 
 /// 解析 catalog topics JSON 数组（`["a","b"]`；空/坏值归一空数组，eri 同宽容度）。
@@ -565,5 +696,122 @@ mod tests {
         assert_eq!(count("\"repositories\""), 1);
         // 章节 "常用工具" grams = 常用,用工,工具
         assert_eq!(count("\"常用\""), 1, "alias column indexed via 2-gram");
+    }
+
+    /// SK-1 第三源夹具行（plugin_id, version, kind, key, title, desc, review）。
+    type PluginRow<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, Option<&'a str>, &'a str);
+
+    /// SK-1 第三源夹具：platform 库补 plugin + knowledge_source_entry 两表。
+    fn with_plugin_tables(platform: &Pool, rows: &[PluginRow<'_>]) {
+        platform
+            .with_conn(|c| {
+                c.execute_batch(
+                    "CREATE TABLE plugin (
+                       plugin_id TEXT NOT NULL, version TEXT NOT NULL,
+                       state TEXT NOT NULL, is_active INTEGER NOT NULL,
+                       source_uninstalled INTEGER NOT NULL DEFAULT 0);
+                     CREATE TABLE knowledge_source_entry (
+                       plugin_id TEXT NOT NULL, plugin_version TEXT NOT NULL,
+                       entry_kind TEXT NOT NULL, item_key TEXT NOT NULL,
+                       title TEXT NOT NULL, description TEXT,
+                       body TEXT NOT NULL DEFAULT '', canonical_url TEXT,
+                       category_path_json TEXT NOT NULL DEFAULT '[]',
+                       license_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+                       source_location_json TEXT NOT NULL DEFAULT '{}',
+                       review_status TEXT NOT NULL DEFAULT 'DISCOVERED');",
+                )
+            })
+            .unwrap();
+        for (pid, ver, kind, key, title, desc, review) in rows {
+            platform
+                .with_conn(|c| {
+                    c.execute(
+                        "INSERT INTO knowledge_source_entry (plugin_id, plugin_version,
+                            entry_kind, item_key, title, description, body, canonical_url,
+                            review_status) VALUES (?1,?2,?3,?4,?5,?6,'',NULL,?7)",
+                        rusqlite::params![pid, ver, kind, key, title, desc, review],
+                    )
+                })
+                .unwrap();
+        }
+    }
+
+    fn insert_plugin(platform: &Pool, id: &str, state: &str, active: i64) {
+        platform
+            .with_conn(|c| {
+                c.execute(
+                    "INSERT INTO plugin (plugin_id, version, state, is_active) VALUES (?1,'0.1.0',?2,?3)",
+                    rusqlite::params![id, state, active],
+                )
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn third_source_indexes_only_approved_and_visible() {
+        let (p, cat, idx) = fixture_pools();
+        with_plugin_tables(
+            &p,
+            &[
+                ("knowledge.a", "0.1.0", "catalog_entry", "https://a/x", "A 工具目录", Some("链接描述"), "APPROVED"),
+                ("knowledge.a", "0.1.0", "document_markdown", "docs/g.md", "文档标题", Some("文档摘要"), "APPROVED"),
+                ("knowledge.a", "0.1.0", "catalog_entry", "https://a/y", "未审条目", Some("d"), "DISCOVERED"),
+                ("knowledge.b", "0.1.0", "catalog_entry", "https://b/z", "B 条目", Some("d"), "APPROVED"),
+            ],
+        );
+        insert_plugin(&p, "knowledge.a", "ENABLED", 1);
+        insert_plugin(&p, "knowledge.b", "DISABLED", 1);
+        SearchIndex::build(&p, &cat, &idx).unwrap();
+        let ids = doc_ids(&idx);
+        assert_eq!(
+            ids,
+            vec![
+                "gh:a/fuzz-tool".to_string(),
+                "gh:b/cjk-tool".to_string(),
+                "gh:c/quarantined".to_string(),
+                "kse:knowledge.a@0.1.0:catalog_entry:https://a/x".to_string(),
+                "kse:knowledge.a@0.1.0:document_markdown:docs/g.md".to_string(),
+            ],
+            "third source admits only APPROVED + visible-plugin rows (disable hides knowledge.b; DISCOVERED hidden)"
+        );
+        // 第三源条目参与 FTS（name + description + topics/category_path）。
+        let count = |term: &str| -> i64 {
+            idx.with_conn(|c| {
+                c.query_row(
+                    "SELECT COUNT(*) FROM search_index_fts WHERE search_index_fts MATCH ?",
+                    [term],
+                    |r| r.get(0),
+                )
+            })
+            .unwrap()
+        };
+        // CJK 2-gram：标题 "文档标题" grams = 文档,档标,标题。
+        assert_eq!(count("\"文档\""), 1, "CJK title 2-gram indexed");
+        // 禁用后再 rebuild：knowledge.a 条目撤出匹配面。
+        p.with_conn(|c| {
+            c.execute(
+                "UPDATE plugin SET state = 'DISABLED' WHERE plugin_id = 'knowledge.a'",
+                [],
+            )
+        })
+        .unwrap();
+        SearchIndex::rebuild(&p, &cat, &idx).unwrap();
+        assert_eq!(
+            doc_ids(&idx),
+            vec![
+                "gh:a/fuzz-tool".to_string(),
+                "gh:b/cjk-tool".to_string(),
+                "gh:c/quarantined".to_string(),
+            ],
+            "rebuild after disable removes plugin entries (disable hides from match surface)"
+        );
+    }
+
+    #[test]
+    fn third_source_absent_tables_skip_cleanly() {
+        // 无 knowledge_source_entry/plugin 表（旧库形态）：双源行为不变。
+        let (p, cat, idx) = fixture_pools();
+        let report = SearchIndex::build(&p, &cat, &idx).unwrap();
+        assert_eq!(report.doc_count, 3);
     }
 }

@@ -26,6 +26,8 @@
 | 工具协议         | [phase0/TOOL-CONTRACT-DRAFT.md](phase0/TOOL-CONTRACT-DRAFT.md)         |
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |
+| 安全知识源接入计划 | [RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md](RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md) |
+| SK-1 摄取接线裁决 | [adr/SK1-INGEST-ADR.md](adr/SK1-INGEST-ADR.md)（指针：[phase6/SK1-INGEST-ADR.md](phase6/SK1-INGEST-ADR.md)） |
 | 现状架构盘点     | [phase0/CURRENT-ARCHITECTURE-INVENTORY.md](phase0/CURRENT-ARCHITECTURE-INVENTORY.md) |
 | 可登记工具清单   | [phase0/TOOL-INVENTORY.md](phase0/TOOL-INVENTORY.md)                   |
 | 前端复用矩阵     | [phase0/TELEGRAM-ADMIN-UI-REUSE.md](phase0/TELEGRAM-ADMIN-UI-REUSE.md) |

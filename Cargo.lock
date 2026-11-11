@@ -584,10 +584,13 @@ name = "plugin-runtime"
 version = "0.2.0"
 dependencies = [
  "audit-engine",
+ "context-broker",
  "database",
  "domain",
  "plugin-registry",
  "quality-engine",
+ "resource-engine",
+ "search-engine",
  "serde",
  "serde_json",
  "tool-registry",
@@ -710,6 +713,7 @@ dependencies = [
  "domain",
  "serde",
  "serde_json",
+ "tool-registry",
 ]
 
 [[package]]
