@@ -41,6 +41,8 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
    - **c. 纯手动推进**：每个批次的规格、路径、自验命令都在 PHASE-ROADMAP 与 docs/phaseN/PHASEN-PLAN.md 里，按队列逐批实施，每批过五道门禁 + 独立验收 + RELEASE 入库。
 5. 推进纪律：阶段验收不过不进下一阶段；连续两次同一方法无新信息就换方法。
 
+> 接手记录（2026-11-12 03:2x）：原运行 dwfrun-5f804a20 于 03:17 因 owning session closed 中断（spent 452M tokens），已按 b 案由新会话重建：重建脚本为 docs/handoff/workflow-script-RIP2-2026-11-12-RESUME.dwf.ts（Phase 5/6 已完成段改为只读核对，SK-1 半成品 WIP 备份 fec5a3f 已标注进规划与实施 ask，门禁命令按运行 cwd 即仓库根修正，仓库 core.sshCommand 已指向宿主密钥 /home/emo/.ssh/id_ed25519）。后续接手方优先用 RESUME 版脚本，原快照仅作历史参照。
+
 ## 三、剩余任务队列（完成即按序执行）
 
 | 序 | 任务 | 验收基准 |
