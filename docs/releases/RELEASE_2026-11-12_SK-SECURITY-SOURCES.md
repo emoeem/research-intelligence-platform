@@ -4,7 +4,7 @@
 
 | 项         | 值                                                                                                                                                                                                                      |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 阶段交付   | SK-1 `9058c93`（03:49 CST，代码半成品基线 `fec5a3f` 03:23 已在库）+ SK-2 `f77e7b5`（04:37 CST）+ SK-3 `ff9e93e`（05:39 CST）+ 本批收尾入库（V-9 门禁修复 + 复测截图 + 本 RELEASE 与登记；本行短哈希按仓库回填惯例由后续 docs 提交落定） |
+| 阶段交付   | SK-1 `9058c93`（03:49 CST，代码半成品基线 `fec5a3f` 03:23 已在库）+ SK-2 `f77e7b5`（04:37 CST）+ SK-3 `ff9e93e`（05:39 CST）+ 本批收尾入库 `2bf8e9c`（06:14 CST，V-9 门禁修复 + 复测截图 + 本 RELEASE 与登记） |
 | 数据库迁移 | 011_knowledge_sources.sql（SK-1，knowledge_source_entry + context_citation_evidence）与 012_knowledge_document_fetch.sql（SK-3，抓取审计表 ok/rejected 双态只追加）均在开发库副本与测试内存库执行；生产 platform*.db 与 integrations/rtis/knowledge.db 零写入（本批对账复跑前后 sha256 一致实测） |
 | 自动化测试 | 本批全量复跑（2026-11-12 仓库根 CWD）：`cargo test --offline --workspace` exit 0，430 passed / 0 failed / 0 ignored（80 条 test result 行 = 67 测试二进制 + 13 Doc-tests 段，58 套件有用例；podman_host_egress 5/5，V-9 修复后原 4 项 panic 转绿）；`python3 -m unittest discover -s workers/python/tests` 211 tests OK（skipped=11）。SK-3 批次记录 57 套件 379 passed / 4 failed（4 失败即 podman 缺席 panic），与本批总数差值属当时统计口径未对齐，本批以逐行求和实测为准 |
 | 静态检查   | `cargo clippy --offline --workspace --all-targets -- -D warnings` exit 0 零告警（本批复跑实测）                                                                                                                          |
