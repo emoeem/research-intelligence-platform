@@ -6,7 +6,7 @@
 
 | 项         | 值                                                                                                                                                    |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 阶段交付   | git `<SK1-COMMIT>`（03:48 CST 收尾入库；代码半成品基线 fec5a3f 已在库，本批为文档收尾零代码改动；本行短哈希由回填提交落定）                              |
+| 阶段交付   | git `9058c93`（03:48 CST 收尾入库；代码半成品基线 fec5a3f 已在库，本批为文档收尾零代码改动；本行短哈希由回填提交落定）                              |
 | 数据库迁移 | 无新增（011_knowledge_sources.sql 随 fec5a3f 在库，010 零改动；对账在 dev 库副本 /tmp/sk1-recon.db 验证，生产 platform*.db 与 RTIS knowledge.db 零写入，sha256 前后一致实测） |
 | 自动化测试 | `cargo test --offline -p plugin-runtime --test knowledge_ingest_provenance --test sk1_extended_ingest` exit 0（5 + 4 passed）；`cargo test --offline --workspace` 54 套件 ok 零失败，唯一例外 tool-engine podman_host_egress 4 项（本机无 podman，panic 原文 podman ps spawn NotFound，见 §三） |
 | 静态检查   | `cargo clippy --offline --workspace --all-targets -- -D warnings` 零告警（exit 0 当日实测）                                                            |
