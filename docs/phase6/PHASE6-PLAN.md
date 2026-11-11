@@ -38,7 +38,9 @@
 | P6-5 | Knowledge 插件落地 knowledge.rtis-redteam（摄取 + 溯源）  | 已完成 | migrations/010_knowledge_ingest.sql、plugin-runtime ingest.rs（权限闸 + 三类语料 + 幂等）、CLI ingest 命令、docs/phase6/RTIS-REDTEAM-PLUGIN-NOTES.md（license 裁决 + 条数收敛） |
 | P6-6 | Tool 插件 + 外部 Project 插件（rtis_mcp.mjs project_endpoint） | 已完成 | capability/{tool_register, project_endpoint}.rs、install 深注册接线（stage→validate→checksums→lock→注册）、project.rtis-mcp 示例双份、docs/phase6/DUAL-MCP-BOUNDARY.md |
 | P6-7 | 三层依赖与兼容检查（激活层 + 运行层）                      | 已完成 | deps.rs（依赖解析 + requires + 环检测 + 机器可读报告）、compat.rs（rip_core/manifest_schema/worker_protocol 三项）、health.rs（间隔下限 1s + 失败进 ERROR 停止重试 + 探测注入）、enable 激活层接线 |
-| P6-8 | Plugin Center 页面                                        | 未开工 |                                                                                                     |
+| P6-8 | Plugin Center 页面                                        | 已完成 | web PluginsPage/PluginDetailPage（四分类 + 三级加载 + 兼容性列 + 依赖图 + 审计 trail）、rp_server /api/plugins 读写端点（Bearer 强制、零直连 SQL 写）、selftest_phase6 PASS=49 FAIL=0、Playwright 真实后端 E2E + 截图 12 张（验收报告 docs/phase6/PHASE6-ACCEPTANCE.md；本行原「未开工」为陈旧状态，2026-11-12 SK-1 批次按验收报告修正） |
+| P6-9（收口扩展） | 武器库扩展路径：ADDING-A-TOOL 指南 + 脚手架一条线 + /api/tools aux 增量合并 | 已完成 | docs/guides/ADDING-A-TOOL.md、scripts/rip_new_tool.py、rp-tool validate/register 与 rp-tool-health ping、样例工具 rip.http.tls_inspect 端到端露出（收口记录 docs/releases/RELEASE_2026-11-12_PHASE6.md §三/§四；ROADMAP §7.3 原表止于 P6-8，本行为收口批新增编号） |
+| P6-9（SK-1） | 通用 Knowledge Catalog/Document Ingestion（SK 计划 §8 P6-9 原口径，与上行同号异源） | 已完成 | 011 两表（knowledge_source_entry + context_citation_evidence）、domain::knowledge 四实体、ingest per-kind 注册表 + dry-run SAVEPOINT、validate rule 3 knowledge_provides_invalid、search-engine 第三源（INDEX_SCHEMA_VERSION=2）、context-broker PluginSource 实装 + Evidence 受控写面、真实 RTIS 对账复跑 15155 行幂等（实测记录见下方 SK-1 节，收口 docs/releases/RELEASE_2026-11-12_SK1-INGEST.md） |
 
 ## 已实施批次实测记录
 
@@ -94,6 +96,16 @@
 - state 文件实测：plugin-state.json 快照随操作翻转（REGISTERED 到 DISABLED），transitions.jsonl 追加 install/register/enable/disable 四行可读回（CLI 冒烟对账 + state_store.rs 单测）。
 - gitignore 实测：`git status --porcelain -- rip-data/` 输出为空，`git check-ignore -v rip-data/plugins/state/plugin-state.json` 命中 .gitignore:42。
 - 源码字面量复核：`grep -rn "rip-data" crates/ apps/` 全部命中为文档注释与相对缺省名（paths.rs DEFAULT_DATA_DIR_NAME = "rip-data" 相对名，拼部署根或配置根）；apps/ 零命中；无任何绝对路径字面量。crates/context-broker/src/cache.rs:110 的 `.join("rip-data")` 为 P4-5 既有相对默认（join 可配置根），非本批引入，未改动。
+
+### SK-1（2026-11-12，半成品收尾）
+
+- 接手基线：WIP 备份 commit fec5a3f（40 文件 +3831/-159）已含计划 §8 P6-9 第 1 到 7 步代码级交付（ADR、Manifest/Schema、Ingest 通用化、Parser、Search 第三源、Context PluginSource、Evidence 固化），本批不推翻；收尾三项为真实 RTIS 对账复跑、批次台账登记、RELEASE 文档。
+- 验收命令与结果：`cargo clippy --offline --workspace --all-targets -- -D warnings` exit 0；`cargo test --offline -p plugin-runtime --test knowledge_ingest_provenance --test sk1_extended_ingest` exit 0（5 + 4 passed）；`cargo test --offline --workspace` exit 101，唯一失败套件 tool-engine podman_host_egress 4 项（egress_env_injection_frozen_via_live_inspect、egress_allowlisted_get_succeeds_through_proxy、non_allowlisted_host_connect_rejected_structured、network_none_dispatch_stays_isolated），panic 原文 `podman ps spawn: Os { code: 2, kind: NotFound }`，本机无 podman（`command -v podman` 零输出），其余 54 套件 `test result: ok` 零失败，符合批次预期口径。
+- 真实 RTIS 对账复跑（本批硬红线收口）：`migrations/dev-p71.db` 复制为 /tmp/sk1-recon.db（摄取前 knowledge_ingest 0 行，证实 15,155 证据是 P6-5 重构前实测）→ `RIP_DATA_DIR=/tmp/sk1-recon-data rp-plugin install --manifest rip-data/plugins/installed/knowledge.rtis-redteam/0.1.0/manifest.yaml --package integrations/rtis` exit 0 → ingest 首跑 counts poc 14717 + skill_md 125 + method_case 313 = 15155（skipped=0）→ 二跑 skipped=15155、changed=0 → 只读 `SELECT content_kind,count(*) FROM knowledge_ingest GROUP BY content_kind` = {'poc':14717,'skill_md':125,'method_case':313}，plugin_id 全行 knowledge.rtis-redteam（version 0.1.0、corpus_id rtis-redteam），sum(body_bytes)=6286781 与 P6-5 基线逐字节一致，poc source_pk 非空 14717 行。
+- RTIS 红线核查：integrations/rtis/knowledge.db sha256 摄取前后一致（f8580feb...e70f7e3）；`git diff --stat -- integrations/rtis/rtis.py` 空；`git status --porcelain -- integrations/rtis migrations/platform.db` 零输出；integrations/rtis 无 -wal/-shm 边车残留。
+- 依赖增量：零新外部依赖（plugin-runtime 仅新增 workspace 内部 dev-dependencies 四条 context-broker/resource-engine/search-engine/tool-registry，仅测试环消费，Cargo.lock 相应四行）。
+- 台账修正：P6-8 行「未开工」与 PHASE6-ACCEPTANCE.md 已验收矛盾，按验收报告修正；收口批 P6-9（武器库扩展路径）与 SK 计划 §8 P6-9（SK-1）两个同号异源批次分别登记。
+- 浏览器级验证归 SK-2（本批只收 fixture 级与真实语料对账，sk1_extended_ingest.rs 四项已覆盖：三类 dry-run、100% 幂等、禁用即不可见、历史 Evidence 可读）。
 
 ## 偏差登记（对冻结文档的显式偏离，均可评审推翻）
 
