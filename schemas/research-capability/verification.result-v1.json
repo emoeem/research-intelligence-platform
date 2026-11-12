@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/research-capability/verification.result-v1.json",
+  "title": "RIP Research Capability Result v1: research.verification",
+  "description": "核验能力（Verification）结果契约 v1（P7-6 冻结）。信封条件必填由 status 驱动：SUCCEEDED 时必填 result；FAILED 时必填 error；summary 与 provenance（六 ID 锚数组，至少含 correlation 的 run/trace 锚）恒必填。",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "capability_id",
+    "capability_version",
+    "status",
+    "summary",
+    "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "description": "结果信封协议主版本，当前恒为 1。",
+      "type": "string",
+      "const": "1"
+    },
+    "capability_id": {
+      "type": "string",
+      "const": "research.verification"
+    },
+    "capability_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "status": {
+      "description": "终态：mock 纯函数只会产出 SUCCEEDED（合法入参）或 FAILED（入参被拒，category=VALIDATION）。",
+      "type": "string",
+      "enum": [
+        "SUCCEEDED",
+        "FAILED"
+      ]
+    },
+    "result": {
+      "description": "核验能力（Verification）结构化输出（仅 SUCCEEDED）。",
+      "type": "object",
+      "required": [
+        "verdicts",
+        "verified_count",
+        "unverified_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verdicts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/verdict"
+          }
+        },
+        "verified_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "unverified_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+    },
+    "summary": {
+      "description": "人类可读一段话摘要（mock 产出确定性文本）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "provenance": {
+      "description": "六 ID 锚数组（至少含 correlation 派生的 run/trace 锚）。",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/anchor"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "SUCCEEDED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "result"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "anchor": {
+      "description": "provenance/citation 锚：六 ID（resource/run/trace/task/artifact/evidence，domain::ids.rs 口径）的字符串形式，kind 标注 ID 族。id 不做 maxLength 强约束（resource 稳定 ID 含 gh:owner/repo 全段，域层各自校验）。",
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "锚的 ID 族：resource 对应 ResourceId，run 对应 RunId（agent_run/tool_run 别名族），trace 对应 TraceId，task 对应 TaskId，artifact 对应 ArtifactId，evidence 对应 EvidenceId。",
+          "type": "string",
+          "enum": [
+            "resource",
+            "run",
+            "trace",
+            "task",
+            "artifact",
+            "evidence"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "error": {
+      "description": "能力错误对象（类别词表取 TOOL-CONTRACT 5.3 的子集；P7-6 mock 只产出 VALIDATION，即入参在派发前被拒；EXECUTION 预留给 Phase 8 真实实现，词表先行冻结）。",
+      "type": "object",
+      "required": [
+        "category",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "VALIDATION",
+            "EXECUTION"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "verdict",
+        "checked_evidence_ids",
+        "notes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verdict": {
+          "description": "mock 确定性规则产出，无 CONTRADICTED（真实内容比对属 Phase 8）。",
+          "type": "string",
+          "enum": [
+            "VERIFIED",
+            "UNVERIFIED"
+          ]
+        },
+        "checked_evidence_ids": {
+          "description": "实际参与核验的合法 EvidenceId（去重保序；非法 ID 不入列，只进 notes）。",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

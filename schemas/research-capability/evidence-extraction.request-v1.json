@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/research-capability/evidence-extraction.request-v1.json",
+  "title": "RIP Research Capability Request v1: research.evidence-extraction",
+  "description": "证据抽取能力（Evidence Extraction）请求契约 v1（P7-6 冻结，SESSION-HANDOFF 十追加项 2）。信封结构沿用 schemas/tool-contract/request-v1.json 惯例：protocol_version 恒 1，capability_id 恒为能力名，correlation 携六 ID 关联锚，input 为能力专属载荷。P7-6 交付物为确定性 mock：input 合法性由本 Schema 在派发前校验，实现体为纯函数，不含任何模型调用。",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "capability_id",
+    "capability_version",
+    "correlation",
+    "input"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "description": "契约协议主版本，当前恒为 1。",
+      "type": "string",
+      "const": "1"
+    },
+    "capability_id": {
+      "description": "能力标识，段内字符集与 tool-contract tool_id 同口径。",
+      "type": "string",
+      "const": "research.evidence-extraction"
+    },
+    "capability_version": {
+      "description": "能力契约版本（P7-6 冻结为 0.1.0）。",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "correlation": {
+      "$ref": "#/$defs/correlation"
+    },
+    "input": {
+      "description": "抽取载荷：证据引用与产物引用、抽取目标类型（对齐 evidence.evidence_type 词表）。",
+      "type": "object",
+      "required": [
+        "evidence_refs",
+        "extract_as"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "extract_as": {
+          "description": "抽取目标类型，与 001 迁移 evidence.evidence_type CHECK 同词表。",
+          "type": "string",
+          "enum": [
+            "http_pair",
+            "screenshot",
+            "file",
+            "log",
+            "hash"
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "correlation": {
+      "description": "六 ID 关联锚（domain::ids.rs P7-5 口径）：run_id 对齐 RunId（agent_run/tool_run 共享冻结形状：非空且不超过 128 字符），trace_id 对齐 TraceId（迁移 015 trace_id 列同口径），task_id 对齐 TaskId（research_task.task_id，可缺省）。",
+      "type": "object",
+      "required": [
+        "run_id",
+        "trace_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "trace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  }
+}

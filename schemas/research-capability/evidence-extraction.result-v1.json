@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/research-capability/evidence-extraction.result-v1.json",
+  "title": "RIP Research Capability Result v1: research.evidence-extraction",
+  "description": "证据抽取能力（Evidence Extraction）结果契约 v1（P7-6 冻结）。信封条件必填由 status 驱动：SUCCEEDED 时必填 result；FAILED 时必填 error；summary 与 provenance（六 ID 锚数组，至少含 correlation 的 run/trace 锚）恒必填。",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "capability_id",
+    "capability_version",
+    "status",
+    "summary",
+    "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "description": "结果信封协议主版本，当前恒为 1。",
+      "type": "string",
+      "const": "1"
+    },
+    "capability_id": {
+      "type": "string",
+      "const": "research.evidence-extraction"
+    },
+    "capability_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "status": {
+      "description": "终态：mock 纯函数只会产出 SUCCEEDED（合法入参）或 FAILED（入参被拒，category=VALIDATION）。",
+      "type": "string",
+      "enum": [
+        "SUCCEEDED",
+        "FAILED"
+      ]
+    },
+    "result": {
+      "description": "证据抽取能力（Evidence Extraction）结构化输出（仅 SUCCEEDED）。",
+      "type": "object",
+      "required": [
+        "extractions",
+        "extracted_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "extractions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/extraction"
+          }
+        },
+        "extracted_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
+    "summary": {
+      "description": "人类可读一段话摘要（mock 产出确定性文本）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "provenance": {
+      "description": "六 ID 锚数组（至少含 correlation 派生的 run/trace 锚）。",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/anchor"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "SUCCEEDED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "result"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "anchor": {
+      "description": "provenance/citation 锚：六 ID（resource/run/trace/task/artifact/evidence，domain::ids.rs 口径）的字符串形式，kind 标注 ID 族。id 不做 maxLength 强约束（resource 稳定 ID 含 gh:owner/repo 全段，域层各自校验）。",
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "锚的 ID 族：resource 对应 ResourceId，run 对应 RunId（agent_run/tool_run 别名族），trace 对应 TraceId，task 对应 TaskId，artifact 对应 ArtifactId，evidence 对应 EvidenceId。",
+          "type": "string",
+          "enum": [
+            "resource",
+            "run",
+            "trace",
+            "task",
+            "artifact",
+            "evidence"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "error": {
+      "description": "能力错误对象（类别词表取 TOOL-CONTRACT 5.3 的子集；P7-6 mock 只产出 VALIDATION，即入参在派发前被拒；EXECUTION 预留给 Phase 8 真实实现，词表先行冻结）。",
+      "type": "object",
+      "required": [
+        "category",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "VALIDATION",
+            "EXECUTION"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "required": [
+        "evidence_id",
+        "content_hash",
+        "storage_ref",
+        "summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_hash": {
+          "description": "sha256 hex 64 位（mock 对 evidence_id 确定性派生；Phase 8 以 evidence 表 content_hash 权威值替换）。",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "storage_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

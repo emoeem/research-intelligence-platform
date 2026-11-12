@@ -14,6 +14,7 @@ members = [
     "crates/plugin-registry",
     "crates/plugin-runtime",
     "crates/agent-engine",
+    "crates/research-engine",
     "tests",
 ]
 

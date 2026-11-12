@@ -1,0 +1,27 @@
+[package]
+name = "research-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 7 P7-6 研究能力契约化（SESSION-HANDOFF §十追加项 2）：Research Planner/Source Discovery/Evidence Extraction/Verification/Synthesis/Citation/Evaluator 七能力以输入输出契约 Schema 加确定性 mock 纯函数加测试交付（不是 prompt）；schemas/research-capability/ 14 份 request-v1/result-v1 契约面沿用 tool-contract 双份惯例；rp-research CLI（list/run）为契约验收入口；agent_loop 真实接线留 Phase 8；零迁移（契约面纯 Schema 加代码，不占 016 号段）"
+
+[dependencies]
+# 依赖面（零新增第三方 package：serde/serde_json/domain 走 workspace 既有；
+# jsonschema 0.56 与 sha2 0.10 均为 Cargo.lock/vendor 既有条目，本 crate 只
+# 增加依赖边不增加 package，见 RELEASE 自验第 5 条 Cargo.lock diff）。
+domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# JSON Schema draft 2020-12 校验（契约装载与符合性门）：与 tool-registry
+# 同版本钉 0.56（镜像滞后口径见 crates/tool-registry/Cargo.toml 注释），
+# default-features 关闭远程与文件 $ref 解析，契约 Schema 均为内联文档
+# （仅 #/$defs 内部引用），外部引用在编译期即拒绝（fail-closed）。
+jsonschema = { version = "0.56", default-features = false }
+# 确定性摘要（plan/src/syn/cite 等 ID 派生与 content_hash 钉面）：sha2
+# 已随 tool-registry 入 vendor，复用成熟实现不手写哈希。
+sha2 = "0.10"
+
+[[bin]]
+name = "rp-research"
+path = "src/bin/rp-research.rs"
