@@ -42,6 +42,8 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 5. 推进纪律：阶段验收不过不进下一阶段；连续两次同一方法无新信息就换方法。
 
 > 接手记录（2026-11-12 03:2x）：原运行 dwfrun-5f804a20 于 03:17 因 owning session closed 中断（spent 452M tokens），已按 b 案由新会话重建：重建脚本为 docs/handoff/workflow-script-RIP2-2026-11-12-RESUME.dwf.ts（Phase 5/6 已完成段改为只读核对，SK-1 半成品 WIP 备份 fec5a3f 已标注进规划与实施 ask，门禁命令按运行 cwd 即仓库根修正，仓库 core.sshCommand 已指向宿主密钥 /home/emo/.ssh/id_ed25519）。后续接手方优先用 RESUME 版脚本，原快照仅作历史参照。
+>
+> 接手记录（2026-11-13 用户暂停点）：重建运行 dwfrun-954913b0-9e59-48cd-a2af-1202026edf95 已完成 SK 扩展收尾（队列第 1 项完成：SK-1 到 SK-3，commit 2bf8e9c 入库推送）与 Phase 7 批次 1 到 4 半成品（五区壳层、agent-engine 最小执行闭环、013 三类 Memory、014 运行控制九类护栏，WIP 备份 7effba9 已推送，各自 RELEASE 见 docs/releases/RELEASE_*_PHASE7-P7-2/3/4.md）。运行因 1005 配额停过一次，续跑（缓存重放）后用户手动停。剩余：P7-5（trace 统一关联与跨栈查询，实施中被停）、P7-6、P7-7（含 Agent Studio 页）与 Phase 7 门禁/独立验收/入库三站，之后 Phase 8、9、10 与收尾闭环（第三节队列第 2 到 6 项）。恢复首选 ResumeWorkflowRun dwfrun-954913b0-9e59-48cd-a2af-1202026edf95（已完成步骤走缓存）；如需重建（运行丢失时），用 RESUME 版脚本并把 SK 段与 P7-1 到 P7-4 改为对照 2bf8e9c 与 7effba9 的核对性说明，另注意本机浏览器二进制口径：视觉门禁用 PW_CHROMIUM 指向宿主 Chrome for Testing 153（路径见 SESSION-HANDOFF 第三节 Phase 7 行）。
 
 ## 三、剩余任务队列（完成即按序执行）
 
