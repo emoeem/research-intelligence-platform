@@ -46,7 +46,15 @@ impl SqliteResourceRepository {
         plugin_id: &str,
         limit: u64,
     ) -> DbResult<CandidateMappingReport> {
-        type Row = (String, Option<String>, Option<String>, String, Option<String>, Option<String>, Option<String>);
+        type Row = (
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
         let rows: Vec<Row> = self.pool.with_conn(|c| {
             let mut stmt = c.prepare(
                 "SELECT item_key, title, description, review_status, canonical_url,
@@ -197,19 +205,20 @@ impl SqliteResourceRepository {
 
     /// 按装配清单读证据行（对账与 manifest-show 消费）。
     pub fn list_citation_evidence(&self, manifest_id: &str) -> DbResult<Vec<CitationEvidenceRow>> {
-        self.pool.with_conn(|c| -> rusqlite::Result<Vec<CitationEvidenceRow>> {
-            let mut stmt = c.prepare(
-                "SELECT evidence_id, manifest_id, item_id, event_kind, ref_source, ref_id,
+        self.pool
+            .with_conn(|c| -> rusqlite::Result<Vec<CitationEvidenceRow>> {
+                let mut stmt = c.prepare(
+                    "SELECT evidence_id, manifest_id, item_id, event_kind, ref_source, ref_id,
                         ref_version, excerpt, excerpt_sha256, content_sha256, source_id,
                         plugin_version, source_commit, canonical_url, section_anchor,
                         source_location_json, created_at
                  FROM context_citation_evidence WHERE manifest_id = ?1 ORDER BY rowid",
-            )?;
-            let rows = stmt
-                .query_map([manifest_id], row_to_citation_evidence)?
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(rows)
-        })
+                )?;
+                let rows = stmt
+                    .query_map([manifest_id], row_to_citation_evidence)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
     }
 
     /// 证据复核（压缩/重试后仍可验证的落点）：excerpt 与落库哈希互核；
@@ -237,32 +246,30 @@ impl SqliteResourceRepository {
             .map_err(|e: crate::error::EngineError| database::DbError::Validation(e.to_string()))?;
         let excerpt_ok = sha256_hex(row.excerpt.as_bytes()) == row.excerpt_sha256;
         let mut source_ok: Option<bool> = None;
-        if let Some(plugin_id) = row
-            .ref_source
-            .strip_prefix("plugin:")
-            .map(str::to_string)
-        {
+        if let Some(plugin_id) = row.ref_source.strip_prefix("plugin:").map(str::to_string) {
             // ref_id 词形：kse:<plugin_id>:<entry_kind>:<item_key>。
             let tail = row.ref_id.strip_prefix(&format!("kse:{plugin_id}:"));
             if let Some((kind, key)) = tail.and_then(|t| t.split_once(':')) {
-                let source_sha: Option<String> = self.pool.with_conn(|c| -> rusqlite::Result<Option<String>> {
-                    c.query_row(
-                        "SELECT content_sha256 FROM knowledge_source_entry
+                let source_sha: Option<String> =
+                    self.pool
+                        .with_conn(|c| -> rusqlite::Result<Option<String>> {
+                            c.query_row(
+                                "SELECT content_sha256 FROM knowledge_source_entry
                          WHERE plugin_id = ?1 AND entry_kind = ?2 AND item_key = ?3",
-                        rusqlite::params![plugin_id, kind, key],
-                        |r| r.get(0),
-                    )
-                    .map(Some)
-                    .or_else(|e| match e {
-                        rusqlite::Error::QueryReturnedNoRows => Ok(None),
-                        other => Err(other),
-                    })
-                })?;
+                                rusqlite::params![plugin_id, kind, key],
+                                |r| r.get(0),
+                            )
+                            .map(Some)
+                            .or_else(|e| match e {
+                                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                                other => Err(other),
+                            })
+                        })?;
                 // 源行存在且哈希一致 = verified；存在但哈希不一致 = drift；
                 // 源行缺失（插件禁用不删行，通常为误配 ref）= unverifiable。
-                source_ok = source_sha.as_ref().map(|s| {
-                    *s == row.content_sha256.clone().unwrap_or_default()
-                });
+                source_ok = source_sha
+                    .as_ref()
+                    .map(|s| *s == row.content_sha256.clone().unwrap_or_default());
             }
         }
         Ok(CitationVerification {
@@ -343,9 +350,7 @@ pub struct CandidateMappingReport {
     pub resource_ids: Vec<String>,
 }
 
-fn row_to_citation_evidence(
-    r: &rusqlite::Row<'_>,
-) -> rusqlite::Result<CitationEvidenceRow> {
+fn row_to_citation_evidence(r: &rusqlite::Row<'_>) -> rusqlite::Result<CitationEvidenceRow> {
     Ok(CitationEvidenceRow {
         evidence_id: r.get(0)?,
         manifest_id: r.get(1)?,
@@ -790,11 +795,16 @@ mod tests {
     #[test]
     fn promote_candidates_maps_only_approved() {
         let repo = repo_with_kse_fixtures();
-        let report = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 100).unwrap();
+        let report = repo
+            .promote_knowledge_candidates("knowledge.sk3-skill-pack", 100)
+            .unwrap();
         assert_eq!(report.scanned, 3);
         assert_eq!(report.mapped, 1, "只映射 APPROVED 行（审核闸）");
         assert_eq!(report.skipped_not_approved, 2);
-        assert_eq!(report.resource_ids, vec!["kse:knowledge.sk3-skill-pack:skills/alpha/SKILL.md"]);
+        assert_eq!(
+            report.resource_ids,
+            vec!["kse:knowledge.sk3-skill-pack:skills/alpha/SKILL.md"]
+        );
         // 落点形态：lifecycle=CANDIDATE / governance=ACTIVE / type=skill_candidate
         let (lifecycle, governance, rtype, canonical): (String, String, String, String) = repo
             .pool
@@ -807,12 +817,18 @@ mod tests {
                 )
             })
             .unwrap();
-        assert_eq!((lifecycle.as_str(), governance.as_str(), rtype.as_str()),
-                   ("CANDIDATE", "ACTIVE", "skill_candidate"));
-        assert_eq!(canonical, "https://github.com/fixture/skill-pack",
-                   "条目无 canonical_url 时回落 source_url");
+        assert_eq!(
+            (lifecycle.as_str(), governance.as_str(), rtype.as_str()),
+            ("CANDIDATE", "ACTIVE", "skill_candidate")
+        );
+        assert_eq!(
+            canonical, "https://github.com/fixture/skill-pack",
+            "条目无 canonical_url 时回落 source_url"
+        );
         // 幂等二跑：skipped_existing，不覆盖既有行
-        let report2 = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 100).unwrap();
+        let report2 = repo
+            .promote_knowledge_candidates("knowledge.sk3-skill-pack", 100)
+            .unwrap();
         assert_eq!(report2.mapped, 0);
         assert_eq!(report2.skipped_existing, 1);
         assert_eq!(report2.skipped_not_approved, 2);
@@ -838,7 +854,9 @@ mod tests {
                 )
             })
             .unwrap();
-        let report = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 100).unwrap();
+        let report = repo
+            .promote_knowledge_candidates("knowledge.sk3-skill-pack", 100)
+            .unwrap();
         assert_eq!(report.mapped, 1); // alpha 仍映射
         assert_eq!(report.skipped_missing_url, 1, "缺 URL 溯源拒映射不猜造");
     }
@@ -846,7 +864,9 @@ mod tests {
     #[test]
     fn promote_candidates_limit_bounds_scan() {
         let repo = repo_with_kse_fixtures();
-        let report = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 1).unwrap();
+        let report = repo
+            .promote_knowledge_candidates("knowledge.sk3-skill-pack", 1)
+            .unwrap();
         assert_eq!(report.scanned, 1);
         assert_eq!(report.mapped, 1);
     }

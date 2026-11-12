@@ -133,10 +133,27 @@ impl AuditEngine {
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare(
             "SELECT event_id, ts, actor, action, entity_type, entity_id, correlation_id,
-                    detail, permission_level, source_system, source_pk
+                    trace_id, detail, permission_level, source_system, source_pk
              FROM audit_event WHERE correlation_id = ?1 ORDER BY event_id ASC",
         )?;
         let rows = stmt.query_map([correlation_id], row_to_event)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// `Trace` 的 trace_id 方向（P7-5 迁移 015）：按链路追踪 ID 升序回放
+    /// 跨实体族事件链（同一 trace_id 下的全部事件，不限单一 run）。
+    pub fn trace_by_trace_id(&self, trace_id: &str) -> DbResult<Vec<StoredAuditEvent>> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT event_id, ts, actor, action, entity_type, entity_id, correlation_id,
+                    trace_id, detail, permission_level, source_system, source_pk
+             FROM audit_event WHERE trace_id = ?1 ORDER BY event_id ASC",
+        )?;
+        let rows = stmt.query_map([trace_id], row_to_event)?;
         let mut out = Vec::new();
         for r in rows {
             out.push(r?);
@@ -155,10 +172,10 @@ impl AuditEngine {
         let conn = self.pool.get()?;
         conn.execute(
             "INSERT INTO audit_event (ts, actor, action, entity_type, entity_id,
-                                      correlation_id, detail, permission_level,
+                                      correlation_id, trace_id, detail, permission_level,
                                       source_system, source_pk, created_at, updated_at,
                                       schema_version)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                      strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                      strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 1)",
             rusqlite_params(event),
@@ -168,7 +185,7 @@ impl AuditEngine {
     }
 }
 
-fn rusqlite_params(e: &AuditEvent) -> [&dyn rusqlite::ToSql; 10] {
+fn rusqlite_params(e: &AuditEvent) -> [&dyn rusqlite::ToSql; 11] {
     [
         &e.ts,
         &e.actor,
@@ -176,6 +193,7 @@ fn rusqlite_params(e: &AuditEvent) -> [&dyn rusqlite::ToSql; 10] {
         &e.entity_type,
         &e.entity_id,
         &e.correlation_id,
+        &e.trace_id,
         &e.detail,
         &e.permission_level,
         &e.source_system,
@@ -193,10 +211,11 @@ fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredAuditEvent> {
             entity_type: row.get(4)?,
             entity_id: row.get(5)?,
             correlation_id: row.get(6)?,
-            detail: row.get(7)?,
-            permission_level: row.get(8)?,
-            source_system: row.get(9)?,
-            source_pk: row.get(10)?,
+            trace_id: row.get(7)?,
+            detail: row.get(8)?,
+            permission_level: row.get(9)?,
+            source_system: row.get(10)?,
+            source_pk: row.get(11)?,
         },
     })
 }
@@ -227,7 +246,8 @@ mod tests {
                 "CREATE TABLE audit_event (
                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
                    ts TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL,
-                   entity_type TEXT, entity_id TEXT, correlation_id TEXT, detail TEXT,
+                   entity_type TEXT, entity_id TEXT, correlation_id TEXT, trace_id TEXT,
+                   detail TEXT,
                    permission_level TEXT, source_system TEXT, source_pk TEXT,
                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                    schema_version INTEGER NOT NULL DEFAULT 1);",
@@ -252,6 +272,40 @@ mod tests {
         assert_eq!(chain.len(), 1);
         assert_eq!(chain[0].event.action, "resource.resolved");
         assert!(engine.trace("no-such").unwrap().is_empty());
+    }
+
+    /// P7-5：trace_id 列写读回环 + trace_by_trace_id 跨 run 回放
+    /// （correlation_id 各自独立，trace_id 归并两 run 的事件）。
+    #[test]
+    fn trace_id_roundtrip_and_cross_run_replay() {
+        let engine = engine_with_audit_table();
+        engine
+            .emit(
+                AuditEvent::new("agent-engine", "agent.run.accepted")
+                    .with_correlation("rn-a")
+                    .with_trace("tr-1"),
+            )
+            .unwrap();
+        engine
+            .emit(
+                AuditEvent::new("agent-engine", "agent.run.finished")
+                    .with_correlation("rn-b")
+                    .with_trace("tr-1"),
+            )
+            .unwrap();
+        engine
+            .emit(AuditEvent::new("system", "unrelated").with_correlation("rn-c"))
+            .unwrap();
+
+        let by_corr = engine.trace("rn-a").unwrap();
+        assert_eq!(by_corr.len(), 1);
+        assert_eq!(by_corr[0].event.trace_id.as_deref(), Some("tr-1"));
+
+        let by_trace = engine.trace_by_trace_id("tr-1").unwrap();
+        assert_eq!(by_trace.len(), 2, "trace_id 归并两 run 事件");
+        assert_eq!(by_trace[0].event.correlation_id.as_deref(), Some("rn-a"));
+        assert_eq!(by_trace[1].event.correlation_id.as_deref(), Some("rn-b"));
+        assert!(engine.trace_by_trace_id("tr-none").unwrap().is_empty());
     }
 
     #[test]

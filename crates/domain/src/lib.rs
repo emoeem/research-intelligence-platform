@@ -45,7 +45,7 @@ pub use context::{
     TargetSlot, ToolFamily,
 };
 pub use error::DomainError;
-pub use ids::{ArtifactId, ResourceId, RunId};
+pub use ids::{AgentRunId, ArtifactId, EvidenceId, ResourceId, RunId, TaskId, ToolRunId, TraceId};
 pub use node::{NodeHealth, RuntimeNode, RuntimeNodeKind};
 pub use plugin::{
     CapabilityType, Plugin, PluginCapability, PluginId, PluginKind, PluginState, PluginTrust,

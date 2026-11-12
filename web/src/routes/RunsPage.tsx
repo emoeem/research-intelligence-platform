@@ -6,13 +6,15 @@ import { formatDateTime } from "../lib/format";
 
 /** 运行记录页（P5-8）：ToolRun 列表（/api/runs，状态过滤走服务端参数）。
  *  数据面 aux 优先（RP_AUX_DB）；未配置/缺表时按服务端守卫显真实空态说明。
- *  三态统一。 */
+ *  三态统一。P7-5：trace_id 在场（015 迁移后开发副本）时行内渲染 trace
+ *  徽标链接（/traces?id=），列按库水位条件出现、旧库不伪造。 */
 
 interface RunRow {
   run_id: string;
   tool_id: string;
   tool_version?: string | null;
   task_id?: string | null;
+  trace_id?: string | null;
   workspace_id?: string | null;
   status?: string;
   error_category?: string | null;
@@ -125,6 +127,17 @@ export function RunsPage() {
                     ) : null}
                   </div>
                   <p className="mt-1.5 break-all text-sm font-medium">{run.run_id}</p>
+                  {run.trace_id ? (
+                    <p className="mt-1 text-[11px]">
+                      <span className="text-base-content/50">trace </span>
+                      <Link
+                        to={`/traces?id=${encodeURIComponent(run.trace_id)}`}
+                        className="text-primary underline underline-offset-2"
+                      >
+                        {run.trace_id}
+                      </Link>
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-[11px] text-base-content/40">
                     {run.tool_id}
                     {run.tool_version ? ` @ v${run.tool_version}` : ""}

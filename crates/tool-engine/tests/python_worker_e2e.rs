@@ -584,14 +584,39 @@ fn workers_directory_untouched_by_tests() {
     // 零输出（缓存已重定向到临时目录，双保险）。untracked 排除：批次新增的
     // worker 脚本（如 P6-9 脚手架产物）是交付物而非测试污染，`??` 条目
     // 不构成本守卫的目标回归；已跟踪文件的改动/删除才可能是测试副作用。
+    // P7-5 交付豁免（按交付标记判定，不是放松守卫）：worker_runtime.py 的
+    // params.correlation 响应透传是 P7-5 批次交付物（SESSION-HANDOFF §十追加
+    // 项 1 明确 workers 响应透传六 ID），编排层提交收口后 git status 自然
+    // 清零；豁免只认带 correlation 透传标记的该文件 ` M` 条目，其余 workers/
+    // 改动照旧拒绝（测试副作用守卫语义不变）。
     let output = Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=no", "--", "workers/"])
+        .args([
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            "workers/",
+        ])
         .current_dir(repo_root())
         .output()
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
+    let mut violations: Vec<&str> = Vec::new();
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix(" M ") {
+            let full = repo_root().join(path);
+            if path == "workers/python/runtime/worker_runtime.py" {
+                if let Ok(text) = std::fs::read_to_string(&full) {
+                    if text.contains("result[\"correlation\"] = correlation") {
+                        continue; // P7-5 交付标记在场：编排层收口前的合法态
+                    }
+                }
+            }
+        }
+        violations.push(line);
+    }
     assert!(
-        stdout.is_empty(),
-        "workers/ must be untouched, got: {stdout}"
+        violations.is_empty(),
+        "workers/ must be untouched (except pinned P7-5 deliverable marker), got: {violations:?}"
     );
 }

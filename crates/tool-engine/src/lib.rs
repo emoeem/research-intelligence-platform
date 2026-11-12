@@ -279,6 +279,48 @@ impl Engine {
         })
     }
 
+    /// 关联提交（P7-5）：与 [`Engine::submit`] 同一受理校验面（冻结契约
+    /// request-v1.json 不动，trace_id 不入契约 JSON 字段集，本仓结构检查
+    /// 拒未知字段），受理落行后为 run 行补写链路追踪 ID（迁移 015
+    /// tool_run.trace_id 列，domain::ids::TraceId）。trace_id 为 None 时
+    /// 与 submit 完全等价（行内列维持 NULL）。工具直调方（不经 Agent 的
+    /// RunLink 面）传 None；Agent 步骤驱动经 agent-engine ToolLink 传入。
+    pub fn submit_correlated(
+        &self,
+        request: &Value,
+        trace_id: Option<&str>,
+    ) -> Result<Submitted, EngineError> {
+        let submitted = self.submit(request)?;
+        if let Some(trace_id) = trace_id {
+            let validated = domain::TraceId::try_new(trace_id)
+                .map_err(|e| EngineError::Storage(e.to_string()))?;
+            self.pool
+                .with_conn(|c| {
+                    c.execute(
+                        "UPDATE tool_run SET trace_id = ?2 WHERE run_id = ?1",
+                        database::rusqlite::params![submitted.run_id, validated.as_str()],
+                    )
+                })
+                .map_err(EngineError::from)?;
+        }
+        Ok(submitted)
+    }
+
+    /// 读 run 行链路追踪 ID（P7-5 关联查询面；行不存在返回 Ok(None)）。
+    pub fn trace_id_of(&self, run_id: &str) -> Result<Option<String>, EngineError> {
+        let trace_id: Option<String> = self
+            .pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT trace_id FROM tool_run WHERE run_id = ?1",
+                    [run_id],
+                    |r| r.get(0),
+                )
+            })
+            .map_err(EngineError::from)?;
+        Ok(trace_id)
+    }
+
     /// 协作式取消请求（D-TC-04）：仅 RUNNING 与 WAITING_FOR_RUNNER 可发起；
     /// 记录 cancel_requested_at，返回是否受理。
     pub fn request_cancel(&self, run_id: &str) -> Result<bool, EngineError> {
@@ -730,12 +772,23 @@ impl Engine {
         artifact: &envelope::EnvelopeArtifact,
     ) -> Result<(), EngineError> {
         let now = domain::time::now_iso();
+        // P7-5：产物行 trace_id 从 run 行同链取（单锚传播，不另设入参）。
+        let trace_id: Option<String> = self
+            .pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT trace_id FROM tool_run WHERE run_id = ?1",
+                    [run_id],
+                    |r| r.get(0),
+                )
+            })
+            .map_err(EngineError::from)?;
         self.pool
             .with_conn(|c| {
                 c.execute(
                     "INSERT INTO artifact (artifact_id, run_id, role, uri, sha256, size_bytes,
-                     mime_type, provenance, created_at, schema_version)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)",
+                     mime_type, provenance, trace_id, created_at, schema_version)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1)",
                     database::rusqlite::params![
                         artifact.artifact_id,
                         run_id,
@@ -745,6 +798,7 @@ impl Engine {
                         artifact.size_bytes as i64,
                         artifact.mime_type,
                         artifact.provenance,
+                        trace_id,
                         now
                     ],
                 )?;

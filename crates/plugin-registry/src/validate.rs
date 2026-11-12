@@ -124,7 +124,8 @@ const SOURCE_TYPES: [&str; 5] = ["local_dir", "git", "archive", "mcp_server", "h
 
 /// SK-1 三类新知识内容类型（010 词表之外的扩展，落 knowledge_source_entry，
 /// 011 迁移；裁决 docs/phase6/SK1-INGEST-ADR.md 第五节）。
-pub const EXTENDED_CONTENT_KINDS: [&str; 3] = ["catalog_entry", "document_markdown", "skill_candidate"];
+pub const EXTENDED_CONTENT_KINDS: [&str; 3] =
+    ["catalog_entry", "document_markdown", "skill_candidate"];
 
 /// 每类新内容的必配内置解析器（per-kind parser 注册表键，一一对应）。
 pub const KIND_PARSER: [(&str, &str); 3] = [

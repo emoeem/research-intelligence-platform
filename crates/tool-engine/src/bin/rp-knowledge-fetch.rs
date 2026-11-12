@@ -24,10 +24,8 @@ use std::time::Duration;
 
 use database::{rusqlite, DbPath, Pool, PoolConfig};
 use serde_json::{json, Value};
-use tool_engine::document_fetch::{
-    fetch_document, FetchInput, FetchPolicy, ProxyTransport,
-};
 use tool_engine::adapter::egress_proxy::EgressAllowlist;
+use tool_engine::document_fetch::{fetch_document, FetchInput, FetchPolicy, ProxyTransport};
 
 fn usage() -> ! {
     eprintln!(
@@ -201,15 +199,21 @@ fn main() {
         &proxy,
         &policy,
         &input,
-        if require_approved { Some(&approved) } else { None },
+        if require_approved {
+            Some(&approved)
+        } else {
+            None
+        },
     );
     match outcome {
         Ok(out) => {
             if let Some(path) = out_path {
-                std::fs::write(&path, &out.body)
-                    .expect("write --out body file");
+                std::fs::write(&path, &out.body).expect("write --out body file");
             }
-            println!("{}", serde_json::to_string(&json_record(&out.record)).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string(&json_record(&out.record)).unwrap()
+            );
         }
         Err(rej) => {
             println!(

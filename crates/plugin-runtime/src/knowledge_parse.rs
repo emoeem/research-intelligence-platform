@@ -288,11 +288,7 @@ pub fn normalize_url(url: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    let lower_scheme = trimmed
-        .split("://")
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let lower_scheme = trimmed.split("://").next().unwrap_or("").to_lowercase();
     let mut normalized = trimmed.to_string();
     if matches!(lower_scheme.as_str(), "http" | "https") {
         while normalized.ends_with('/') {
@@ -335,7 +331,10 @@ mod tests {
         assert_eq!(links[0].description, "描述一");
         assert!(!links[0].in_table);
         assert!(links[1].in_table, "table-row link flagged");
-        assert_eq!(stats.scheme_rejected, 1, "javascript: inside fence skipped by fence AND scheme filter counts the unfenced one");
+        assert_eq!(
+            stats.scheme_rejected, 1,
+            "javascript: inside fence skipped by fence AND scheme filter counts the unfenced one"
+        );
         assert_eq!(stats.no_scheme, 2, "relative + anchor-only rejected");
     }
 
@@ -348,7 +347,10 @@ mod tests {
             heading_path_at(&hs, 7),
             vec!["A".to_string(), "B".to_string(), "C".to_string()]
         );
-        assert_eq!(heading_path_at(&hs, 9), vec!["A".to_string(), "D".to_string()]);
+        assert_eq!(
+            heading_path_at(&hs, 9),
+            vec!["A".to_string(), "D".to_string()]
+        );
         assert_eq!(slugify("A B (C)!"), "a-b-c");
         assert_eq!(slugify("渗透 检查"), "渗透-检查");
     }

@@ -153,6 +153,7 @@ fn builtin_agent_closes_loop_with_broker_knowledge_and_tool_evidence() {
             agent_version: None,
             goal: "检索 nmap 端口扫描相关知识并调用登记工具".to_string(),
             task_id: Some("task-p72-accept".to_string()),
+            trace_id: None,
             input: None,
             planner: Box::new(KeywordSearchPlanner),
             confirmer: Box::new(FirstFamilyConfirmer::new(
@@ -359,6 +360,7 @@ fn guardrail_rejects_step_tool_outside_capability_refs() {
             agent_version: None,
             goal: "zzzq 无关词串".to_string(),
             task_id: None,
+            trace_id: None,
             input: None,
             planner: Box::new(RoguePlanner),
             confirmer: Box::new(DeclineConfirmer),

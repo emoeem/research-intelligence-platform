@@ -163,7 +163,9 @@ fn build_broker(flags: &Flags) -> Broker {
     .with_cache(cache)
     // SK-1（P6-9 第 7 步）：引用证据固化写面（011 context_citation_evidence，
     // resource-engine 受控写面；装配 L2 装入与 L3 expand 即固化）。
-    .with_evidence_store(resource_engine::sqlite::SqliteResourceRepository::new(pool.clone()))
+    .with_evidence_store(resource_engine::sqlite::SqliteResourceRepository::new(
+        pool.clone(),
+    ))
 }
 
 fn run() -> i32 {
@@ -183,6 +185,7 @@ fn run() -> i32 {
                 task_id,
                 text: flags.text.clone(),
                 correlation_id: format!("cli-{}", flags.task_id.clone().unwrap_or_default()),
+                trace_id: None,
                 actor: "rp-context".to_string(),
             });
             match context {

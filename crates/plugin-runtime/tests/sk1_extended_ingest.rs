@@ -14,10 +14,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use database::{DbPath, Pool, PoolConfig};
-use domain::plugin::PluginTrust;
-use domain::knowledge::ReviewStatus;
 use context_broker::ContextSource;
+use database::{DbPath, Pool, PoolConfig};
+use domain::knowledge::ReviewStatus;
+use domain::plugin::PluginTrust;
 use plugin_runtime::{ingest_knowledge_source_with_opts, IngestOptions, PluginRuntime};
 use serde_json::{json, Value};
 
@@ -118,7 +118,8 @@ fn sk1_manifest() -> Value {
 }
 
 fn install(rt: &PluginRuntime, pkg: &Path, manifest: &Value) {
-    rt.install("user:test", manifest, pkg, PluginTrust::Local).unwrap();
+    rt.install("user:test", manifest, pkg, PluginTrust::Local)
+        .unwrap();
 }
 
 fn kse_counts(pool: &Pool, plugin_id: &str) -> Vec<(String, i64)> {
@@ -157,10 +158,15 @@ fn three_extended_kinds_dry_run_ingest_and_idempotence() {
     let (pool, pkg, manifest, _rt) = setup("dry");
 
     // dry-run：计数与实跑同构，零落盘。
-    let dry = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions { dry_run: true })
-        .unwrap();
+    let dry =
+        ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions { dry_run: true })
+            .unwrap();
     assert!(dry.dry_run);
-    assert_eq!(dry.counts.get("catalog_entry"), Some(&2), "2 个 http(s) 链接入目");
+    assert_eq!(
+        dry.counts.get("catalog_entry"),
+        Some(&2),
+        "2 个 http(s) 链接入目"
+    );
     assert_eq!(dry.counts.get("document_markdown"), Some(&2));
     assert_eq!(dry.counts.get("skill_candidate"), Some(&2));
     assert_eq!(dry.skipped, 0);
@@ -171,13 +177,18 @@ fn three_extended_kinds_dry_run_ingest_and_idempotence() {
         dry.filtered
     );
     let before: i64 = pool
-        .with_conn(|c| c.query_row("SELECT COUNT(*) FROM knowledge_source_entry", [], |r| r.get(0)))
+        .with_conn(|c| {
+            c.query_row("SELECT COUNT(*) FROM knowledge_source_entry", [], |r| {
+                r.get(0)
+            })
+        })
         .unwrap();
     assert_eq!(before, 0, "dry-run 落盘必须为零");
 
     // 实跑：三类入表，溯源三元组 + item_key 词形 + 初始 DISCOVERED。
-    let report = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
-        .unwrap();
+    let report =
+        ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
+            .unwrap();
     assert!(!report.dry_run);
     assert_eq!(report.counts.get("catalog_entry"), Some(&2));
     assert_eq!(report.counts.get("document_markdown"), Some(&2));
@@ -207,7 +218,11 @@ fn three_extended_kinds_dry_run_ingest_and_idempotence() {
             .map_err(database::DbError::from)
         })
         .unwrap();
-    assert_eq!((n_prov, n_discovered, n_sha), (6, 6, 6), "溯源 + 初始 DISCOVERED + 双哈希全行命中");
+    assert_eq!(
+        (n_prov, n_discovered, n_sha),
+        (6, 6, 6),
+        "溯源 + 初始 DISCOVERED + 双哈希全行命中"
+    );
     // item_key 词形：catalog = 规范化 URL（尾部 / 归一）；document/skill = 包内相对路径。
     let keys: Vec<String> = pool
         .with_conn(|c| {
@@ -222,7 +237,10 @@ fn three_extended_kinds_dry_run_ingest_and_idempotence() {
             Ok::<Vec<String>, database::rusqlite::Error>(rows)
         })
         .unwrap();
-    assert!(keys.contains(&"https://example.com/fuzz-like".to_string()), "{keys:?}");
+    assert!(
+        keys.contains(&"https://example.com/fuzz-like".to_string()),
+        "{keys:?}"
+    );
     assert!(keys.contains(&"docs/guide.md".to_string()), "{keys:?}");
     // 分类路径与源位置（catalog 条目带章节标题路径 + 行号锚点）。
     let (cat_path, loc): (String, String) = pool
@@ -236,12 +254,16 @@ fn three_extended_kinds_dry_run_ingest_and_idempotence() {
             .map_err(database::DbError::from)
         })
         .unwrap();
-    assert!(cat_path.contains("扫描"), "标题路径入 category_path_json: {cat_path}");
+    assert!(
+        cat_path.contains("扫描"),
+        "标题路径入 category_path_json: {cat_path}"
+    );
     assert!(loc.contains("\"line\""), "源位置带行号: {loc}");
 
     // 幂等重跑：skipped=全量，counts 空，changed=0。
-    let again = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
-        .unwrap();
+    let again =
+        ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
+            .unwrap();
     assert!(again.counts.is_empty(), "second run inserts nothing");
     assert_eq!(again.skipped, 6, "all 6 rows skipped as unchanged");
     assert_eq!(again.changed, 0, "no content drift on rerun");
@@ -267,10 +289,16 @@ fn approve_visible_disable_hidden_evidence_readable() {
         constraints: Vec::new(),
         confidence: 1.0,
     };
-    assert!(source.candidates(&q, 10).unwrap().is_empty(), "未审条目对模型面不可见");
+    assert!(
+        source.candidates(&q, 10).unwrap().is_empty(),
+        "未审条目对模型面不可见"
+    );
     // install 已登记插件行（REGISTERED），经生命周期 enable 进入可见态。
     rt.enable("user:test", "knowledge.sk1.extended").unwrap();
-    assert!(source.candidates(&q, 10).unwrap().is_empty(), "DISCOVERED 且插件可见仍不可见");
+    assert!(
+        source.candidates(&q, 10).unwrap().is_empty(),
+        "DISCOVERED 且插件可见仍不可见"
+    );
 
     // 受控审核：catalog + document 两条 APPROVED（skill_candidate 留未审）。
     let audit = audit_engine::AuditEngine::new(pool.clone());
@@ -296,8 +324,12 @@ fn approve_visible_disable_hidden_evidence_readable() {
     // 「端口」gram 命中 nmap-like（标题+描述）；docs/guide.md 的标题/正文含
     // 「端口扫描」同样召回（文档类 APPROVED 条目）。
     assert_eq!(hits.len(), 2, "端口扫描 召回 nmap-like 条目与指南文档");
-    assert!(hits.iter().all(|h| h.kind == context_broker::ContextItemKind::Plugin));
-    assert!(hits.iter().all(|h| h.reference.source == "plugin:knowledge.sk1.extended"));
+    assert!(hits
+        .iter()
+        .all(|h| h.kind == context_broker::ContextItemKind::Plugin));
+    assert!(hits
+        .iter()
+        .all(|h| h.reference.source == "plugin:knowledge.sk1.extended"));
     assert!(hits.iter().all(|h| h.reference.content_hash.is_some()));
     let ref_id = hits
         .iter()
@@ -309,7 +341,11 @@ fn approve_visible_disable_hidden_evidence_readable() {
 
     // L3 按需正文展开（全文）。
     let content = source.load(&hits[0].reference).unwrap();
-    assert!(content.body.contains("NmapLike"), "L3 返回条目正文：{}", content.body);
+    assert!(
+        content.body.contains("NmapLike"),
+        "L3 返回条目正文：{}",
+        content.body
+    );
 
     // Search 第三源：APPROVED + 可见插件入索引。
     let catalog = memory_pool();
@@ -334,12 +370,15 @@ fn approve_visible_disable_hidden_evidence_readable() {
         context_broker::ManifestStore::new(pool.clone()),
         None,
     )
-    .with_evidence_store(resource_engine::sqlite::SqliteResourceRepository::new(pool.clone()));
+    .with_evidence_store(resource_engine::sqlite::SqliteResourceRepository::new(
+        pool.clone(),
+    ));
     let context = broker
         .assemble(&context_broker::AssembleRequest {
             task_id: "t-sk1".to_string(),
             text: "端口扫描 工具调研".to_string(),
             correlation_id: "corr-sk1".to_string(),
+            trace_id: None,
             actor: "test".to_string(),
         })
         .unwrap();
@@ -357,7 +396,9 @@ fn approve_visible_disable_hidden_evidence_readable() {
         && e.ref_source == "plugin:knowledge.sk1.extended"
         && !e.excerpt.is_empty()
         && e.content_sha256.is_some()));
-    let v = repo.verify_citation_evidence(&evidences[0].evidence_id).unwrap();
+    let v = repo
+        .verify_citation_evidence(&evidences[0].evidence_id)
+        .unwrap();
     assert!(v.excerpt_ok, "excerpt 与 excerpt_sha256 互核通过");
     assert_eq!(v.source_ok, Some(true), "源行 content_sha256 互核 verified");
 
@@ -369,7 +410,10 @@ fn approve_visible_disable_hidden_evidence_readable() {
         )
     })
     .unwrap();
-    assert!(source.candidates(&q, 10).unwrap().is_empty(), "禁用即撤出匹配面");
+    assert!(
+        source.candidates(&q, 10).unwrap().is_empty(),
+        "禁用即撤出匹配面"
+    );
     let load_after = source.load(&context_broker::ContentRef {
         source: "plugin:knowledge.sk1.extended".to_string(),
         ref_id,
@@ -383,6 +427,7 @@ fn approve_visible_disable_hidden_evidence_readable() {
             task_id: "t-sk1-2".to_string(),
             text: "端口扫描 工具调研".to_string(),
             correlation_id: "corr-sk1-2".to_string(),
+            trace_id: None,
             actor: "test".to_string(),
         })
         .unwrap();
@@ -398,12 +443,21 @@ fn approve_visible_disable_hidden_evidence_readable() {
         !evidences_still.is_empty(),
         "历史 Evidence 可读（禁用不删行）"
     );
-    let v2 = repo.verify_citation_evidence(&evidences_still[0].evidence_id).unwrap();
-    assert!(v2.excerpt_ok && v2.source_ok == Some(true), "禁用后历史证据仍可验证");
+    let v2 = repo
+        .verify_citation_evidence(&evidences_still[0].evidence_id)
+        .unwrap();
+    assert!(
+        v2.excerpt_ok && v2.source_ok == Some(true),
+        "禁用后历史证据仍可验证"
+    );
 
     // Search 面同步撤出（rebuild 刷新派生索引）。
     search_engine::SearchIndex::rebuild(&pool, &catalog, &index_pool).unwrap();
-    assert_eq!(search_engine::SearchIndex::doc_count(&index_pool).unwrap(), 0, "rebuild 后插件条目全部撤出");
+    assert_eq!(
+        search_engine::SearchIndex::doc_count(&index_pool).unwrap(),
+        0,
+        "rebuild 后插件条目全部撤出"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -413,10 +467,16 @@ fn approve_visible_disable_hidden_evidence_readable() {
 #[test]
 fn contract_example_double_files_validate() {
     for ext in ["yaml", "json"] {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../../schemas/plugin-manifest/examples/knowledge.catalog-example.{ext}"));
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../schemas/plugin-manifest/examples/knowledge.catalog-example.{ext}"
+        ));
         let text = fs::read_to_string(&path).unwrap();
-        let report = plugin_registry::validate_document(&text, None, &Default::default(), &Default::default());
+        let report = plugin_registry::validate_document(
+            &text,
+            None,
+            &Default::default(),
+            &Default::default(),
+        );
         assert!(
             report.ok,
             "{ext} example must pass the seven rules: {}",
@@ -430,7 +490,10 @@ fn contract_example_double_files_validate() {
             .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
-        assert_eq!(kinds, vec!["catalog_entry", "document_markdown", "skill_candidate"]);
+        assert_eq!(
+            kinds,
+            vec!["catalog_entry", "document_markdown", "skill_candidate"]
+        );
     }
 }
 
@@ -446,15 +509,17 @@ fn validate_rejects_extended_kinds_without_per_kind_declaration() {
         .unwrap()
         .remove("kinds");
     let text = serde_json::to_string(&manifest).unwrap();
-    let report = plugin_registry::validate_document(&text, None, &Default::default(), &Default::default());
+    let report =
+        plugin_registry::validate_document(&text, None, &Default::default(), &Default::default());
     assert!(!report.ok);
     assert_eq!(report.errors[0].code, "knowledge_provides_invalid");
 
     let mut manifest2 = sk1_manifest();
-    manifest2.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]["catalog_entry"]["parser"] =
-        json!("markdown_doc");
+    manifest2.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]["catalog_entry"]
+        ["parser"] = json!("markdown_doc");
     let text2 = serde_json::to_string(&manifest2).unwrap();
-    let report2 = plugin_registry::validate_document(&text2, None, &Default::default(), &Default::default());
+    let report2 =
+        plugin_registry::validate_document(&text2, None, &Default::default(), &Default::default());
     assert!(!report2.ok);
     assert_eq!(report2.errors[0].code, "knowledge_provides_invalid");
 }

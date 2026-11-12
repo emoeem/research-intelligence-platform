@@ -146,6 +146,7 @@ fn acceptance_explainable_every_item_has_reason_and_signals() {
             task_id: "t-acceptance-2".to_string(),
             text: "kingdee HTTP 检索".to_string(),
             correlation_id: "corr-acceptance-2".to_string(),
+            trace_id: None,
             actor: "acceptance".to_string(),
         })
         .expect("assemble");

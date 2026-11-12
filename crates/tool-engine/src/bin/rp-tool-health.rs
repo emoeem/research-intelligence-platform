@@ -17,7 +17,10 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 fn die_json(code: &str, message: &str) -> ! {
-    eprintln!("{}", json!({"ok": false, "error": {"code": code, "message": message}}));
+    eprintln!(
+        "{}",
+        json!({"ok": false, "error": {"code": code, "message": message}})
+    );
     std::process::exit(1);
 }
 
@@ -55,13 +58,18 @@ fn main() {
                 i += 2;
             }
             "--timeout-ms" => {
-                timeout_ms = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(15_000);
+                timeout_ms = args
+                    .get(i + 1)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(15_000);
                 i += 2;
             }
             _ => i += 1,
         }
     }
-    let Some(manifest_path) = manifest_path else { usage() };
+    let Some(manifest_path) = manifest_path else {
+        usage()
+    };
 
     let manifest = parse_manifest(&manifest_path);
     let runtime_type = manifest
@@ -90,7 +98,10 @@ fn main() {
         })
         .unwrap_or_default();
     if command.is_empty() {
-        die_json("runtime_command_missing", "runtime.command is empty or missing");
+        die_json(
+            "runtime_command_missing",
+            "runtime.command is empty or missing",
+        );
     }
 
     let (program, cargs) = command.split_first().unwrap();
@@ -123,7 +134,8 @@ fn main() {
         "jsonrpc": "2.0", "id": 1, "method": "initialize",
         "params": {"protocol_version": "1"}
     });
-    writeln!(stdin, "{init_req}").unwrap_or_else(|e| die_json("protocol_io", &format!("write initialize: {e}")));
+    writeln!(stdin, "{init_req}")
+        .unwrap_or_else(|e| die_json("protocol_io", &format!("write initialize: {e}")));
 
     let mut init_resp: Option<Value> = None;
     let mut line = String::new();
@@ -132,7 +144,10 @@ fn main() {
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            die_json("health_timeout", &format!("initialize response not received within {timeout_ms}ms"));
+            die_json(
+                "health_timeout",
+                &format!("initialize response not received within {timeout_ms}ms"),
+            );
         }
         line.clear();
         let n = stdout
@@ -154,7 +169,10 @@ fn main() {
     let init = init_resp.unwrap_or_else(|| {
         let _ = child.kill();
         let _ = child.wait();
-        die_json("handshake_failed", "initialize response not received before EOF")
+        die_json(
+            "handshake_failed",
+            "initialize response not received before EOF",
+        )
     });
 
     // 校验 worker_name（TOOL-CONTRACT §2.2：worker_name 须与响应一致）

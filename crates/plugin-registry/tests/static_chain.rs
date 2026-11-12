@@ -469,7 +469,11 @@ fn sk2_source_manifests_pass_seven_rules() {
     for (name, fixture, _license) in [
         ("knowledge.awesome-hacking", "awesome-hacking", "CC0-1.0"),
         ("knowledge.secskills", "secskills", "Apache-2.0"),
-        ("knowledge.tongui-course-notes", "tongui-course-notes", "UNLICENSED"),
+        (
+            "knowledge.tongui-course-notes",
+            "tongui-course-notes",
+            "UNLICENSED",
+        ),
     ] {
         let yaml_doc = sk2_manifest_text(name, "yaml");
         let json_doc = sk2_manifest_text(name, "json");
@@ -500,11 +504,15 @@ fn sk2_rule3_counterexamples_rejected() {
     // skill_frontmatter）。
     let doc = sk2_manifest_text("knowledge.secskills", "yaml");
     let mut manifest = parse_document(&doc).unwrap();
-    manifest.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]
-        ["skill_candidate"]["parser"] = Value::from("markdown_links");
+    manifest.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]["skill_candidate"]
+        ["parser"] = Value::from("markdown_links");
     let pkg = sk2_package("secskills");
-    let report =
-        validate_document(&serde_json::to_string(&manifest).unwrap(), Some(&pkg), &existing(&[]), &Default::default());
+    let report = validate_document(
+        &serde_json::to_string(&manifest).unwrap(),
+        Some(&pkg),
+        &existing(&[]),
+        &Default::default(),
+    );
     assert!(!report.ok);
     assert_eq!(report.errors[0].rule, 3);
     assert_eq!(report.errors[0].code, "knowledge_provides_invalid");
@@ -517,8 +525,8 @@ fn sk2_rule3_counterexamples_rejected() {
     // 反例 2：license_policy 出词表（v1.json enum 冻结词表，rule 2 先拒，
     // ingest 侧 LICENSE_POLICIES 为双处防御）。
     let mut manifest2 = parse_document(&doc).unwrap();
-    manifest2.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]
-        ["catalog_entry"]["license_policy"] = Value::from("copy_everything");
+    manifest2.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]["catalog_entry"]
+        ["license_policy"] = Value::from("copy_everything");
     let pkg2 = sk2_package("secskills");
     let report2 = validate_document(
         &serde_json::to_string(&manifest2).unwrap(),
@@ -527,14 +535,17 @@ fn sk2_rule3_counterexamples_rejected() {
         &Default::default(),
     );
     assert!(!report2.ok);
-    assert_eq!(report2.errors[0].rule, 2, "policy vocabulary is schema-frozen");
+    assert_eq!(
+        report2.errors[0].rule, 2,
+        "policy vocabulary is schema-frozen"
+    );
     assert_eq!(report2.errors[0].code, "schema_violation");
 
     // 反例 3：source_path 路径穿越（.. 上跳拒绝）。
     let tongui = sk2_manifest_text("knowledge.tongui-course-notes", "yaml");
     let mut manifest3 = parse_document(&tongui).unwrap();
-    manifest3.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]
-        ["catalog_entry"]["source_path"] = Value::from("../escape.md");
+    manifest3.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]["catalog_entry"]
+        ["source_path"] = Value::from("../escape.md");
     let pkg3 = sk2_package("tongui-course-notes");
     let report3 = validate_document(
         &serde_json::to_string(&manifest3).unwrap(),

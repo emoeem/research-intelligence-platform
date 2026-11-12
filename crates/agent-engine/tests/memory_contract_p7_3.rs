@@ -164,6 +164,7 @@ fn compression_and_eviction_keep_all_evidence_and_artifact_refs_resolvable() {
             agent_version: None,
             goal: "检索 nmap 端口扫描相关知识并调用登记工具".to_string(),
             task_id: Some("task-p73-contract".to_string()),
+            trace_id: None,
             input: None,
             planner: Box::new(KeywordSearchPlanner),
             confirmer: Box::new(FirstFamilyConfirmer::new(confirmer_config)),

@@ -7,10 +7,10 @@
 use std::time::Duration;
 
 use database::{DbPath, Pool, PoolConfig};
+use tool_engine::adapter::egress_proxy::EgressAllowlist;
 use tool_engine::document_fetch::{
     fetch_document, FetchInput, FetchPolicy, ProxyTransport, Transport,
 };
-use tool_engine::adapter::egress_proxy::EgressAllowlist;
 
 fn memory_pool() -> Pool {
     Pool::open(PoolConfig {
@@ -23,10 +23,7 @@ fn memory_pool() -> Pool {
 }
 
 fn policy_for(hosts: &[&str]) -> FetchPolicy {
-    FetchPolicy::new(
-        hosts.iter().map(|h| h.to_string()).collect(),
-        vec![80],
-    )
+    FetchPolicy::new(hosts.iter().map(|h| h.to_string()).collect(), vec![80])
 }
 
 /// Mock 传输（零真实网络；approved 闸与落库是被测对象）。
@@ -118,9 +115,16 @@ fn sk3_approved_gate_only_accepts_registry_approved_canonical() {
         Some(&checker),
     )
     .unwrap_err();
-    assert_ne!(err.code(), "not_approved_rejected", "APPROVED canonical 必须过 approved 闸");
+    assert_ne!(
+        err.code(),
+        "not_approved_rejected",
+        "APPROVED canonical 必须过 approved 闸"
+    );
     assert!(
-        matches!(err.code(), "dns_resolve_failed" | "transport_error" | "host_not_allowlisted"),
+        matches!(
+            err.code(),
+            "dns_resolve_failed" | "transport_error" | "host_not_allowlisted"
+        ),
         "闸放行后止于后续闸（无网环境任一），got {err:?}"
     );
 
@@ -197,11 +201,25 @@ fn sk3_fetch_records_ok_and_reject_into_012_table() {
 
     // 拒绝行幂等：fetch_id 内容寻址（url|reason|时刻），重放零新增。
     let before: i64 = pool
-        .with_conn(|c| c.query_row("SELECT COUNT(*) FROM knowledge_document_fetch", [], |r| r.get(0)))
+        .with_conn(|c| {
+            c.query_row("SELECT COUNT(*) FROM knowledge_document_fetch", [], |r| {
+                r.get(0)
+            })
+        })
         .unwrap();
-    let _ = fetch_document(Some(&pool), &NoNetTransport, &policy, &input, Some(&checker));
+    let _ = fetch_document(
+        Some(&pool),
+        &NoNetTransport,
+        &policy,
+        &input,
+        Some(&checker),
+    );
     let after: i64 = pool
-        .with_conn(|c| c.query_row("SELECT COUNT(*) FROM knowledge_document_fetch", [], |r| r.get(0)))
+        .with_conn(|c| {
+            c.query_row("SELECT COUNT(*) FROM knowledge_document_fetch", [], |r| {
+                r.get(0)
+            })
+        })
         .unwrap();
     assert!(after >= before, "012 行只追加");
 }
@@ -274,7 +292,9 @@ fn sk3_t2_shaped_call_without_authorization_ref_rejected() {
     };
 
     // 缺授权引用：POLICY_DENIED，且不产生 run 行。
-    let err = engine.submit(&mk_req("rn-sk3t2-missing", None)).unwrap_err();
+    let err = engine
+        .submit(&mk_req("rn-sk3t2-missing", None))
+        .unwrap_err();
     match err {
         EngineError::Rejected(tool_engine::request::Rejection::MissingAuthorization(tool)) => {
             assert_eq!(tool, "rip.t.sk3t2probe");

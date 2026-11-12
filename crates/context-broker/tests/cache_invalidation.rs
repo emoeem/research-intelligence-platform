@@ -440,6 +440,7 @@ fn p4_5_broker_expand_caches_load_payload_and_history_manifest_unchanged() {
             task_id: "t-p45".to_string(),
             text: "doc 检索".to_string(),
             correlation_id: "corr-p45".to_string(),
+            trace_id: None,
             actor: "p45-test".to_string(),
         })
         .expect("assemble");
@@ -510,6 +511,7 @@ fn p4_5_broker_expand_caches_load_payload_and_history_manifest_unchanged() {
             task_id: "t-p45".to_string(),
             text: "doc 检索".to_string(),
             correlation_id: "corr-p45-2".to_string(),
+            trace_id: None,
             actor: "p45-test".to_string(),
         })
         .expect("assemble again");

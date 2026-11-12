@@ -72,8 +72,8 @@ fn migration_013_is_idempotent_on_dev_copy() {
     let first = database::migrate(&pool, &migrations_dir).unwrap();
     assert_eq!(
         first.iter().map(|m| m.version).collect::<Vec<_>>(),
-        vec![13, 14],
-        "开发副本上第一次迁移应只落 013..014（链尾演进至 014，编号冻结规则顺延）"
+        vec![13, 14, 15],
+        "开发副本上第一次迁移应只落 013..015（链尾演进至 015，编号冻结规则顺延；P7-5 trace 关联 015 同链落列）"
     );
     let snapshot_after_first = schema_snapshot(&pool);
 
@@ -82,13 +82,13 @@ fn migration_013_is_idempotent_on_dev_copy() {
     let snapshot_after_second = schema_snapshot(&pool);
     assert_eq!(
         snapshot_after_first, snapshot_after_second,
-        "013..014 幂等执行两次 schema 必须零差异"
+        "013..015 幂等执行两次 schema 必须零差异"
     );
 
     let after_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(after_version, 14, "链尾 014（P7-4 运行控制）");
+    assert_eq!(after_version, 15, "链尾 015（P7-5 trace 统一关联）");
 
     // 三表在场 + 生产库未触核对（原件 user_version 仍为 12）。
     for table in [

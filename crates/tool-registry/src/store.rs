@@ -169,8 +169,7 @@ pub fn get_tool_row(pool: &Pool, tool_id: &str) -> Result<Option<ToolRow>, Regis
 }
 
 /// tool 行投影（既有列子集）。
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolRow {
     /// 工具 id。
     pub tool_id: String,
@@ -220,8 +219,7 @@ pub fn list_versions(pool: &Pool, tool_id: &str) -> Result<Vec<VersionRow>, Regi
 }
 
 /// tool_version 行投影。
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct VersionRow {
     /// 版本字符串。
     pub version: String,

@@ -130,8 +130,18 @@ impl PluginSource {
     #[allow(clippy::type_complexity)]
     fn approved_entries(
         &self,
-    ) -> DbResult<Vec<(String, String, String, Option<String>, String, String, String, Option<String>)>>
-    {
+    ) -> DbResult<
+        Vec<(
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            Option<String>,
+        )>,
+    > {
         self.pool.with_conn(|c| -> rusqlite::Result<Vec<(String, String, String, Option<String>, String, String, String, Option<String>)>> {
             let exists: Option<String> = c
                 .query_row(
@@ -286,12 +296,12 @@ impl ContextSource for PluginSource {
                     r.ref_id, self.plugin_id
                 ),
             })?;
-        let (kind, key) = rest.split_once(':').ok_or_else(|| {
-            ContextBrokerError::Source {
+        let (kind, key) = rest
+            .split_once(':')
+            .ok_or_else(|| ContextBrokerError::Source {
                 source: self.source_id.clone(),
                 reason: format!("ref_id {:?} lacks <entry_kind>:<item_key> tail", r.ref_id),
-            }
-        })?;
+            })?;
         let row = self
             .pool
             .with_conn(|c| {
@@ -355,7 +365,15 @@ mod tests {
         database::migrate(pool, &dir).unwrap();
     }
 
-    fn insert_entry(pool: &Pool, plugin: &str, kind: &str, key: &str, title: &str, body: &str, review: &str) {
+    fn insert_entry(
+        pool: &Pool,
+        plugin: &str,
+        kind: &str,
+        key: &str,
+        title: &str,
+        body: &str,
+        review: &str,
+    ) {
         pool.with_conn(|c| {
             c.execute(
                 "INSERT INTO knowledge_source_entry (plugin_id, plugin_version, corpus_id,
@@ -384,8 +402,24 @@ mod tests {
     fn candidates_only_when_visible_and_approved() {
         let pool = memory_pool();
         seed(&pool);
-        insert_entry(&pool, "p.a", "catalog_entry", "https://x/1", "端口扫描工具", "body", "APPROVED");
-        insert_entry(&pool, "p.a", "catalog_entry", "https://x/2", "未审条目", "body", "DISCOVERED");
+        insert_entry(
+            &pool,
+            "p.a",
+            "catalog_entry",
+            "https://x/1",
+            "端口扫描工具",
+            "body",
+            "APPROVED",
+        );
+        insert_entry(
+            &pool,
+            "p.a",
+            "catalog_entry",
+            "https://x/2",
+            "未审条目",
+            "body",
+            "DISCOVERED",
+        );
         let src = PluginSource::new(pool.clone(), "p.a");
         // 插件未登记：空集（fail-closed）。
         assert!(src.candidates(&query("端口"), 10).unwrap().is_empty());
@@ -400,10 +434,18 @@ mod tests {
         assert_eq!(hits.len(), 1, "only APPROVED row surfaces");
         assert_eq!(hits[0].kind, ContextItemKind::Plugin);
         assert_eq!(hits[0].reference.source, "plugin:p.a");
-        assert_eq!(hits[0].reference.ref_id, "kse:p.a:catalog_entry:https://x/1");
+        assert_eq!(
+            hits[0].reference.ref_id,
+            "kse:p.a:catalog_entry:https://x/1"
+        );
         // 禁用即撤出。
-        pool.with_conn(|c| c.execute("UPDATE plugin SET state='DISABLED' WHERE plugin_id='p.a'", []))
-            .unwrap();
+        pool.with_conn(|c| {
+            c.execute(
+                "UPDATE plugin SET state='DISABLED' WHERE plugin_id='p.a'",
+                [],
+            )
+        })
+        .unwrap();
         assert!(src.candidates(&query("端口扫描"), 10).unwrap().is_empty());
         // load 同闸拒绝。
         let r = ContentRef {
@@ -420,7 +462,15 @@ mod tests {
     fn load_returns_full_body_when_approved_and_visible() {
         let pool = memory_pool();
         seed(&pool);
-        insert_entry(&pool, "p.b", "document_markdown", "docs/g.md", "指南", "全文正文", "APPROVED");
+        insert_entry(
+            &pool,
+            "p.b",
+            "document_markdown",
+            "docs/g.md",
+            "指南",
+            "全文正文",
+            "APPROVED",
+        );
         pool.with_conn(|c| {
             c.execute(
                 "INSERT INTO plugin (plugin_id, version, name, kind, description, license, trust_level, state, source_type, source_ref, manifest_json, created_at, updated_at, is_active) VALUES ('p.b','0.1.0','B','knowledge','d','MIT','local','ENABLED','local_dir','.','{}','2026-11-12T00:00:00Z','2026-11-12T00:00:00Z',1)",

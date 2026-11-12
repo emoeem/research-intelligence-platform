@@ -197,6 +197,19 @@ def table_exists(conn: sqlite3.Connection, schema: str, table: str) -> bool:
     return row is not None
 
 
+def has_column(conn: sqlite3.Connection, schema: str, table: str, column: str) -> bool:
+    """列存在守卫（P7-5 trace 关联面）：同一表在主库/aux 库可能处于不同
+    迁移水位（platform*.db 停在 001..004 词表面，开发副本已到 015），
+    trace_id 列按库水位条件出现，读面按列存在与否降级，不炸查询。"""
+    if not table_exists(conn, schema, table):
+        return False
+    cols = {
+        row[1]
+        for row in conn.execute(f"PRAGMA {schema}.table_info({table})").fetchall()
+    }
+    return column in cols
+
+
 def phase14_source(conn: sqlite3.Connection, table: str) -> str | None:
     """返回某张 Phase 1-4 表应读取的 schema：主库已建表一律主库优先（主库是
     全量注册面，如 tool=20）；aux 只承载主库未建的表（tool_run/artifact/
@@ -484,6 +497,13 @@ RUN_LIST_COLUMNS = (
 )
 
 
+def run_list_columns(conn: sqlite3.Connection, src: str) -> str:
+    """P7-5：trace_id 列按库水位条件追加（015 迁移之后的开发副本含列）。"""
+    if has_column(conn, src, "tool_run", "trace_id"):
+        return RUN_LIST_COLUMNS + ", trace_id"
+    return RUN_LIST_COLUMNS
+
+
 def handle_overview(conn: sqlite3.Connection, params: dict) -> dict:
     """Overview 页聚合：M 面计数取主库（与 /api/stats 同源缩小版），
     Phase 1-4 面（tools/runs/runtime）走守卫，缺什么说什么。"""
@@ -736,15 +756,67 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
         artifacts_note = None
         artifact_src = phase14_source(conn, "artifact")
         if artifact_src:
+            artifact_cols = (
+                "artifact_id, run_id, role, uri, sha256, size_bytes, mime_type, provenance, created_at"
+                + (", trace_id" if has_column(conn, artifact_src, "artifact", "trace_id") else "")
+            )
             artifacts = query_all(
                 conn,
-                f"SELECT artifact_id, run_id, role, uri, sha256, size_bytes, mime_type, provenance, created_at"
+                f"SELECT {artifact_cols}"
                 f" FROM {artifact_src}.artifact WHERE run_id = ? ORDER BY created_at ASC",
                 (run_id,),
             )
         else:
             artifacts_note = "artifact 表不存在（对应迁移未应用），返回空列表"
         result = {"available": True, "source": src, "run": run, "artifacts": artifacts}
+        # P7-5 六 ID 关联面（读面聚合，不写库）：
+        #   correlation 六字段 = trace_id / task_id / agent_run_id / tool_run_id /
+        #   artifact_ids / evidence_ids；agent_run_id 从 submit_key
+        #   「agent:{run}:{seq}:{tool}」（P7-4 步序形状）解析，非 agent 驱动
+        #   为 None；evidence 行按 source_pk = run_id 归并（trace_id 列按库
+        #   水位条件读取）。
+        correlation: dict = {
+            "trace_id": run.get("trace_id"),
+            "task_id": run.get("task_id"),
+            "agent_run_id": None,
+            "tool_run_id": run_id,
+            "artifact_ids": [a.get("artifact_id") for a in artifacts],
+            "evidence_ids": [],
+        }
+        submit_key = run.get("submit_key") or ""
+        if submit_key.startswith("agent:"):
+            parts = submit_key.split(":")
+            if len(parts) >= 3:
+                correlation["agent_run_id"] = parts[1]
+        evidence_note = None
+        # evidence 证据面按 schema 逐库归并（主库 V1 有 evidence 表、工具运行
+        # 证据行在 aux 开发副本；两库都可能承载，source_pk 归并去重）。
+        evidence_schemas: list[str] = []
+        if table_exists(conn, "main", "evidence"):
+            evidence_schemas.append("main")
+        if "aux" in attached_schemas(conn) and table_exists(conn, "aux", "evidence"):
+            evidence_schemas.append("aux")
+        result["evidence"] = []
+        for evidence_src in evidence_schemas:
+            evidence_cols = (
+                "evidence_id, evidence_type, storage_ref, content_hash, captured_at, "
+                "captured_by, task_ref, source_pk"
+                + (", trace_id" if has_column(conn, evidence_src, "evidence", "trace_id") else "")
+            )
+            result["evidence"] += query_all(
+                conn,
+                f"SELECT {evidence_cols} FROM {evidence_src}.evidence"
+                " WHERE source_pk = ? ORDER BY created_at ASC",
+                (run_id,),
+            )
+        if not evidence_schemas:
+            evidence_note = "evidence 表不可读（主库/aux 均缺），返回空列表"
+        correlation["evidence_ids"] = [
+            e.get("evidence_id") for e in result["evidence"]
+        ]
+        result["correlation"] = correlation
+        if evidence_note:
+            result["evidence_note"] = evidence_note
         if artifacts_note:
             result["artifacts_note"] = artifacts_note
         return result
@@ -764,7 +836,7 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
     total = conn.execute(f"SELECT COUNT(*) FROM {src}.tool_run {where_sql}", args).fetchone()[0]
     items = query_all(
         conn,
-        f"SELECT {RUN_LIST_COLUMNS} FROM {src}.tool_run {where_sql}"
+        f"SELECT {run_list_columns(conn, src)} FROM {src}.tool_run {where_sql}"
         " ORDER BY created_at DESC, run_id DESC LIMIT ?",
         tuple(args) + (limit,),
     )
@@ -1295,6 +1367,309 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
     }
 
 
+def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
+    """P7-5 统一只读关联查询（SESSION-HANDOFF §十追加项 1）：?id=<任一关联
+    ID>（trace_id/task_id/agent_run_id/tool_run_id/artifact_id/evidence_id）
+    按解析方向汇出任务/意图/上下文/工具/证据/审计全链。SQL 与 Rust 读面
+    （agent-engine trace::trace_query）同拓扑：trace_id 五面列为锚，
+    context_manifest（意图/上下文面）经 task_id（或无任务 run_id 兜底）
+    关联，research_task（任务面）经 agent_run.task_id 关联。
+    只读 SELECT；主库与 aux 同表不同迁移水位（platform*.db 停在 V1，
+    evidence/audit_event 两库并存），按 schema 逐库查询后归并排序，
+    trace_id 列按库水位条件出现，缺列库零贡献（不炸、不伪造）。"""
+    query_id = clean_str(params, "id")
+    if not query_id:
+        raise ApiError(400, "missing_id", "需 ?id=<关联 ID>（六 ID 之一）")
+    limit = parse_limit(params)
+    limit = max(1, min(limit, 200))
+
+    def schemas_with(table: str) -> list[str]:
+        out = []
+        if table_exists(conn, "main", table):
+            out.append("main")
+        if "aux" in attached_schemas(conn) and table_exists(conn, "aux", table):
+            out.append("aux")
+        return out
+
+    tool_schemas = schemas_with("tool_run")
+    agent_schemas = schemas_with("agent_run")
+    if not tool_schemas or not agent_schemas:
+        return {
+            "available": False,
+            "reason": "trace_tables_missing",
+            "message": "tool_run/agent_run 数据面不可读（对应迁移未应用或库未挂载）：trace 关联面暂不可查",
+            "query_id": query_id,
+            "trace_ids": [],
+            "counts": {},
+        }
+    audit_schemas = schemas_with("audit_event")
+    ev_schemas = schemas_with("evidence")
+    art_schemas = schemas_with("artifact")
+
+    def col(src: str, table: str, column: str) -> str:
+        return column if has_column(conn, src, table, column) else f"NULL AS {column}"
+
+    def probe_all(template: str, schemas: list[str]) -> list[str]:
+        rows: list[str] = []
+        for src in schemas:
+            try:
+                rows += [
+                    r[0]
+                    for r in conn.execute(template.format(s=src), (query_id,)).fetchall()
+                ]
+            except sqlite3.Error:
+                continue
+        return rows
+
+    # ---- 解析 trace_id 集合（探测顺序与 Rust 读面一致）----
+    probes = [
+        ("agent_run_id",
+         "SELECT DISTINCT trace_id FROM {s}.agent_run WHERE run_id = ? AND trace_id IS NOT NULL",
+         agent_schemas),
+        ("tool_run_id",
+         "SELECT DISTINCT trace_id FROM {s}.tool_run WHERE run_id = ? AND trace_id IS NOT NULL",
+         tool_schemas),
+        ("artifact_id",
+         "SELECT DISTINCT trace_id FROM {s}.artifact WHERE artifact_id = ? AND trace_id IS NOT NULL",
+         art_schemas),
+        ("artifact_id",
+         "SELECT DISTINCT tr.trace_id FROM {s}.tool_run tr JOIN {s}.artifact a"
+         " ON a.run_id = tr.run_id WHERE a.artifact_id = ? AND tr.trace_id IS NOT NULL",
+         tool_schemas),
+        ("evidence_id",
+         "SELECT DISTINCT trace_id FROM {s}.evidence WHERE evidence_id = ? AND trace_id IS NOT NULL",
+         ev_schemas),
+        ("evidence_id",
+         "SELECT DISTINCT tr.trace_id FROM {s}.tool_run tr JOIN {s}.evidence e"
+         " ON e.source_pk = tr.run_id WHERE e.evidence_id = ? AND tr.trace_id IS NOT NULL",
+         tool_schemas),
+        ("trace_id",
+         "SELECT DISTINCT trace_id FROM {s}.audit_event WHERE trace_id = ? AND trace_id IS NOT NULL",
+         audit_schemas),
+        ("trace_id",
+         "SELECT DISTINCT trace_id FROM {s}.audit_event WHERE correlation_id = ?"
+         " AND trace_id IS NOT NULL",
+         audit_schemas),
+        ("task_id",
+         "SELECT DISTINCT trace_id FROM {s}.agent_run WHERE task_id = ? AND trace_id IS NOT NULL",
+         agent_schemas),
+        ("task_id",
+         "SELECT DISTINCT trace_id FROM {s}.tool_run WHERE task_id = ? AND trace_id IS NOT NULL",
+         tool_schemas),
+    ]
+    trace_ids: list[str] = []
+    matched_via: str | None = None
+    for via, template, schemas in probes:
+        if not schemas:
+            continue
+        rows = probe_all(template, schemas)
+        if rows:
+            trace_ids, matched_via = rows, via
+            break
+    if not trace_ids and schemas_with("context_manifest"):
+        task_row = None
+        for man_src in schemas_with("context_manifest"):
+            try:
+                task_row = conn.execute(
+                    f"SELECT task_id FROM {man_src}.context_manifest WHERE manifest_id = ?",
+                    (query_id,),
+                ).fetchone()
+                if task_row and task_row[0]:
+                    break
+            except sqlite3.Error:
+                continue
+        if task_row and task_row[0]:
+            rows = probe_all(
+                "SELECT DISTINCT trace_id FROM {s}.agent_run"
+                " WHERE (task_id = ? OR run_id = ?) AND trace_id IS NOT NULL",
+                agent_schemas,
+            )
+            # 反查入参是 task 值本身，重跑参数化探针。
+            rows = []
+            for src in agent_schemas:
+                try:
+                    rows += [
+                        r[0]
+                        for r in conn.execute(
+                            f"SELECT DISTINCT trace_id FROM {src}.agent_run"
+                            " WHERE (task_id = ?1 OR run_id = ?1) AND trace_id IS NOT NULL",
+                            (task_row[0],),
+                        ).fetchall()
+                    ]
+                except sqlite3.Error:
+                    continue
+            if rows:
+                trace_ids, matched_via = rows, "context_manifest_id"
+    ph = ",".join("?" for _ in trace_ids)
+    args = tuple(trace_ids)
+
+    def q_all(templates: list[tuple[str, str]], params: tuple, order: str) -> list[dict]:
+        """逐 schema 查询后归并排序（order 为 SQL ORDER BY 列，作用于归并行）。"""
+        rows: list[dict] = []
+        for sql, src in templates:
+            try:
+                cols = [d[0] for d in conn.execute(sql, params).description]
+                for row in conn.execute(sql, params).fetchall():
+                    item = dict(zip(cols, row))
+                    item["_src"] = src
+                    rows.append(item)
+            except sqlite3.Error:
+                continue
+
+        def sort_key(item: dict):
+            v = item.get(order.split(" ")[0].split(".")[-1])
+            return (v is None, str(v) if v is not None else "")
+        rows.sort(key=sort_key)
+        return rows[:limit]
+
+    chain: dict = {
+        "available": True,
+        "query_id": query_id,
+        "trace_ids": trace_ids,
+        "matched_via": matched_via,
+    }
+    if not trace_ids:
+        chain["counts"] = {}
+        chain["message"] = (
+            f"{query_id} 未解析到任何 trace_id（六 ID 方向均未命中；"
+            "015 之前落库行 trace_id 为 NULL 不参与关联）"
+        )
+        return chain
+
+    chain["agent_runs"] = q_all(
+        [
+            (
+                f"SELECT a.run_id, a.task_id, a.agent_id, a.agent_version, a.state,"
+                f" {col(src, 'agent_run', 'trace_id')}, a.created_at, a.started_at, a.finished_at"
+                f" FROM {src}.agent_run a WHERE a.trace_id IN ({ph})",
+                src,
+            )
+            for src in agent_schemas
+        ],
+        args,
+        "created_at",
+    )
+    task_ids = [r["task_id"] for r in chain["agent_runs"] if r.get("task_id")]
+    chain["tasks"] = []
+    task_schemas = schemas_with("research_task")
+    if task_ids and task_schemas:
+        tph = ",".join("?" for _ in task_ids)
+        chain["tasks"] = q_all(
+            [
+                (
+                    f"SELECT task_id, title, objective, target, task_type, state,"
+                    f" created_at, updated_at"
+                    f" FROM {src}.research_task WHERE task_id IN ({tph})",
+                    src,
+                )
+                for src in task_schemas
+            ],
+            tuple(task_ids),
+            "task_id",
+        )
+    # 意图/上下文面（manifest 按 run.task_id 或 run_id 兜底）。
+    chain["manifests"] = []
+    chain["context_items"] = []
+    man_schemas = schemas_with("context_manifest")
+    anchors = list(dict.fromkeys(task_ids + [r["run_id"] for r in chain["agent_runs"]]))
+    if anchors and man_schemas:
+        aph = ",".join("?" for _ in anchors)
+        chain["manifests"] = q_all(
+            [
+                (
+                    f"SELECT manifest_id, task_id, intent_json, intent_status, created_at"
+                    f" FROM {src}.context_manifest WHERE task_id IN ({aph})",
+                    src,
+                )
+                for src in man_schemas
+            ],
+            tuple(anchors),
+            "created_at",
+        )
+        manifest_ids = [m["manifest_id"] for m in chain["manifests"]]
+        item_schemas = schemas_with("context_manifest_item")
+        if manifest_ids and item_schemas:
+            mph = ",".join("?" for _ in manifest_ids)
+            chain["context_items"] = q_all(
+                [
+                    (
+                        f"SELECT manifest_id, item_id, layer, kind, included, ref_id,"
+                        f" source, title"
+                        f" FROM {src}.context_manifest_item WHERE manifest_id IN ({mph})",
+                        src,
+                    )
+                    for src in item_schemas
+                ],
+                tuple(manifest_ids),
+                "item_id",
+            )
+    chain["tool_runs"] = q_all(
+        [
+            (
+                f"SELECT run_id, tool_id, tool_version, task_id, workspace_id, submit_key,"
+                f" status, error_category, {col(src, 'tool_run', 'trace_id')},"
+                f" created_at, started_at, finished_at"
+                f" FROM {src}.tool_run WHERE trace_id IN ({ph})",
+                src,
+            )
+            for src in tool_schemas
+        ],
+        args,
+        "created_at",
+    )
+    chain["artifacts"] = q_all(
+        [
+            (
+                f"SELECT artifact_id, run_id, role, uri, sha256, size_bytes, mime_type,"
+                f" {col(src, 'artifact', 'trace_id')}, created_at"
+                f" FROM {src}.artifact WHERE trace_id IN ({ph})",
+                src,
+            )
+            for src in art_schemas
+        ],
+        args,
+        "created_at",
+    )
+    chain["evidence"] = q_all(
+        [
+            (
+                f"SELECT evidence_id, evidence_type, storage_ref, content_hash, captured_at,"
+                f" captured_by, task_ref, source_pk, {col(src, 'evidence', 'trace_id')},"
+                f" created_at"
+                f" FROM {src}.evidence WHERE trace_id IN ({ph})",
+                src,
+            )
+            for src in ev_schemas
+        ],
+        args,
+        "created_at",
+    )
+    chain["audit_events"] = q_all(
+        [
+            (
+                f"SELECT event_id, ts, actor, action, entity_type, entity_id,"
+                f" correlation_id, {col(src, 'audit_event', 'trace_id')}, source_system"
+                f" FROM {src}.audit_event WHERE trace_id IN ({ph})",
+                src,
+            )
+            for src in audit_schemas
+        ],
+        args,
+        "event_id",
+    )
+    chain["counts"] = {
+        "tasks": len(chain["tasks"]),
+        "agent_runs": len(chain["agent_runs"]),
+        "manifests": len(chain["manifests"]),
+        "context_items": len(chain["context_items"]),
+        "tool_runs": len(chain["tool_runs"]),
+        "artifacts": len(chain["artifacts"]),
+        "evidence": len(chain["evidence"]),
+        "audit_events": len(chain["audit_events"]),
+    }
+    return chain
+
+
 API_ROUTES = {
     "/api/plugins": handle_plugins_list,
     "/api/knowledge_sources": handle_knowledge_sources,
@@ -1307,6 +1682,7 @@ API_ROUTES = {
     "/api/tools": handle_tools,
     "/api/runs": handle_runs,
     "/api/runtime": handle_runtime,
+    "/api/traces": handle_traces,
 }
 
 

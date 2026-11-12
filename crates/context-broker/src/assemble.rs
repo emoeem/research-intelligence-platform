@@ -62,6 +62,9 @@ pub struct AssembleRequest {
     pub text: String,
     /// 审计关联 id（任务-意图-上下文-工具-证据链，设计稿 §6.2）。
     pub correlation_id: String,
+    /// 链路追踪 ID（P7-5 迁移 015：意图审计事件 audit_event.trace_id 同链
+    /// 落列；None 不落列，015 之前调用面语义不变）。
+    pub trace_id: Option<String>,
     /// 执行者（审计 actor）。
     pub actor: String,
 }
@@ -135,7 +138,13 @@ impl Broker {
         }
         let intent = classify(&req.text, &self.intent_config);
         if let Some(audit) = &self.audit {
-            emit_intent_event(audit, &intent, &req.correlation_id, &req.actor);
+            emit_intent_event(
+                audit,
+                &intent,
+                &req.correlation_id,
+                req.trace_id.as_deref(),
+                &req.actor,
+            );
         }
         let alloc = self.policy.allocate()?;
 
@@ -568,22 +577,20 @@ impl Broker {
                     && item.included == InclusionForm::Summary
                     && item.candidate.reference.content_hash.is_some()
                 {
-                    ev.insert_citation_evidence(
-                        &resource_engine::sqlite::CitationEvidenceRow {
-                            manifest_id: manifest_row.manifest_id.clone(),
-                            item_id: item.item_id.clone(),
-                            event_kind: "assembled".to_string(),
-                            ref_source: item.candidate.reference.source.clone(),
-                            ref_id: item.candidate.reference.ref_id.clone(),
-                            ref_version: item.candidate.reference.ref_version.clone(),
-                            excerpt: item.summary.clone(),
-                            content_sha256: item.candidate.reference.content_hash.clone(),
-                            source_id: item.candidate.reference.source.clone(),
-                            plugin_version: item.candidate.reference.ref_version.clone(),
-                            canonical_url: item.candidate.reference.uri.clone(),
-                            ..Default::default()
-                        },
-                    )
+                    ev.insert_citation_evidence(&resource_engine::sqlite::CitationEvidenceRow {
+                        manifest_id: manifest_row.manifest_id.clone(),
+                        item_id: item.item_id.clone(),
+                        event_kind: "assembled".to_string(),
+                        ref_source: item.candidate.reference.source.clone(),
+                        ref_id: item.candidate.reference.ref_id.clone(),
+                        ref_version: item.candidate.reference.ref_version.clone(),
+                        excerpt: item.summary.clone(),
+                        content_sha256: item.candidate.reference.content_hash.clone(),
+                        source_id: item.candidate.reference.source.clone(),
+                        plugin_version: item.candidate.reference.ref_version.clone(),
+                        canonical_url: item.candidate.reference.uri.clone(),
+                        ..Default::default()
+                    })
                     .map_err(|e| ContextBrokerError::Source {
                         source: "assemble".to_string(),
                         reason: format!("citation evidence persist failed: {e}"),

@@ -125,10 +125,10 @@ class WorkerContext:
 class _TaskRecord:
     __slots__ = ("key", "request_id", "task", "ctx", "thread", "timer",
                  "state", "lock", "started", "timeout_ms", "max_output_bytes",
-                 "idempotency_key", "done_event")
+                 "idempotency_key", "correlation", "done_event")
 
     def __init__(self, key, request_id, task, ctx, timeout_ms, max_output_bytes,
-                 idempotency_key):
+                 idempotency_key, correlation=None):
         self.key = key
         self.request_id = request_id
         self.task = task
@@ -141,6 +141,10 @@ class _TaskRecord:
         self.timeout_ms = timeout_ms
         self.max_output_bytes = max_output_bytes
         self.idempotency_key = idempotency_key
+        # P7-5 六 ID 关联透传（SESSION-HANDOFF §十追加项 1）：平台下发
+        # params.correlation 原样回传 result.correlation（worker 不校验业务
+        # 字段、不落盘，只做响应透传；缺省 None 不改既有响应形状）。
+        self.correlation = correlation
         self.done_event = threading.Event()
 
 
@@ -370,9 +374,13 @@ class WorkerRuntime:
                 raise InvalidParams(
                     "idempotency_key must be a non-empty string <=512 chars")
 
+        correlation = params.get("correlation")
+        if correlation is not None and not isinstance(correlation, dict):
+            raise InvalidParams("params.correlation must be an object when present")
+
         if idem is not None:
             if self._cache_lookup(idem, task, msg["id"], max_output_bytes,
-                                  timeout_ms):
+                                  timeout_ms, correlation):
                 return  # True=命中或冲突均已回包；False=未命中，继续执行
 
         rec = _TaskRecord(
@@ -380,7 +388,7 @@ class WorkerRuntime:
             ctx=WorkerContext(self, msg["id"], task, timeout_ms,
                               max_output_bytes, idem),
             timeout_ms=timeout_ms, max_output_bytes=max_output_bytes,
-            idempotency_key=idem)
+            idempotency_key=idem, correlation=correlation)
         with self._tasks_lock:
             if rec.key in self._tasks:
                 raise WorkerError(
@@ -492,7 +500,8 @@ class WorkerRuntime:
             "truncated": False,
         }
         result = self._build_execute_result(status, data, err, cached=False,
-                                            usage=usage)
+                                            usage=usage,
+                                            correlation=rec.correlation)
         self._remove_task(rec)
         self._send_fitted(rec.request_id, result, rec.max_output_bytes)
 
@@ -511,7 +520,8 @@ class WorkerRuntime:
         usage = {"tokens_est": 0, "elapsed_ms": elapsed_ms,
                  "output_bytes": 0, "truncated": False}
         result = self._build_execute_result("timeout", None, err,
-                                            cached=False, usage=usage)
+                                            cached=False, usage=usage,
+                                            correlation=rec.correlation)
         if rec.idempotency_key:
             with self._tasks_lock:
                 if self._idem_inflight.get(rec.idempotency_key) is rec:
@@ -537,7 +547,8 @@ class WorkerRuntime:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _cache_lookup(self, key: str, task: dict, request_id,
-                      max_output_bytes: int, timeout_ms: int) -> bool:
+                      max_output_bytes: int, timeout_ms: int,
+                      correlation: dict | None = None) -> bool:
         """True=已处理（命中或冲突已回包）；False=未命中，调用方继续执行。
 
         同 key 的前一任务若仍在飞，先等待其完成（至多 timeout_ms）再查缓存，
@@ -566,7 +577,7 @@ class WorkerRuntime:
         usage = {"tokens_est": _tokens_est(data), "elapsed_ms": 0,
                  "output_bytes": 0, "truncated": False}
         result = self._build_execute_result("result", data, None, cached=True,
-                                            usage=usage)
+                                            usage=usage, correlation=correlation)
         self.log("info", "cache_hit", request_id=request_id, key=key)
         self._send_fitted(request_id, result, max_output_bytes)
         return True
@@ -597,7 +608,8 @@ class WorkerRuntime:
 
     def _build_execute_result(self, status: str, data: dict | None,
                               err: dict | None, cached: bool,
-                              usage: dict) -> dict:
+                              usage: dict,
+                              correlation: dict | None = None) -> dict:
         result = {
             "worker_name": self.NAME,
             "worker_version": self.VERSION,
@@ -610,6 +622,10 @@ class WorkerRuntime:
             result["data"] = data
         if err is not None:
             result["error"] = err
+        if correlation is not None:
+            # P7-5：六 ID 关联原样回传（trace_id/task_id/agent_run_id/
+            # tool_run_id/artifact_id/evidence_id 由平台侧组装，worker 只透传）。
+            result["correlation"] = correlation
         return result
 
     def _send_result(self, request_id, result: dict) -> None:

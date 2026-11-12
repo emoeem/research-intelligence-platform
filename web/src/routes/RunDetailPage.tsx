@@ -5,7 +5,19 @@ import { formatDateTime } from "../lib/format";
 
 /** Run 详情（P5-8）：/api/runs?run_id= 全字段（usage/environment/replay/budget
  *  JSON 列解析）+ input_hash + artifact 列表与预览入口（uri 新标签打开）。
- *  artifact 表缺失时显服务端 artifacts_note 说明。 */
+ *  artifact 表缺失时显服务端 artifacts_note 说明。
+ *  P7-5：概要区渲染六 ID 关联面（correlation：trace_id/task_id/agent_run_id/
+ *  tool_run_id/artifact_ids/evidence_ids），全部可点击跳转 /traces?id=（任务
+ *  跳 projects）。 */
+
+interface RunCorrelation {
+  trace_id?: string | null;
+  task_id?: string | null;
+  agent_run_id?: string | null;
+  tool_run_id?: string | null;
+  artifact_ids?: (string | null)[];
+  evidence_ids?: (string | null)[];
+}
 
 interface RunFull {
   run_id: string;
@@ -50,6 +62,7 @@ interface RunDetailData {
   run?: RunFull;
   artifacts?: ArtifactRow[];
   artifacts_note?: string | null;
+  correlation?: RunCorrelation;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -63,12 +76,53 @@ const STATUS_BADGE: Record<string, string> = {
   QUEUED: "badge-ghost",
 };
 
-function MetaRow({ label, value }: { label: string; value: string | null | undefined }) {
+function MetaRow({
+  label,
+  value,
+  linkTemplate,
+}: {
+  label: string;
+  value: string | null | undefined;
+  linkTemplate?: string;
+}) {
   if (value === null || value === undefined || value === "") return null;
   return (
     <div className="flex gap-2 text-xs">
       <span className="w-24 shrink-0 text-base-content/50">{label}</span>
-      <span className="min-w-0 flex-1 break-all">{value}</span>
+      <span className="min-w-0 flex-1 break-all">
+        {linkTemplate ? (
+          <Link
+            to={linkTemplate.replace("{id}", encodeURIComponent(value))}
+            className="text-primary underline underline-offset-2"
+          >
+            {value}
+          </Link>
+        ) : (
+          value
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** P7-5 六 ID 多值行（artifact_ids/evidence_ids）：每个 id 可点击跳
+ *  /traces?id= 关联链。空列表不渲染。 */
+function IdListRow({ label, ids }: { label: string; ids: string[] }) {
+  if (ids.length === 0) return null;
+  return (
+    <div className="flex gap-2 text-xs">
+      <span className="w-24 shrink-0 text-base-content/50">{label}</span>
+      <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1 break-all">
+        {ids.map((id) => (
+          <Link
+            key={id}
+            to={`/traces?id=${encodeURIComponent(id)}`}
+            className="break-all text-primary underline underline-offset-2"
+          >
+            {id}
+          </Link>
+        ))}
+      </span>
     </div>
   );
 }
@@ -132,6 +186,7 @@ export function RunDetailPage() {
   }
   const artifacts = detail.data?.artifacts ?? [];
   const artifactsNote = detail.data?.artifacts_note ?? null;
+  const correlation = detail.data?.correlation;
 
   return (
     <div className="space-y-4">
@@ -175,6 +230,11 @@ export function RunDetailPage() {
             </div>
           ) : null}
           <MetaRow label="submit_key" value={run.submit_key} />
+          <IdListRow label="trace" ids={correlation?.trace_id ? [correlation.trace_id] : []} />
+          <MetaRow label="agent_run" value={correlation?.agent_run_id ?? null} linkTemplate="/traces?id={id}" />
+          <MetaRow label="tool_run" value={correlation?.tool_run_id ?? run.run_id} linkTemplate="/traces?id={id}" />
+          <IdListRow label="artifacts" ids={(correlation?.artifact_ids ?? []).filter(Boolean) as string[]} />
+          <IdListRow label="evidence" ids={(correlation?.evidence_ids ?? []).filter(Boolean) as string[]} />
           <MetaRow label="input_hash" value={run.input_hash} />
           <MetaRow
             label="duration"

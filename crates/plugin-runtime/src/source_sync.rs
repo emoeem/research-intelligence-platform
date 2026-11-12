@@ -156,7 +156,10 @@ pub fn verify_pin(manifest: &Value) -> Result<(Option<String>, Option<String>), 
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let is_remote = matches!(source_type.as_str(), "git" | "archive" | "mcp_server" | "http_api");
+    let is_remote = matches!(
+        source_type.as_str(),
+        "git" | "archive" | "mcp_server" | "http_api"
+    );
     if is_remote && !matches!(kind.as_str(), "commit" | "tag" | "release") {
         return Err(RuntimeError::new(
             "floating_ref_rejected",
@@ -230,7 +233,8 @@ pub fn append_sync_key(state_dir: &Path, key: &str, plugin_id: &str) -> Result<(
         .open(&path)
         .map_err(|e| RuntimeError::new("io", format!("open {path:?}: {e}")))?;
     writeln!(f, "{line}").map_err(|e| RuntimeError::new("io", format!("write: {e}")))?;
-    f.sync_all().map_err(|e| RuntimeError::new("io", format!("sync: {e}")))?;
+    f.sync_all()
+        .map_err(|e| RuntimeError::new("io", format!("sync: {e}")))?;
     Ok(())
 }
 
@@ -335,9 +339,9 @@ pub fn sync_knowledge_source(
         if let Some(cap) = opts.max_seconds {
             if started.elapsed().as_secs() > cap {
                 report.limits_exceeded.push("max_seconds".to_string());
-                report.partial_failures.push(
-                    "max_seconds exceeded before ingest attempt".to_string(),
-                );
+                report
+                    .partial_failures
+                    .push("max_seconds exceeded before ingest attempt".to_string());
                 break;
             }
         }
@@ -382,10 +386,10 @@ pub fn sync_knowledge_source(
             && !report.limits_exceeded.contains(&"max_seconds".to_string())
         {
             report.limits_exceeded.push("max_seconds".to_string());
-            report
-                .partial_failures
-                .push("max_seconds exceeded after ingest (synchronous call not interruptible)"
-                    .to_string());
+            report.partial_failures.push(
+                "max_seconds exceeded after ingest (synchronous call not interruptible)"
+                    .to_string(),
+            );
         }
     }
     report.ok = report.final_report.is_some() && report.limits_exceeded.is_empty();

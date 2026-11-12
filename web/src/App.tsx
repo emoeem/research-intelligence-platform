@@ -28,6 +28,10 @@ const RunsPage = lazy(() => import("./routes/RunsPage").then((m) => ({ default: 
 const RunDetailPage = lazy(() =>
   import("./routes/RunDetailPage").then((m) => ({ default: m.RunDetailPage })),
 );
+// P7-5：trace 统一关联链查询页（/traces?id=，六 ID 任一入参）。
+const TracePage = lazy(() =>
+  import("./routes/TracePage").then((m) => ({ default: m.TracePage })),
+);
 const RuntimePage = lazy(() =>
   import("./routes/RuntimePage").then((m) => ({ default: m.RuntimePage })),
 );
@@ -90,6 +94,7 @@ export function App() {
             <Route path="tools/:toolId" element={lazyElement(<ToolDetailPage />)} />
             <Route path="runs" element={lazyElement(<RunsPage />)} />
             <Route path="runs/:runId" element={lazyElement(<RunDetailPage />)} />
+            <Route path="traces" element={lazyElement(<TracePage />)} />
             <Route path="runtime" element={lazyElement(<RuntimePage />)} />
             <Route path="plugins" element={lazyElement(<PluginsPage />)} />
             <Route path="plugins/:pluginId" element={lazyElement(<PluginDetailPage />)} />

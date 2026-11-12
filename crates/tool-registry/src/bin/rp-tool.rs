@@ -71,7 +71,9 @@ fn main() {
 
     match command.as_str() {
         "validate" => {
-            let Some(manifest_path) = flag_value("--manifest") else { usage() };
+            let Some(manifest_path) = flag_value("--manifest") else {
+                usage()
+            };
             let manifest = parse_manifest(&manifest_path);
             let vm = tool_registry::validate::validate_static(&manifest, &Options::default())
                 .unwrap_or_else(|e| die_json("validation_failed", &format!("{e}")));
@@ -87,8 +89,12 @@ fn main() {
             );
         }
         "register" => {
-            let Some(manifest_path) = flag_value("--manifest") else { usage() };
-            let Some(db) = flag_value("--db") else { usage() };
+            let Some(manifest_path) = flag_value("--manifest") else {
+                usage()
+            };
+            let Some(db) = flag_value("--db") else {
+                usage()
+            };
             let manifest = parse_manifest(&manifest_path);
             let pool = open_pool(&db);
             let registry = Registry::open(pool).with_options(Options::default());
@@ -108,7 +114,9 @@ fn main() {
             );
         }
         "list" => {
-            let Some(db) = flag_value("--db") else { usage() };
+            let Some(db) = flag_value("--db") else {
+                usage()
+            };
             let pool = open_pool(&db);
             let tools = catalog::discover(&pool)
                 .unwrap_or_else(|e| die_json("discover_failed", &format!("{e}")));
@@ -123,8 +131,12 @@ fn main() {
             );
         }
         "get" => {
-            let Some(db) = flag_value("--db") else { usage() };
-            let Some(tool_id) = rest.iter().find(|a| !a.starts_with("--")) else { usage() };
+            let Some(db) = flag_value("--db") else {
+                usage()
+            };
+            let Some(tool_id) = rest.iter().find(|a| !a.starts_with("--")) else {
+                usage()
+            };
             let pool = open_pool(&db);
             let detail = catalog::query(&pool, tool_id)
                 .unwrap_or_else(|e| die_json("query_failed", &format!("{e}")));

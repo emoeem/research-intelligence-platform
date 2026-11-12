@@ -132,6 +132,7 @@ fn assemble_request(task: &str, text: &str) -> AssembleRequest {
         task_id: task.to_string(),
         text: text.to_string(),
         correlation_id: format!("corr-{task}"),
+        trace_id: None,
         actor: "p44-test".to_string(),
     }
 }

@@ -9,8 +9,7 @@ use database::Pool;
 use serde_json::Value;
 
 /// 发现结果条目（tool 行投影）。
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolSummary {
     /// 工具 id。
     pub tool_id: String,
@@ -25,8 +24,7 @@ pub struct ToolSummary {
 }
 
 /// 查询结果：tool 行 + 全部版本行。
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolDetail {
     /// tool 行投影。
     pub tool: ToolRow,

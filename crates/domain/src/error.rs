@@ -48,6 +48,27 @@ pub enum DomainError {
         /// 拒绝原因。
         reason: String,
     },
+    /// TraceId 非法（P7-5 关联面：非空且不超过 128 字符）。
+    InvalidTraceId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// TaskId 非法（P7-5 关联面：非空且不超过 128 字符）。
+    InvalidTaskId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// EvidenceId 非法（P7-5 关联面：非空且不超过 128 字符）。
+    InvalidEvidenceId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
     /// AgentId 非法（P7-1：非空且不超过 128 字符）。
     InvalidAgentId {
         /// 被拒绝的原始值。
@@ -169,6 +190,15 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidArtifactId { value, reason } => {
                 write!(f, "invalid artifact id {value:?}: {reason}")
+            }
+            DomainError::InvalidTraceId { value, reason } => {
+                write!(f, "invalid trace id {value:?}: {reason}")
+            }
+            DomainError::InvalidTaskId { value, reason } => {
+                write!(f, "invalid task id {value:?}: {reason}")
+            }
+            DomainError::InvalidEvidenceId { value, reason } => {
+                write!(f, "invalid evidence id {value:?}: {reason}")
             }
             DomainError::InvalidAgentId { value, reason } => {
                 write!(f, "invalid agent id {value:?}: {reason}")

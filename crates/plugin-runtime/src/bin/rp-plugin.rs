@@ -428,7 +428,10 @@ fn main() {
                     "user:cli",
                     audit_engine::plugin_actions::KNOWLEDGE_INGEST,
                 )
-                .with_entity("plugin", &format!("{}@{}", report.plugin_id, report.plugin_version))
+                .with_entity(
+                    "plugin",
+                    &format!("{}@{}", report.plugin_id, report.plugin_version),
+                )
                 .with_detail(
                     serde_json::json!({
                         "counts": report.counts,
@@ -454,15 +457,14 @@ fn main() {
                     details: None,
                 })
             });
-            let keys: Vec<&str> = keys_raw.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+            let keys: Vec<&str> = keys_raw
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
             let audit = audit_engine::AuditEngine::new(ctx.pool.clone());
             let updated = plugin_runtime::knowledge_review::set_review_status(
-                &ctx.pool,
-                &audit,
-                "user:cli",
-                &id,
-                &keys,
-                to,
+                &ctx.pool, &audit, "user:cli", &id, &keys, to,
             )
             .unwrap_or_else(|e| die(e));
             let counts = plugin_runtime::knowledge_review::review_counts(&ctx.pool, &id)
@@ -480,7 +482,9 @@ fn main() {
             let max_files = flag_value(&args.rest, "--max-files").and_then(|v| v.parse().ok());
             let max_bytes = flag_value(&args.rest, "--max-bytes").and_then(|v| v.parse().ok());
             let max_seconds = flag_value(&args.rest, "--max-seconds").and_then(|v| v.parse().ok());
-            let retries = flag_value(&args.rest, "--retries").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let retries = flag_value(&args.rest, "--retries")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
             let new_version = flag_value(&args.rest, "--new-version");
 
             let plugin = ctx.runtime.store().get_active(&id).unwrap_or_else(|e| {
@@ -508,11 +512,7 @@ fn main() {
 
             // update-check（受控 API；--new-version 给出时执行）。
             let update_check_result = match &new_version {
-                Some(v) => Some(
-                    ctx.runtime
-                        .update_check(&id, v)
-                        .unwrap_or_else(|e| die(e)),
-                ),
+                Some(v) => Some(ctx.runtime.update_check(&id, v).unwrap_or_else(|e| die(e))),
                 None => None,
             };
 
@@ -522,8 +522,7 @@ fn main() {
             let package_dir = match package_from(&args.rest) {
                 Some(pkg) => pkg,
                 None => {
-                    plugin_runtime::source_sync::verify_pin(&manifest)
-                        .unwrap_or_else(|e| die(e));
+                    plugin_runtime::source_sync::verify_pin(&manifest).unwrap_or_else(|e| die(e));
                     plugin_runtime::source_fetch::verify(&manifest).unwrap_or_else(|e| die(e));
                     let target = ctx
                         .paths
@@ -558,12 +557,8 @@ fn main() {
             // 实跑成功且非 dry-run：幂等键入账（侧车文件，非数据库）。
             if !report.dry_run && report.ok && !report.idempotent_skipped {
                 if let Some(key) = &opts.idempotency_key {
-                    plugin_runtime::source_sync::append_sync_key(
-                        &ctx.paths.state_dir(),
-                        key,
-                        &id,
-                    )
-                    .unwrap_or_else(|e| die(e));
+                    plugin_runtime::source_sync::append_sync_key(&ctx.paths.state_dir(), key, &id)
+                        .unwrap_or_else(|e| die(e));
                 }
             }
 
@@ -574,7 +569,10 @@ fn main() {
                     "user:cli",
                     audit_engine::plugin_actions::KNOWLEDGE_SYNC,
                 )
-                .with_entity("plugin", &format!("{}@{}", report.plugin_id, report.plugin_version))
+                .with_entity(
+                    "plugin",
+                    &format!("{}@{}", report.plugin_id, report.plugin_version),
+                )
                 .with_detail(
                     serde_json::json!({
                         "ok": report.ok,

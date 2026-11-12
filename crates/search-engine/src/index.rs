@@ -699,7 +699,15 @@ mod tests {
     }
 
     /// SK-1 第三源夹具行（plugin_id, version, kind, key, title, desc, review）。
-    type PluginRow<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, Option<&'a str>, &'a str);
+    type PluginRow<'a> = (
+        &'a str,
+        &'a str,
+        &'a str,
+        &'a str,
+        &'a str,
+        Option<&'a str>,
+        &'a str,
+    );
 
     /// SK-1 第三源夹具：platform 库补 plugin + knowledge_source_entry 两表。
     fn with_plugin_tables(platform: &Pool, rows: &[PluginRow<'_>]) {
@@ -753,10 +761,42 @@ mod tests {
         with_plugin_tables(
             &p,
             &[
-                ("knowledge.a", "0.1.0", "catalog_entry", "https://a/x", "A 工具目录", Some("链接描述"), "APPROVED"),
-                ("knowledge.a", "0.1.0", "document_markdown", "docs/g.md", "文档标题", Some("文档摘要"), "APPROVED"),
-                ("knowledge.a", "0.1.0", "catalog_entry", "https://a/y", "未审条目", Some("d"), "DISCOVERED"),
-                ("knowledge.b", "0.1.0", "catalog_entry", "https://b/z", "B 条目", Some("d"), "APPROVED"),
+                (
+                    "knowledge.a",
+                    "0.1.0",
+                    "catalog_entry",
+                    "https://a/x",
+                    "A 工具目录",
+                    Some("链接描述"),
+                    "APPROVED",
+                ),
+                (
+                    "knowledge.a",
+                    "0.1.0",
+                    "document_markdown",
+                    "docs/g.md",
+                    "文档标题",
+                    Some("文档摘要"),
+                    "APPROVED",
+                ),
+                (
+                    "knowledge.a",
+                    "0.1.0",
+                    "catalog_entry",
+                    "https://a/y",
+                    "未审条目",
+                    Some("d"),
+                    "DISCOVERED",
+                ),
+                (
+                    "knowledge.b",
+                    "0.1.0",
+                    "catalog_entry",
+                    "https://b/z",
+                    "B 条目",
+                    Some("d"),
+                    "APPROVED",
+                ),
             ],
         );
         insert_plugin(&p, "knowledge.a", "ENABLED", 1);

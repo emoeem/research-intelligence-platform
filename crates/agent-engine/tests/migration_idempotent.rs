@@ -61,7 +61,7 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     // 运行控制与步骤轨迹两表）。
     assert_eq!(
         applied_first,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
         "all migrations must apply once"
     );
 
@@ -76,7 +76,7 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     let user_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(user_version, 14);
+    assert_eq!(user_version, 15);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }

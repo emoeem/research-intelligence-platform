@@ -2,6 +2,9 @@
 //!
 //! 口径（UNIFIED_DOMAIN_MODEL §7.15）：只追加，不可改；correlation_id 打通
 //! "任务-查询-工具-证据" 链。物理表为 audit_event（migrations/001_init.sql）。
+//! P7-5 关联面扩展：trace_id 列（迁移 015）承载跨实体族链路锚，与
+//! correlation_id 并行（correlation_id 仍是 run 内事件链主键，trace_id 是
+//! 跨 run 族/跨实体族的统一关联面），见 [`AuditEvent::with_trace`]。
 
 /// 审计事件（纯数据，写入由 audit-engine 唯一出口 Emit 承担）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +21,9 @@ pub struct AuditEvent {
     pub entity_id: Option<String>,
     /// 关联 ID（任务-查询-工具-证据链）。
     pub correlation_id: Option<String>,
+    /// 链路追踪 ID（P7-5 迁移 015 新列；跨实体族关联锚，与 correlation_id
+    /// 并行不互替）。
+    pub trace_id: Option<String>,
     /// 明细（已序列化 JSON 文本，建议）。
     pub detail: Option<String>,
     /// 事件发生时的权限级（T0/T1/T2）。
@@ -38,6 +44,7 @@ impl AuditEvent {
             entity_type: None,
             entity_id: None,
             correlation_id: None,
+            trace_id: None,
             detail: None,
             permission_level: None,
             source_system: None,
@@ -55,6 +62,12 @@ impl AuditEvent {
     /// 设置关联 ID。
     pub fn with_correlation(mut self, correlation_id: &str) -> Self {
         self.correlation_id = Some(correlation_id.to_string());
+        self
+    }
+
+    /// 设置链路追踪 ID（P7-5）。
+    pub fn with_trace(mut self, trace_id: &str) -> Self {
+        self.trace_id = Some(trace_id.to_string());
         self
     }
 
@@ -102,5 +115,17 @@ mod tests {
         assert_eq!(e.entity_id.as_deref(), Some("gh:o/r"));
         assert!(AuditEvent::new("", "a").validate().is_err());
         assert!(AuditEvent::new("a", "").validate().is_err());
+    }
+
+    #[test]
+    fn trace_builder_and_default_none() {
+        // P7-5：with_trace 注入 trace_id；缺省 None（correlation_id 并行不互替）。
+        let plain = AuditEvent::new("system", "x");
+        assert_eq!(plain.trace_id, None);
+        let traced = AuditEvent::new("system", "x")
+            .with_correlation("rn-1")
+            .with_trace("tr-1");
+        assert_eq!(traced.correlation_id.as_deref(), Some("rn-1"));
+        assert_eq!(traced.trace_id.as_deref(), Some("tr-1"));
     }
 }

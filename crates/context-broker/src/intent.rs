@@ -430,6 +430,7 @@ pub fn emit_intent_event(
     engine: &AuditEngine,
     result: &ClassifyResult,
     correlation_id: &str,
+    trace_id: Option<&str>,
     actor: &str,
 ) -> bool {
     let detail = serde_json::json!({
@@ -464,6 +465,7 @@ pub fn emit_intent_event(
         entity_type: Some("intent".to_string()),
         entity_id: None,
         correlation_id: Some(correlation_id.to_string()),
+        trace_id: trace_id.map(str::to_string),
         detail: Some(detail),
         permission_level: Some("T0".to_string()),
         source_system: Some("context-broker".to_string()),

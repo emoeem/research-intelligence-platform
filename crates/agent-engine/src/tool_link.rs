@@ -87,6 +87,9 @@ pub struct ToolCallSpec {
     pub workspace_id: String,
     /// 幂等提交键（缺省由引擎生成 agent:{run 序号} 键）。
     pub submit_key: Option<String>,
+    /// 链路追踪 ID（P7-5：经 [`ToolLink::call`] 走 tool-engine
+    /// `submit_correlated` 落 tool_run.trace_id 列，迁移 015；None = 无关联）。
+    pub trace_id: Option<String>,
 }
 
 /// 调用结果。
@@ -119,7 +122,8 @@ impl ToolLink {
 
     /// 受理 + 驱动到终态。受理拒绝（结构/Registry/schema 校验）与驱动失败
     /// 都按 [`AgentError::Tool`] 上抛；工具业务失败（信封 FAILED/TIMED_OUT）
-    /// 属正常交付，由调用方按信封判定。
+    /// 属正常交付，由调用方按信封判定。trace_id 经 submit_correlated 落
+    /// tool_run 行（P7-5；冻结契约 JSON 不动，关联列平台侧承载）。
     pub fn call(&self, spec: &ToolCallSpec) -> Result<ToolCallOutcome, AgentError> {
         let run_id = new_id("rn");
         let request = json!({
@@ -132,7 +136,9 @@ impl ToolLink {
             "workspace_id": spec.workspace_id,
             "task_id": spec.task_id,
         });
-        let submitted = self.engine.submit(&request)?;
+        let submitted = self
+            .engine
+            .submit_correlated(&request, spec.trace_id.as_deref())?;
         let outcome = self.driver.drive(&self.engine, &submitted.run_id)?;
         Ok(ToolCallOutcome {
             run_id: submitted.run_id,
@@ -185,6 +191,7 @@ mod tests {
                 task_id: None,
                 workspace_id: "ws-default".to_string(),
                 submit_key: None,
+                trace_id: None,
             })
             .unwrap_err();
         assert!(err.to_string().contains("unknown tool"), "err: {err}");
@@ -198,7 +205,7 @@ mod tests {
         registry
             .register(&repo_manifest("rip.kb.keyword_search"))
             .unwrap();
-        let engine = Engine::open(pool, registry);
+        let engine = Engine::open(pool.clone(), registry);
         let link = ToolLink::new(
             engine,
             Box::new(MockDriver::succeed(
@@ -214,8 +221,20 @@ mod tests {
                 task_id: Some("task-agent-1".to_string()),
                 workspace_id: "ws-default".to_string(),
                 submit_key: Some("agent:arn-x:0".to_string()),
+                trace_id: Some("tr-link-1".to_string()),
             })
             .unwrap();
+        // P7-5：trace_id 经 submit_correlated 落 tool_run 行。
+        let stored_trace: Option<String> = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT trace_id FROM tool_run WHERE run_id = ?1",
+                    [&outcome.run_id],
+                    |r| r.get(0),
+                )
+            })
+            .unwrap();
+        assert_eq!(stored_trace.as_deref(), Some("tr-link-1"));
         assert_eq!(outcome.tool_version, "0.1.0");
         assert_eq!(outcome.envelope.status, domain::ToolRunStatus::Succeeded);
         assert_eq!(outcome.envelope.result.as_ref().unwrap()["keyword"], "nmap");

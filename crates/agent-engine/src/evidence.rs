@@ -30,6 +30,9 @@ pub struct Registration {
     pub tool_version: String,
     /// 结构化载荷（SUCCEEDED 取信封 result；失败取 error 对象）。
     pub payload: Value,
+    /// 链路追踪 ID（P7-5 迁移 015：artifact/evidence 行 trace_id 列同链
+    /// 落账；None 不落列，与 015 之前登记面语义一致）。
+    pub trace_id: Option<String>,
 }
 
 /// 登记结果（Artifact/Evidence 双 id + uri + 同哈希快照）。
@@ -103,8 +106,8 @@ impl EvidenceRegistrar {
             .with_conn(|c| {
                 c.execute(
                     "INSERT INTO artifact (artifact_id, run_id, role, uri, sha256, size_bytes,
-                     mime_type, provenance, created_at, schema_version)
-                     VALUES (?1, ?2, 'primary', ?3, ?4, ?5, 'application/json', ?6, ?7, 1)",
+                     mime_type, provenance, trace_id, created_at, schema_version)
+                     VALUES (?1, ?2, 'primary', ?3, ?4, ?5, 'application/json', ?6, ?7, ?8, 1)",
                     rusqlite::params![
                         artifact_id,
                         reg.tool_run_id,
@@ -112,6 +115,7 @@ impl EvidenceRegistrar {
                         sha,
                         size_bytes,
                         provenance,
+                        reg.trace_id,
                         now
                     ],
                 )?;
@@ -126,9 +130,9 @@ impl EvidenceRegistrar {
                 c.execute(
                     "INSERT INTO evidence (evidence_id, evidence_type, storage_ref, content_hash,
                      captured_at, captured_by, task_ref, lifecycle, governance, source_system,
-                     source_pk, created_at, updated_at, schema_version)
+                     source_pk, trace_id, created_at, updated_at, schema_version)
                      VALUES (?1, 'log', ?2, ?3, ?4, ?5, ?6, 'RAW', 'ACTIVE', 'tool-engine',
-                     ?7, ?4, ?4, 1)",
+                     ?7, ?8, ?4, ?4, 1)",
                     rusqlite::params![
                         evidence_id,
                         artifact_uri,
@@ -136,7 +140,8 @@ impl EvidenceRegistrar {
                         now,
                         captured_by,
                         reg.task_id,
-                        reg.tool_run_id
+                        reg.tool_run_id,
+                        reg.trace_id
                     ],
                 )?;
                 Ok::<(), rusqlite::Error>(())
@@ -180,6 +185,7 @@ mod tests {
             tool_id: "rip.kb.keyword_search".to_string(),
             tool_version: "0.1.0".to_string(),
             payload: json!({"keyword": "nmap", "total_hits": 2}),
+            trace_id: None,
         }
     }
 
@@ -214,8 +220,33 @@ mod tests {
         let pool = migrated_pool();
         seed_tool_run(&pool, "rn-tool-1");
         let registrar = EvidenceRegistrar::new(pool.clone());
-        let out = registrar.register_tool_result(&registration()).unwrap();
+        let mut reg = registration();
+        reg.trace_id = Some("tr-ev-1".to_string());
+        let out = registrar.register_tool_result(&reg).unwrap();
         assert!(out.artifact_uri.starts_with("ripartifact://rn-tool-1/"));
+
+        // P7-5：trace_id 同链落两行（迁移 015 列）。
+        let (artifact_trace, evidence_trace): (Option<String>, Option<String>) = pool
+            .with_conn(|c| {
+                let a: Option<String> = c
+                    .query_row(
+                        "SELECT trace_id FROM artifact WHERE artifact_id = ?1",
+                        [&out.artifact_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                let e: Option<String> = c
+                    .query_row(
+                        "SELECT trace_id FROM evidence WHERE evidence_id = ?1",
+                        [&out.evidence_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                Ok::<(Option<String>, Option<String>), rusqlite::Error>((a, e))
+            })
+            .unwrap();
+        assert_eq!(artifact_trace.as_deref(), Some("tr-ev-1"));
+        assert_eq!(evidence_trace.as_deref(), Some("tr-ev-1"));
 
         let (uri, sha, role): (String, String, String) = pool
             .with_conn(|c| {

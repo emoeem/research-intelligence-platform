@@ -198,7 +198,9 @@ impl RunControl {
             AgentRunState::Queued,
             vec![],
         )?;
-        self.store.create_run(&replay)?;
+        // P7-5：重试链继承源 run 的 trace_id（跨 run 关联同链，迁移 015；
+        // 源 run 无关联列即新 run 同样 NULL，不伪造）。
+        self.store.create_run(&replay, stored.trace_id.as_deref())?;
         self.state.set_retry_of(new_run_id.as_str(), run_id)?;
         Ok(RetryOutcome {
             new_run_id: new_run_id.as_str().to_string(),

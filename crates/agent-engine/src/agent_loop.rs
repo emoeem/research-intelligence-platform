@@ -153,6 +153,11 @@ pub struct RunRequest {
     pub goal: String,
     /// 关联研究任务（可空；缺省以 run id 关联）。
     pub task_id: Option<String>,
+    /// 链路追踪 ID（P7-5）：Some 时整个 run（含步骤 tool_run/artifact/
+    /// evidence/audit 事件）落同一 trace_id（迁移 015 五面列）；None 时
+    /// 受理面生成新 `tr-` trace（一次 run 一个新链，跨 run 关联靠 task_id
+    /// 与 RunControl::retry 的 trace 继承）。
+    pub trace_id: Option<String>,
     /// 显式工具入参（覆盖规划器推导；合工具 input_schema）。
     pub input: Option<Value>,
     /// 规划器。
@@ -178,6 +183,8 @@ pub struct ResumeRequest {
 pub struct RunReport {
     /// agent run id（arn- 前缀，审计 correlation_id）。
     pub run_id: String,
+    /// 链路追踪 ID（P7-5：请求传入或受理面生成，五面落库同链）。
+    pub trace_id: Option<String>,
     /// agent id。
     pub agent_id: String,
     /// 钉定定义版本。
@@ -217,6 +224,8 @@ pub struct RunReport {
 struct DriveParams<'a> {
     run_id: &'a RunId,
     run_id_str: &'a str,
+    /// 链路追踪 ID（P7-5；audit/tool_run/artifact/evidence 统一注入）。
+    trace_id: Option<String>,
     actor: &'a str,
     agent_id: &'a str,
     agent_version: &'a str,
@@ -306,6 +315,15 @@ impl AgentLoop {
 
         // 受理：QUEUED 落行 → RUNNING（CAS 记 started_at）；goal 落控制行
         // （resume 状态续接的装配输入，014 agent_run_control.goal_text）。
+        // trace_id（P7-5）：请求传入或受理面生成（domain::TraceId 校验），
+        // agent_run 行随 create_run 落关联列（迁移 015）。
+        let trace_id = match &req.trace_id {
+            Some(t) => {
+                let validated = domain::TraceId::try_new(t.clone())?;
+                validated.into_inner()
+            }
+            None => crate::new_id("tr"),
+        };
         let run_id = AgentStore::new_run_id();
         let run = AgentRun::try_new(
             run_id.clone(),
@@ -315,15 +333,16 @@ impl AgentLoop {
             AgentRunState::Queued,
             vec![],
         )?;
-        self.store.create_run(&run)?;
+        self.store.create_run(&run, Some(&trace_id))?;
         let run_id_str = run_id.as_str().to_string();
         let actor = format!("agent-engine:{agent_id}");
         self.state.ensure_control_row(&run_id_str, &req.goal)?;
         self.audit_emit(
             "agent.run.accepted",
             &run_id_str,
+            Some(&trace_id),
             &actor,
-            json!({"agent_id": agent_id, "goal": req.goal}),
+            json!({"agent_id": agent_id, "goal": req.goal, "trace_id": trace_id}),
         );
         self.store
             .transition_run(&run_id_str, AgentRunState::Running)?;
@@ -331,6 +350,7 @@ impl AgentLoop {
         self.drive(DriveParams {
             run_id: &run_id,
             run_id_str: &run_id_str,
+            trace_id: Some(trace_id),
             actor: &actor,
             agent_id: &agent_id,
             agent_version: stored.definition.version(),
@@ -390,9 +410,12 @@ impl AgentLoop {
         // CAS PAUSED → RUNNING（域跃迁表合法对），恢复事件留痕。
         self.store
             .transition_run(&req.run_id, AgentRunState::Running)?;
+        // P7-5：恢复段沿用源 run 的 trace_id（agent_run 行关联列）。
+        let trace_id = stored.trace_id.clone();
         self.audit_emit(
             control::actions::RESUMED,
             &req.run_id,
+            trace_id.as_deref(),
             &actor,
             json!({"replayed_steps": persisted.len()}),
         );
@@ -414,6 +437,7 @@ impl AgentLoop {
         self.drive(DriveParams {
             run_id: &run_id,
             run_id_str: &req.run_id,
+            trace_id,
             actor: &actor,
             agent_id: &agent_id,
             agent_version: stored.run.agent_version(),
@@ -447,6 +471,7 @@ impl AgentLoop {
                 task_id,
                 text: p.goal.clone(),
                 correlation_id: p.run_id_str.to_string(),
+                trace_id: p.trace_id.clone(),
                 actor: p.actor.to_string(),
             },
             p.confirmer,
@@ -512,6 +537,7 @@ impl AgentLoop {
                 self.audit_emit(
                     control::actions::CANCELLED,
                     p.run_id_str,
+                    p.trace_id.as_deref(),
                     p.actor,
                     json!({"before_step": steps.len(), "round": round, "cooperative": true}),
                 );
@@ -528,6 +554,7 @@ impl AgentLoop {
                 self.audit_emit(
                     control::actions::PAUSED,
                     p.run_id_str,
+                    p.trace_id.as_deref(),
                     p.actor,
                     json!({"before_step": steps.len(), "round": round}),
                 );
@@ -539,6 +566,7 @@ impl AgentLoop {
                 self.audit_emit(
                     control::actions::GUARDRAIL,
                     p.run_id_str,
+                    p.trace_id.as_deref(),
                     p.actor,
                     json!({"kind": "budget_rounds", "round": round, "limit": cfg.max_rounds}),
                 );
@@ -598,9 +626,10 @@ impl AgentLoop {
                             self.store
                                 .transition_run(p.run_id_str, AgentRunState::Cancelled)?;
                             self.audit_emit(
-                                control::actions::CANCELLED,
-                                p.run_id_str,
-                                p.actor,
+            control::actions::CANCELLED,
+            p.run_id_str,
+            p.trace_id.as_deref(),
+            p.actor,
                                 json!({"before_step": steps.len(), "round": round, "cooperative": true}),
                             );
                             break 'rounds;
@@ -616,6 +645,7 @@ impl AgentLoop {
                             self.audit_emit(
                                 control::actions::PAUSED,
                                 p.run_id_str,
+                                p.trace_id.as_deref(),
                                 p.actor,
                                 json!({"before_step": steps.len(), "round": round}),
                             );
@@ -630,6 +660,7 @@ impl AgentLoop {
                             self.audit_emit(
                                 control::actions::GUARDRAIL,
                                 p.run_id_str,
+                                p.trace_id.as_deref(),
                                 p.actor,
                                 json!({"kind": "budget_elapsed", "limit_ms": cfg.max_elapsed_ms}),
                             );
@@ -669,9 +700,10 @@ impl AgentLoop {
                                     step.tool_id
                                 );
                                 self.audit_emit(
-                                    control::actions::GUARDRAIL,
-                                    p.run_id_str,
-                                    p.actor,
+            control::actions::GUARDRAIL,
+            p.run_id_str,
+            p.trace_id.as_deref(),
+            p.actor,
                                     json!({"kind": "goal_drift", "tool_id": step.tool_id,
                                            "drift_streak": drift_streak, "tolerance": cfg.drift_tolerance}),
                                 );
@@ -695,6 +727,7 @@ impl AgentLoop {
                             self.audit_emit(
                                 control::actions::STEP_DUPLICATE,
                                 p.run_id_str,
+                                p.trace_id.as_deref(),
                                 p.actor,
                                 json!({"tool_id": step.tool_id, "round": round}),
                             );
@@ -706,6 +739,7 @@ impl AgentLoop {
                             p.run_id,
                             seq,
                             round,
+                            p.trace_id.as_deref(),
                             p.agent_id,
                             &step,
                             p.task_id.as_deref(),
@@ -730,6 +764,7 @@ impl AgentLoop {
                         self.audit_emit(
                             "agent.step.completed",
                             p.run_id_str,
+                            p.trace_id.as_deref(),
                             p.actor,
                             json!({
                                 "tool_id": step.tool_id,
@@ -749,6 +784,7 @@ impl AgentLoop {
                             self.audit_emit(
                                 control::actions::GUARDRAIL,
                                 p.run_id_str,
+                                p.trace_id.as_deref(),
                                 p.actor,
                                 json!({"kind": "stall", "streak": no_progress_streak,
                                        "window": cfg.stall_window}),
@@ -775,6 +811,7 @@ impl AgentLoop {
                         self.audit_emit(
                             control::actions::GUARDRAIL,
                             p.run_id_str,
+                            p.trace_id.as_deref(),
                             p.actor,
                             json!({"kind": "duplicate_exhausted", "round": round,
                                    "duplicates": duplicates_in_round}),
@@ -807,6 +844,7 @@ impl AgentLoop {
             self.audit_emit(
                 "agent.run.finished",
                 p.run_id_str,
+                p.trace_id.as_deref(),
                 p.actor,
                 json!({
                     "state": final_state.as_str(),
@@ -856,6 +894,7 @@ impl AgentLoop {
 
         Ok(RunReport {
             run_id: p.run_id_str.to_string(),
+            trace_id: p.trace_id.clone(),
             agent_id: p.agent_id.to_string(),
             agent_version: p.agent_version.to_string(),
             task_id: p.task_id.clone(),
@@ -954,6 +993,7 @@ impl AgentLoop {
         run_id: &RunId,
         seq: usize,
         round: usize,
+        trace_id: Option<&str>,
         agent_id: &str,
         step: &PlanStep,
         task_id: Option<&str>,
@@ -986,6 +1026,8 @@ impl AgentLoop {
                 seq,
                 step.tool_id
             )),
+            // P7-5：tool_run 行 trace_id 同链落列（迁移 015）。
+            trace_id: trace_id.map(str::to_string),
         };
         let called = match self.tool.call(&spec) {
             Ok(called) => called,
@@ -1018,6 +1060,8 @@ impl AgentLoop {
             tool_id: step.tool_id.clone(),
             tool_version: called.tool_version.clone(),
             payload,
+            // P7-5：artifact/evidence 行 trace_id 同链落列（迁移 015）。
+            trace_id: trace_id.map(str::to_string),
         }) {
             Ok(reg_out) => {
                 record.artifact_id = Some(reg_out.artifact_id.clone());
@@ -1132,15 +1176,26 @@ impl AgentLoop {
         }
     }
 
-    /// 审计旁路（emit_best_effort；写失败不反压业务）。
-    fn audit_emit(&self, action: &str, run_id: &str, actor: &str, detail: Value) {
+    /// 审计旁路（emit_best_effort；写失败不反压业务）。P7-5：trace_id
+    /// 随事件落 audit_event.trace_id 列（迁移 015），与 correlation_id
+    /// （恒 = run_id，run 内事件链）并行。
+    fn audit_emit(
+        &self,
+        action: &str,
+        run_id: &str,
+        trace_id: Option<&str>,
+        actor: &str,
+        detail: Value,
+    ) {
         if let Some(audit) = &self.audit {
-            audit.emit_best_effort(
-                domain::audit::AuditEvent::new(actor, action)
-                    .with_entity("agent_run", run_id)
-                    .with_correlation(run_id)
-                    .with_detail(detail.to_string()),
-            );
+            let mut event = domain::audit::AuditEvent::new(actor, action)
+                .with_entity("agent_run", run_id)
+                .with_correlation(run_id)
+                .with_detail(detail.to_string());
+            if let Some(trace) = trace_id {
+                event = event.with_trace(trace);
+            }
+            audit.emit_best_effort(event);
         }
     }
 }

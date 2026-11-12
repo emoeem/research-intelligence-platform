@@ -6,6 +6,7 @@
 
 use crate::error::{DbError, DbResult};
 use crate::pool::Pool;
+use crate::rusqlite::OptionalExtension;
 use std::path::{Path, PathBuf};
 
 /// 一个迁移文件。
@@ -63,6 +64,54 @@ pub fn discover_migrations(dir: &Path) -> DbResult<Vec<Migration>> {
     Ok(out)
 }
 
+/// ALTER TABLE ADD COLUMN 行守卫（SQLite 无条件 DDL；002_tasks.sql 头注已
+/// 记录该缺口，015_trace_correlation.sql 起在执行器补齐）：目标列已存在的
+/// ALTER 语句按 CREATE TABLE IF NOT EXISTS 同款幂等语义跳过（行替换为注释
+/// 留痕），防 raw file replay 与 009 式 user_version 自钉重放炸
+/// duplicate column name。逐行处理：ALTER 语句须单行书写（迁移文件纪律）。
+fn guard_alter_add_columns(
+    conn: &rusqlite::Connection,
+    sql: &str,
+) -> rusqlite::Result<String> {
+    let mut out = String::with_capacity(sql.len());
+    for line in sql.lines() {
+        let trimmed = line.trim();
+        let upper = trimmed.to_ascii_uppercase();
+        if upper.starts_with("ALTER TABLE") && upper.contains("ADD COLUMN") {
+            let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+            // 形状：ALTER TABLE <table> ADD COLUMN <column> <decl>...
+            let table = tokens.get(2).copied().unwrap_or("").trim_matches('"');
+            let add_pos = tokens
+                .iter()
+                .position(|t| t.eq_ignore_ascii_case("COLUMN"))
+                .and_then(|i| tokens.get(i + 1))
+                .copied()
+                .unwrap_or("")
+                .trim_matches('"');
+            let exists = table
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && !table.is_empty()
+                && conn
+                    .prepare(&format!("PRAGMA table_info(\"{table}\")"))?
+                    .query_map([], |r| r.get::<_, String>(1))?
+                    .collect::<Result<Vec<String>, rusqlite::Error>>()?
+                    .into_iter()
+                    .any(|name| name == add_pos);
+            if exists {
+                out.push_str(&format!(
+                    "-- [executor guard] skipped ALTER ADD COLUMN {}.{} (column exists)\n",
+                    table, add_pos
+                ));
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 /// 执行迁移（幂等）。返回本次实际执行的迁移列表。
 pub fn migrate(pool: &Pool, dir: &Path) -> DbResult<Vec<AppliedMigration>> {
     let migrations = discover_migrations(dir)?;
@@ -74,6 +123,7 @@ pub fn migrate(pool: &Pool, dir: &Path) -> DbResult<Vec<AppliedMigration>> {
             continue;
         }
         let sql = std::fs::read_to_string(&m.path)?;
+        let sql = pool.with_conn(|c| guard_alter_add_columns(c, &sql))?;
         pool.with_conn(|c| c.execute_batch(&sql))?;
         let after: i64 =
             pool.with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
@@ -173,6 +223,50 @@ mod tests {
             .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
             .unwrap();
         assert_eq!(v, 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ALTER ADD COLUMN 执行器守卫（015 起口径）：文件自钉 user_version 后
+    /// 重放（009 式语义，经 migrate()）不炸 duplicate column（列已存在的
+    /// ALTER 行被跳过），列首次仍正常落。
+    #[test]
+    fn guarded_alter_add_column_replay_is_idempotent() {
+        let dir = tmp_dir("guard-alter");
+        std::fs::write(
+            dir.join("001_t.sql"),
+            "CREATE TABLE IF NOT EXISTS t(x TEXT);\n\
+             ALTER TABLE t ADD COLUMN y TEXT;\n",
+        )
+        .unwrap();
+        let pool = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(1),
+        })
+        .unwrap();
+        migrate(&pool, &dir).unwrap();
+        // 受守卫重放：user_version 自钉回 0（模拟 009 式文件自钉语义）后再
+        // migrate，文件经执行器守卫重放，列已存在的 ALTER 行跳过不炸。
+        pool.with_conn(|c| c.pragma_update(None, "user_version", 0)).unwrap();
+        {
+            let sql = std::fs::read_to_string(dir.join("001_t.sql")).unwrap();
+            let guarded = pool
+                .with_conn(|c| guard_alter_add_columns(c, &sql))
+                .unwrap();
+            eprintln!("GUARDED-OUT: {guarded}");
+        }
+        migrate(&pool, &dir).unwrap();
+        let cols: Vec<String> = pool
+            .with_conn(|c| {
+                let mut stmt = c.prepare("PRAGMA table_info(t)")?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(1))?
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+                Ok::<_, rusqlite::Error>(rows)
+            })
+            .unwrap();
+        assert_eq!(cols, vec!["x", "y"], "列恰一份，重放零重复");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

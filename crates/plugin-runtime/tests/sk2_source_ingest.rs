@@ -69,7 +69,8 @@ fn fixture_package(fixture: &str) -> PathBuf {
 }
 
 fn sk2_manifest(id: &str) -> serde_json::Value {
-    let text = fs::read_to_string(repo_root().join(format!("manifests/plugins/{id}.yaml"))).unwrap();
+    let text =
+        fs::read_to_string(repo_root().join(format!("manifests/plugins/{id}.yaml"))).unwrap();
     parse_document(&text).unwrap()
 }
 
@@ -109,9 +110,21 @@ fn sk2_three_sources_ingest_counts_reconcile_and_idempotence() {
     // 两条目同 URL（上游原文如此），规范化 canonical URL 去重后 102 唯一键，
     // 首跑该行计 skipped=1（去重生效的实测形态），二跑 skipped=103。
     let cases = [
-        ("knowledge.awesome-hacking", "awesome-hacking", 85u64, 2u64, 0u64),
+        (
+            "knowledge.awesome-hacking",
+            "awesome-hacking",
+            85u64,
+            2u64,
+            0u64,
+        ),
         ("knowledge.secskills", "secskills", 102, 17, 1),
-        ("knowledge.tongui-course-notes", "tongui-course-notes", 75, 0, 0),
+        (
+            "knowledge.tongui-course-notes",
+            "tongui-course-notes",
+            75,
+            0,
+            0,
+        ),
     ];
     let mut total_rows = 0i64;
     for (id, fixture, expect_count, expect_no_scheme, in_pass_dup) in cases {
@@ -119,8 +132,13 @@ fn sk2_three_sources_ingest_counts_reconcile_and_idempotence() {
         let manifest = sk2_manifest(id);
 
         // dry-run：计数与实跑同构，零落盘。
-        let dry = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions { dry_run: true })
-            .unwrap();
+        let dry = ingest_knowledge_source_with_opts(
+            &pool,
+            &manifest,
+            &pkg,
+            &IngestOptions { dry_run: true },
+        )
+        .unwrap();
         assert_eq!(
             dry.counts.get("catalog_entry"),
             Some(&expect_count),
@@ -131,24 +149,37 @@ fn sk2_three_sources_ingest_counts_reconcile_and_idempotence() {
             expect_no_scheme,
             "{id}: 无 scheme 过滤计数（0 时报告不携带该键）"
         );
-        assert_eq!(dry.skipped, in_pass_dup, "{id}: dry-run skipped = 源内同键重复行数");
+        assert_eq!(
+            dry.skipped, in_pass_dup,
+            "{id}: dry-run skipped = 源内同键重复行数"
+        );
         let before = kse_count(&pool, &format!("WHERE plugin_id = '{id}'"));
         assert_eq!(before, 0, "{id}: dry-run 零落盘");
 
         // 实跑。
-        let report = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
-            .unwrap();
-        assert_eq!(report.counts.get("catalog_entry"), Some(&expect_count), "{id}");
+        let report =
+            ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
+                .unwrap();
+        assert_eq!(
+            report.counts.get("catalog_entry"),
+            Some(&expect_count),
+            "{id}"
+        );
         assert_eq!(report.changed, 0, "{id}: 首跑无内容变更");
         let rows = kse_count(&pool, &format!("WHERE plugin_id = '{id}'"));
         assert_eq!(rows, expect_count as i64, "{id}: 落表行数与计数一致");
         total_rows += rows;
 
         // 幂等二跑：skipped=全量（含源内同键重复行），counts 空，changed=0。
-        let again = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
-            .unwrap();
+        let again =
+            ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
+                .unwrap();
         assert!(again.counts.is_empty(), "{id}: 二跑零新增");
-        assert_eq!(again.skipped, expect_count + in_pass_dup, "{id}: 二跑 skipped=全量+源内重复");
+        assert_eq!(
+            again.skipped,
+            expect_count + in_pass_dup,
+            "{id}: 二跑 skipped=全量+源内重复"
+        );
         assert_eq!(again.changed, 0, "{id}: 二跑无变更");
     }
     assert_eq!(total_rows, 85 + 102 + 75, "三源合计行数");
@@ -215,7 +246,12 @@ fn sk2_tongui_merge_dual_source_ref_metadata_only() {
     database::migrate(&pool, &migrations_dir()).unwrap();
     let audit = audit_engine::AuditEngine::new(pool.clone());
     let rt = PluginRuntime::open(pool.clone(), audit);
-    let pkg = setup_plugin(&pool, &rt, "knowledge.tongui-course-notes", "tongui-course-notes");
+    let pkg = setup_plugin(
+        &pool,
+        &rt,
+        "knowledge.tongui-course-notes",
+        "tongui-course-notes",
+    );
     let manifest = sk2_manifest("knowledge.tongui-course-notes");
     ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default()).unwrap();
 
@@ -224,7 +260,10 @@ fn sk2_tongui_merge_dual_source_ref_metadata_only() {
         &pool,
         "WHERE plugin_id = 'knowledge.tongui-course-notes' AND description LIKE '%Git路径=渗透测试全套/%'",
     );
-    assert_eq!(git_path_rows, 74, "74 篇课程条目全部携带 Git 路径（正文来源）");
+    assert_eq!(
+        git_path_rows, 74,
+        "74 篇课程条目全部携带 Git 路径（正文来源）"
+    );
     let homepage = kse_count(
         &pool,
         "WHERE plugin_id = 'knowledge.tongui-course-notes' AND item_key = 'https://tongui66.github.io/course-notes'",
@@ -240,7 +279,10 @@ fn sk2_tongui_merge_dual_source_ref_metadata_only() {
            AND canonical_url LIKE 'https://tongui66.github.io/course-notes/%'
            AND item_key != 'https://tongui66.github.io/course-notes'",
     );
-    assert_eq!(featured, 31, "精选站点 31 篇与仓库 74 篇同文章合并为同一逻辑资源");
+    assert_eq!(
+        featured, 31,
+        "精选站点 31 篇与仓库 74 篇同文章合并为同一逻辑资源"
+    );
     let blob_only = kse_count(
         &pool,
         "WHERE plugin_id = 'knowledge.tongui-course-notes'
@@ -254,7 +296,10 @@ fn sk2_tongui_merge_dual_source_ref_metadata_only() {
            AND description LIKE '%Blob=https://github.com/tongui66/Cyber-Security-Course-Notes/blob/%'
            AND description LIKE '%Git路径=渗透测试全套/%'",
     );
-    assert_eq!(dual_ref, 31, "精选条目双 source_ref（站点 URL + Git 路径 + blob）");
+    assert_eq!(
+        dual_ref, 31,
+        "精选条目双 source_ref（站点 URL + Git 路径 + blob）"
+    );
 
     // 元数据形态：章节（category_path 含章名）+ 标题（编号 课程）+ 哈希。
     let (title, cat, body, desc): (String, String, String, String) = pool
@@ -270,7 +315,10 @@ fn sk2_tongui_merge_dual_source_ref_metadata_only() {
         .unwrap();
     assert!(title.starts_with("23 "), "标题带编号前缀: {title}");
     assert!(cat.contains("渗透测试全套"), "分类路径含课程体系: {cat}");
-    assert!(body.contains("Git路径="), "正文（元数据行）携带 Git 路径: {body}");
+    assert!(
+        body.contains("Git路径="),
+        "正文（元数据行）携带 Git 路径: {body}"
+    );
     assert!(desc.contains("状态="), "描述携带章节/状态元数据: {desc}");
 }
 
@@ -284,7 +332,12 @@ fn sk2_changed_counts_preserve_history_and_no_physical_delete() {
     database::migrate(&pool, &migrations_dir()).unwrap();
     let audit = audit_engine::AuditEngine::new(pool.clone());
     let rt = PluginRuntime::open(pool.clone(), audit);
-    let pkg = setup_plugin(&pool, &rt, "knowledge.tongui-course-notes", "tongui-course-notes");
+    let pkg = setup_plugin(
+        &pool,
+        &rt,
+        "knowledge.tongui-course-notes",
+        "tongui-course-notes",
+    );
     let manifest = sk2_manifest("knowledge.tongui-course-notes");
     ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default()).unwrap();
 
@@ -306,7 +359,9 @@ fn sk2_changed_counts_preserve_history_and_no_physical_delete() {
     let catalog = pkg.join("catalog/articles.md");
     let text = fs::read_to_string(&catalog).unwrap();
     let marker = format!("[{old_title}]");
-    let idx = text.find(&marker).unwrap_or_else(|| panic!("marker {marker} in catalog"));
+    let idx = text
+        .find(&marker)
+        .unwrap_or_else(|| panic!("marker {marker} in catalog"));
     let mutated = format!(
         "{}[{}（更名）]{}",
         &text[..idx],
@@ -314,9 +369,14 @@ fn sk2_changed_counts_preserve_history_and_no_physical_delete() {
         &text[idx + marker.len()..]
     );
     fs::write(&catalog, &mutated).unwrap();
-    let report = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default()).unwrap();
+    let report =
+        ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
+            .unwrap();
     assert_eq!(report.changed, 1, "键同内容变 = changed 计数");
-    assert_eq!(report.skipped, 75, "其余 74 行 skipped + 变更行本身计 skipped");
+    assert_eq!(
+        report.skipped, 75,
+        "其余 74 行 skipped + 变更行本身计 skipped"
+    );
     let (title_now, sha_now): (String, String) = pool
         .with_conn(|c| {
             c.query_row(
@@ -333,14 +393,16 @@ fn sk2_changed_counts_preserve_history_and_no_physical_delete() {
 
     // 上游删除：从目录移除该条目再摄取，行保留（不物理删）；
     // upstream_missing 自动标记属后续 sync 批次（本批列恒 0，见 NOTES §六）。
-    let line_start = text[..idx]
-        .rfind("\n- [")
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let line_end = text[idx..].find('\n').map(|i| idx + i + 1).unwrap_or(text.len());
+    let line_start = text[..idx].rfind("\n- [").map(|i| i + 1).unwrap_or(0);
+    let line_end = text[idx..]
+        .find('\n')
+        .map(|i| idx + i + 1)
+        .unwrap_or(text.len());
     let without = format!("{}{}", &text[..line_start], &text[line_end..]);
     fs::write(&catalog, &without).unwrap();
-    let report2 = ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default()).unwrap();
+    let report2 =
+        ingest_knowledge_source_with_opts(&pool, &manifest, &pkg, &IngestOptions::default())
+            .unwrap();
     assert_eq!(report2.counts.get("catalog_entry"), None, "删除后不再新增");
     let still = kse_count(
         &pool,
@@ -381,8 +443,13 @@ fn sk2_review_gate_search_visibility_and_disable() {
                 .map_err(database::DbError::from)
             })
             .unwrap();
-        ingest_knowledge_source_with_opts(&pool, &manifest, Path::new(&pkg_dir), &IngestOptions::default())
-            .unwrap();
+        ingest_knowledge_source_with_opts(
+            &pool,
+            &manifest,
+            Path::new(&pkg_dir),
+            &IngestOptions::default(),
+        )
+        .unwrap();
     }
     // 初始 DISCOVERED：三源全量不进索引。
     let catalog = memory_pool();

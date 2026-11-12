@@ -50,8 +50,12 @@ const MAX_REDIRECTS_HARD_CAP: u32 = 10;
 /// 每 hop 读超时。
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// MIME 白名单前缀（响应缺 Content-Type 按 application/octet-stream 拒）。
-const MIME_ALLOW_PREFIXES: [&str; 4] =
-    ["text/", "application/json", "application/xml", "application/markdown"];
+const MIME_ALLOW_PREFIXES: [&str; 4] = [
+    "text/",
+    "application/json",
+    "application/xml",
+    "application/markdown",
+];
 
 /// 抓取策略（allowlist + 限额；派发面按 approved 条目 host 与 Manifest
 /// egress.ports 组装；工具面可显式传入）。
@@ -159,9 +163,9 @@ impl FetchRejection {
     pub fn detail(&self) -> String {
         match self {
             FetchRejection::InvalidUrl(u) => format!("invalid url: {u:?}"),
-            FetchRejection::SchemeUnsupported(s) => format!(
-                "scheme {s:?} unsupported: no TLS stack in this batch; http only"
-            ),
+            FetchRejection::SchemeUnsupported(s) => {
+                format!("scheme {s:?} unsupported: no TLS stack in this batch; http only")
+            }
             FetchRejection::HostNotAllowlisted(h) => format!("host_not_allowlisted: {h:?}"),
             FetchRejection::PortNotAllowed(p) => format!("port_not_allowed: {p}"),
             FetchRejection::PrivateNetworkBlocked(h) => format!(
@@ -222,10 +226,9 @@ impl ProxyTransport {
 impl Transport for ProxyTransport {
     fn get(&self, url: &str, max_bytes: usize) -> std::io::Result<TransportResponse> {
         // 绝对形式目标（代理仅转发 http 绝对形式；策略面已先行限 http）。
-        let mut stream =
-            TcpStream::connect(("127.0.0.1", self.proxy.port())).map_err(|e| {
-                std::io::Error::new(ErrorKind::ConnectionRefused, format!("proxy: {e}"))
-            })?;
+        let mut stream = TcpStream::connect(("127.0.0.1", self.proxy.port())).map_err(|e| {
+            std::io::Error::new(ErrorKind::ConnectionRefused, format!("proxy: {e}"))
+        })?;
         stream.set_read_timeout(Some(READ_TIMEOUT))?;
         stream.set_write_timeout(Some(READ_TIMEOUT))?;
         let request = format!(
@@ -254,11 +257,17 @@ fn read_http_response(
             break;
         }
         if head.len() > 64 * 1024 {
-            return Err(std::io::Error::new(ErrorKind::InvalidData, "head too large"));
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "head too large",
+            ));
         }
         let n = stream.read(&mut chunk)?;
         if n == 0 {
-            return Err(std::io::Error::new(ErrorKind::UnexpectedEof, "head incomplete"));
+            return Err(std::io::Error::new(
+                ErrorKind::UnexpectedEof,
+                "head incomplete",
+            ));
         }
         head.extend_from_slice(&chunk[..n]);
     }
@@ -298,7 +307,10 @@ fn read_http_response(
         while pending.len() < n {
             let got = stream.read(chunk)?;
             if got == 0 {
-                return Err(std::io::Error::new(ErrorKind::UnexpectedEof, "body incomplete"));
+                return Err(std::io::Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "body incomplete",
+                ));
             }
             pending.extend_from_slice(&chunk[..got]);
         }
@@ -315,7 +327,10 @@ fn read_http_response(
                 }
                 let got = stream.read(&mut chunk)?;
                 if got == 0 {
-                    return Err(std::io::Error::new(ErrorKind::UnexpectedEof, "chunk size incomplete"));
+                    return Err(std::io::Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "chunk size incomplete",
+                    ));
                 }
                 pending.extend_from_slice(&chunk[..got]);
             };
@@ -406,8 +421,11 @@ fn find_head_end(buf: &[u8]) -> Option<usize> {
 
 /// 主机名级私网/内网判定（DNS 解析前先拒，不给内网名解析机会）。
 fn hostname_is_internal(host: &str) -> bool {
-    host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local")
-        || host.ends_with(".internal") || host.ends_with(".home.arpa")
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+        || host.ends_with(".home.arpa")
         || host.ends_with(".lan")
 }
 
@@ -455,8 +473,12 @@ pub fn private_reason(ip: IpAddr) -> Option<&'static str> {
                 Some("multicast") // ff00::/8
             } else if seg[0] == 0x0064 && seg[1] == 0xff9b {
                 Some("nat64") // 64:ff9b::/96 映射 v4，一律按内网处理
-            } else if seg[0] == 0 && seg[1] == 0 && seg[2] == 0 && seg[3] == 0
-                && seg[4] == 0 && seg[5] == 0xffff
+            } else if seg[0] == 0
+                && seg[1] == 0
+                && seg[2] == 0
+                && seg[3] == 0
+                && seg[4] == 0
+                && seg[5] == 0xffff
             {
                 // ::ffff:0:0/96 IPv4-mapped：按内嵌 v4 复核
                 let v4 = std::net::Ipv4Addr::new(
@@ -479,22 +501,28 @@ pub fn private_reason(ip: IpAddr) -> Option<&'static str> {
 
 /// URL 端口推导（缺省 http=80/https=443；非法端口 Err）。
 fn url_port(url: &str) -> Result<u16, FetchRejection> {
-    let rest = url.split_once("://").map(|(_, r)| r).ok_or_else(|| {
-        FetchRejection::InvalidUrl(url.to_string())
-    })?;
+    let rest = url
+        .split_once("://")
+        .map(|(_, r)| r)
+        .ok_or_else(|| FetchRejection::InvalidUrl(url.to_string()))?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let authority = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let authority = authority
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(authority);
     let port_str = if authority.starts_with('[') {
-        let end = authority.find(']').ok_or_else(|| {
-            FetchRejection::InvalidUrl(url.to_string())
-        })?;
+        let end = authority
+            .find(']')
+            .ok_or_else(|| FetchRejection::InvalidUrl(url.to_string()))?;
         authority[end + 1..].strip_prefix(':')
     } else {
         authority.rsplit_once(':').map(|(_, p)| p)
     };
     match port_str {
         Some("") => Ok(default_port(url)),
-        Some(p) => p.parse::<u16>().map_err(|_| FetchRejection::InvalidUrl(url.to_string())),
+        Some(p) => p
+            .parse::<u16>()
+            .map_err(|_| FetchRejection::InvalidUrl(url.to_string())),
         None => Ok(default_port(url)),
     }
 }
@@ -510,12 +538,12 @@ fn default_port(url: &str) -> u16 {
 /// DNS 解析面函数类型（host+port 到全部解析 IP；Err = 解析失败）。
 pub type DnsResolver<'a> = &'a dyn Fn(&str, u16) -> Result<Vec<IpAddr>, ()>;
 /// approved 闸复核函数类型（url + entry_key 到 canonical 或拒绝理由）。
-pub type ApprovedChecker<'a> =
-    &'a dyn Fn(&str, Option<&str>) -> Result<String, String>;
+pub type ApprovedChecker<'a> = &'a dyn Fn(&str, Option<&str>) -> Result<String, String>;
 
 /// 生产 DNS 解析面（std ToSocketAddrs；返回全部解析地址的 IP 列表）。
 fn system_dns(host: &str, port: u16) -> Result<Vec<IpAddr>, ()> {
-    let addrs: Vec<std::net::SocketAddr> = (host, port).to_socket_addrs().map_err(|_| ())?.collect();
+    let addrs: Vec<std::net::SocketAddr> =
+        (host, port).to_socket_addrs().map_err(|_| ())?.collect();
     if addrs.is_empty() {
         return Err(());
     }
@@ -546,8 +574,7 @@ pub fn check_hop_with(
         let scheme = lower.split("://").next().unwrap_or("").to_string();
         return Err(FetchRejection::SchemeUnsupported(scheme));
     }
-    let host = host_from_url(url)
-        .map_err(FetchRejection::InvalidUrl)?;
+    let host = host_from_url(url).map_err(FetchRejection::InvalidUrl)?;
     if hostname_is_internal(&host) {
         return Err(FetchRejection::PrivateNetworkBlocked(host));
     }
@@ -564,8 +591,7 @@ pub fn check_hop_with(
     if !policy.allowed_ports.contains(&port) {
         return Err(FetchRejection::PortNotAllowed(port));
     }
-    let addrs = dns(&host, port)
-        .map_err(|_| FetchRejection::DnsResolveFailed(host.clone()))?;
+    let addrs = dns(&host, port).map_err(|_| FetchRejection::DnsResolveFailed(host.clone()))?;
     if addrs.is_empty() {
         return Err(FetchRejection::DnsResolveFailed(host.clone()));
     }
@@ -576,8 +602,11 @@ pub fn check_hop_with(
             )));
         }
     }
-    let hosts: BTreeSet<String> =
-        policy.allowed_hosts.iter().map(|h| h.to_lowercase()).collect();
+    let hosts: BTreeSet<String> = policy
+        .allowed_hosts
+        .iter()
+        .map(|h| h.to_lowercase())
+        .collect();
     if !hosts.contains(&host) {
         return Err(FetchRejection::HostNotAllowlisted(host));
     }
@@ -596,9 +625,10 @@ fn resolve_location(current: &str, location: &str) -> Result<String, FetchReject
     if loc.starts_with("//") {
         return Ok(format!("http:{loc}"));
     }
-    let rest = current.split_once("://").map(|(_, r)| r).ok_or_else(|| {
-        FetchRejection::InvalidUrl(current.to_string())
-    })?;
+    let rest = current
+        .split_once("://")
+        .map(|(_, r)| r)
+        .ok_or_else(|| FetchRejection::InvalidUrl(current.to_string()))?;
     let authority_end = rest.find('/').unwrap_or(rest.len());
     let authority = &rest[..authority_end];
     if loc.starts_with('/') {
@@ -699,8 +729,7 @@ pub fn fetch_document(
                 .to_string(),
             },
         };
-        record_fetch(pool, &record)
-            .unwrap_or_else(|e| eprintln!("record_fetch failed: {e}"));
+        record_fetch(pool, &record).unwrap_or_else(|e| eprintln!("record_fetch failed: {e}"));
     }
     outcome
 }
@@ -779,10 +808,7 @@ fn fetch_document_inner(
         let record = FetchRecord {
             fetch_id: format!(
                 "fdf-{}",
-                &sha256_hex(
-                    format!("{record_url}|{}|{sha}|{fetched_at}", url)
-                        .as_bytes()
-                )[..24]
+                &sha256_hex(format!("{record_url}|{}|{sha}|{fetched_at}", url).as_bytes())[..24]
             ),
             source_id,
             requested_url: record_url,
@@ -856,10 +882,7 @@ mod tests {
     use std::thread;
 
     fn policy_hosts(hosts: &[&str]) -> FetchPolicy {
-        FetchPolicy::new(
-            hosts.iter().map(|h| h.to_string()).collect(),
-            vec![80],
-        )
+        FetchPolicy::new(hosts.iter().map(|h| h.to_string()).collect(), vec![80])
     }
 
     fn noop_check() -> impl Fn(&str, Option<&str>) -> Result<String, String> {
@@ -915,15 +938,31 @@ mod tests {
         let err = check_hop_with("http://example.com/x", &policy8080, &fake_dns).unwrap_err();
         assert_eq!(err.code(), "port_not_allowed");
         // scheme
-        let err = check_hop_with("https://example.com/x", &policy_hosts(&["example.com"]), &fake_dns)
-            .unwrap_err();
+        let err = check_hop_with(
+            "https://example.com/x",
+            &policy_hosts(&["example.com"]),
+            &fake_dns,
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "scheme_unsupported");
-        let err = check_hop_with("file:///etc/passwd", &policy_hosts(&["example.com"]), &fake_dns)
-            .unwrap_err();
+        let err = check_hop_with(
+            "file:///etc/passwd",
+            &policy_hosts(&["example.com"]),
+            &fake_dns,
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "scheme_unsupported");
-        let err = check_hop_with("javascript:alert(1)", &policy_hosts(&["x.example"]), &fake_dns)
-            .unwrap_err();
-        assert_eq!(err.code(), "invalid_url", "无 :// 的非 http 目标按 invalid_url 拒");
+        let err = check_hop_with(
+            "javascript:alert(1)",
+            &policy_hosts(&["x.example"]),
+            &fake_dns,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.code(),
+            "invalid_url",
+            "无 :// 的非 http 目标按 invalid_url 拒"
+        );
     }
 
     #[test]
@@ -945,8 +984,14 @@ mod tests {
         let deny = |_url: &str, _k: Option<&str>| -> Result<String, String> {
             Err("url not in APPROVED canonical set".to_string())
         };
-        let err = fetch_document_inner(&MockTransport::empty(), &policy, &input, Some(&deny), &fake_dns)
-            .unwrap_err();
+        let err = fetch_document_inner(
+            &MockTransport::empty(),
+            &policy,
+            &input,
+            Some(&deny),
+            &fake_dns,
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "not_approved_rejected");
     }
 
@@ -1010,7 +1055,11 @@ mod tests {
         let body = "# Document\nhello rip fetch";
         let t = MockTransport::with(vec![(
             "http://example.com/doc".into(),
-            resp(200, vec![("Content-Type", "text/markdown; charset=utf-8")], body),
+            resp(
+                200,
+                vec![("Content-Type", "text/markdown; charset=utf-8")],
+                body,
+            ),
         )]);
         let policy = policy_hosts(&["example.com"]);
         let input = FetchInput {
@@ -1018,9 +1067,13 @@ mod tests {
             url: "http://example.com/doc".into(),
             entry_key: None,
         };
-        let out = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap();
+        let out =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap();
         assert_eq!(out.record.status, "ok");
-        assert_eq!(out.record.content_sha256.as_deref(), Some(&sha256_hex(body.as_bytes()) as &str));
+        assert_eq!(
+            out.record.content_sha256.as_deref(),
+            Some(&sha256_hex(body.as_bytes()) as &str)
+        );
         assert_eq!(out.record.content_bytes, Some(body.len() as u64));
         assert_eq!(out.record.mime_type.as_deref(), Some("text/markdown"));
         assert_eq!(out.record.hops, vec!["http://example.com/doc"]);
@@ -1046,8 +1099,12 @@ mod tests {
             url: "http://example.com/a".into(),
             entry_key: None,
         };
-        let out = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap();
-        assert_eq!(out.record.hops, vec!["http://example.com/a", "http://example.com/b"]);
+        let out =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap();
+        assert_eq!(
+            out.record.hops,
+            vec!["http://example.com/a", "http://example.com/b"]
+        );
         assert_eq!(t.requested.lock().unwrap().len(), 2);
     }
 
@@ -1064,8 +1121,13 @@ mod tests {
             url: "http://example.com/a".into(),
             entry_key: None,
         };
-        let err = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
-        assert_eq!(err.code(), "host_not_allowlisted", "跨出 allowlist 域逐跳拒绝");
+        let err =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        assert_eq!(
+            err.code(),
+            "host_not_allowlisted",
+            "跨出 allowlist 域逐跳拒绝"
+        );
         // 只请求了首跳，目标域从未被请求
         assert_eq!(
             t.requested.lock().unwrap().as_slice(),
@@ -1077,7 +1139,11 @@ mod tests {
     fn redirect_to_private_rejected_per_hop() {
         let t = MockTransport::with(vec![(
             "http://example.com/a".into(),
-            resp(302, vec![("Location", "http://169.254.169.254/latest/meta-data/")], ""),
+            resp(
+                302,
+                vec![("Location", "http://169.254.169.254/latest/meta-data/")],
+                "",
+            ),
         )]);
         let policy = policy_hosts(&["example.com"]);
         let input = FetchInput {
@@ -1085,7 +1151,8 @@ mod tests {
             url: "http://example.com/a".into(),
             entry_key: None,
         };
-        let err = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        let err =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
         assert_eq!(err.code(), "private_network_blocked");
     }
 
@@ -1104,7 +1171,8 @@ mod tests {
             url: "http://example.com/0".into(),
             entry_key: None,
         };
-        let err = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        let err =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
         assert_eq!(err.code(), "too_many_redirects");
     }
 
@@ -1120,16 +1188,22 @@ mod tests {
         // MIME 拒绝
         let t = MockTransport::with(vec![(
             "http://example.com/x".into(),
-            resp(200, vec![("Content-Type", "application/octet-stream")], "bin"),
+            resp(
+                200,
+                vec![("Content-Type", "application/octet-stream")],
+                "bin",
+            ),
         )]);
-        let err = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        let err =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
         assert_eq!(err.code(), "mime_not_allowed");
         // 缺 Content-Type 按 octet-stream 拒
         let t = MockTransport::with(vec![(
             "http://example.com/x".into(),
             resp(200, vec![], "bin"),
         )]);
-        let err = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        let err =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
         assert_eq!(err.code(), "mime_not_allowed");
         // 体超限
         let t = MockTransport::with(vec![(
@@ -1140,14 +1214,16 @@ mod tests {
             max_bytes: 1024,
             ..policy.clone()
         };
-        let err = fetch_document_inner(&t, &small, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        let err =
+            fetch_document_inner(&t, &small, &input, Some(&noop_check()), &fake_dns).unwrap_err();
         assert_eq!(err.code(), "body_too_large");
         // 非 2xx
         let t = MockTransport::with(vec![(
             "http://example.com/x".into(),
             resp(404, vec![("Content-Type", "text/plain")], "nope"),
         )]);
-        let err = fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
+        let err =
+            fetch_document_inner(&t, &policy, &input, Some(&noop_check()), &fake_dns).unwrap_err();
         assert_eq!(err.code(), "http_status");
     }
 
@@ -1175,12 +1251,8 @@ mod tests {
             },
         )
         .unwrap();
-        let out = Transport::get(
-            &transport,
-            &format!("http://localhost:{port}/doc"),
-            4096,
-        )
-        .unwrap();
+        let out =
+            Transport::get(&transport, &format!("http://localhost:{port}/doc"), 4096).unwrap();
         assert_eq!(out.status, 200);
         assert_eq!(out.body, b"proxied-body");
         // 代理事件留痕（绝对形式 GET 转发）
@@ -1269,7 +1341,9 @@ mod tests {
         record_fetch(&pool, &ok).unwrap();
         let total: i64 = pool
             .with_conn(|c| {
-                c.query_row("SELECT COUNT(*) FROM knowledge_document_fetch", [], |r| r.get(0))
+                c.query_row("SELECT COUNT(*) FROM knowledge_document_fetch", [], |r| {
+                    r.get(0)
+                })
             })
             .unwrap();
         assert_eq!(total, 2);

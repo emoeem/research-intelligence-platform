@@ -147,6 +147,7 @@ fn acceptance_no_stuffing_full_surface_and_rtis_scale() {
             task_id: "t-acceptance-1".to_string(),
             text: "kingdee HTTP 检索".to_string(),
             correlation_id: "corr-acceptance-1".to_string(),
+            trace_id: None,
             actor: "acceptance".to_string(),
         })
         .expect("assemble");

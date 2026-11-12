@@ -44,6 +44,9 @@ pub struct StoredDefinition {
 pub struct StoredRun {
     /// 域对象。
     pub run: AgentRun,
+    /// 链路追踪 ID（P7-5 迁移 015 trace_id 列；015 之前落库的行与显式
+    /// None 受理为 None，只读查询面按 NULL 如实呈现）。
+    pub trace_id: Option<String>,
     /// 创建时刻。
     pub created_at: String,
     /// RUNNING 进入时刻。
@@ -262,7 +265,10 @@ impl AgentStore {
     }
 
     /// 创建 run（QUEUED 落行；定义不存在先拒绝，FK 前置显式报因）。
-    pub fn create_run(&self, run: &AgentRun) -> Result<(), AgentError> {
+    /// trace_id（P7-5 迁移 015）：None 时不落关联列（015 之前的调用面
+    /// 语义不变）；Some 时须过 domain::ids::TraceId 校验。重试链继承源
+    /// run 的 trace_id（RunControl::retry 传入），跨 run 关联同链。
+    pub fn create_run(&self, run: &AgentRun, trace_id: Option<&str>) -> Result<(), AgentError> {
         let agent_id = run.agent_id().as_str();
         let agent_version = run.agent_version();
         let exists: bool = self.pool.with_conn(|c| {
@@ -276,14 +282,18 @@ impl AgentStore {
                 "definition {agent_id}@{agent_version} not found; agent_run FK requires it"
             )));
         }
+        let trace = trace_id
+            .map(domain::TraceId::try_new)
+            .transpose()
+            .map_err(|e| AgentError::Storage(e.to_string()))?;
         let now = domain::time::now_iso();
         let refs: Vec<String> = run.memory_refs().to_vec();
         self.pool
             .with_conn(|c| {
                 c.execute(
                     "INSERT INTO agent_run (run_id, task_id, agent_id, agent_version, state,
-                     memory_refs_json, created_at, updated_at, schema_version)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, 1)",
+                     memory_refs_json, trace_id, created_at, updated_at, schema_version)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 1)",
                     rusqlite::params![
                         run.run_id().as_str(),
                         run.task_id(),
@@ -291,6 +301,7 @@ impl AgentStore {
                         agent_version,
                         run.state().as_str(),
                         serde_json::to_string(&refs).unwrap_or_else(|_| "[]".to_string()),
+                        trace.as_ref().map(|t| t.as_str()),
                         now
                     ],
                 )?;
@@ -311,11 +322,12 @@ impl AgentStore {
             String,
             Option<String>,
             Option<String>,
+            Option<String>,
         );
         let row: Option<RunRow> = self.pool.with_conn(|c| {
             let mut stmt = c.prepare(
                 "SELECT task_id, agent_id, agent_version, state, memory_refs_json,
-                            created_at, started_at, finished_at
+                            created_at, started_at, finished_at, trace_id
                      FROM agent_run WHERE run_id = ?1",
             )?;
             stmt.query_row([run_id], |r| {
@@ -328,6 +340,7 @@ impl AgentStore {
                     r.get::<_, String>(5)?,
                     r.get::<_, Option<String>>(6)?,
                     r.get::<_, Option<String>>(7)?,
+                    r.get::<_, Option<String>>(8)?,
                 ))
             })
             .optional()
@@ -342,6 +355,7 @@ impl AgentStore {
                 created_at,
                 started_at,
                 finished_at,
+                trace_id,
             )| {
                 let state = AgentRunState::ALL
                     .into_iter()
@@ -360,6 +374,7 @@ impl AgentStore {
                 )?;
                 Ok::<StoredRun, AgentError>(StoredRun {
                     run,
+                    trace_id,
                     created_at,
                     started_at,
                     finished_at,
@@ -624,7 +639,7 @@ mod tests {
             vec![],
         )
         .unwrap();
-        assert!(store.create_run(&orphan).is_err());
+        assert!(store.create_run(&orphan, None).is_err());
 
         let run = AgentRun::try_new(
             RunId::try_new("arn-lc1").unwrap(),
@@ -635,7 +650,7 @@ mod tests {
             vec![],
         )
         .unwrap();
-        store.create_run(&run).unwrap();
+        store.create_run(&run, None).unwrap();
 
         // QUEUED → RUNNING（记 started_at）→ SUCCEEDED（记 finished_at）。
         let running = store
@@ -688,7 +703,7 @@ mod tests {
             vec![],
         )
         .unwrap();
-        store.create_run(&run2).unwrap();
+        store.create_run(&run2, None).unwrap();
         assert!(matches!(
             store.transition_run("arn-lc2", AgentRunState::Succeeded),
             Err(AgentError::InvalidTransition { .. })

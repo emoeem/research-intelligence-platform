@@ -41,8 +41,17 @@ const RUNS_STUB = {
 const RUN_DETAIL_STUB = {
   available: true,
   source: "aux",
+  correlation: {
+    trace_id: "tr-p75-smoke",
+    task_id: null,
+    agent_run_id: "arn-p75-agent",
+    tool_run_id: "rn-b5-rt-py",
+    artifact_ids: ["art-p75-1"],
+    evidence_ids: ["ev-p75-1"],
+  },
   run: {
     run_id: "rn-b5-rt-py",
+    trace_id: "tr-p75-smoke",
     tool_id: "rip.kb.rtis",
     tool_version: "0.1.0",
     workspace_id: "ws-dev",
@@ -198,6 +207,26 @@ describe("Run 详情页（P5-8）", () => {
     // JSON 块：usage 与 environment 原样解析渲染
     expect(screen.getByText("usage")).toBeTruthy();
     expect(screen.getByText(/"elapsed_ms": 4210/)).toBeTruthy();
+    // P7-5 六 ID 关联面在场（correlation）且可点击跳转 /traces?id=
+    expect(screen.getByText("trace")).toBeTruthy();
+    const traceLink = screen.getByRole("link", { name: "tr-p75-smoke" });
+    expect(traceLink.getAttribute("href")).toBe("/traces?id=tr-p75-smoke");
+    expect(screen.getByText("agent_run")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "arn-p75-agent" }).getAttribute("href"),
+    ).toBe("/traces?id=arn-p75-agent");
+    expect(screen.getByText("tool_run")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "rn-b5-rt-py" }).getAttribute("href"),
+    ).toBe("/traces?id=rn-b5-rt-py");
+    expect(screen.getByText("artifacts")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "art-p75-1" }).getAttribute("href")).toBe(
+      "/traces?id=art-p75-1",
+    );
+    expect(screen.getByText("evidence")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "ev-p75-1" }).getAttribute("href")).toBe(
+      "/traces?id=ev-p75-1",
+    );
     expect(screen.getByText("environment")).toBeTruthy();
     expect(screen.getByText(/"fingerprint": "py3.12"/)).toBeTruthy();
     // artifact 缺表：服务端 note + 空列表说明

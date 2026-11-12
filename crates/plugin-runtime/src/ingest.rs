@@ -60,11 +60,8 @@ pub const CONTENT_KINDS: [&str; 6] = [
 pub const RTIS_CONTENT_KINDS: [&str; 3] = ["poc", "skill_md", "method_case"];
 
 /// SK-1 三类（knowledge_source_entry 权威落点，011）。
-pub const EXTENDED_CONTENT_KINDS: [&str; 3] = [
-    "catalog_entry",
-    "document_markdown",
-    "skill_candidate",
-];
+pub const EXTENDED_CONTENT_KINDS: [&str; 3] =
+    ["catalog_entry", "document_markdown", "skill_candidate"];
 
 /// parser 注册表键与内容类型的配对（validate rule 3 同款，双处防御）。
 pub const KIND_PARSER: [(&str, &str); 3] = [
@@ -396,7 +393,8 @@ fn write_all(
     rtis_items: &[CorpusItem],
     extended_items: &[ExtendedItem],
     now: &str,
-) -> Result<(BTreeMap<String, u64>, BTreeMap<String, u64>, u64, u64, u64), database::rusqlite::Error> {
+) -> Result<(BTreeMap<String, u64>, BTreeMap<String, u64>, u64, u64, u64), database::rusqlite::Error>
+{
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut skipped_by_kind: BTreeMap<String, u64> = BTreeMap::new();
     let mut skipped = 0u64;
@@ -445,9 +443,8 @@ fn write_all(
     // 2) SK-1 三类 → knowledge_source_entry（011；去重键 + 内容变更侦测）。
     for item in extended_items {
         let sha = sha256_hex(item.body.as_bytes());
-        let cat_json = serde_json::to_string(&item.category_path).map_err(|e| {
-            database::rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-        })?;
+        let cat_json = serde_json::to_string(&item.category_path)
+            .map_err(|e| database::rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
         let loc_json = item.source_location.to_string();
         let meta_json = item.meta.as_ref().map(|m| m.to_string());
         let metadata_material = format!(

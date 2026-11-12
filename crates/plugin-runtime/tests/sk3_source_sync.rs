@@ -124,16 +124,26 @@ fn sk3_sync_dry_run_zero_writes_then_real_then_idempotent() {
     let pkg = fixture_package("awesome-hacking");
 
     // dry-run：报告计数与实跑同构，但 knowledge_source_entry 零行。
-    let report = sync_knowledge_source(&pool, &manifest, &pkg, &SyncOptions {
-        dry_run: true,
-        ..base_opts()
-    })
+    let report = sync_knowledge_source(
+        &pool,
+        &manifest,
+        &pkg,
+        &SyncOptions {
+            dry_run: true,
+            ..base_opts()
+        },
+    )
     .unwrap();
     assert!(report.ok);
     assert!(report.dry_run);
     assert!(report.final_report.as_ref().unwrap().dry_run);
     assert_eq!(
-        report.final_report.as_ref().unwrap().counts.get("catalog_entry"),
+        report
+            .final_report
+            .as_ref()
+            .unwrap()
+            .counts
+            .get("catalog_entry"),
         Some(&85)
     );
     assert_eq!(kse_count(&pool, ""), 0, "dry-run 必须零落盘");
@@ -143,7 +153,10 @@ fn sk3_sync_dry_run_zero_writes_then_real_then_idempotent() {
     assert!(report.ok);
     assert!(!report.dry_run);
     assert_eq!(report.pin_kind.as_deref(), Some("commit"));
-    assert_eq!(report.pinned_commit.as_deref(), Some("440486fd08b0a0d9ad9a041a0bb234dcdf65dee2"));
+    assert_eq!(
+        report.pinned_commit.as_deref(),
+        Some("440486fd08b0a0d9ad9a041a0bb234dcdf65dee2")
+    );
     assert_eq!(kse_count(&pool, "WHERE entry_kind='catalog_entry'"), 85);
 
     // 幂等二跑：skipped=全量、changed=0。
@@ -210,22 +223,35 @@ fn sk3_sync_limits_exceeded_fail_fast_machine_readable() {
     let manifest = ah_manifest();
     let pkg = fixture_package("awesome-hacking");
 
-    let report = sync_knowledge_source(&pool, &manifest, &pkg, &SyncOptions {
-        max_bytes: Some(1), // 必然超限
-        ..base_opts()
-    })
+    let report = sync_knowledge_source(
+        &pool,
+        &manifest,
+        &pkg,
+        &SyncOptions {
+            max_bytes: Some(1), // 必然超限
+            ..base_opts()
+        },
+    )
     .unwrap();
     assert!(!report.ok);
     assert!(report.limits_exceeded.contains(&"max_bytes".to_string()));
-    assert!(report.partial_failures.iter().any(|f| f.contains("max_bytes")));
+    assert!(report
+        .partial_failures
+        .iter()
+        .any(|f| f.contains("max_bytes")));
     assert!(report.final_report.is_none(), "超限不摄取（fail-fast）");
     assert_eq!(kse_count(&pool, ""), 0);
 
     // max_files 同形。
-    let report2 = sync_knowledge_source(&pool, &manifest, &pkg, &SyncOptions {
-        max_files: Some(0),
-        ..base_opts()
-    })
+    let report2 = sync_knowledge_source(
+        &pool,
+        &manifest,
+        &pkg,
+        &SyncOptions {
+            max_files: Some(0),
+            ..base_opts()
+        },
+    )
     .unwrap();
     assert!(report2.limits_exceeded.contains(&"max_files".to_string()));
 }
@@ -239,10 +265,15 @@ fn sk3_sync_retry_attempts_recorded_machine_readable() {
     let mut manifest = ah_manifest();
     manifest["permissions"]["data_access"] = serde_json::json!("read_only");
     let pkg = fixture_package("awesome-hacking");
-    let report = sync_knowledge_source(&pool, &manifest, &pkg, &SyncOptions {
-        retries: 1,
-        ..base_opts()
-    })
+    let report = sync_knowledge_source(
+        &pool,
+        &manifest,
+        &pkg,
+        &SyncOptions {
+            retries: 1,
+            ..base_opts()
+        },
+    )
     .unwrap();
     assert!(!report.ok);
     assert_eq!(report.attempts.len(), 2, "retries=1 → 共两次尝试");
@@ -270,21 +301,31 @@ fn sk3_sync_idempotency_key_skips_second_run() {
     let pkg = fixture_package("awesome-hacking");
 
     // 首跑（带键，prior 为空）→ 实跑。
-    let report = sync_knowledge_source(&pool, &manifest, &pkg, &SyncOptions {
-        idempotency_key: Some("sk3-key-001".to_string()),
-        ..base_opts()
-    })
+    let report = sync_knowledge_source(
+        &pool,
+        &manifest,
+        &pkg,
+        &SyncOptions {
+            idempotency_key: Some("sk3-key-001".to_string()),
+            ..base_opts()
+        },
+    )
     .unwrap();
     assert!(report.ok);
     assert!(!report.idempotent_skipped);
     assert_eq!(kse_count(&pool, ""), 85);
 
     // 二跑同键（prior 含该键）→ 整体跳过，final_report=None，零新增。
-    let report2 = sync_knowledge_source(&pool, &manifest, &pkg, &SyncOptions {
-        idempotency_key: Some("sk3-key-001".to_string()),
-        prior_sync_keys: vec!["sk3-key-001".to_string()],
-        ..base_opts()
-    })
+    let report2 = sync_knowledge_source(
+        &pool,
+        &manifest,
+        &pkg,
+        &SyncOptions {
+            idempotency_key: Some("sk3-key-001".to_string()),
+            prior_sync_keys: vec!["sk3-key-001".to_string()],
+            ..base_opts()
+        },
+    )
     .unwrap();
     assert!(report2.ok);
     assert!(report2.idempotent_skipped);
@@ -293,10 +334,17 @@ fn sk3_sync_idempotency_key_skips_second_run() {
 
     // 键台账侧车：append/read 往返（非数据库写面）。
     let state_dir = unique("sync-keys");
-    plugin_runtime::source_sync::append_sync_key(&state_dir, "sk3-key-001", "knowledge.awesome-hacking")
-        .unwrap();
+    plugin_runtime::source_sync::append_sync_key(
+        &state_dir,
+        "sk3-key-001",
+        "knowledge.awesome-hacking",
+    )
+    .unwrap();
     assert_eq!(read_sync_keys(&state_dir), vec!["sk3-key-001".to_string()]);
-    assert_eq!(plugin_runtime::source_sync::SYNC_KEYS_FILE_NAME, "sync-keys.jsonl");
+    assert_eq!(
+        plugin_runtime::source_sync::SYNC_KEYS_FILE_NAME,
+        "sync-keys.jsonl"
+    );
 
     // 包统计独立可用（CLI 限额面同一实现）。
     let (files, bytes) = package_stats(&pkg).unwrap();
@@ -319,22 +367,26 @@ fn sk3_sync_candidate_mapping_review_gate_and_idempotence() {
     let report = sync_knowledge_source(&pool, &manifest, &pkg, &base_opts()).unwrap();
     assert!(report.ok);
     assert_eq!(
-        report.final_report.as_ref().unwrap().counts.get("skill_candidate"),
+        report
+            .final_report
+            .as_ref()
+            .unwrap()
+            .counts
+            .get("skill_candidate"),
         Some(&2)
     );
 
     // 审核闸：未 APPROVED 时不映射。
     let repo = SqliteResourceRepository::new(pool.clone());
-    let m0 = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 500).unwrap();
+    let m0 = repo
+        .promote_knowledge_candidates("knowledge.sk3-skill-pack", 500)
+        .unwrap();
     assert_eq!(m0.scanned, 2);
     assert_eq!(m0.mapped, 0, "DISCOVERED 不映射（审核闸）");
     assert_eq!(m0.skipped_not_approved, 2);
 
     // 受控审核翻转 → 映射 2 条 CANDIDATE 资源。
-    let keys = vec![
-        "skills/alpha/SKILL.md",
-        "skills/beta/SKILL.md",
-    ];
+    let keys = vec!["skills/alpha/SKILL.md", "skills/beta/SKILL.md"];
     plugin_runtime::knowledge_review::set_review_status(
         &pool,
         &audit,
@@ -344,7 +396,9 @@ fn sk3_sync_candidate_mapping_review_gate_and_idempotence() {
         ReviewStatus::Approved,
     )
     .unwrap();
-    let m1 = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 500).unwrap();
+    let m1 = repo
+        .promote_knowledge_candidates("knowledge.sk3-skill-pack", 500)
+        .unwrap();
     assert_eq!(m1.mapped, 2);
     assert_eq!(m1.resource_ids.len(), 2);
     let (lifecycle, governance, rtype): (String, String, String) = pool
@@ -363,7 +417,9 @@ fn sk3_sync_candidate_mapping_review_gate_and_idempotence() {
     );
 
     // 映射幂等：二跑 skipped_existing，不覆盖。
-    let m2 = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 500).unwrap();
+    let m2 = repo
+        .promote_knowledge_candidates("knowledge.sk3-skill-pack", 500)
+        .unwrap();
     assert_eq!(m2.mapped, 0);
     assert_eq!(m2.skipped_existing, 2);
 
@@ -377,7 +433,9 @@ fn sk3_sync_candidate_mapping_review_gate_and_idempotence() {
         ReviewStatus::Rejected,
     )
     .unwrap();
-    let m3 = repo.promote_knowledge_candidates("knowledge.sk3-skill-pack", 500).unwrap();
+    let m3 = repo
+        .promote_knowledge_candidates("knowledge.sk3-skill-pack", 500)
+        .unwrap();
     assert_eq!(m3.mapped, 0, "REJECTED 永不映射");
     assert_eq!(m3.skipped_not_approved, 1);
     assert_eq!(m3.skipped_existing, 1);

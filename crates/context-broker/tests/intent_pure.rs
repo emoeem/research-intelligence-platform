@@ -283,7 +283,7 @@ fn intent_event_carries_correlation_id_via_audit_engine() {
 
     let config = load_config();
     let result = classify("kingdee HTTP 检索", &config);
-    let emitted = emit_intent_event(&engine, &result, "corr-p43-1", "test-agent");
+    let emitted = emit_intent_event(&engine, &result, "corr-p43-1", None, "test-agent");
     assert!(emitted, "合法事件应落库");
 
     let (count, action, corr): (i64, String, String) = pool
@@ -328,6 +328,6 @@ fn intent_event_best_effort_never_fails_caller() {
     let engine = AuditEngine::new(pool);
     let config = load_config();
     let result = classify("kingdee HTTP 检索", &config);
-    let emitted = emit_intent_event(&engine, &result, "corr-p43-2", "test-agent");
+    let emitted = emit_intent_event(&engine, &result, "corr-p43-2", None, "test-agent");
     assert!(!emitted, "写失败旁路返回 false，不影响装配");
 }

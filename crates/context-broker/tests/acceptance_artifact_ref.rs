@@ -110,6 +110,7 @@ fn acceptance_artifact_ref_only_reference_and_hash_in_context() {
             task_id: "t-acceptance-3".to_string(),
             text: "kingdee 检索".to_string(),
             correlation_id: "corr-acceptance-3".to_string(),
+            trace_id: None,
             actor: "acceptance".to_string(),
         })
         .expect("assemble");

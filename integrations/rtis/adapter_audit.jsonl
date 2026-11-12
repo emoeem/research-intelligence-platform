@@ -11,3 +11,4 @@
 {"at": "2026-11-06T15:44:51Z", "mode": "auto", "resolver_used": "rp", "status": "no_match", "elapsed_ms": 3.1, "attempts": [{"path": "rp", "ok": true, "error": null}]}
 {"at": "2026-11-06T15:45:10Z", "mode": "auto", "resolver_used": "rp", "status": "no_match", "elapsed_ms": 3.2, "attempts": [{"path": "rp", "ok": true, "error": null}]}
 {"at": "2026-11-06T15:48:48Z", "mode": "auto", "resolver_used": "rp", "status": "ok", "elapsed_ms": 6.0, "attempts": [{"path": "rp", "ok": true, "error": null}]}
+{"at": "2026-11-12T17:30:40Z", "mode": "auto", "resolver_used": "rp", "status": "ok", "elapsed_ms": 31.5, "attempts": [{"path": "rp", "ok": true, "error": null}]}

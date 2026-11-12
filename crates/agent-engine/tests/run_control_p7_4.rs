@@ -329,6 +329,7 @@ fn run_request(agent_id: &str, planner: Box<dyn Planner>, goal: &str) -> RunRequ
         agent_version: None,
         goal: goal.to_string(),
         task_id: Some("task-p74".to_string()),
+        trace_id: None,
         input: None,
         planner,
         confirmer: Box::new(DeclineConfirmer),
@@ -539,7 +540,7 @@ fn pause_contract_request_is_signal_and_loop_consumes_it() {
         vec![],
     )
     .unwrap();
-    store.create_run(&run).unwrap();
+    store.create_run(&run, None).unwrap();
     store
         .transition_run("arn-p74-failed-src", AgentRunState::Running)
         .unwrap();
@@ -629,7 +630,7 @@ fn cancel_cooperative_and_queued_direct() {
         vec![],
     )
     .unwrap();
-    store.create_run(&queued).unwrap();
+    store.create_run(&queued, None).unwrap();
     state
         .ensure_control_row("arn-p74-queued-cancel", "")
         .unwrap();
@@ -657,7 +658,7 @@ fn cancel_cooperative_and_queued_direct() {
         vec![],
     )
     .unwrap();
-    store.create_run(&done).unwrap();
+    store.create_run(&done, None).unwrap();
     state.ensure_control_row("arn-p74-done-cancel", "").unwrap();
     store
         .transition_run("arn-p74-done-cancel", AgentRunState::Running)
@@ -708,7 +709,7 @@ fn retry_replays_failed_run_as_new_run_with_link() {
         vec![],
     )
     .unwrap();
-    store.create_run(&source).unwrap();
+    store.create_run(&source, None).unwrap();
     state
         .ensure_control_row("arn-p74-retry-src", "源目标")
         .unwrap();

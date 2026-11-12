@@ -17,9 +17,10 @@
 //!    面可对账）。
 //!
 //! 数据面：agent_definition/agent_run（006 迁移）+ 三类 Memory（013 迁移）+
-//! 运行控制与步骤轨迹（014 迁移，[`state::RunStateStore`]）；状态机纯函数在
-//! domain::agent，CAS 持久化在 [`store::AgentStore`]，控制编排面在
-//! [`control::RunControl`]。
+//! 运行控制与步骤轨迹（014 迁移，[`state::RunStateStore`]）+ trace 统一关联
+//! （015 迁移五面 trace_id 列，写面统一注入，只读查询面 [`trace::trace_query`]，
+//! 六 ID 类型集中定义在 domain::ids）；状态机纯函数在 domain::agent，CAS 持久
+//! 化在 [`store::AgentStore`]，控制编排面在 [`control::RunControl`]。
 //!
 //! 边界（如实声明）：
 //! - 工具驱动经 [`tool_link::RunDriver`] 端口注入；MockRunner 注入路径与
@@ -42,6 +43,7 @@ pub mod memory;
 pub mod state;
 pub mod store;
 pub mod tool_link;
+pub mod trace;
 
 pub use agent_loop::{
     Decision, KeywordSearchPlanner, L3Expansion, LoopConfig, PlanContext, PlanStep, Planner,
@@ -58,6 +60,7 @@ pub use store::{AgentStore, StoredDefinition, StoredRun};
 pub use tool_link::{
     MockDriver, PythonWorkerDriver, RunDriver, ToolCallOutcome, ToolCallSpec, ToolLink,
 };
+pub use trace::{chain_to_json, trace_query, TraceChain, DEFAULT_SECTION_LIMIT};
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;

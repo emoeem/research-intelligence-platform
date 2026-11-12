@@ -7,6 +7,10 @@
 //!   --name <n> [--caps "tool@ver,tool2"] [--policy <json>] [--db <path>]
 //! cargo run --offline -p agent-engine --bin rp-agent -- def-show <agent_id> [--version <v>] [--db <path>]
 //! cargo run --offline -p agent-engine --bin rp-agent -- run-show <run_id> [--db <path>]
+//! cargo run --offline -p agent-engine --bin rp-agent -- trace <id> [--db <path>] [--out <path>]
+//!   （P7-5 统一只读关联查询：按任一 ID（trace_id/task_id/agent_run_id/
+//!    tool_run_id/artifact_id/evidence_id）关联出任务/意图/上下文/工具/
+//!    证据/审计全链，agent_engine::trace::trace_query）
 //! ~~~
 //!
 //! 默认面（仓库根运行）：--db migrations/dev-p7.db（开发库副本；生产
@@ -52,7 +56,9 @@ fn usage() -> i32 {
          \x20 def-add --agent-id <id> --version <v> --name <n> [--caps \"tool@ver,tool2\"]\n\
          \x20   [--policy <json>] [--db <path>]\n\
          \x20 def-show <agent_id> [--version <v>] [--db <path>]\n\
-         \x20 run-show <run_id> [--db <path>]"
+         \x20 run-show <run_id> [--db <path>]\n\
+         \x20 trace <id> [--db <path>] [--out <path>]  (按任一关联 ID 汇全链, P7-5)\n\
+         \x20 run <agent_id> 追加: [--trace-id <id>]  (自定义链路追踪 ID)"
     );
     2
 }
@@ -74,6 +80,7 @@ struct Flags {
     out: Option<PathBuf>,
     policy: String,
     caps: String,
+    trace_id: Option<String>,
 }
 
 fn parse_flags(args: &[String]) -> Flags {
@@ -98,6 +105,7 @@ fn parse_flags(args: &[String]) -> Flags {
         out: None,
         policy: "{}".to_string(),
         caps: String::new(),
+        trace_id: None,
     };
     let mut iter = args.iter();
     while let Some(flag) = iter.next() {
@@ -127,6 +135,7 @@ fn parse_flags(args: &[String]) -> Flags {
             "--out" => flags.out = Some(PathBuf::from(value(&mut iter))),
             "--policy" => flags.policy = value(&mut iter),
             "--caps" => flags.caps = value(&mut iter),
+            "--trace-id" => flags.trace_id = Some(value(&mut iter)),
             _ => {}
         }
     }
@@ -432,6 +441,7 @@ fn run() -> i32 {
                             "agent_id": s.run.agent_id().as_str(),
                             "agent_version": s.run.agent_version(),
                             "state": s.run.state().as_str(),
+                            "trace_id": s.trace_id,
                             "memory_refs": s.run.memory_refs(),
                             "created_at": s.created_at,
                             "started_at": s.started_at,
@@ -446,6 +456,44 @@ fn run() -> i32 {
                 }
                 Err(e) => {
                     eprintln!("run-show failed: {e}");
+                    1
+                }
+            }
+        }
+        // P7-5 统一只读关联查询：按任一关联 ID 汇任务/意图/上下文/工具/
+        // 证据/审计全链（agent_engine::trace::trace_query，只读 SELECT）。
+        "trace" => {
+            let query_id = args.iter().skip(1).find(|a| !a.starts_with("--")).cloned();
+            let Some(query_id) = query_id else {
+                eprintln!("trace requires <id>（六 ID 之一：trace_id/task_id/agent_run_id/tool_run_id/artifact_id/evidence_id）");
+                return usage();
+            };
+            let pool = open_pool(&flags.db, &flags.migrations_dir);
+            match agent_engine::trace::trace_query(
+                &pool,
+                &query_id,
+                agent_engine::trace::DEFAULT_SECTION_LIMIT,
+            ) {
+                Ok(chain) => {
+                    if chain.trace_ids.is_empty() {
+                        eprintln!(
+                            "{}",
+                            serde_json::json!({"code": "trace_not_found",
+                                   "message": format!("{query_id} 未解析到任何 trace_id（六 ID 方向均未命中；015 之前落库行 trace_id 为 NULL 不参与关联）")})
+                        );
+                        return 1;
+                    }
+                    let text = agent_engine::trace::chain_to_json(&chain).to_string();
+                    println!("{text}");
+                    if let Some(out) = &flags.out {
+                        if let Err(e) = std::fs::write(out, &text) {
+                            eprintln!("write chain {}: {e}", out.display());
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("trace query failed: {e}");
                     1
                 }
             }
@@ -520,6 +568,7 @@ fn run() -> i32 {
                 agent_version: flags.agent_version.clone(),
                 goal: flags.goal.clone(),
                 task_id: flags.task_id.clone(),
+                trace_id: flags.trace_id.clone(),
                 input: flags.input.clone(),
                 planner: Box::new(agent_engine::KeywordSearchPlanner),
                 confirmer: Box::new(confirmer),

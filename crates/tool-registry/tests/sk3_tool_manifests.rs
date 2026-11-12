@@ -10,8 +10,8 @@
 use std::path::PathBuf;
 
 use database::{DbPath, Pool, PoolConfig};
-use tool_registry::{Options, Registry};
 use tool_registry::validate::{content_hash, validate_static};
+use tool_registry::{Options, Registry};
 
 fn repo_root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -28,18 +28,14 @@ const TOOLS: [&str; 4] = [
 ];
 
 fn load_yaml(name: &str) -> serde_json::Value {
-    let text = std::fs::read_to_string(
-        repo_root().join(format!("manifests/tools/{name}.yaml")),
-    )
-    .unwrap();
+    let text =
+        std::fs::read_to_string(repo_root().join(format!("manifests/tools/{name}.yaml"))).unwrap();
     serde_yaml_ng::from_str(&text).unwrap()
 }
 
 fn load_json(name: &str) -> serde_json::Value {
-    let text = std::fs::read_to_string(
-        repo_root().join(format!("manifests/tools/{name}.json")),
-    )
-    .unwrap();
+    let text =
+        std::fs::read_to_string(repo_root().join(format!("manifests/tools/{name}.json"))).unwrap();
     serde_json::from_str(&text).unwrap()
 }
 
@@ -69,8 +65,14 @@ fn sk3_dual_manifest_forms_are_key_equal_and_static_valid() {
             assert_eq!(mode, "none", "{name}: T0 必须无网络");
         } else {
             assert_eq!(mode, "egress_allowlist", "{name}: T1 白名单出网");
-            assert!(yaml["network"]["egress"]["ports"].as_array().unwrap().iter().all(|p| p.is_i64() || p.is_u64()),
-                    "{name}: egress.ports 必填");
+            assert!(
+                yaml["network"]["egress"]["ports"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|p| p.is_i64() || p.is_u64()),
+                "{name}: egress.ports 必填"
+            );
         }
     }
 }
@@ -91,20 +93,29 @@ fn sk3_four_tools_register_discover_query() {
         let registry = Registry::open(pool.clone());
         for name in TOOLS {
             let doc = load_json(name);
-            let r = registry.register(&doc).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let r = registry
+                .register(&doc)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(r.tool_id, name);
             assert_eq!(r.version, "0.1.0");
         }
         let found = registry.discover().unwrap();
         for name in TOOLS {
-            assert!(found.iter().any(|t| t.tool_id == name), "{name} discoverable");
+            assert!(
+                found.iter().any(|t| t.tool_id == name),
+                "{name} discoverable"
+            );
             let d = registry.query(name).unwrap();
             assert_eq!(d.current_version.as_deref(), Some("0.1.0"));
             let permission = match name {
                 "rip.knowledge.catalog.extract" | "rip.security.extension.audit" => "T0",
                 _ => "T1",
             };
-            assert_eq!(d.tool.permission_level.as_deref(), Some(permission), "{name}");
+            assert_eq!(
+                d.tool.permission_level.as_deref(),
+                Some(permission),
+                "{name}"
+            );
         }
     })
     .unwrap_or_else(|e| {

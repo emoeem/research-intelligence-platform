@@ -113,6 +113,7 @@ impl BrokerLink {
                 task_id: req.task_id.clone(),
                 text: text.clone(),
                 correlation_id: req.correlation_id.clone(),
+                trace_id: req.trace_id.clone(),
                 actor: req.actor.clone(),
             })?;
         }
@@ -197,6 +198,7 @@ mod tests {
                     // 无族触发词、无槽位：置信度 0，ambiguous 无候选族。
                     text: "zzzq 无关词串".to_string(),
                     correlation_id: "c-broker-1".to_string(),
+                    trace_id: None,
                     actor: "test".to_string(),
                 },
                 &mut DeclineConfirmer,
@@ -245,6 +247,7 @@ mod tests {
                     // 无族触发词：首轮 families 空。
                     text: "zzzq 无关词串".to_string(),
                     correlation_id: "c-broker-2".to_string(),
+                    trace_id: None,
                     actor: "test".to_string(),
                 },
                 &mut WordConfirmer("http".to_string()),

@@ -47,7 +47,10 @@ impl EntryKind {
 
     /// RTIS 既有三类（010 词表，knowledge_ingest 权威落点）。
     pub fn is_rtis(&self) -> bool {
-        matches!(self, EntryKind::Poc | EntryKind::SkillMd | EntryKind::MethodCase)
+        matches!(
+            self,
+            EntryKind::Poc | EntryKind::SkillMd | EntryKind::MethodCase
+        )
     }
 
     /// SK-1 新增三类（knowledge_source_entry 权威落点，011）。
