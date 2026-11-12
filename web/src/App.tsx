@@ -39,8 +39,8 @@ const PluginsPage = lazy(() =>
 const PluginDetailPage = lazy(() =>
   import("./routes/PluginDetailPage").then((m) => ({ default: m.PluginDetailPage })),
 );
-// P7-1 新增四区（占位页：Research/Settings 后续批次填充，Agents P7-7、
-// Workflows Phase 8 填充）；既有 10 页路由路径不变。
+// P7-1 新增四区（Research/Settings 占位页后续批次填充，Agents 已由 P7-7
+// 落实页三区，Workflows Phase 8 填充）；既有 10 页路由路径不变。
 const ResearchPage = lazy(() =>
   import("./routes/ResearchPage").then((m) => ({ default: m.ResearchPage })),
 );

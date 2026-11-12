@@ -7,6 +7,9 @@
 //!   --name <n> [--caps "tool@ver,tool2"] [--policy <json>] [--db <path>]
 //! cargo run --offline -p agent-engine --bin rp-agent -- def-show <agent_id> [--version <v>] [--db <path>]
 //! cargo run --offline -p agent-engine --bin rp-agent -- run-show <run_id> [--db <path>]
+//! cargo run --offline -p agent-engine --bin rp-agent -- run-steps <run_id> [--db <path>] [--out <path>]
+//!   （P7-7 AgentRun/step 轨迹读取面：复用 RunStateStore::steps 读 014
+//!    agent_run_step 全量轨迹，seq 升序，入参快照与信封摘要逐字段透出）
 //! cargo run --offline -p agent-engine --bin rp-agent -- trace <id> [--db <path>] [--out <path>]
 //!   （P7-5 统一只读关联查询：按任一 ID（trace_id/task_id/agent_run_id/
 //!    tool_run_id/artifact_id/evidence_id）关联出任务/意图/上下文/工具/
@@ -57,6 +60,7 @@ fn usage() -> i32 {
          \x20   [--policy <json>] [--db <path>]\n\
          \x20 def-show <agent_id> [--version <v>] [--db <path>]\n\
          \x20 run-show <run_id> [--db <path>]\n\
+         \x20 run-steps <run_id> [--db <path>] [--out <path>]  (AgentRun 步骤轨迹, P7-7)\n\
          \x20 trace <id> [--db <path>] [--out <path>]  (按任一关联 ID 汇全链, P7-5)\n\
          \x20 run <agent_id> 追加: [--trace-id <id>]  (自定义链路追踪 ID)"
     );
@@ -459,6 +463,71 @@ fn run() -> i32 {
                     1
                 }
             }
+        }
+        // P7-7 AgentRun/step 轨迹读取面：复用 RunStateStore::steps（014
+        // agent_run_step 持久化轨迹权威面）输出全量步骤 JSON（seq 升序，
+        // 含入参快照与登记三 ID），CLI 与 HTTP（/api/agent-runs?id=）同一
+        // 读取面口径；run 不存在 exit 1，零步骤 run 如实输出空数组。
+        "run-steps" => {
+            let run_id = args.iter().skip(1).find(|a| !a.starts_with("--")).cloned();
+            let Some(run_id) = run_id else {
+                eprintln!("run-steps requires <run_id>");
+                return usage();
+            };
+            let pool = open_pool(&flags.db, &flags.migrations_dir);
+            let state_store = agent_engine::state::RunStateStore::new(pool.clone());
+            match state_store.run_state(&run_id) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    eprintln!(
+                        "{}",
+                        serde_json::json!({"code": "run_not_found", "message": format!("run {run_id} not found")})
+                    );
+                    return 1;
+                }
+                Err(e) => {
+                    eprintln!("run-steps failed: {e}");
+                    return 1;
+                }
+            }
+            let steps = state_store.steps(&run_id).unwrap_or_else(|e| {
+                eprintln!("run-steps failed: {e}");
+                exit(1);
+            });
+            let payload = serde_json::json!({
+                "command": "run-steps",
+                "run_id": run_id,
+                "steps_count": steps.len(),
+                "steps": steps
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "seq": s.seq,
+                            "round": s.round,
+                            "tool_id": s.record.tool_id,
+                            "tool_version": s.record.tool_version,
+                            "tool_run_id": s.record.tool_run_id,
+                            "status": s.record.status,
+                            "artifact_id": s.record.artifact_id,
+                            "evidence_id": s.record.evidence_id,
+                            "content_hash": s.record.content_hash,
+                            "summary": s.record.summary,
+                            "error": s.record.error,
+                            "elapsed_ms": s.record.elapsed_ms,
+                            "input": s.input_json,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+                "db": flags.db.display().to_string(),
+            });
+            let text = payload.to_string();
+            println!("{text}");
+            if let Some(out) = &flags.out {
+                if let Err(e) = std::fs::write(out, &text) {
+                    eprintln!("write steps {}: {e}", out.display());
+                }
+            }
+            0
         }
         // P7-5 统一只读关联查询：按任一关联 ID 汇任务/意图/上下文/工具/
         // 证据/审计全链（agent_engine::trace::trace_query，只读 SELECT）。

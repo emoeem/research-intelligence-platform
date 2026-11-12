@@ -179,14 +179,14 @@ export const WORKSPACES: readonly Workspace[] = [
     label: "Agents",
     icon: "bot",
     entry: "/agents",
-    hint: "Agent Studio（占位）",
+    hint: "Agent Studio",
     tabs: [
       {
         order: 1,
         to: "/agents",
         label: "Agent Studio",
         icon: "bot",
-        hint: "Agent 配置、能力绑定与运行记录（P7-7 填充）",
+        hint: "Agent 定义与能力绑定、运行轨迹回放、三类 Memory 视图",
       },
     ],
   },

@@ -3,11 +3,14 @@
 
 单文件 http.server 实现，Python stdlib-only：
 - 静态页（apps/server/static/）
-- 9 个只读 JSON API（sqlite3 URI mode=ro 直查生产库 platform.db）：
+- 只读 JSON API（sqlite3 URI mode=ro 直查生产库 platform.db）：
   M7 四端点 /api/stats /api/resources /api/reviews /api/tasks；
   Phase 5 增量五端点 /api/overview /api/knowledge /api/tools /api/runs
   /api/runtime（对应 ROADMAP P5-4 的本阶段落地形态，api-server crate 化
-  顺延，见 docs/phase5/PHASE5-PLAN.md 偏差登记 1）
+  顺延，见 docs/phase5/PHASE5-PLAN.md 偏差登记 1）；
+  P7-5 /api/traces（六 ID 统一关联）；P7-7 /api/agents /api/agent-runs
+  （Agent Studio 读面：定义与能力绑定、AgentRun 列表、步骤轨迹与 013
+  三记忆表视图，主库加 aux 双 schema 归并，只读 SELECT 零 SQL 写）
 - 无任何写端点，默认绑定 127.0.0.1（容器内通过 RP_HOST=0.0.0.0 覆盖）
 - Bearer Token 鉴权：配置 RP_AUTH_TOKEN 或 RP_AUTH_TOKEN_FILE 后，
   所有 /api/* 请求必须携带有效令牌（constant-time 比较 + 失败节流）；
@@ -1670,6 +1673,383 @@ def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
     return chain
 
 
+# ---------------------------------------------------------------------------
+# P7-7 Agent Studio 读面（SESSION-HANDOFF §11.4 接入点 4）：/api/agents 与
+# /api/agent-runs，只读 SELECT 零 SQL 写；主库与 aux 双 schema 归并同款
+# （handle_traces 的 schemas_with 逐库查询模式，缺表守卫不炸、不伪造）。
+# ---------------------------------------------------------------------------
+
+AGENT_RUN_STATES = ("QUEUED", "PAUSED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED")
+
+AGENT_RUN_LIST_COLUMNS = (
+    "run_id, task_id, agent_id, agent_version, state, memory_refs_json,"
+    " created_at, started_at, finished_at, updated_at"
+)
+
+# 013 三记忆表视图（P7-7 Agent Studio 第三区）：task / evidence / research
+# 三族各自的列表列（content_json / refs_json 由 parse_json_or_none 解析）。
+AGENT_MEMORY_TABLES = {
+    "task": "agent_task_memory",
+    "evidence": "agent_evidence_memory",
+    "research": "agent_research_memory",
+}
+
+
+def schemas_with_table(conn: sqlite3.Connection, table: str) -> list[str]:
+    """承载某张表的 schema 列表（主库优先、aux 兜底；与 handle_traces 内
+    schemas_with 同拓扑，提为模块级供 Agent Studio 读面复用）。"""
+    out = []
+    if table_exists(conn, "main", table):
+        out.append("main")
+    if "aux" in attached_schemas(conn) and table_exists(conn, "aux", table):
+        out.append("aux")
+    return out
+
+
+def select_merged(conn: sqlite3.Connection, statements: list[tuple[str, str]], params: tuple) -> list[dict]:
+    """逐 schema 执行同一参数化 SELECT 后归并（_src 标注来源库）。
+    单库 sqlite3.Error 视为该库水位不支持该查询，跳过不炸（与
+    handle_traces.probe_all 同纪律）。"""
+    rows: list[dict] = []
+    for sql, src in statements:
+        try:
+            for row in conn.execute(sql, params).fetchall():
+                item = dict(row)
+                item["_src"] = src
+                rows.append(item)
+        except sqlite3.Error:
+            continue
+    return rows
+
+
+def sort_by(rows: list[dict], column: str) -> list[dict]:
+    """归并行 None 安全排序（升序列名或 'col DESC'）。"""
+    desc = column.strip().upper().endswith(" DESC")
+    key = column.split(" ")[0]
+    rows.sort(
+        key=lambda item: (item.get(key) is None, str(item.get(key) or "")),
+        reverse=desc,
+    )
+    return rows
+
+
+def agent_run_list_sql(conn: sqlite3.Connection, src: str) -> str:
+    """agent_run 列表列：trace_id 列按库水位条件追加（015 之后开发副本含列），
+    steps_count 子查询在 agent_run_step 同库在场时带上（缺表库不伪造计数）。"""
+    cols = AGENT_RUN_LIST_COLUMNS
+    if has_column(conn, src, "agent_run", "trace_id"):
+        cols += ", trace_id"
+    if table_exists(conn, src, "agent_run_step"):
+        cols += f", (SELECT COUNT(*) FROM {src}.agent_run_step s WHERE s.run_id = a.run_id) AS steps_count"
+    return f"SELECT {cols} FROM {src}.agent_run a"
+
+
+def capability_refs_of(text: str | None) -> list:
+    """capability_refs_json 解析（失败保留原文不静默丢）。"""
+    value = parse_json_or_none(text)
+    return value if isinstance(value, list) else []
+
+
+def handle_agents(conn: sqlite3.Connection, params: dict) -> dict:
+    """Agent 定义与能力绑定（P7-7 第一区读面）：agent_definition 列表；
+    ?id=<agent_id> 详情 = 全版本定义（capability_refs 逐条对账 tool 注册面）
+    + 该 agent 的 run 摘要（run_id/task_id/trace_id/steps_count 六 ID 关联
+    字段）。主库与 aux 双 schema 归并，只读 SELECT 零 SQL 写。"""
+    agent_id = clean_str(params, "id")
+    limit = parse_limit(params)
+    def_schemas = schemas_with_table(conn, "agent_definition")
+    run_schemas = schemas_with_table(conn, "agent_run")
+
+    def merged_definitions(where: str = "", args: tuple = ()) -> list[dict]:
+        statements = [
+            (
+                f"SELECT agent_id, version, name, context_policy, capability_refs_json,"
+                f" created_at, updated_at FROM {src}.agent_definition{where}"
+                f" ORDER BY updated_at DESC, agent_id, version LIMIT ?",
+                src,
+            )
+            for src in def_schemas
+        ]
+        merged: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for item in select_merged(conn, statements, args + (limit,)):
+            key = (item.get("agent_id") or "", item.get("version") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            item["context_policy"] = parse_json_or_none(item.pop("context_policy", None))
+            item["capability_refs"] = capability_refs_of(item.pop("capability_refs_json", None))
+            merged.append(item)
+        return merged
+
+    def merged_runs(where: str, args: tuple, cap: int) -> list[dict]:
+        statements = [
+            (f"{agent_run_list_sql(conn, src)}{where} ORDER BY created_at DESC LIMIT ?", src)
+            for src in run_schemas
+        ]
+        merged: list[dict] = []
+        seen: set[str] = set()
+        for item in select_merged(conn, statements, args + (cap,)):
+            run_key = item.get("run_id") or ""
+            if run_key in seen:
+                continue
+            seen.add(run_key)
+            item["memory_refs"] = parse_json_or_none(item.pop("memory_refs_json", None))
+            merged.append(item)
+        sort_by(merged, "created_at DESC")
+        return merged
+
+    def runs_summary(runs: list[dict]) -> dict:
+        by_state: dict[str, int] = {}
+        for item in runs:
+            by_state[item.get("state") or "?"] = by_state.get(item.get("state") or "?", 0) + 1
+        return {"by_state": by_state}
+
+    if agent_id:
+        # 详情：全版本定义 + 能力绑定对账（tool 注册面 lifecycle）+ run 摘要。
+        definitions = [
+            d
+            for d in merged_definitions(" WHERE agent_id = ?", (agent_id,))
+            if d.get("agent_id") == agent_id
+        ]
+        if not definitions:
+            raise ApiError(404, "no_agent", f"Agent 定义不存在：{agent_id}")
+        tool_schemas = schemas_with_table(conn, "tool")
+        bindings: dict[str, dict] = {}
+        for definition in definitions:
+            for ref in definition["capability_refs"]:
+                tool = ref.get("tool_id") if isinstance(ref, dict) else None
+                if not tool or tool in bindings:
+                    continue
+                binding: dict = {"tool_id": tool, "version": ref.get("version")}
+                if tool_schemas:
+                    # 主库（ETL 全量注册面）优先，aux 开发副本回退（handle_tools
+                    # 详情同款：契约工具暂存开发副本时主库可能没有该行）。
+                    row = None
+                    for tool_src in tool_schemas:
+                        row = query_one(
+                            conn,
+                            f"SELECT name, lifecycle, governance FROM {tool_src}.tool"
+                            f" WHERE tool_id = ?",
+                            (tool,),
+                        )
+                        if row:
+                            break
+                    if row:
+                        binding.update({"registered": True, **row})
+                    else:
+                        binding["registered"] = False
+                else:
+                    binding["registered"] = None
+                bindings[tool] = binding
+        runs = merged_runs(" WHERE a.agent_id = ?", (agent_id,), limit)
+        summary = runs_summary(runs)
+        return {
+            "available": True,
+            "agent_id": agent_id,
+            "definitions": definitions,
+            "tool_bindings": list(bindings.values()),
+            "runs": runs,
+            "runs_total": len(runs),
+            "runs_by_state": summary["by_state"],
+        }
+
+    items = merged_definitions()
+    runs = merged_runs("", (), MAX_LIMIT)
+    summary = runs_summary(runs)
+    return {
+        "available": True,
+        "total": len(items),
+        "agents": len({item.get("agent_id") for item in items}),
+        "returned": len(items),
+        "limit": limit,
+        "source": "+".join(def_schemas) if def_schemas else "missing",
+        "items": items,
+        "runs_total": len(runs),
+        "runs_by_state": summary["by_state"],
+        **(
+            {}
+            if def_schemas
+            else {
+                "message": "agent_definition 表不可读（主库/aux 均缺 006 迁移）："
+                "Agent 定义面暂不可查（真实空态说明，非空数据）"
+            }
+        ),
+    }
+
+
+def handle_agent_runs(conn: sqlite3.Connection, params: dict) -> dict:
+    """AgentRun 列表与详情（P7-7 第二/三区读面）：?id=<run_id> 详情 =
+    agent_run 全行 + agent_run_step 步骤轨迹（seq 升序，014 权威面）
+    + 013 三记忆表视图（task/evidence/research，run_id 归并）
+    + agent_run_control 控制行（goal/retry 请求位）+ correlation 六 ID
+    （trace_id/task_id/agent_run_id/tool_run_ids/artifact_ids/evidence_ids，
+    tool_run_id 跳 RunDetail，其余跳 /traces）。主库与 aux 双 schema 归并，
+    只读 SELECT 零 SQL 写。"""
+    run_id = clean_str(params, "id")
+    limit = parse_limit(params)
+    run_schemas = schemas_with_table(conn, "agent_run")
+
+    if run_id:
+        run: dict | None = None
+        run_src: str | None = None
+        for src in run_schemas:
+            found = query_one(conn, f"SELECT * FROM {src}.agent_run WHERE run_id = ?", (run_id,))
+            if found is not None:
+                run = dict(found)
+                run_src = src
+                break
+        if run is None or run_src is None:
+            raise ApiError(404, "no_agent_run", f"AgentRun 不存在：{run_id}")
+        run["memory_refs"] = parse_json_or_none(run.pop("memory_refs_json", None))
+
+        # 步骤轨迹（014 agent_run_step，seq 升序；跨库按 seq 去重归并）。
+        step_schemas = schemas_with_table(conn, "agent_run_step")
+        steps = select_merged(
+            conn,
+            [
+                (
+                    f"SELECT seq, round, tool_id, tool_version, tool_run_id, status,"
+                    f" artifact_id, evidence_id, input_json, content_hash, summary,"
+                    f" error, elapsed_ms, created_at, updated_at"
+                    f" FROM {src}.agent_run_step WHERE run_id = ? ORDER BY seq ASC",
+                    src,
+                )
+                for src in step_schemas
+            ],
+            (run_id,),
+        )
+        seen_seq: set[int] = set()
+        unique_steps: list[dict] = []
+        for step in steps:
+            seq = step.get("seq")
+            if seq in seen_seq:
+                continue
+            seen_seq.add(seq)
+            step["input"] = parse_json_or_none(step.pop("input_json", None))
+            unique_steps.append(step)
+        sort_by(unique_steps, "seq")
+
+        # 013 三记忆表视图（run_id 归并；content/refs JSON 列解析）。
+        memories: dict[str, list[dict]] = {}
+        for view, table in AGENT_MEMORY_TABLES.items():
+            mem_schemas = schemas_with_table(conn, table)
+            rows = select_merged(
+                conn,
+                [
+                    (f"SELECT * FROM {src}.{table} WHERE run_id = ? ORDER BY created_at ASC", src)
+                    for src in mem_schemas
+                ],
+                (run_id,),
+            )
+            for row in rows:
+                if view == "research":
+                    row["refs"] = parse_json_or_none(row.pop("refs_json", None))
+                elif view != "evidence":
+                    row["content"] = parse_json_or_none(row.pop("content_json", None))
+                row.pop("content_json", None)
+                row.pop("refs_json", None)
+            sort_by(rows, "created_at")
+            memories[view] = rows
+
+        # 控制行（014 agent_run_control：goal/retry/协作请求位快照）。
+        control: dict | None = None
+        for src in schemas_with_table(conn, "agent_run_control"):
+            control = query_one(
+                conn,
+                f"SELECT goal_text, retry_of_run_id, pause_requested_at, cancel_requested_at"
+                f" FROM {src}.agent_run_control WHERE run_id = ?",
+                (run_id,),
+            )
+            if control is not None:
+                break
+
+        # P7-5 六 ID 关联面（读面聚合，不写库）：tool_run_ids/artifact_ids/
+        # evidence_ids 从步骤轨迹与 evidence memory 台账归并去重。
+        def collect(column: str) -> list[str]:
+            out: list[str] = []
+            for step in unique_steps:
+                value = step.get(column)
+                if value and value not in out:
+                    out.append(value)
+            for row in memories["evidence"]:
+                value = row.get(column)
+                if value and value not in out:
+                    out.append(value)
+            return out
+
+        trace_id = run.get("trace_id")
+        correlation = {
+            "trace_id": trace_id if trace_id else None,
+            "task_id": run.get("task_id"),
+            "agent_run_id": run_id,
+            "tool_run_ids": collect("tool_run_id"),
+            "artifact_ids": collect("artifact_id"),
+            "evidence_ids": collect("evidence_id"),
+        }
+        return {
+            "available": True,
+            "source": run_src,
+            "run": run,
+            "steps": unique_steps,
+            "memories": memories,
+            "control": control,
+            "correlation": correlation,
+            "counts": {
+                "steps": len(unique_steps),
+                "task_memory": len(memories["task"]),
+                "evidence_memory": len(memories["evidence"]),
+                "research_memory": len(memories["research"]),
+            },
+        }
+
+    state = check_enum(params, "state", AGENT_RUN_STATES)
+    agent_filter = clean_str(params, "agent_id")
+    where, args = [], []
+    if state:
+        where.append("a.state = ?")
+        args.append(state)
+    if agent_filter:
+        where.append("a.agent_id = ?")
+        args.append(agent_filter)
+    where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+    statements = [
+        (f"{agent_run_list_sql(conn, src)}{where_sql} ORDER BY a.created_at DESC LIMIT ?", src)
+        for src in run_schemas
+    ]
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for item in select_merged(conn, statements, tuple(args) + (limit,)):
+        run_key = item.get("run_id") or ""
+        if run_key in seen:
+            continue
+        seen.add(run_key)
+        item["memory_refs"] = parse_json_or_none(item.pop("memory_refs_json", None))
+        merged.append(item)
+    sort_by(merged, "created_at DESC")
+    total = len(merged)
+    result = {
+        "available": True,
+        "source": "+".join(run_schemas) if run_schemas else "missing",
+        "total": total,
+        "returned": len(merged),
+        "limit": limit,
+        "filters": {"state": state, "agent_id": agent_filter},
+        "items": merged,
+        **(
+            {}
+            if run_schemas
+            else {
+                "message": "agent_run 表不可读（主库/aux 均缺 006 迁移）："
+                "Agent 运行面暂不可查（真实空态说明，非空数据）"
+            }
+        ),
+    }
+    if total == 0 and run_schemas:
+        result["message"] = "暂无 AgentRun：rp-agent run 端到端链未产生运行记录"
+    return result
+
+
 API_ROUTES = {
     "/api/plugins": handle_plugins_list,
     "/api/knowledge_sources": handle_knowledge_sources,
@@ -1683,6 +2063,8 @@ API_ROUTES = {
     "/api/runs": handle_runs,
     "/api/runtime": handle_runtime,
     "/api/traces": handle_traces,
+    "/api/agents": handle_agents,
+    "/api/agent-runs": handle_agent_runs,
 }
 
 

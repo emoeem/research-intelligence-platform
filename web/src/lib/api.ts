@@ -347,3 +347,237 @@ export async function fetchKnowledgeSources(
   const qs = search.toString();
   return apiGet<KnowledgeSourceList>(`/api/knowledge_sources${qs ? `?${qs}` : ""}`, options);
 }
+
+// ---------------------------------------------------------------------------
+// P7-7 Agent Studio 读面（/api/agents 与 /api/agent-runs，apps/server
+// rp_server.py handle_agents/handle_agent_runs；主库加 aux 双 schema 归并，
+// 只读 SELECT 零 SQL 写；详情口径见各 Payload 注释）。
+// ---------------------------------------------------------------------------
+
+/** 能力绑定引用（agent_definition.capability_refs_json 逐项）。 */
+export interface AgentCapabilityRef {
+  tool_id: string;
+  version?: string | null;
+}
+
+/** 能力绑定对账行（详情侧：引用 tool 注册面 lifecycle）。 */
+export interface AgentToolBinding {
+  tool_id: string;
+  version?: string | null;
+  registered?: boolean | null;
+  name?: string | null;
+  lifecycle?: string | null;
+  governance?: string | null;
+}
+
+/** Agent 定义行（006 agent_definition，一个版本一行）。 */
+export interface AgentDefinitionRow {
+  agent_id: string;
+  version: string;
+  name: string;
+  context_policy?: unknown;
+  capability_refs?: AgentCapabilityRef[];
+  created_at?: string | null;
+  updated_at?: string | null;
+  /** 来源库（主库/aux 归并标注）。 */
+  _src?: string;
+}
+
+/** /api/agents 列表（?id= 缺省）。 */
+export interface AgentList {
+  available: boolean;
+  message?: string;
+  total: number;
+  agents: number;
+  returned: number;
+  limit?: number;
+  source?: string;
+  items: AgentDefinitionRow[];
+  runs_total?: number;
+  runs_by_state?: Record<string, number>;
+}
+
+/** AgentRun 摘要行（006 agent_run；trace_id 列按库水位条件出现）。 */
+export interface AgentRunRow {
+  run_id: string;
+  task_id?: string | null;
+  agent_id: string;
+  agent_version: string;
+  state: string;
+  memory_refs?: string[] | null;
+  trace_id?: string | null;
+  steps_count?: number;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  updated_at?: string | null;
+  _src?: string;
+}
+
+/** /api/agents?id=<agent_id> 详情：全版本定义 + 能力绑定对账 + run 摘要。 */
+export interface AgentDetail {
+  available: boolean;
+  agent_id: string;
+  definitions: AgentDefinitionRow[];
+  tool_bindings: AgentToolBinding[];
+  runs: AgentRunRow[];
+  runs_total: number;
+  runs_by_state?: Record<string, number>;
+}
+
+/** 步骤轨迹行（014 agent_run_step 投影 + input_json 解析）。 */
+export interface AgentRunStepRow {
+  seq: number;
+  round: number;
+  tool_id: string;
+  tool_version?: string | null;
+  tool_run_id?: string | null;
+  status: string;
+  artifact_id?: string | null;
+  evidence_id?: string | null;
+  content_hash?: string | null;
+  summary?: string | null;
+  error?: string | null;
+  elapsed_ms?: number;
+  input?: unknown;
+  created_at?: string | null;
+  updated_at?: string | null;
+  _src?: string;
+}
+
+/** Task Memory 行（013 agent_task_memory）。 */
+export interface AgentTaskMemoryRow {
+  memory_id: string;
+  run_id: string;
+  task_id?: string | null;
+  round: number;
+  content?: unknown;
+  summary?: string | null;
+  lifecycle: string;
+  created_at?: string | null;
+  _src?: string;
+}
+
+/** Evidence Memory 行（013 agent_evidence_memory，指针台账）。 */
+export interface AgentEvidenceMemoryRow {
+  memory_id: string;
+  run_id: string;
+  evidence_id: string;
+  artifact_id?: string | null;
+  content_hash?: string | null;
+  storage_ref?: string | null;
+  lifecycle: string;
+  created_at?: string | null;
+  _src?: string;
+}
+
+/** Research Memory 行（013 agent_research_memory，Context Memory 雏形）。 */
+export interface AgentResearchMemoryRow {
+  memory_id: string;
+  run_id: string;
+  task_id?: string | null;
+  agent_id?: string | null;
+  title: string;
+  summary?: string | null;
+  refs?: unknown;
+  lifecycle: string;
+  created_at?: string | null;
+  _src?: string;
+}
+
+/** /api/agent-runs?id= 详情：run 全行 + 步骤轨迹 + 三记忆视图 + 六 ID。 */
+export interface AgentRunDetail {
+  available: boolean;
+  source?: string;
+  run: AgentRunRow;
+  steps: AgentRunStepRow[];
+  memories: {
+    task: AgentTaskMemoryRow[];
+    evidence: AgentEvidenceMemoryRow[];
+    research: AgentResearchMemoryRow[];
+  };
+  control?: {
+    goal_text?: string | null;
+    retry_of_run_id?: string | null;
+    pause_requested_at?: string | null;
+    cancel_requested_at?: string | null;
+  } | null;
+  correlation: {
+    trace_id?: string | null;
+    task_id?: string | null;
+    agent_run_id: string;
+    tool_run_ids: string[];
+    artifact_ids: string[];
+    evidence_ids: string[];
+  };
+  counts: {
+    steps: number;
+    task_memory: number;
+    evidence_memory: number;
+    research_memory: number;
+  };
+}
+
+/** /api/agent-runs 列表。 */
+export interface AgentRunList {
+  available: boolean;
+  message?: string;
+  source?: string;
+  total: number;
+  returned: number;
+  limit?: number;
+  filters?: { state?: string | null; agent_id?: string | null };
+  items: AgentRunRow[];
+}
+
+/** /api/agents 路径组装（列表；detail 由 fetchAgents(id) 走 ?id=）。 */
+export function agentsPath(params: { limit?: number } = {}): string {
+  const search = new URLSearchParams();
+  if (params.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return `/api/agents${qs ? `?${qs}` : ""}`;
+}
+
+/** /api/agent-runs 路径组装（列表过滤：state/agent_id/limit）。 */
+export function agentRunsPath(
+  params: { state?: string; agent_id?: string; limit?: number } = {},
+): string {
+  const search = new URLSearchParams();
+  if (params.state) search.set("state", params.state);
+  if (params.agent_id) search.set("agent_id", params.agent_id);
+  if (params.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return `/api/agent-runs${qs ? `?${qs}` : ""}`;
+}
+
+export async function fetchAgents(
+  params: { limit?: number },
+  options?: { signal?: AbortSignal },
+): Promise<AgentList>;
+export async function fetchAgents(
+  id: string,
+  options?: { signal?: AbortSignal },
+): Promise<AgentDetail>;
+export async function fetchAgents(
+  idOrParams: string | { limit?: number },
+  options: { signal?: AbortSignal } = {},
+): Promise<AgentList | AgentDetail> {
+  if (typeof idOrParams === "string") {
+    return apiGet<AgentDetail>(`/api/agents?id=${encodeURIComponent(idOrParams)}`, options);
+  }
+  return apiGet<AgentList>(agentsPath(idOrParams), options);
+}
+
+export async function fetchAgentRuns(
+  params: { state?: string; agent_id?: string; limit?: number } = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<AgentRunList> {
+  return apiGet<AgentRunList>(agentRunsPath(params), options);
+}
+
+export async function fetchAgentRunDetail(
+  runId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<AgentRunDetail> {
+  return apiGet<AgentRunDetail>(`/api/agent-runs?id=${encodeURIComponent(runId)}`, options);
+}

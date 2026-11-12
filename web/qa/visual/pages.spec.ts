@@ -124,6 +124,54 @@ const API_STUBS: Record<string, unknown> = {
       },
     ],
   },
+  // P7-7 Agent Studio 三区列表面（详情 ?id= 不在视觉矩阵路径内，仅列表落位）。
+  "/api/agents": {
+    available: true,
+    total: 2,
+    agents: 1,
+    returned: 2,
+    source: "main+aux",
+    items: [
+      {
+        agent_id: "agent.research.minimal",
+        version: "0.1.0",
+        name: "研究最小 Agent",
+        capability_refs: [{ tool_id: "rip.kb.keyword_search", version: "0.1.0" }],
+        created_at: "2026-11-13T00:00:00Z",
+        updated_at: "2026-11-13T00:00:00Z",
+      },
+      {
+        agent_id: "agent.research.minimal",
+        version: "0.2.0",
+        name: "研究最小 Agent",
+        capability_refs: [
+          { tool_id: "rip.kb.keyword_search", version: "0.1.0" },
+          { tool_id: "rip.http.tls_inspect", version: null },
+        ],
+        created_at: "2026-11-13T01:00:00Z",
+        updated_at: "2026-11-13T01:00:00Z",
+      },
+    ],
+    runs_total: 1,
+    runs_by_state: { SUCCEEDED: 1 },
+  },
+  "/api/agent-runs": {
+    available: true,
+    source: "aux",
+    total: 1,
+    returned: 1,
+    items: [
+      {
+        run_id: "arn-p77-visual",
+        agent_id: "agent.research.minimal",
+        agent_version: "0.2.0",
+        state: "SUCCEEDED",
+        trace_id: "tr-p77-visual",
+        steps_count: 2,
+        created_at: "2026-11-13T02:00:00Z",
+      },
+    ],
+  },
   "/api/tasks": {
     total: 42,
     by_state: { CREATED: 28, COMPLETED: 2 },
@@ -168,7 +216,7 @@ const PAGES = [
   { path: "/knowledge", marker: "共 46 条" },
   { path: "/tools", marker: "共 20 个工具" },
   { path: "/plugins", marker: "插件中心" },
-  { path: "/agents", marker: "P7-7" },
+  { path: "/agents", marker: "Agent 定义与能力绑定" },
   { path: "/workflows", marker: "Phase 8" },
   { path: "/runs", marker: "rn-b5-rt-py" },
   { path: "/runtime", marker: "node-py-1" },

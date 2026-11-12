@@ -219,11 +219,14 @@ describe("图标轨与中央多标签工作区（P7-1）", () => {
     expect(screen.getByRole("tabpanel", { name: "Tool Runs" })).toBeTruthy();
   });
 
-  it("占位工作区（Agents）深链接直达占位页", async () => {
+  it("Agents 工作区深链接直达实页（P7-7 替换占位）", async () => {
     goTo("/agents");
     render(<App />);
-    // 顶栏 h1 在懒加载 chunk 到位前就渲染 Agent Studio，等占位页正文出现再断言。
-    expect((await screen.findByTestId("fills-in")).textContent).toBe("P7-7");
+    // P7-7 起该工作区是实页三区（占位页 fills-in 标注已随批次移除），
+    // 等三区 section 出现再断言深链接与固定 tab 激活。
+    expect(await screen.findByTestId("agents-defs-section")).toBeTruthy();
+    expect(screen.getByTestId("agents-runs-section")).toBeTruthy();
+    expect(screen.getByTestId("agents-memory-section")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Agent Studio/ }).getAttribute("aria-current")).toBe(
       "page",
     );
