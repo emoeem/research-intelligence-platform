@@ -6,7 +6,6 @@
 
 use crate::error::{DbError, DbResult};
 use crate::pool::Pool;
-use crate::rusqlite::OptionalExtension;
 use std::path::{Path, PathBuf};
 
 /// 一个迁移文件。

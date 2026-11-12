@@ -322,9 +322,7 @@ export function PluginDetailPage() {
           </dl>
           {level >= 2 && data.knowledge_provides?.content_kinds?.length ? (
             <div className="mt-3" data-testid="detail-knowledge-provides">
-              <h3 className="text-xs font-semibold text-base-content/60">
-                内容类型与许可策略
-              </h3>
+              <h3 className="text-xs font-semibold text-base-content/60">内容类型与许可策略</h3>
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {data.knowledge_provides.content_kinds.map((kind) => (
                   <span

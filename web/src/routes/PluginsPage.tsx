@@ -49,8 +49,7 @@ function KnowledgeStatsBadges({ plugin }: { plugin: PluginRow }) {
   const approved = stats.review?.APPROVED ?? 0;
   return (
     <span className="badge badge-sm badge-outline" data-testid="knowledge-stats">
-      来源 {total} 条
-      {approved > 0 ? ` · APPROVED ${approved}` : ""}
+      来源 {total} 条{approved > 0 ? ` · APPROVED ${approved}` : ""}
     </span>
   );
 }

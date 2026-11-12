@@ -231,10 +231,24 @@ export function RunDetailPage() {
           ) : null}
           <MetaRow label="submit_key" value={run.submit_key} />
           <IdListRow label="trace" ids={correlation?.trace_id ? [correlation.trace_id] : []} />
-          <MetaRow label="agent_run" value={correlation?.agent_run_id ?? null} linkTemplate="/traces?id={id}" />
-          <MetaRow label="tool_run" value={correlation?.tool_run_id ?? run.run_id} linkTemplate="/traces?id={id}" />
-          <IdListRow label="artifacts" ids={(correlation?.artifact_ids ?? []).filter(Boolean) as string[]} />
-          <IdListRow label="evidence" ids={(correlation?.evidence_ids ?? []).filter(Boolean) as string[]} />
+          <MetaRow
+            label="agent_run"
+            value={correlation?.agent_run_id ?? null}
+            linkTemplate="/traces?id={id}"
+          />
+          <MetaRow
+            label="tool_run"
+            value={correlation?.tool_run_id ?? run.run_id}
+            linkTemplate="/traces?id={id}"
+          />
+          <IdListRow
+            label="artifacts"
+            ids={(correlation?.artifact_ids ?? []).filter(Boolean) as string[]}
+          />
+          <IdListRow
+            label="evidence"
+            ids={(correlation?.evidence_ids ?? []).filter(Boolean) as string[]}
+          />
           <MetaRow label="input_hash" value={run.input_hash} />
           <MetaRow
             label="duration"

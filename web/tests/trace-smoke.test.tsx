@@ -37,19 +37,13 @@ const TRACE_CHAIN_STUB = {
       agent_version: "0.1.0",
     },
   ],
-  manifests: [
-    { manifest_id: "ctxm-1", intent_status: "ok", task_id: "rtis-20261113-010203-001" },
-  ],
+  manifests: [{ manifest_id: "ctxm-1", intent_status: "ok", task_id: "rtis-20261113-010203-001" }],
   context_items: [
     { manifest_id: "ctxm-1", item_id: "ki-1", layer: "L1", kind: "knowledge", included: "full" },
     { manifest_id: "ctxm-1", item_id: "tb-1", layer: "L2", kind: "tool", included: "summary" },
   ],
-  tool_runs: [
-    { run_id: "rn-p75-e2e", tool_id: "rip.kb.keyword_search", status: "SUCCEEDED" },
-  ],
-  artifacts: [
-    { artifact_id: "art-p75-e2e", role: "primary", mime_type: "application/json" },
-  ],
+  tool_runs: [{ run_id: "rn-p75-e2e", tool_id: "rip.kb.keyword_search", status: "SUCCEEDED" }],
+  artifacts: [{ artifact_id: "art-p75-e2e", role: "primary", mime_type: "application/json" }],
   evidence: [
     { evidence_id: "ev-p75-e2e", evidence_type: "log", task_ref: "rtis-20261113-010203-001" },
   ],
@@ -98,17 +92,8 @@ describe("Trace 关联链页（P7-5）", () => {
     expect(screen.getByText(/证据（evidence）/)).toBeTruthy();
     expect(screen.getByText(/审计事件（audit_event/)).toBeTruthy();
     // 链内 id 均可点击跳转 /traces?id=
-    for (const id of [
-      "arn-p75-e2e",
-      "rn-p75-e2e",
-      "art-p75-e2e",
-      "ev-p75-e2e",
-      "ctxm-1",
-      "ki-1",
-    ]) {
-      expect(
-        screen.getByRole("link", { name: id }).getAttribute("href"),
-      ).toBe(`/traces?id=${id}`);
+    for (const id of ["arn-p75-e2e", "rn-p75-e2e", "art-p75-e2e", "ev-p75-e2e", "ctxm-1", "ki-1"]) {
+      expect(screen.getByRole("link", { name: id }).getAttribute("href")).toBe(`/traces?id=${id}`);
     }
     // 摘要计数
     expect(screen.getByText(/tool_runs 1/)).toBeTruthy();

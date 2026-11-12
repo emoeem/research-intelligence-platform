@@ -29,9 +29,7 @@ const RunDetailPage = lazy(() =>
   import("./routes/RunDetailPage").then((m) => ({ default: m.RunDetailPage })),
 );
 // P7-5：trace 统一关联链查询页（/traces?id=，六 ID 任一入参）。
-const TracePage = lazy(() =>
-  import("./routes/TracePage").then((m) => ({ default: m.TracePage })),
-);
+const TracePage = lazy(() => import("./routes/TracePage").then((m) => ({ default: m.TracePage })));
 const RuntimePage = lazy(() =>
   import("./routes/RuntimePage").then((m) => ({ default: m.RuntimePage })),
 );

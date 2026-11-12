@@ -308,7 +308,9 @@ function SourceEntriesView() {
             <li key={`${item.plugin_id}@${item.entry_kind}:${item.item_key}`}>
               <div className="rounded-surface border border-edge bg-base-100 p-3">
                 <div className="flex flex-wrap items-center gap-1">
-                  <span className={`badge badge-sm ${REVIEW_BADGE[item.review_status] ?? "badge-ghost"}`}>
+                  <span
+                    className={`badge badge-sm ${REVIEW_BADGE[item.review_status] ?? "badge-ghost"}`}
+                  >
                     {item.review_status}
                   </span>
                   <span className="badge badge-sm badge-outline">
@@ -334,7 +336,10 @@ function SourceEntriesView() {
                   {item.title}
                 </p>
                 {item.category_path.length > 0 ? (
-                  <p className="mt-1 text-[11px] text-base-content/50" data-testid="source-category">
+                  <p
+                    className="mt-1 text-[11px] text-base-content/50"
+                    data-testid="source-category"
+                  >
                     分类：{item.category_path.join(" / ")}
                   </p>
                 ) : null}

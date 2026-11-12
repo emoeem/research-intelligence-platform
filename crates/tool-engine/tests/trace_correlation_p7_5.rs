@@ -98,7 +98,7 @@ fn submit_correlated_persists_trace_id_and_none_keeps_null() {
 }
 
 /// 2. 非法 trace_id：受理校验面照常落 run 行（D-TC-05 语义不变），关联列
-/// 拒落（空串不合法；domain::TraceId 校验拒绝）。
+///    拒落（空串不合法；domain::TraceId 校验拒绝）。
 #[test]
 fn submit_correlated_rejects_invalid_trace_id() {
     let engine = fresh_engine();

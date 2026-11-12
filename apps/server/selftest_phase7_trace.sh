@@ -58,6 +58,21 @@ ck "rp-tool register rip.kb.keyword_search" "0" "$?"
   --name "P7-5 trace 自验 Agent" --caps "rip.kb.keyword_search" --db "${TMP_DB}" >/dev/null 2>&1
 ck "rp-agent def-add" "0" "$?"
 
+# 任务面夹具：research_task 行（生产口径该行来自 M1 ETL；开发副本手工播种，
+# agent-engine 只读关联不代写任务行）。五类事件链判据要求任务段非空。
+python3 - "${TMP_DB}" <<'PYEOF'
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+c.execute(
+    "INSERT INTO research_task (task_id, title, objective, target, task_type, state,"
+    " status_history, source_file, source_system, created_at, updated_at, schema_version)"
+    " VALUES ('task-p75-selftest', 'P7-5 trace 自验任务', '端到端链路自验', 'local://selftest',"
+    " 'recon', 'running', '[]', 'selftest-fixture', 'rtis-tasks',"
+    " '2026-11-13T00:00:00Z', '2026-11-13T00:00:00Z', 1)")
+c.commit(); c.close()
+PYEOF
+ck "夹具 research_task 行落库" "0" "$?"
+
 echo "== 3. 端到端 run（真实 python_worker，显式 --trace-id）"
 "${RP_AGENT}" run agent.trace.selftest \
   --goal "检索 nmap 端口扫描相关知识并调用登记工具" \
@@ -108,6 +123,7 @@ ck "方向1 artifacts=1" "1" "$(jget "${CHAIN}" "d['counts']['artifacts']")"
 ck "方向1 agent_runs=1" "1" "$(jget "${CHAIN}" "d['counts']['agent_runs']")"
 MANIFESTS="$(jget "${CHAIN}" "d['counts']['manifests']")"
 if [[ "${MANIFESTS}" -ge 1 ]]; then PASS=$((PASS+1)); echo "[PASS] 方向1 manifests>=1（意图/上下文面经 task_id 关联）"; else FAIL=$((FAIL+1)); echo "[FAIL] 方向1 manifests=${MANIFESTS}"; fi
+ck "方向1 tasks=1（任务面，research_task 经 agent_run.task_id 关联）" "1" "$(jget "${CHAIN}" "d['counts']['tasks']")"
 AUDITS="$(jget "${CHAIN}" "d['counts']['audit_events']")"
 if [[ "${AUDITS}" -ge 3 ]]; then PASS=$((PASS+1)); echo "[PASS] 方向1 audit_events>=3"; else FAIL=$((FAIL+1)); echo "[FAIL] audit_events=${AUDITS}"; fi
 

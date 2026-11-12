@@ -212,13 +212,13 @@ describe("Run 详情页（P5-8）", () => {
     const traceLink = screen.getByRole("link", { name: "tr-p75-smoke" });
     expect(traceLink.getAttribute("href")).toBe("/traces?id=tr-p75-smoke");
     expect(screen.getByText("agent_run")).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "arn-p75-agent" }).getAttribute("href"),
-    ).toBe("/traces?id=arn-p75-agent");
+    expect(screen.getByRole("link", { name: "arn-p75-agent" }).getAttribute("href")).toBe(
+      "/traces?id=arn-p75-agent",
+    );
     expect(screen.getByText("tool_run")).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "rn-b5-rt-py" }).getAttribute("href"),
-    ).toBe("/traces?id=rn-b5-rt-py");
+    expect(screen.getByRole("link", { name: "rn-b5-rt-py" }).getAttribute("href")).toBe(
+      "/traces?id=rn-b5-rt-py",
+    );
     expect(screen.getByText("artifacts")).toBeTruthy();
     expect(screen.getByRole("link", { name: "art-p75-1" }).getAttribute("href")).toBe(
       "/traces?id=art-p75-1",
