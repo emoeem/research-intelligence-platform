@@ -601,12 +601,12 @@ fn migration_009_idempotent_on_file_copy() {
         "009 file self-pins user_version = 9 (own pragma)"
     );
     let reapply = database::migrate(&pool, &migrations_dir()).unwrap();
-    // 链尾随批次演进：SK-3 起 012_knowledge_document_fetch 为尾，009 自钉回
-    // 9 后 migrate 需重放 010..012 三枚（断言按链尾距离演进）。
+    // 链尾随批次演进：P7-4 起 014_agent_run_control 为尾，009 自钉回 9 后
+    // migrate 需重放 010..014 五枚（断言按链尾距离演进）。
     assert_eq!(
         reapply.len(),
-        3,
-        "migrate re-applies 010..012 after 009 self-pin reset"
+        5,
+        "migrate re-applies 010..014 after 009 self-pin reset"
     );
     let snap4 = snapshot(&pool);
     assert_eq!(snap4.0, snap2.0, "chain tail restored");

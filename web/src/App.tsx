@@ -37,6 +37,20 @@ const PluginsPage = lazy(() =>
 const PluginDetailPage = lazy(() =>
   import("./routes/PluginDetailPage").then((m) => ({ default: m.PluginDetailPage })),
 );
+// P7-1 新增四区（占位页：Research/Settings 后续批次填充，Agents P7-7、
+// Workflows Phase 8 填充）；既有 10 页路由路径不变。
+const ResearchPage = lazy(() =>
+  import("./routes/ResearchPage").then((m) => ({ default: m.ResearchPage })),
+);
+const AgentsPage = lazy(() =>
+  import("./routes/AgentsPage").then((m) => ({ default: m.AgentsPage })),
+);
+const WorkflowsPage = lazy(() =>
+  import("./routes/WorkflowsPage").then((m) => ({ default: m.WorkflowsPage })),
+);
+const SettingsPage = lazy(() =>
+  import("./routes/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
 function lazyElement(node: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
@@ -79,6 +93,10 @@ export function App() {
             <Route path="runtime" element={lazyElement(<RuntimePage />)} />
             <Route path="plugins" element={lazyElement(<PluginsPage />)} />
             <Route path="plugins/:pluginId" element={lazyElement(<PluginDetailPage />)} />
+            <Route path="research" element={lazyElement(<ResearchPage />)} />
+            <Route path="agents" element={lazyElement(<AgentsPage />)} />
+            <Route path="workflows" element={lazyElement(<WorkflowsPage />)} />
+            <Route path="settings" element={lazyElement(<SettingsPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -77,7 +77,9 @@ describe("Overview 页（P5-5）", () => {
     expect(screen.getByText("700")).toBeTruthy(); // 证据
     expect(screen.getByText("165")).toBeTruthy(); // 评审队列（stats.reviews.total）
     expect(screen.getByText("20")).toBeTruthy(); // 工具
-    expect(screen.getByText("3")).toBeTruthy(); // 运行
+    // P7-1 壳层里功能地图工作区卡编号（3=Research）与 KPI 数值同屏：
+    // 运行 KPI 断言收窄到运行卡本身（可访问名含数值）。
+    expect(screen.getByRole("link", { name: /^运行 3/ })).toBeTruthy(); // 运行
     // 评审队列 note 显示三个队列计数
     expect(screen.getByTitle("D5 68 · License 79 · Mapping 18")).toBeTruthy();
     // Run 状态 note 显示 by_status
@@ -98,8 +100,10 @@ describe("Overview 页（P5-5）", () => {
   it("工具卡跳 /tools、运行卡跳 /runs", async () => {
     render(<App />);
     await screen.findByText("46");
-    expect(screen.getByRole("link", { name: /工具/ }).getAttribute("href")).toBe("/tools");
-    expect(screen.getByRole("link", { name: /运行/ }).getAttribute("href")).toBe("/runs");
+    // P7-1 壳层新增 Inspector 关联链接与顶栏运行任务链接，链接名正则收窄到
+    // KPI 卡的可访问名（含数值），避免误命中壳层元素。
+    expect(screen.getByRole("link", { name: "工具 20" }).getAttribute("href")).toBe("/tools");
+    expect(screen.getByRole("link", { name: /^运行 3/ }).getAttribute("href")).toBe("/runs");
     // 证据与评审队列无专属页面：静态卡
     expect(screen.queryByRole("link", { name: /证据/ })).toBeNull();
     expect(screen.queryByRole("link", { name: /评审队列/ })).toBeNull();

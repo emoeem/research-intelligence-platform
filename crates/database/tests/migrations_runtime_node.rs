@@ -68,8 +68,8 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-        "discover must see 001..011 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+        "discover must see 001..014 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹)"
     );
 
     let pool = open_memory_pool();
@@ -79,13 +79,13 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (12, "_knowledge_document_fetch"),
-        "first run must land 012 last"
+        (14, "_agent_run_control"),
+        "first run must land 014 last"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
-    assert_eq!(uv1, 12, "user_version must be 12 after first run");
+    assert_eq!(uv1, 14, "user_version must be 14 after first run");
 
     // 第二次：执行器按 user_version 全跳过，零变更。
     let second = migrate(&pool, &dir).unwrap();

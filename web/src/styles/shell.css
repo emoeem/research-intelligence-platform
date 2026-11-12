@@ -1,7 +1,8 @@
-/* RIP 壳层样式：图标轨（56px）/ 工作区 tab 条 / 移动抽屉 / ⌘K 搜索面板。
+/* RIP 壳层样式（P7-1 五区版）：图标轨（56px）/ 顶部栏 / 中央多标签工作区 /
+ * 右侧 Inspector / 底部 Activity / 移动抽屉 / ⌘K 搜索面板。
  * 结构模式沿自参照实现 index.css 的 .admin-shell/.admin-sidebar/
- * .admin-workspace-tabs/.admin-search-* 段落（UI 复用盘点 §3.11 锚点），
- * 色值与圆角全部走 src/styles/token.css 的 RIP token，不复用其品牌色。 */
+ * .admin-search-* 段落（UI 复用盘点 §3.11 锚点），色值与圆角全部走
+ * src/styles/token.css 的 RIP token，不复用其品牌色。 */
 
 :root {
   /* fx 动效 token（主题无关，参照实现 index.css fx 段的 RIP 版） */
@@ -16,11 +17,13 @@
   color: var(--color-base-content);
 }
 
-/* 沉浸态（IMMERSIVE_PATH 命中时）：图标轨、页头与 tab 条全部隐藏。 */
+/* 沉浸态（IMMERSIVE_PATH 命中时）：图标轨、顶栏、标签区、Inspector 与 Activity 全部隐藏。 */
 .shell.is-immersive .rail,
 .shell.is-immersive .rail-backdrop,
-.shell.is-immersive .shell-head,
-.shell.is-immersive .ws-tabs {
+.shell.is-immersive .topbar,
+.shell.is-immersive .tabarea,
+.shell.is-immersive .inspector,
+.shell.is-immersive .activity {
   display: none;
 }
 
@@ -168,39 +171,126 @@
   border-top: 1px solid color-mix(in srgb, var(--edge) 60%, transparent);
 }
 
-/* ---- 主区：页头 + tab 条 + 路由出口 ---- */
-.shell-main {
+/* ---- 主列：顶部栏 + 工作区（中央多标签 + Inspector）+ Activity ---- */
+.shell-body {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  flex-direction: column;
+}
+
+/* 顶部栏（计划 §10.2 五要素）：工作区切换 / 搜索 / 运行任务 / Runner / 通知
+ * + Inspector 与 Activity 的折叠开关。 */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  max-width: 80rem;
-  margin: 0 auto;
-  padding: 16px;
+  padding: 10px 16px;
+  background: var(--color-base-100);
+  border-bottom: 1px solid var(--edge);
 }
 
 @media (min-width: 640px) {
-  .shell-main {
-    padding: 32px;
+  .topbar {
+    padding: 10px 24px;
   }
 }
 
-.shell-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.shell-head-title {
-  font-size: 20px;
+.topbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.shell-head-actions {
+@media (max-width: 639.9px) {
+  /* 移动端标题让位五要素：缩到图标级宽度仍可读 */
+  .topbar-title {
+    font-size: 15px;
+  }
+}
+
+.topbar-actions {
   display: flex;
-  gap: 8px;
-  margin-left: auto;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  font-size: 13px;
+  color: var(--color-base-content);
+  opacity: 0.8;
+}
+
+.topbar-item:hover {
+  background: var(--surface-2);
+  opacity: 1;
+}
+
+.topbar-item[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--color-primary);
+  opacity: 1;
+}
+
+.search-trigger {
+  border: 1px solid var(--edge);
+  background: var(--color-base-100);
+}
+
+.search-trigger:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+@media (max-width: 639.9px) {
+  .topbar {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .topbar-label,
+  .search-kbd {
+    display: none;
+  }
+
+  .topbar-item {
+    padding: 6px;
+  }
+
+  /* 移动端切换器定宽截断：十一项 option 文本撑不开 390px 顶栏 */
+  .ws-switch {
+    width: 92px;
+    max-width: 92px;
+    padding: 5px 4px;
+    text-overflow: ellipsis;
+  }
+}
+
+.ws-switch {
+  max-width: 190px;
+  flex-shrink: 1;
+  padding: 5px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--edge);
+  background: var(--color-base-100);
+  font-size: 13px;
+  color: var(--color-base-content);
 }
 
 .menu-btn {
@@ -220,19 +310,353 @@
   }
 }
 
-.search-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--edge);
-  background: var(--color-base-100);
-  font-size: 13px;
-  color: var(--color-base-content);
+/* 通知气泡（顶部栏弹出层） */
+.notif-wrap {
+  position: relative;
 }
 
-.search-trigger:hover {
+.notif-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 240px;
+  padding: 12px;
+  background: var(--color-base-100);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.notif-empty {
+  font-weight: 600;
+}
+
+.notif-note {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+/* ---- 工作区行：中央多标签 + 右侧 Inspector ---- */
+.shell-workarea {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+@media (min-width: 640px) {
+  .shell-workarea {
+    flex-direction: row;
+    align-items: stretch;
+  }
+}
+
+.shell-center {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  width: 100%;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 14px 16px 24px;
+}
+
+@media (min-width: 640px) {
+  .shell-center {
+    padding: 18px 24px 32px;
+  }
+}
+
+/* ---- 中央多标签工作区（TabArea） ---- */
+.tabarea {
+  border-bottom: 1px solid var(--edge);
+  background: var(--color-base-100);
+  padding: 0 8px;
+}
+
+.tabarea-list {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0;
+}
+
+.tabarea-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 7px 8px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.tabarea-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-base-content);
+  opacity: 0.75;
+}
+
+.tabarea-tab:hover .tabarea-btn {
+  opacity: 1;
+}
+
+.tabarea-tab.is-active {
+  border-bottom-color: var(--color-primary);
+}
+
+.tabarea-tab.is-active .tabarea-btn {
+  color: var(--color-primary);
+  opacity: 1;
+}
+
+.tabarea-no {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  /* 编号徽标不用透明度稀释：11px 小字号须保住 4.5:1（axe AA 扫描项）。 */
+  opacity: 1;
+}
+
+.tabarea-icon {
+  display: inline-flex;
+}
+
+.tabarea-label {
+  max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tabarea-pin {
+  display: inline-flex;
+  color: var(--color-primary);
+  opacity: 0.55;
+}
+
+.tabarea-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--color-base-content);
+  opacity: 0.45;
+}
+
+.tabarea-close:hover {
+  background: var(--surface-2);
+  opacity: 1;
+}
+
+/* ---- 右侧 Inspector（可折叠，宽 280px；移动端并入纵向流） ---- */
+.inspector {
+  flex-shrink: 0;
+  width: 280px;
+  min-width: 0;
+  padding: 14px;
+  background: var(--color-base-100);
+  border-left: 1px solid var(--edge);
+  overflow-y: auto;
+}
+
+@media (max-width: 639.9px) {
+  .inspector {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--edge);
+  }
+}
+
+.panel-title {
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 60%, transparent);
+}
+
+.inspector-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.inspector-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.inspector-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.inspector-row {
+  display: flex;
+  gap: 8px;
+}
+
+.inspector-row dt {
+  flex-shrink: 0;
+  width: 44px;
+  opacity: 0.55;
+}
+
+.inspector-row dd {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inspector-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.inspector-links a {
+  padding: 3px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+}
+
+.inspector-links a:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.inspector-note {
+  width: 100%;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+/* ---- 底部 Activity 面板（可折叠，移动端并入纵向流） ---- */
+.activity {
+  flex-shrink: 0;
+  border-top: 1px solid var(--edge);
+  background: var(--color-base-100);
+}
+
+.activity-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 60%, transparent);
+}
+
+.activity-tab {
+  padding: 7px 10px;
+  border-bottom: 2px solid transparent;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--color-base-content);
+  opacity: 0.7;
+}
+
+.activity-tab:hover {
+  opacity: 1;
+}
+
+.activity-tab.is-active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  opacity: 1;
+}
+
+.activity-body {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.activity-note {
+  opacity: 0.75;
+}
+
+.activity-note a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---- 占位页（P7-1 四区） ---- */
+.placeholder-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-surface);
+  background: var(--color-base-100);
+  font-size: 14px;
+}
+
+.placeholder-plan {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.placeholder-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.placeholder-related-label {
+  opacity: 0.6;
+}
+
+.placeholder-link {
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.placeholder-link:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
@@ -243,43 +667,6 @@
   border-radius: 6px;
   font-size: 11px;
   opacity: 0.65;
-}
-
-/* ---- 工作区 tab 条 ---- */
-.ws-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--edge);
-}
-
-.ws-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 2px solid transparent;
-  font-size: 13px;
-  white-space: nowrap;
-  color: var(--color-base-content);
-  opacity: 0.7;
-}
-
-.ws-tab:hover {
-  opacity: 1;
-}
-
-.ws-tab.is-active {
-  border-bottom-color: var(--color-primary);
-  color: var(--color-primary);
-  opacity: 1;
-}
-
-.ws-tab .ws-tab-no {
-  font-variant-numeric: tabular-nums;
-  opacity: 0.6;
 }
 
 /* ---- ⌘K 全局搜索面板 ---- */

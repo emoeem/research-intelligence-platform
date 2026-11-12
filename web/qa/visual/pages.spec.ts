@@ -1,7 +1,8 @@
 import { type Page, test, expect } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 
-/** 视觉矩阵（P5-10，ROADMAP P5-9 裁剪版）：6 页 × 2 主题 × 2 视口 = 24 组合。
+/** 视觉矩阵（P5-10，ROADMAP P5-9 裁剪版；P7-1 五区壳层重拍）：11 页 × 2 主题
+ *  × 2 视口 = 44 组合（新壳含 Inspector/Activity，axe 断言并轨覆盖）。
  *  断言（无快照基线，ROADMAP 风险 3）：
  *  1. 零 console.error 与零 pageerror；
  *  2. 无横向溢出（scrollWidth <= innerWidth + 1）；
@@ -163,10 +164,15 @@ const API_STUBS: Record<string, unknown> = {
 const PAGES = [
   { path: "/", marker: "知识生命周期分布" },
   { path: "/projects", marker: "共 42 个任务" },
+  { path: "/research", marker: "研究工作台" },
   { path: "/knowledge", marker: "共 46 条" },
   { path: "/tools", marker: "共 20 个工具" },
+  { path: "/plugins", marker: "插件中心" },
+  { path: "/agents", marker: "P7-7" },
+  { path: "/workflows", marker: "Phase 8" },
   { path: "/runs", marker: "rn-b5-rt-py" },
   { path: "/runtime", marker: "node-py-1" },
+  { path: "/settings", marker: "界面偏好" },
 ];
 
 const THEMES = ["rip-dark", "rip-light"] as const;

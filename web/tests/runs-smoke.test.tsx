@@ -189,8 +189,9 @@ describe("Run 详情页（P5-8）", () => {
 
   it("渲染概要字段、JSON 块与 artifact 缺表说明", async () => {
     renderDetail("rn-b5-rt-py");
-    expect(await screen.findAllByText("rn-b5-rt-py").then((arr) => arr.length)).toBeGreaterThan(0);
-    expect(screen.getByText("SUCCEEDED")).toBeTruthy();
+    // P7-1 壳层：会话 tab 先于详情数据出现 run id，页面就绪标记改用状态徽标。
+    expect(await screen.findByText("SUCCEEDED")).toBeTruthy();
+    expect(screen.getAllByText("rn-b5-rt-py").length).toBeGreaterThan(0);
     expect(screen.getByText("4210 ms")).toBeTruthy();
     expect(screen.getByText(`input_hash`)).toBeTruthy();
     expect(screen.getByText("ab".repeat(32))).toBeTruthy();

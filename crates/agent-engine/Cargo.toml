@@ -1,0 +1,27 @@
+[package]
+name = "agent-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 7 Agent Engine 最小执行闭环（ROADMAP §8.3 P7-2，计划 §9:454-477 八步流程）：AgentDefinition/AgentRun 持久化读写面（006 表）与状态机（domain::agent P7-2 补充）、capability_refs 绑定引用校验接线（指向不存在工具即拒绝）、Broker 装配（含 ambiguous 意图确认回路与 L3 expand 记账）、经 Tool Engine 的登记工具调用（禁直调宿主 Shell）、Artifact/Evidence 登记与结束报告；rp-agent CLI 为 ROADMAP §8.4 验收命令基线"
+
+[dependencies]
+# 依赖面（复用优先纪律：持久化用 database Pool，工具存在性与调用用
+# tool-registry/tool-engine 既有公开接口，上下文装配用 context-broker
+# Broker（sources + assemble/expand/manifest），审计走 audit-engine 唯一
+# Emit 出口；零新增第三方依赖）。
+domain = { workspace = true }
+database = { workspace = true }
+# SK-1 引用证据固化写面（Broker::with_evidence_store，cli 装配接线）。
+resource-engine = { workspace = true }
+tool-registry = { workspace = true }
+tool-engine = { workspace = true }
+context-broker = { workspace = true }
+audit-engine = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "rp-agent"
+path = "src/bin/rp-agent.rs"

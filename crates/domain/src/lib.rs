@@ -35,7 +35,11 @@ pub mod resource;
 pub mod time;
 pub mod tool;
 
-pub use agent::{AgentDefinition, AgentId, AgentRun, AgentRunState, CapabilityRef};
+pub use agent::{
+    AgentDefinition, AgentId, AgentRun, AgentRunState, CapabilityRef, EvidenceMemoryEntry,
+    MemoryKind, MemoryLifecycle, MemoryObjectRef, MemoryRefType, ResearchMemoryEntry,
+    TaskMemoryEntry,
+};
 pub use context::{
     ContentRef, ContextItemKind, ContextLayer, InclusionForm, IntentQuery, IntentStatus, RefEvent,
     TargetSlot, ToolFamily,

@@ -68,6 +68,36 @@ pub enum DomainError {
         /// 拒绝原因。
         reason: String,
     },
+    /// AgentRun 状态迁移非法（P7-2 状态机补充：跃迁表之外的状态对一律拒绝，
+    /// 含终态迁出与自迁移）。
+    InvalidAgentTransition {
+        /// 起始状态（存储值词形）。
+        from: String,
+        /// 目标状态（存储值词形）。
+        to: String,
+    },
+    /// Agent Memory 字段非法（P7-3：id/hash 快照/载荷不变式/回链等校验拒绝）。
+    InvalidAgentMemory {
+        /// 被拒绝的字段名。
+        field: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// Memory 生命周期出现未知变体（013 CHECK 词值之外的存储值）。
+    UnknownMemoryLifecycle(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// Memory 生命周期迁移非法（P7-3：按类别跃迁表拒绝；Evidence/Research
+    /// 记忆的驱逐与归档出词值即在此拒绝）。
+    InvalidMemoryTransition {
+        /// Memory 类别（task/evidence/research）。
+        kind: String,
+        /// 起始状态（存储值词形）。
+        from: String,
+        /// 目标状态（存储值词形）。
+        to: String,
+    },
     /// Context Broker 词表出现未知变体（008 迁移 CHECK 域与 domain::context
     /// 枚举之外的值；覆盖 layer/kind/included/intent_status/event/target_slot/
     /// tool_family 七类词表，P4-1 收编）。
@@ -148,6 +178,27 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidAgentDefinition { field, reason } => {
                 write!(f, "invalid agent definition field {field:?}: {reason}")
+            }
+            DomainError::InvalidAgentTransition { from, to } => {
+                write!(
+                    f,
+                    "illegal agent run transition {from} -> {to} (P7-2 transition table)"
+                )
+            }
+            DomainError::InvalidAgentMemory { field, reason } => {
+                write!(f, "invalid agent memory field {field:?}: {reason}")
+            }
+            DomainError::UnknownMemoryLifecycle(value) => {
+                write!(
+                    f,
+                    "unknown memory lifecycle value {value:?} (013 CHECK domain)"
+                )
+            }
+            DomainError::InvalidMemoryTransition { kind, from, to } => {
+                write!(
+                    f,
+                    "illegal {kind} memory transition {from} -> {to} (P7-3 transition table)"
+                )
             }
             DomainError::UnknownContextVariant { field, value } => {
                 write!(f, "unknown context variant in {field:?}: {value:?}")

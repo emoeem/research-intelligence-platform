@@ -13,6 +13,7 @@ members = [
     "crates/context-broker",
     "crates/plugin-registry",
     "crates/plugin-runtime",
+    "crates/agent-engine",
     "tests",
 ]
 
@@ -47,6 +48,7 @@ runtime-gateway = { path = "crates/runtime-gateway" }
 context-broker = { path = "crates/context-broker" }
 plugin-registry = { path = "crates/plugin-registry" }
 plugin-runtime = { path = "crates/plugin-runtime" }
+agent-engine = { path = "crates/agent-engine" }
 
 
 [profile.release]
