@@ -64,6 +64,18 @@ fn podman_available() -> bool {
         .unwrap_or(false)
 }
 
+/// drill3 引用的是 tool-manifest.json 里按 digest 钉死的验收镜像
+/// （localhost/rip-tool-base:smoke@sha256:...），镜像属运行时数据
+/// （ADR §3.2），不在仓库内也无法现建命中同一 digest：只在已准备
+/// 镜像的受控环境（本地验收）执行，否则按 V-9 跳过。
+fn image_ready(image: &str) -> bool {
+    Command::new("podman")
+        .args(["image", "exists", image])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 fn fresh_env(tag: &str) -> (Pool, Engine, PathBuf) {
     let pool = Pool::open(PoolConfig {
         path: DbPath::Memory,
@@ -271,6 +283,11 @@ fn drill3_boundary_negative_mount_whitelist_and_sensitive_faces() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
+    let image = image_ref();
+    if !image_ready(&image) {
+        eprintln!("SKIP: 验收镜像不在本地镜像库（{image}），digest 钉死无法现建命中（V-9，受控环境演练）");
+        return;
+    }
     let _drill = DRILL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let (_pool, engine, ws_root) = fresh_env("boundary");
     let config = PodmanHostConfig {
@@ -278,7 +295,6 @@ fn drill3_boundary_negative_mount_whitelist_and_sensitive_faces() {
         ..PodmanHostConfig::default()
     };
     let adapter = PodmanHostAdapter::new(config);
-    let image = image_ref();
     engine
         .submit(&json!({
             "protocol_version": "1",

@@ -1,6 +1,8 @@
 name: CI
 
-# 推送与 PR 的最小质量门：Rust workspace（离线 vendored 构建）+ Python worker 测试。
+# 推送与 PR 的最小质量门：Rust workspace（离线 vendored 构建）+ Python worker 测试
+# + Web 工作台（npm 构建 + vitest）。浏览器视觉门禁按 V-9 保持本地执行（需浏览器
+# 二进制与已验收基线）；容器端到端按 V-9 保持受控环境执行（镜像属运行时数据）。
 # migrations/verify.py 不在 CI 内跑：它对账的源快照与 dryrun 库含生产衍生数据，不入库；
 # 该对账在本地执行并以 sources-snapshot manifest 为准。
 
@@ -64,3 +66,31 @@ jobs:
       - name: 运行 worker 测试
         working-directory: workers/python
         run: python -m unittest discover -s tests -v
+
+  web:
+    name: Web 工作台（构建与 vitest）
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web
+        run: npm ci
+
+      - name: 构建
+        working-directory: web
+        run: npm run build
+
+      - name: 测试
+        working-directory: web
+        run: npm run test
