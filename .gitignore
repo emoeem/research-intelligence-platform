@@ -26,6 +26,10 @@ integrations/rtis/reports/
 integrations/rtis/engagements/
 integrations/rtis/current
 integrations/rtis/*.log
+# pocs/ 运行时落盘（rt.py POCS=HOME/pocs，poc_add 由 knowledge.db content 列
+# 物化正文并回填 poc.path，属运行时产物不入库；gitignore 只拦未跟踪新落盘，
+# 已跟踪的 kit 快照（迁移提交 022a717，276 个文件）改动仍正常上报）
+integrations/rtis/pocs/
 
 # 全局数据库文件不入库（gitignore 只拦未跟踪文件，已跟踪的历史 db 不受影响）
 *.db

@@ -1,14 +1,41 @@
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { defineConfig } from "@playwright/test";
 
-/** 视觉与交互门禁配置（P5-10，ROADMAP P5-9 裁剪版）。
- *  浏览器二进制口径（ROADMAP §6.2）：优先用户缓存目录（~/.cache/ms-playwright，
- *  npx playwright install chromium）；本机该下载不可得（CDN 中断，实测两次），
- *  回退驱动系统 chromium（/usr/sbin/chromium，环境已存在、零安装），可用
- *  PW_CHROMIUM 环境变量覆盖。快照基线不本地生成（ROADMAP 风险 3：基线只能由
- *  CI 字体环境生成），本门禁只跑零 console.error/pageerror、横向溢出与
- *  axe AA 扫描断言。 */
+/** 视觉与交互门禁配置（P5-10，ROADMAP P5-9 裁剪版；P8-4 浏览器二进制
+ *  机器无关探测）：
+ *  1. PW_CHROMIUM 环境变量显式注入（机器无关口径，CI/新机器优先）；
+ *  2. 用户级缓存探测（~/.cache/ms-playwright 下 chromium 版本目录内的
+ *     chrome-linux64/chrome，npx playwright install chromium 只写用户缓存
+ *     目录，零系统级安装）；
+ *  3. 回退系统 chromium（/usr/sbin/chromium，部分发行版环境已存在）。
+ *  快照基线不本地生成（ROADMAP 风险 3：基线只能由 CI 字体环境生成），本门禁
+ *  只跑零 console.error/pageerror、横向溢出与 axe AA 扫描断言。 */
 
-const executablePath = process.env.PW_CHROMIUM ?? "/usr/sbin/chromium";
+function probeChromium(): string | undefined {
+  const cacheRoot = join(homedir(), ".cache", "ms-playwright");
+  try {
+    if (existsSync(cacheRoot)) {
+      for (const entry of readdirSync(cacheRoot).filter((name) => name.startsWith("chromium-"))) {
+        for (const inner of ["chrome-linux64", "chrome-linux", "chrome-win"]) {
+          const candidate = join(
+            cacheRoot,
+            entry,
+            inner,
+            process.platform === "win32" ? "chrome.exe" : "chrome",
+          );
+          if (existsSync(candidate)) return candidate;
+        }
+      }
+    }
+  } catch {
+    /* 探测失败走回退 */
+  }
+  return undefined;
+}
+
+const executablePath = process.env.PW_CHROMIUM ?? probeChromium() ?? "/usr/sbin/chromium";
 
 export default defineConfig({
   testDir: "qa/visual",

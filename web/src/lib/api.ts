@@ -581,3 +581,209 @@ export async function fetchAgentRunDetail(
 ): Promise<AgentRunDetail> {
   return apiGet<AgentRunDetail>(`/api/agent-runs?id=${encodeURIComponent(runId)}`, options);
 }
+
+// ---------------------------------------------------------------------------
+// P8-4 Workflow Studio 画布面（/api/workflows 与 /api/workflow-runs 的画布
+// 消费侧）：定义列表与逐版 graph（历史回看）、run 列表与详情（节点状态/
+// 控制行/关联六 ID）、写面 run/pause/resume/retry（P8-3）与 put（画布保存，
+// 版本存储侧递增）。写面一律经服务端 rp-workflow 子进程，前端零 SQL。
+// ---------------------------------------------------------------------------
+
+/** definition-v1 图节点（id/type/params，词表 = workflow-engine DSL 八类）。 */
+export interface WorkflowGraphNode {
+  id: string;
+  type: string;
+  params?: Record<string, unknown>;
+}
+
+/** definition-v1 图边（from/to，kind 缺省 seq，branch 为 condition/parallel
+ *  出边词形，when 为声明式条件载荷）。 */
+export interface WorkflowGraphEdge {
+  from: string;
+  to: string;
+  kind?: string;
+  when?: unknown;
+}
+
+/** definition-v1 graph（节点/边两向量）。 */
+export interface WorkflowGraph {
+  nodes: WorkflowGraphNode[];
+  edges: WorkflowGraphEdge[];
+}
+
+/** workflow_definition 行（016；?id= 详情带逐版 graph）。 */
+export interface WorkflowDefinitionRow {
+  workflow_id: string;
+  version: number;
+  name: string;
+  description?: string | null;
+  compat?: string;
+  node_count?: number;
+  edge_count?: number;
+  input_schema?: unknown;
+  source?: string | null;
+  created_at?: string | null;
+  graph?: WorkflowGraph | null;
+  _src?: string;
+}
+
+/** /api/workflows 列表（?id= 缺省）。 */
+export interface WorkflowList {
+  available: boolean;
+  message?: string;
+  source?: string;
+  total_workflows: number;
+  total_versions: number;
+  items: WorkflowDefinitionRow[];
+}
+
+/** workflow_run 摘要行（017 + 018 六 ID 关联列，缺列库条件出现）。 */
+export interface WorkflowRunRow {
+  run_id: string;
+  workflow_id: string;
+  workflow_version: number;
+  state: string;
+  trace_id?: string | null;
+  task_id?: string | null;
+  agent_run_id?: string | null;
+  tool_run_id?: string | null;
+  artifact_id?: string | null;
+  evidence_id?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  _src?: string;
+}
+
+/** workflow_run_node 节点状态行（五态 + attempt + 实体链接列）。 */
+export interface WorkflowRunNodeRow {
+  node_id: string;
+  node_kind: string;
+  state: string;
+  attempt: number;
+  output?: unknown;
+  error?: unknown;
+  started_at?: string | null;
+  finished_at?: string | null;
+  tool_run_id?: string | null;
+  agent_run_id?: string | null;
+}
+
+/** 018 workflow_run_control 控制行投影（awaiting_approval 判定服务端算好）。 */
+export interface WorkflowRunControl {
+  pause_requested_at?: string | null;
+  cancel_requested_at?: string | null;
+  approval_node_id?: string | null;
+  approval_request?: unknown;
+  approval?: unknown;
+  approval_updated_at?: string | null;
+  awaiting_approval?: boolean;
+  _src?: string;
+}
+
+/** /api/workflow-runs?id= 详情（run 头行 + 节点行 + 控制行 + 六 ID 对账）。 */
+export interface WorkflowRunDetail {
+  available: boolean;
+  source?: string;
+  query_id: string;
+  run: WorkflowRunRow & { input?: unknown; output?: unknown; error?: unknown };
+  nodes: WorkflowRunNodeRow[];
+  checkpoint_seq?: number | null;
+  control?: WorkflowRunControl | null;
+  correlation: {
+    trace_id?: string | null;
+    task_id?: string | null;
+    agent_run_id?: string | null;
+    tool_run_id?: string | null;
+    artifact_id?: string | null;
+    evidence_id?: string | null;
+  };
+  trace_query?: string | null;
+}
+
+/** /api/workflow-runs 列表。 */
+export interface WorkflowRunList {
+  available: boolean;
+  message?: string;
+  source?: string;
+  total: number;
+  returned: number;
+  limit?: number;
+  items: WorkflowRunRow[];
+}
+
+export async function fetchWorkflows(
+  id: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<WorkflowList> {
+  const suffix = id ? `?id=${encodeURIComponent(id)}` : "?limit=100";
+  return apiGet<WorkflowList>(`/api/workflows${suffix}`, options);
+}
+
+export async function fetchWorkflowRuns(
+  id: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<WorkflowRunList> {
+  const suffix = id ? `?id=${encodeURIComponent(id)}` : "?limit=50";
+  return apiGet<WorkflowRunList>(`/api/workflow-runs${suffix}`, options);
+}
+
+export async function fetchWorkflowRunDetail(
+  runId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<WorkflowRunDetail> {
+  return apiGet<WorkflowRunDetail>(`/api/workflow-runs?id=${encodeURIComponent(runId)}`, options);
+}
+
+/** run 受理（P8-3 集合路径）：受理即返回（异步承载），状态经 GET 轮询。 */
+export interface WorkflowRunAccepted {
+  result: string;
+  action: string;
+  run_id: string;
+  pid?: number;
+  log?: string;
+  status_query?: string;
+}
+
+export function workflowRun(
+  workflowId: string,
+  options: { input?: Record<string, unknown>; version?: number } = {},
+): Promise<WorkflowRunAccepted> {
+  return apiSend<WorkflowRunAccepted>("POST", "/api/workflow-runs", {
+    workflow_id: workflowId,
+    input: options.input ?? {},
+    ...(options.version ? { version: options.version } : {}),
+  });
+}
+
+export type WorkflowRunAction = "pause" | "resume" | "retry";
+
+/** run 控制动作（REST 动态路径）：pause 同步（请求位写入即回）；
+ *  resume 带 inject（原样并入恢复态，批准参数按 human 节点 params.key 包键）；
+ *  retry 带 node_id（新 run 承载，只重跑目标失败节点）。 */
+export function workflowRunAction(
+  action: WorkflowRunAction,
+  runId: string,
+  body: { inject?: Record<string, unknown>; node_id?: string } = {},
+): Promise<Record<string, unknown>> {
+  return apiSend<Record<string, unknown>>(
+    "POST",
+    `/api/workflow-runs/${encodeURIComponent(runId)}/${action}`,
+    body,
+  );
+}
+
+/** 画布保存（P8-4 put）：definition-v1 JSON 经 rp-workflow put 四道门后
+ *  追加一版，版本由存储侧分配（现有最大版本 + 1）。 */
+export interface WorkflowPutResult {
+  result: string;
+  workflow_id: string;
+  version: number;
+  nodes?: number;
+  edges?: number;
+  status_query?: string;
+}
+
+export function workflowPut(definition: Record<string, unknown>): Promise<WorkflowPutResult> {
+  return apiSend<WorkflowPutResult>("POST", "/api/workflows", { definition });
+}

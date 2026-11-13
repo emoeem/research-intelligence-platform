@@ -172,6 +172,57 @@ const API_STUBS: Record<string, unknown> = {
       },
     ],
   },
+  // P8-4 Workflow Studio 五区面（列表形状与 /api/workflows 真实响应一致；
+  // ?id= 详情不在视觉矩阵路径内，仅列表落位；逐版 graph 形状见
+  // workflows.spec.ts）。
+  "/api/workflows": {
+    available: true,
+    source: "main+aux",
+    total_workflows: 1,
+    total_versions: 2,
+    items: [
+      {
+        workflow_id: "wf-p84-visual",
+        version: 1,
+        name: "P8-4 视觉矩阵演示流 v1",
+        compat: "graph-v1",
+        node_count: 3,
+        edge_count: 2,
+        input_schema: { type: "object", properties: { target: { type: "string" } } },
+        source: "rp-workflow-put",
+        created_at: "2026-11-14T00:00:00Z",
+      },
+      {
+        workflow_id: "wf-p84-visual",
+        version: 2,
+        name: "P8-4 视觉矩阵演示流 v2",
+        compat: "graph-v1",
+        node_count: 4,
+        edge_count: 3,
+        input_schema: { type: "object", properties: { target: { type: "string" } } },
+        source: "rp-workflow-put",
+        created_at: "2026-11-14T01:00:00Z",
+      },
+    ],
+  },
+  "/api/workflow-runs": {
+    available: true,
+    source: "main+aux",
+    total: 1,
+    returned: 1,
+    limit: 50,
+    items: [
+      {
+        run_id: "wfr-p84-visual",
+        workflow_id: "wf-p84-visual",
+        workflow_version: 2,
+        state: "paused",
+        trace_id: "tr-p84-visual",
+        task_id: "rtis-20261114-010000-001",
+        created_at: "2026-11-14T01:00:00Z",
+      },
+    ],
+  },
   "/api/tasks": {
     total: 42,
     by_state: { CREATED: 28, COMPLETED: 2 },
@@ -217,7 +268,7 @@ const PAGES = [
   { path: "/tools", marker: "共 20 个工具" },
   { path: "/plugins", marker: "插件中心" },
   { path: "/agents", marker: "Agent 定义与能力绑定" },
-  { path: "/workflows", marker: "Phase 8" },
+  { path: "/workflows", marker: "节点分类面板" },
   { path: "/runs", marker: "rn-b5-rt-py" },
   { path: "/runtime", marker: "node-py-1" },
   { path: "/settings", marker: "界面偏好" },
