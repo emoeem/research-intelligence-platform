@@ -16,6 +16,9 @@
 //! - [`context`]：Context Broker 域类型（计划 §12:703 ContextManifest 词表
 //!   与设计稿 §4.1 IntentQuery/ContentRef，P4-1 收编；五类词表与 008 迁移
 //!   CHECK 域一一对应）
+//! - [`workflow`]：Workflow 域类型（计划 §12:701-702 实体行，P8-1 收编；
+//!   graph 静态校验属 workflow-engine validate 模块，本 crate 只承载身份
+//!   校验、结构向量与 run 状态词表/跃迁表）
 //!
 //! 状态机口径：lifecycle 为处理阶段链，governance 为治理状态，两轴正交
 //! （M1 评审修正 K-08，见 migrations/001_init.sql 头注）；tool_run 状态机
@@ -34,6 +37,7 @@ pub mod plugin;
 pub mod resource;
 pub mod time;
 pub mod tool;
+pub mod workflow;
 
 pub use agent::{
     AgentDefinition, AgentId, AgentRun, AgentRunState, CapabilityRef, EvidenceMemoryEntry,
@@ -52,3 +56,7 @@ pub use plugin::{
 };
 pub use resource::{GovernanceStatus, LifecycleStatus, QualityGrade, Resource};
 pub use tool::ToolRunStatus;
+pub use workflow::{
+    WorkflowCompat, WorkflowDefinition, WorkflowEdge, WorkflowEdgeKind, WorkflowId, WorkflowNode,
+    WorkflowNodeKind, WorkflowNodeRunState, WorkflowNodeState, WorkflowRun, WorkflowRunState,
+};

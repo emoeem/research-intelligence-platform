@@ -1,0 +1,29 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-four-node",
+  "version": 1,
+  "name": "four node demo（P8-1 验收样例：start → tool → knowledge → end）",
+  "description": "P8-1 自验第 2 条样例：put 输出 version=1，重复 put 输出 version=2，get --version 1 回读与首版逐字节一致",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string"
+      }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "fetch", "type": "tool", "params": { "tool_id": "webresearch.fetch" } },
+      { "id": "summarize", "type": "knowledge", "params": { "query": "summarize findings for {{target}}" } },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "fetch" },
+      { "from": "fetch", "to": "summarize" },
+      { "from": "summarize", "to": "done" }
+    ]
+  }
+}

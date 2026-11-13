@@ -638,6 +638,7 @@ fn run() -> i32 {
                 goal: flags.goal.clone(),
                 task_id: flags.task_id.clone(),
                 trace_id: flags.trace_id.clone(),
+                run_id: None,
                 input: flags.input.clone(),
                 planner: Box::new(agent_engine::KeywordSearchPlanner),
                 confirmer: Box::new(confirmer),

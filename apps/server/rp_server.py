@@ -10,7 +10,13 @@
   顺延，见 docs/phase5/PHASE5-PLAN.md 偏差登记 1）；
   P7-5 /api/traces（六 ID 统一关联）；P7-7 /api/agents /api/agent-runs
   （Agent Studio 读面：定义与能力绑定、AgentRun 列表、步骤轨迹与 013
-  三记忆表视图，主库加 aux 双 schema 归并，只读 SELECT 零 SQL 写）
+  三记忆表视图，主库加 aux 双 schema 归并，只读 SELECT 零 SQL 写）；
+  P8-3 /api/workflows /api/workflow-runs（Workflow Studio 读面：定义版本
+  与 run 六态 + 018 六 ID 关联列 + awaiting_approval 控制行视图，写面
+  run/pause/resume/retry 经 rp-workflow 子进程零直连 SQL 写）；
+  P8-4 写面追加 /api/workflows put（画布保存：definition-v1 JSON 经
+  rp-workflow put 同步子进程落库，版本由存储侧分配递增）与读面 ?id=
+  详情逐版 graph 形状（版本历史回看渲染画布）
 - 无任何写端点，默认绑定 127.0.0.1（容器内通过 RP_HOST=0.0.0.0 覆盖）
 - Bearer Token 鉴权：配置 RP_AUTH_TOKEN 或 RP_AUTH_TOKEN_FILE 后，
   所有 /api/* 请求必须携带有效令牌（constant-time 比较 + 失败节流）；
@@ -46,8 +52,11 @@ import hmac
 import json
 import os
 import posixpath
+import re
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -65,6 +74,12 @@ DB_PATH = os.environ.get("RP_DB_PATH", DEFAULT_DB)
 AUX_DB_PATH = (os.environ.get("RP_AUX_DB") or "").strip() or None
 PLUGIN_DB_PATH = (os.environ.get("RIP_PLUGIN_DB") or "").strip() \
     or os.path.join(REPO_ROOT, "migrations", "dev-p6.db")
+# P8-3 workflow 写面：rp-workflow 子进程落库（本进程零直连 SQL 写，
+# plugin_write 同款纪律）；读面 workflow_run/workflow_definition 沿
+# RP_AUX_DB 只读 ATTACH 通道（主库无 016/017/018 迁移，守卫降级空态说明）。
+WORKFLOW_DB_PATH = (os.environ.get("RP_WORKFLOW_DB") or "").strip()     or (AUX_DB_PATH or "")
+WORKFLOW_BIN = (os.environ.get("RP_WORKFLOW_BIN") or "target/debug/rp-workflow").strip()
+WORKFLOW_LOG_DIR = os.environ.get("RP_WORKFLOW_LOG_DIR", "/tmp/rp-workflow-run-logs")
 PLUGIN_BIN = (os.environ.get("RP_PLUGIN_BIN") or "cargo").strip()
 # RP_PLUGIN_BIN_ARGS 语义：显式空串 = 无前置参数（直用预编译二进制时）；
 # 未设置 = cargo run 默认前置。
@@ -1408,6 +1423,7 @@ def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
     audit_schemas = schemas_with("audit_event")
     ev_schemas = schemas_with("evidence")
     art_schemas = schemas_with("artifact")
+    wf_schemas = schemas_with("workflow_run")
 
     def col(src: str, table: str, column: str) -> str:
         return column if has_column(conn, src, table, column) else f"NULL AS {column}"
@@ -1462,6 +1478,17 @@ def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
     ]
     trace_ids: list[str] = []
     matched_via: str | None = None
+    # P8-3：workflow_run 反查入参（wfr- run id 即链锚 trace_id，018 关联列）
+    # 前置于六 ID 探测（run_id = query_id 直命中；017 库缺列零贡献）。
+    if wf_schemas:
+        probes = [
+            ("workflow_run_id",
+             "SELECT trace_id FROM {s}.workflow_run WHERE run_id = ? AND trace_id IS NOT NULL",
+             wf_schemas),
+            ("trace_id",
+             "SELECT trace_id FROM {s}.workflow_run WHERE trace_id = ? AND trace_id IS NOT NULL",
+             wf_schemas),
+        ] + probes
     for via, template, schemas in probes:
         if not schemas:
             continue
@@ -1660,6 +1687,30 @@ def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
         args,
         "event_id",
     )
+    # P8-3：workflow_run 面入链（run_id 即链锚，trace_id/run_id 双向命中；
+    # 018 六 ID 关联列按库水位条件出现，缺列库 NULL 占位不炸）。
+    chain["workflow_runs"] = []
+    if wf_schemas:
+        chain["workflow_runs"] = q_all(
+            [
+                (
+                    f"SELECT run_id, workflow_id, workflow_version, state,"
+                    f" {_wf_col(conn, src, 'workflow_run', 'trace_id')},"
+                    f" {_wf_col(conn, src, 'workflow_run', 'task_id')},"
+                    f" {_wf_col(conn, src, 'workflow_run', 'agent_run_id')},"
+                    f" {_wf_col(conn, src, 'workflow_run', 'tool_run_id')},"
+                    f" {_wf_col(conn, src, 'workflow_run', 'artifact_id')},"
+                    f" {_wf_col(conn, src, 'workflow_run', 'evidence_id')},"
+                    f" created_at, started_at, finished_at"
+                    f" FROM {src}.workflow_run"
+                    f" WHERE trace_id IN ({ph}) OR run_id IN ({ph})",
+                    src,
+                )
+                for src in wf_schemas
+            ],
+            args + args,
+            "created_at",
+        )
     chain["counts"] = {
         "tasks": len(chain["tasks"]),
         "agent_runs": len(chain["agent_runs"]),
@@ -1669,6 +1720,7 @@ def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
         "artifacts": len(chain["artifacts"]),
         "evidence": len(chain["evidence"]),
         "audit_events": len(chain["audit_events"]),
+        "workflow_runs": len(chain["workflow_runs"]),
     }
     return chain
 
@@ -2050,6 +2102,420 @@ def handle_agent_runs(conn: sqlite3.Connection, params: dict) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# P8-3 Workflow Studio 读面与写面：/api/workflows 与 /api/workflow-runs，
+# 只读 SELECT 零 SQL 写（agent 读面同款 schemas_with 逐库查询模式，缺表
+# 守卫不炸、不伪造）；写面 run/pause/resume/retry 一律经 subprocess 调
+# rp-workflow CLI（run-request-v1 契约形状校验 + 生产库守卫镜像），本文件
+# 对 workflow 面零直连 SQL 写（selftest 有静态断言）。
+# ---------------------------------------------------------------------------
+
+WORKFLOW_RUN_STATES = ("queued", "running", "paused", "succeeded", "failed", "cancelled")
+
+
+def _wf_col(conn: sqlite3.Connection, src: str, table: str, column: str) -> str:
+    """018 追加列按库水位条件出现（缺列库零贡献，不炸不伪造）。"""
+    return column if has_column(conn, src, table, column) else f"NULL AS {column}"
+
+
+def _wf_control_rows(conn: sqlite3.Connection, src: str, run_id: str) -> dict:
+    """018 workflow_run_control 控制行投影（缺表库返回真实空说明形状）。"""
+    if not table_exists(conn, src, "workflow_run_control"):
+        return {}
+    row = None
+    try:
+        row = conn.execute(
+            f"SELECT pause_requested_at, cancel_requested_at, approval_node_id,"
+            f" approval_request_json, approval_json, approval_updated_at"
+            f" FROM {src}.workflow_run_control WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return {}
+    if not row:
+        return {}
+    return {
+        "pause_requested_at": row[0],
+        "cancel_requested_at": row[1],
+        "approval_node_id": row[2],
+        "approval_request": parse_json_or_none(row[3]),
+        "approval": parse_json_or_none(row[4]),
+        "approval_updated_at": row[5],
+        "awaiting_approval": bool(row[2]) and row[4] is None,
+        "_src": src,
+    }
+
+
+def handle_workflows(conn: sqlite3.Connection, params: dict) -> dict:
+    """Workflow 定义读面（P8-3 第一区）：workflow_definition 列表；?id= 详情 =
+    全版本定义（版本管理历史逐版可查）+ 逐版 graph 形状（P8-4 历史回看渲染
+    画布消费）。主库与 aux 双 schema 归并（platform*.db 停在 V1 无 016，
+    守卫降级为真实空态说明）。"""
+    workflow_id = clean_str(params, "id")
+    limit = parse_limit(params)
+    schemas = schemas_with_table(conn, "workflow_definition")
+    merged: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for src in schemas:
+        where = " WHERE workflow_id = ?" if workflow_id else ""
+        args: tuple = (workflow_id,) if workflow_id else ()
+        try:
+            rows = conn.execute(
+                f"SELECT workflow_id, version, name, description, compat, node_count,"
+                f" edge_count, input_schema_json, source, created_at,"
+                f" definition_json"
+                f" FROM {src}.workflow_definition{where}"
+                f" ORDER BY workflow_id, version LIMIT ?",
+                args + (limit,),
+            ).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            key = (row["workflow_id"], row["version"])
+            if key in seen:
+                continue
+            seen.add(key)
+            item = dict(row)
+            item["_src"] = src
+            merged.append(item)
+    sort_by(merged, "created_at")
+    for item in merged:
+        item["input_schema"] = parse_json_or_none(item.pop("input_schema_json", None))
+        # P8-4：逐版 graph 形状（definition_json 规范文本内的 graph 节点/边
+        # 向量，历史回看按版本渲染只读画布）。?id= 详情随行返回；列表路径
+        # 不带 payload（节点图可能数百 KB）。缺列库（无 definition_json 列）
+        # 解析得 None，页面按空 graph 呈现不伪造。
+        if workflow_id:
+            parsed_doc = parse_json_or_none(item.pop("definition_json", None))
+            item["graph"] = parsed_doc.get("graph") if isinstance(parsed_doc, dict) else None
+        else:
+            item.pop("definition_json", None)
+    total_ids = len({item["workflow_id"] for item in merged})
+    result = {
+        "available": True,
+        "source": "+".join(schemas) if schemas else "missing",
+        "total_workflows": total_ids,
+        "total_versions": len(merged),
+        "items": merged,
+        **(
+            {}
+            if schemas
+            else {
+                "message": "workflow_definition 表不可读（主库/aux 均缺 016 迁移）："
+                "Workflow 定义面暂不可查（真实空态说明，非空数据）"
+            }
+        ),
+    }
+    if total_ids == 0 and schemas:
+        result["message"] = "暂无 workflow 定义：rp-workflow put 端到端链未产生定义记录"
+    return result
+
+
+def handle_workflow_runs(conn: sqlite3.Connection, params: dict) -> dict:
+    """WorkflowRun 读面（P8-3 第二区）：run 列表（六态 + 六 ID 关联列）；
+    ?id= 详情 = run 头行 + 节点状态行 + 018 控制行（awaiting_approval 判定）
+    + checkpoint 计数 + 六 ID 对账面。主库与 aux 双 schema 归并。"""
+    run_id = clean_str(params, "id")
+    limit = parse_limit(params)
+    schemas = schemas_with_table(conn, "workflow_run")
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for src in schemas:
+        where = " WHERE run_id = ?" if run_id else ""
+        args: tuple = (run_id,) if run_id else ()
+        try:
+            rows = conn.execute(
+                f"SELECT run_id, workflow_id, workflow_version, state, input_json,"
+                f" output_json, error_json, created_at, started_at, finished_at,"
+                f" {_wf_col(conn, src, 'workflow_run', 'trace_id')},"
+                f" {_wf_col(conn, src, 'workflow_run', 'task_id')},"
+                f" {_wf_col(conn, src, 'workflow_run', 'agent_run_id')},"
+                f" {_wf_col(conn, src, 'workflow_run', 'tool_run_id')},"
+                f" {_wf_col(conn, src, 'workflow_run', 'artifact_id')},"
+                f" {_wf_col(conn, src, 'workflow_run', 'evidence_id')}"
+                f" FROM {src}.workflow_run{where} ORDER BY created_at DESC, run_id LIMIT ?",
+                args + (limit,),
+            ).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            key = row["run_id"]
+            if key in seen:
+                continue
+            seen.add(key)
+            item = dict(row)
+            item["_src"] = src
+            merged.append(item)
+    sort_by(merged, "created_at DESC")
+    if run_id and merged:
+        item = merged[0]
+        src = item["_src"]
+        detail: dict = {"run": {k: v for k, v in item.items() if k != "input_json"}}
+        detail["run"]["input"] = parse_json_or_none(item.get("input_json"))
+        detail["run"]["output"] = parse_json_or_none(item.get("output_json"))
+        detail["run"]["error"] = parse_json_or_none(item.get("error_json"))
+        detail["nodes"] = []
+        if table_exists(conn, src, "workflow_run_node"):
+            try:
+                for row in conn.execute(
+                    f"SELECT node_id, node_kind, state, attempt, output_json, error_json,"
+                    f" started_at, finished_at,"
+                    f" {_wf_col(conn, src, 'workflow_run_node', 'tool_run_id')},"
+                    f" {_wf_col(conn, src, 'workflow_run_node', 'agent_run_id')}"
+                    f" FROM {src}.workflow_run_node WHERE run_id = ? ORDER BY node_id",
+                    (run_id,),
+                ).fetchall():
+                    node = dict(row)
+                    node["output"] = parse_json_or_none(node.pop("output_json", None))
+                    node["error"] = parse_json_or_none(node.pop("error_json", None))
+                    detail["nodes"].append(node)
+            except sqlite3.Error:
+                pass
+        detail["checkpoint_seq"] = None
+        if table_exists(conn, src, "workflow_checkpoint"):
+            try:
+                row = conn.execute(
+                    f"SELECT MAX(seq) FROM {src}.workflow_checkpoint WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                detail["checkpoint_seq"] = row[0] if row else None
+            except sqlite3.Error:
+                pass
+        detail["control"] = _wf_control_rows(conn, src, run_id)
+        detail["correlation"] = {
+            "trace_id": item.get("trace_id"),
+            "task_id": item.get("task_id"),
+            "agent_run_id": item.get("agent_run_id"),
+            "tool_run_id": item.get("tool_run_id"),
+            "artifact_id": item.get("artifact_id"),
+            "evidence_id": item.get("evidence_id"),
+        }
+        # 015 trace 面双向对账入口：trace_id 即链锚（= run_id），全链经
+        # /api/traces?id=<trace_id> 汇出。
+        detail["trace_query"] = f"/api/traces?id={item.get('trace_id')}" if item.get("trace_id") else None
+        return {
+            "available": True,
+            "source": "+".join(schemas),
+            "query_id": run_id,
+            **detail,
+        }
+    result = {
+        "available": True,
+        "source": "+".join(schemas) if schemas else "missing",
+        "total": len(merged),
+        "returned": len(merged),
+        "limit": limit,
+        "items": [{k: v for k, v in item.items() if k != "input_json"} for item in merged],
+        **(
+            {}
+            if schemas
+            else {
+                "message": "workflow_run 表不可读（主库/aux 均缺 017 迁移）："
+                "WorkflowRun 运行面暂不可查（真实空态说明，非空数据）"
+            }
+        ),
+    }
+    if len(merged) == 0 and schemas:
+        result["message"] = "暂无 WorkflowRun：rp-workflow run 端到端链未产生运行记录"
+    return result
+
+
+# ---------------------------------------------------------------------------
+# P8-3 workflow 写面（run/pause/resume/retry，经 rp-workflow 子进程）：
+# 形状按 schemas/workflow/run-request-v1.schema.json 语义手工核对（stdlib-only
+# 无 jsonschema 运行时）；run/resume/retry 异步承载（Popen 不等待，run_id
+# 预生成钉定，状态经 GET /api/workflow-runs 轮询），pause 同步（请求位写入
+# 即返回）。
+# ---------------------------------------------------------------------------
+
+WORKFLOW_WRITE_ACTIONS = ("pause", "resume", "retry")
+
+# run id 形状（run-request-v1 同口径；domain::RunId 兼容 wfr- 前缀连字符词形，
+# CLI 钉定 id 如 wfr-p83-agent 均合法）。
+_RUN_ID_RE = re.compile(r"^wfr-[A-Za-z0-9._-]+$")
+
+
+def _workflow_db_guard() -> str:
+    """写面目标库守卫（镜像 rp-workflow CLI production_db_refused）：缺配置
+    或指向 platform*.db 一律拒绝。"""
+    if not WORKFLOW_DB_PATH:
+        raise ApiError(503, "workflow_db_not_configured",
+                       "写面不可用：未配置 RP_WORKFLOW_DB（workflow 开发库路径）")
+    name = os.path.basename(WORKFLOW_DB_PATH)
+    if name.startswith("platform"):
+        raise ApiError(403, "production_db_refused",
+                       "写面拒绝：RP_WORKFLOW_DB 指向 platform*.db（红线 ROADMAP §13）")
+    return WORKFLOW_DB_PATH
+
+
+def _generate_run_id() -> str:
+    """run id 预生成（wfr- + 128bit 十六进制，domain::RunId 形状兼容）。"""
+    import uuid
+    return "wfr-" + uuid.uuid4().hex
+
+
+def _spawn_workflow(args: list[str], log_name: str) -> dict:
+    """异步承载 rp-workflow 子进程（stdout/stderr 落日志文件，不等待）。"""
+    os.makedirs(WORKFLOW_LOG_DIR, exist_ok=True)
+    log_path = os.path.join(WORKFLOW_LOG_DIR, log_name)
+    try:
+        with open(log_path, "ab", buffering=0) as log_fh:
+            proc = subprocess.Popen(
+                [WORKFLOW_BIN, *args],
+                stdout=log_fh,
+                stderr=log_fh,
+                cwd=REPO_ROOT,
+                start_new_session=True,
+            )
+    except OSError as exc:
+        raise ApiError(502, "workflow_cmd_spawn_failed",
+                       f"rp-workflow 启动失败（构建产物在位? {WORKFLOW_BIN}）：{exc}") from exc
+    return {"pid": proc.pid, "log": log_path}
+
+
+def _run_workflow_sync(args: list[str], timeout: int = 60) -> dict:
+    """同步承载 rp-workflow 子进程（pause 用；JSON stdout 解析失败带原文）。"""
+    try:
+        proc = subprocess.run(
+            [WORKFLOW_BIN, *args],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "workflow_cmd_timeout", f"rp-workflow 超时：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "workflow_cmd_spawn_failed", f"rp-workflow 启动失败：{exc}") from exc
+    payload: dict = {}
+    if proc.stdout.strip():
+        try:
+            payload = json.loads(proc.stdout.strip().splitlines()[-1])
+        except json.JSONDecodeError:
+            payload = {"stdout": proc.stdout[-800:]}
+    if proc.returncode != 0:
+        stderr_tail = (proc.stderr or "")[-800:]
+        return {"ok": False, "returncode": proc.returncode, "stderr_tail": stderr_tail, **payload}
+    return {"ok": True, "returncode": proc.returncode, **payload}
+
+
+def workflow_put(body: dict) -> dict:
+    """P8-4 画布保存（POST /api/workflows）：definition-v1 JSON 落临时文件，
+    rp-workflow put 同步子进程四道门后追加一版定义（版本由存储侧分配 =
+    现有最大版本 + 1），本进程零直连 SQL 写（与 run/pause/resume/retry 同
+    一纪律）。CLI exit 0 = PUT；exit 1 = 静态校验拒绝（422 带 REJECTED 汇
+    总）；exit 2 = 装载失败（400，Schema/JSON 违规）。临时文件即落即删。"""
+    definition = body.get("definition")
+    if not isinstance(definition, dict):
+        raise ApiError(400, "definition_required",
+                       "put 需要 definition（workflow/definition-v1 形状 JSON object）")
+    # 最小形状核对（调用方第一道护栏；全量装载门 + 静态校验由 rp-workflow put 承担）
+    if definition.get("schema") != "workflow/definition-v1":
+        raise ApiError(400, "bad_definition_schema",
+                       "definition.schema 必须为 \"workflow/definition-v1\"")
+    workflow_id = (definition.get("workflow_id") or "").strip()
+    if not workflow_id or len(workflow_id) > 128:
+        raise ApiError(400, "bad_workflow_id", "definition.workflow_id 非空且不超过 128 字符")
+    graph = definition.get("graph")
+    if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list) \
+            or not isinstance(graph.get("edges"), list):
+        raise ApiError(400, "bad_graph", "definition.graph.nodes/edges 必须是数组（definition-v1）")
+    db = _workflow_db_guard()
+    os.makedirs(WORKFLOW_LOG_DIR, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix="wf-def-", suffix=".json", dir=WORKFLOW_LOG_DIR)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(definition, fh, ensure_ascii=False)
+        out = _run_workflow_sync(["put", tmp_path, "--db", db])
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    if out.get("ok"):
+        return {"result": "put", "workflow_id": out.get("workflow_id"),
+                "version": out.get("version"), "nodes": out.get("nodes"),
+                "edges": out.get("edges"),
+                "status_query": f"/api/workflows?id={out.get('workflow_id')}"}
+    code = out.get("returncode")
+    if code == 1:
+        raise ApiError(422, "definition_rejected",
+                       f"definition 静态校验拒绝（REJECTED）：{out.get('stderr_tail') or out}")
+    raise ApiError(400, "definition_unparsable",
+                   f"definition 装载失败（JSON/Schema 违规）：{out.get('stderr_tail') or out}")
+
+
+def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
+    """workflow 写面统一入口（run/pause/resume/retry）：形状校验 → CLI 子进程。
+    本进程零直连 SQL 写；非零退出 → 502 带错误 JSON（CLI stderr 尾部透传）。"""
+    if not os.path.isfile(WORKFLOW_BIN):
+        raise ApiError(502, "workflow_bin_missing",
+                       f"rp-workflow 可执行缺失：{WORKFLOW_BIN}（先 cargo build --offline -p workflow-engine --bin rp-workflow）")
+    db = _workflow_db_guard()
+    common = ["--db", db]
+
+    if action == "run":
+        workflow_id = (body.get("workflow_id") or "").strip()
+        if not workflow_id or len(workflow_id) > 128:
+            raise ApiError(400, "workflow_id_required", "run 需要 workflow_id（非空 <=128）")
+        inp = body.get("input")
+        if inp is None:
+            inp = {}
+        if not isinstance(inp, dict):
+            raise ApiError(400, "bad_input", "input 必须是 JSON object（run-request-v1）")
+        args = ["run", workflow_id, "--input", json.dumps(inp, ensure_ascii=False)]
+        version = body.get("version")
+        if version is not None:
+            if not isinstance(version, int) or version < 1:
+                raise ApiError(400, "bad_version", "version 必须是 >= 1 的整数")
+            args += ["--version", str(version)]
+        run_id = (body.get("run_id") or "").strip() or _generate_run_id()
+        if not _RUN_ID_RE.match(run_id):
+            raise ApiError(400, "bad_run_id", "run_id 形状须为 wfr-<alnum>（run-request-v1）")
+        args += ["--run-id", run_id, *common]
+        spawned = _spawn_workflow(args, f"run-{run_id}.log")
+        return {"result": "accepted", "action": "run", "run_id": run_id, **spawned,
+                "status_query": f"/api/workflow-runs?id={run_id}"}
+
+    if not run_id or not run_id.startswith("wfr-"):
+        raise ApiError(400, "run_id_required", f"{action} 需要 run_id（wfr- 形状）")
+
+    if action == "pause":
+        out = _run_workflow_sync(["pause", run_id, *common])
+        if not out.get("ok"):
+            raise ApiError(502, "workflow_cmd_failed",
+                           f"rp-workflow pause 失败：{out.get('stderr_tail') or out}")
+        return {"result": "pause-requested", "action": "pause", "run_id": run_id, **out}
+
+    if action == "resume":
+        args = ["resume", run_id]
+        inject = body.get("inject")
+        if inject is not None:
+            if not isinstance(inject, dict):
+                raise ApiError(400, "bad_inject",
+                               "inject 必须是 JSON object（原样经 resume --input 并入恢复态；"
+                               "批准参数按 human 节点 params.key 包键，缺省 approval）")
+            args += ["--input", json.dumps(inject, ensure_ascii=False)]
+        args += common
+        spawned = _spawn_workflow(args, f"resume-{run_id}.log")
+        return {"result": "accepted", "action": "resume", "run_id": run_id, **spawned,
+                "status_query": f"/api/workflow-runs?id={run_id}"}
+
+    if action == "retry":
+        node_id = (body.get("node_id") or "").strip()
+        if not node_id or len(node_id) > 64:
+            raise ApiError(400, "node_id_required", "retry 需要 node_id（非空 <=64）")
+        args = ["retry", run_id, "--node", node_id]
+        new_run_id = (body.get("new_run_id") or "").strip() or _generate_run_id()
+        if not _RUN_ID_RE.match(new_run_id):
+            raise ApiError(400, "bad_new_run_id", "new_run_id 形状须为 wfr-<alnum>（run-request-v1）")
+        args += ["--run-id", new_run_id, *common]
+        spawned = _spawn_workflow(args, f"retry-{new_run_id}.log")
+        return {"result": "accepted", "action": "retry", "run_id": run_id,
+                "new_run_id": new_run_id, **spawned,
+                "status_query": f"/api/workflow-runs?id={new_run_id}"}
+
+    raise ApiError(404, "no_route", f"未知 workflow 写动作：{action}")
+
+
 API_ROUTES = {
     "/api/plugins": handle_plugins_list,
     "/api/knowledge_sources": handle_knowledge_sources,
@@ -2065,6 +2531,8 @@ API_ROUTES = {
     "/api/traces": handle_traces,
     "/api/agents": handle_agents,
     "/api/agent-runs": handle_agent_runs,
+    "/api/workflows": handle_workflows,
+    "/api/workflow-runs": handle_workflow_runs,
 }
 
 
@@ -2182,23 +2650,65 @@ class RpHandler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:  # noqa: N802
-        """P6-8：唯一放行的写面是 /api/plugins/*（经 rp-plugin 子进程走
-        plugin-runtime 状态机与 audit-engine，本文件零直连 SQL 写）；
-        其余路径保持只读 405。写端点强制 Bearer（鉴权关闭时明确拒绝写）。"""
+        """写面白名单（本文件对数据面零直连 SQL 写）：
+        - /api/plugins/*（P6-8）：经 rp-plugin 子进程走 plugin-runtime 状态机
+          与 audit-engine；
+        - /api/workflow-runs（P8-3）：action=run 受理新 run；
+        - /api/workflow-runs/<run_id>/{pause,resume,retry}（P8-3）：经
+          rp-workflow 子进程走 workflow-engine 控制面与执行器；
+        - /api/workflows（P8-4）：put 画布保存（definition-v1 经 rp-workflow
+          put 子进程落库，版本存储侧递增）。
+        其余路径保持只读 405。写端点强制 Bearer（鉴权关闭时明确拒绝写），
+        鉴权四件套（require_auth / constant-time 比较 / 失败节流 / 写面
+        强制鉴权）保持不变。"""
         parsed = urlparse(self.path)
         try:
+            # P8-4 workflow 定义保存（画布图转 definition JSON 走版本递增）。
+            if parsed.path == "/api/workflows":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "workflow 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                self.send_json(workflow_put(body))
+                return
+            # P8-3 workflow 写面（run 走集合路径，pause/resume/retry 走动态路径）。
+            if parsed.path == "/api/workflow-runs":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "workflow 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                self.send_json(workflow_write("run", None, body))
+                return
+            parts = parsed.path.strip("/").split("/")
+            # 形状一：/api/workflow-runs/<action>（run_id 在 body）。
+            if len(parts) == 3 and parts[0] == "api" and parts[1] == "workflow-runs" \
+                    and parts[2] in WORKFLOW_WRITE_ACTIONS:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "workflow 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                self.send_json(workflow_write(parts[2], body.get("run_id") or None, body))
+                return
+            # 形状二：/api/workflow-runs/<run_id>/<action>（REST 动态路径）。
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "workflow-runs" \
+                    and parts[3] in WORKFLOW_WRITE_ACTIONS:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "workflow 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                self.send_json(workflow_write(parts[3], unquote(parts[2]), body))
+                return
             if not parsed.path.startswith("/api/plugins/"):
                 raise ApiError(405, "readonly", "只读工作台：该路径不提供写端点")
             self.require_auth()
             if not AUTH_ENABLED:
                 raise ApiError(403, "auth_required_for_write",
                                "插件写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
-            try:
-                body = json.loads(raw) if raw else {}
-            except json.JSONDecodeError:
-                raise ApiError(400, "bad_json", "请求体不是合法 JSON")
+            body = self._read_json_body()
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3 and parts[2] == "install":
                 self.send_json(plugin_write("install", body.get("plugin_id") or "", body))
@@ -2214,6 +2724,17 @@ class RpHandler(BaseHTTPRequestHandler):
             self.send_api_error(exc)
         except Exception as exc:  # 兜底：不泄露堆栈
             self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
+
+    def _read_json_body(self) -> dict:
+        """读 POST JSON 请求体（上限 1 MiB，防无界读）。"""
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > 1_048_576:
+            raise ApiError(413, "payload_too_large", "请求体超过 1 MiB 上限")
+        raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+        try:
+            return json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            raise ApiError(400, "bad_json", "请求体不是合法 JSON")
 
     do_PUT = do_DELETE = do_PATCH = _reject_write
 

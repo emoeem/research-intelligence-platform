@@ -1,0 +1,18 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-agent-node",
+  "version": 1,
+  "name": "P8-3 Agent 节点样例（agent-engine 执行体，协作暂停恢复）",
+  "description": "P8-3 批次样例：start -> think(agent) -> done。agent 节点 params.agent_id 指向登记的 agent 定义（rp-agent def-add），goal 支持 $/ 引用取 run state；执行体 = Phase 7 agent-engine AgentLoop（fresh run / PAUSED 续接按 agent_run 现态分派），trace_id = workflow run_id 落 015 链路，014 agent_run_control 控制行随 agent run 落；rp-workflow pause 经 WorkflowControl 向运行中 agent_run 传播协作暂停请求位，agent 循环步间消费后 run 转 paused，resume 后已完成节点 attempt 不变续跑。",
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "think", "type": "agent", "params": { "agent_id": "agent.wf.demo", "goal": "调查 $/target 并给出结论" } },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "think" },
+      { "from": "think", "to": "done" }
+    ]
+  }
+}

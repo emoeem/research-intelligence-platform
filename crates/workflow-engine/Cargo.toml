@@ -1,0 +1,40 @@
+[package]
+name = "workflow-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 8 Workflow Studio 引擎（ROADMAP §9.3）：P8-1 definition-v1 图 DSL（nodes/edges JSON + JSON Schema 2020-12 门）+ 静态校验纯函数（环/孤立节点/必填参数/非法边端点）+ workflow_definition 版本化存储（016，workflow_id+version 复合主键，每 put 追加一版历史不可变）+ CLI validate/put/get/list/import-legacy；P8-2 执行引擎与运行持久化（017 workflow_run 六态/workflow_run_node 五态 attempt/workflow_checkpoint 每步快照）+ Tool（tool-engine 派发链）/Knowledge（context-broker 检索）/Condition（jsonschema 纯函数谓词）/Parallel（fork-join 收敛）四类节点执行器 + CLI run/status/nodes/retry/resume/cancel（失败重试以新 run 承载，只重跑失败节点 attempt 递增；resume 从 checkpoint 续跑不重跑已完成节点）；P8-3 控制面与智能节点：Agent 节点执行体 = agent-engine（RunControl pause/cancel/retry 与 014 agent_run_control 协作暂停语义复用）+ human 人工介入节点（awaiting_approval 停等与批准注入）+ workflow 级协作暂停恢复（018 workflow_run_control 请求位 consume-on-observe）+ workflow_run 六 ID 关联列（trace/task/agent_run/tool_run/artifact/evidence 对账 015 trace 面）+ CLI pause 子命令与 run --run-id/resume --input；003 存量 13 行实查为 RTIS 方法层定义非可执行图，经 import-legacy 以 compat=legacy-method-reference 只读参考导入，不为兼容旧形态扭曲 DSL"
+
+[dependencies]
+# 依赖面（复用优先纪律：持久化用 database Pool（rusqlite bundled 随链），
+# 域类型用 domain::workflow（P8-1 同批新增），serde/serde_json 走 workspace
+# 既有；jsonschema 0.56 与 research-engine/tool-registry 同版本钉 0.56
+# （Cargo.lock/vendor 既有条目，零新增 package），default-features 关闭
+# 远程与文件 $ref 解析，definition-v1 Schema 为内联文档（仅 #/$defs 内部
+# 引用），外部引用编译期即拒绝（fail-closed））。
+# P8-2 起执行器接线：Tool 节点走 tool-engine 派发链（submit D-TC-05 受理 +
+# ToolRun 状态机 + 信封，运行面经 ToolRunDriver 端口注入），Knowledge 节点
+# 走 context-broker Broker::assemble 检索；均为 workspace 内部依赖（反方向
+# 禁止：tool-engine/context-broker/agent-engine 不依赖 workflow-engine）。
+# P8-3 Agent 节点接线：执行体 = Phase 7 agent-engine（RunControl pause/
+# cancel/retry 与 014 agent_run_control 协作暂停语义复用，不重复实现控制面，
+# 运行面经 AgentNodeDriver 端口注入；workflow 级暂停传播经 agent_engine::
+# control::RunControl 写 014 请求位）。
+# CLI 装配面（bin/rp-workflow 的 broker 源与工具注册表）按 rp-agent 同款
+# 补 tool-registry / audit-engine / resource-engine 三个既有成员。
+domain = { workspace = true }
+database = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonschema = { version = "0.56", default-features = false }
+tool-engine = { workspace = true }
+context-broker = { workspace = true }
+tool-registry = { workspace = true }
+audit-engine = { workspace = true }
+resource-engine = { workspace = true }
+agent-engine = { workspace = true }
+
+[[bin]]
+name = "rp-workflow"
+path = "src/bin/rp-workflow.rs"

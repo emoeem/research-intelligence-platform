@@ -54,7 +54,11 @@ pub struct Content {
 
 /// 上下文源端口（设计稿 §10 签名；实现方：rulepack/registry/plugin/knowledge/
 /// rtis/artifact 六源）。
-pub trait ContextSource {
+///
+/// P8-2 起补 `Send + Sync` 上界：workflow-engine Parallel 节点的 fan 子
+/// 分支在线程内并发装配（Broker 以 Arc 跨线程共享），装配面要求源可跨
+/// 线程（既有六实现均持 Pool/文件路径等 Send+Sync 载体，无共享可变态）。
+pub trait ContextSource: Send + Sync {
     /// 源 id（审计与 Manifest item source 列词表：registry/rulepack/plugin/...）。
     fn id(&self) -> &str;
 

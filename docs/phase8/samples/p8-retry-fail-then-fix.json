@@ -1,0 +1,32 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-retry",
+  "version": 1,
+  "name": "P8-2 失败重试最小样例（瞬时失败注入 + retry 只重跑失败节点）",
+  "description": "P8-2 自验第 4 条：目标工具未登记时 run 得 FAILED（tool 节点 tool_submit_rejected，attempt=1）；rp-tool register 后 retry --node search，以新 run 承载（failed 为终态不迁出，P8-1 冻结跃迁表），只重跑目标节点且 attempt 递增（1 -> 2），已完成节点状态与 attempt 不变",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target": { "type": "string" }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      {
+        "id": "search",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.keyword_search",
+          "input": { "keyword": "$/target" }
+        }
+      },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "search" },
+      { "from": "search", "to": "done" }
+    ]
+  }
+}

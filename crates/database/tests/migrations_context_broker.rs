@@ -104,8 +104,8 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-        "discover must see 001..014 in order (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+        "discover must see 001..017 in order (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化)"
     );
 
     reset_dev_copy();
@@ -133,16 +133,19 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
             (13, "_agent_memory".to_string()),
             (14, "_agent_run_control".to_string()),
             (15, "_trace_correlation".to_string()),
+            (16, "_workflow_definition".to_string()),
+            (17, "_workflow_run".to_string()),
+            (18, "_workflow_control_correlation".to_string()),
         ],
-        "first run must apply exactly 001..015"
+        "first run must apply exactly 001..018"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 15,
-        "user_version must be 15 after first run (chain tail 015)"
+        uv1, 18,
+        "user_version must be 18 after first run (chain tail 018)"
     );
     assert!(
         sv1.iter()

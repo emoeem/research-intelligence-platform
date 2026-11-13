@@ -1162,6 +1162,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "workflow-engine"
+version = "0.2.0"
+dependencies = [
+ "agent-engine",
+ "audit-engine",
+ "context-broker",
+ "database",
+ "domain",
+ "jsonschema",
+ "resource-engine",
+ "serde",
+ "serde_json",
+ "tool-engine",
+ "tool-registry",
+]
+
+[[package]]
 name = "xattr"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

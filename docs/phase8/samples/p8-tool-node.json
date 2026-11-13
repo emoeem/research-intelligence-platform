@@ -1,0 +1,32 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-tool",
+  "version": 1,
+  "name": "P8-2 Tool 节点最小样例（start -> tool -> end）",
+  "description": "P8-2 自验第 1 条：run wf-p8-tool --input '{\"target\":\"example.com\"}' 跑通 exit 0；tool 节点经 tool-engine 派发链（submit D-TC-05 + ToolRun 状态机 + 信封），input 内 $/target 为 run state JSON Pointer 引用",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target": { "type": "string" }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      {
+        "id": "search",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.keyword_search",
+          "input": { "keyword": "$/target", "per_group_limit": 2 }
+        }
+      },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "search" },
+      { "from": "search", "to": "done" }
+    ]
+  }
+}

@@ -330,6 +330,7 @@ fn run_request(agent_id: &str, planner: Box<dyn Planner>, goal: &str) -> RunRequ
         goal: goal.to_string(),
         task_id: Some("task-p74".to_string()),
         trace_id: None,
+        run_id: None,
         input: None,
         planner,
         confirmer: Box::new(DeclineConfirmer),

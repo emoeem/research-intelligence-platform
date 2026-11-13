@@ -1,0 +1,22 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-cycle-demo",
+  "version": 1,
+  "name": "cycle demo（P8-1 验收样例：a → b → a 环，validate 必拒）",
+  "description": "P8-1 自验第 3 条样例：validate exit 非 0 且错误信息含 cycle（b → done 边存在使 end 可达，问题列表只含环一条，定位单一）",
+  "compat": "graph-v1",
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "a", "type": "tool", "params": { "tool_id": "webresearch.fetch" } },
+      { "id": "b", "type": "knowledge", "params": { "query": "loop back" } },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "a" },
+      { "from": "a", "to": "b" },
+      { "from": "b", "to": "a" },
+      { "from": "b", "to": "done" }
+    ]
+  }
+}

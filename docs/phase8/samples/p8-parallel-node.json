@@ -1,0 +1,44 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-parallel",
+  "version": 1,
+  "name": "P8-2 Parallel 节点最小样例（branch 扇出并发 + join 收敛）",
+  "description": "P8-2 自验第 1 条：run wf-p8-parallel --input '{\"target\":\"example.com\"}' 跑通 exit 0；parallel 节点两路 branch fan 子节点并发执行（各自独立 attempt/checkpoint），join 全 succeeded 后收敛，子输出按子节点 id 升序浅合并进 run state",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target": { "type": "string" }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "fan", "type": "parallel" },
+      {
+        "id": "w1",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.keyword_search",
+          "input": { "keyword": "$/target", "per_group_limit": 1 }
+        }
+      },
+      {
+        "id": "w2",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.keyword_search",
+          "input": { "keyword": "keyword_search" }
+        }
+      },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "fan" },
+      { "from": "fan", "to": "w1", "kind": "branch" },
+      { "from": "fan", "to": "w2", "kind": "branch" },
+      { "from": "w1", "to": "done" },
+      { "from": "w2", "to": "done" }
+    ]
+  }
+}

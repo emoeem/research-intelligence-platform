@@ -35,6 +35,15 @@ export default defineConfig(({ mode }) => {
                 priority: 30,
               },
               {
+                // P8-4 Workflow Studio 画布库独立分组：@xyflow/react + 底层
+                // @xyflow/system（含 zustand/classcat 传递依赖）不进 vendor-react
+                // 共享组，画布只在 /workflows 懒加载页消费，独立分包避免其它
+                // 路由预载画布引擎。
+                name: "vendor-xyflow",
+                test: /node_modules[\\/](@xyflow|zustand|classcat)[\\/]/,
+                priority: 20,
+              },
+              {
                 name: "vendor-query",
                 test: /node_modules[\\/]@tanstack[\\/]/,
                 priority: 20,

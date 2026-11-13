@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rip.local/schemas/workflow/run-request-v1.schema.json",
+  "title": "RIP Workflow Run Request v1",
+  "description": "Phase 8 P8-3 workflow 运行写面契约（rp_server do_POST 白名单 /api/workflow-runs 写面四动作 run/pause/resume/retry 的请求体形状；写面经 subprocess 调 rp-workflow CLI 落库，服务进程零直连 SQL 写，P6-8 plugin_write 同款纪律）。action=run 受理新 run（workflow_id 必填，input 必须缺省或 JSON object，run_id 可选钉定）；action=pause/resume 作用于既有 run（run_id 必填，resume 可带 approval 注入批准参数，浅并入恢复态并落 018 控制行 approval_json）；action=retry 以新 run 承载（P8-2 冻结跃迁表 failed 终态不迁出），run_id 为源 run，new_run_id 可选钉定新 run，node_id 必填为目标失败节点。字段校验在 rp_server 以本 Schema 语义手工核对（stdlib-only 无 jsonschema 运行时，形状一一对应）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action"],
+  "properties": {
+    "action": {
+      "enum": ["run", "pause", "resume", "retry"],
+      "description": "写面动作词表（与 rp-workflow 子命令一一对应）"
+    },
+    "workflow_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "action=run 必填：目标 workflow 定义 id（domain::WorkflowId 同口径）"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "action=run 可选：定义版本钉定（缺省最新版）"
+    },
+    "input": {
+      "type": "object",
+      "description": "action=run 可选：run 输入载荷（JSON object，缺省 {}）；顶层 task_id 字符串即取为 workflow_run.task_id 关联列"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 128,
+      "pattern": "^wfr-[A-Za-z0-9._-]+$",
+      "description": "action=run 可选钉定新 run id（受理面校验唯一性）；action=pause/resume 必填：目标 run id；action=retry 必填：源（failed）run id"
+    },
+    "new_run_id": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 128,
+      "pattern": "^wfr-[A-Za-z0-9._-]+$",
+      "description": "action=retry 可选：新 run id 钉定（缺省引擎生成）"
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "description": "action=retry 必填：重跑目标失败节点 id（domain check_node_id 同口径）"
+    },
+    "inject": {
+      "type": "object",
+      "description": "action=resume 可选：批准/注入参数（JSON object，原样经 rp-workflow resume --input 浅并入恢复态；人工介入 awaiting_approval 的批准通道，键 = human 节点 params.key 包键，缺省 approval，即 {\"approval\": {...}}）"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "run" } }, "required": ["action"] },
+      "then": { "required": ["workflow_id"] }
+    },
+    {
+      "if": { "properties": { "action": { "const": "pause" } }, "required": ["action"] },
+      "then": { "required": ["run_id"] }
+    },
+    {
+      "if": { "properties": { "action": { "const": "resume" } }, "required": ["action"] },
+      "then": { "required": ["run_id"] }
+    },
+    {
+      "if": { "properties": { "action": { "const": "retry" } }, "required": ["action"] },
+      "then": { "required": ["run_id", "node_id"] }
+    }
+  ]
+}

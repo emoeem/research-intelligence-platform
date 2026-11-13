@@ -214,7 +214,102 @@ return await hole<FinalReport>(
       `Phase 7 验收：${acc7.acceptable ? "全部通过" : JSON.stringify(acc7.items.filter((x) => !x.pass))}`,
       `批次摘要：${results7.map((r) => `${r.batch}:${r.done}${r.caveats.length > 0 ? "（caveats：" + r.caveats.join("；") + "）" : ""}`).join("；")}`,
       `继续方式：读 docs/phase0/PHASE-ROADMAP.md 的 Phase 8 节（Workflow Studio）与 2.0 计划 §10.4 G、SESSION-HANDOFF §十（持久化/checkpoint/恢复验收，参考 LangGraph 与 Temporal 设计不替换 Rust 自研）。写「实施 Phase 8」填充：规划员 → 每批新实施员（含 XYFlow 画布批次与浏览器实测画布交互）→ 五道门禁 → 独立验收（多节点工作流编辑运行、暂停恢复、失败重试、版本管理，浏览器实测）→ 入库 RELEASE_PHASE8；结尾留 Phase 9 尾洞。`,
-    ].join("\n"),
+    ].join("\n"), async () => {
+    report({ phase: TRACKED[3], status: "进行中", note: `Phase 7 已收口（commit ${commit7.hash}），Phase 8 Workflow Studio 启动` }, "phases");
+
+    phase("规划 Phase 8 批次");
+    const plan8 = await agent("Phase 8 规划员").ask<PhasePlan>(`${DISCIPLINE}
+
+      你是 Phase 8 规划员。读 docs/phase0/PHASE-ROADMAP.md 的 Phase 8 节（Workflow Studio）、2.0 计划（docs/RIP-2.0-PLATFORM-AND-TOOLING-PLAN.md）§10.4 G 与 §14 Phase 8、docs/SESSION-HANDOFF.md §十（持久化/checkpoint/恢复验收）与 §十一、git log --oneline -8（Phase 7 刚收口 commit ${commit7.hash}，含 P7-5 trace 六 ID 贯穿）。产出 Phase 8 批次清单。硬性要求：
+      1. 覆盖三项用户硬性验收：a) 多节点工作流可视化编辑与真实运行：画布用成熟维护的开源库（web 侧首选 @xyflow/react 即 React Flow），npm 依赖只进 web/ 并锁定版本，不手写画布引擎；b) 持久化/checkpoint/恢复：工作流定义与运行状态落库（迁移只新增编号文件，下一可用编号 016 起），断点恢复与失败重试真实生效；设计参考 LangGraph 与 Temporal 的状态机与 checkpoint 思路，但执行引擎沿用仓库 Rust 自研不替换；c) 工作流版本管理：定义可版本化、历史版本可查可回看。
+      2. 批次基于 Phase 7 现状续作不推翻：agent-engine（run/control/memory/trace 关联）、013/014/015 迁移、五区壳层与 Agent Studio 页、Web 工作台占位路由在位。
+      3. acceptance 对应 2.0 计划 §14 Phase 8 验收加 §十追加项，逐条可核验；每批自验 check 写明命令与预期输出。
+      4. 画布批次必须安排浏览器实测（拖拽节点、连线、保存、运行、暂停恢复全程真实浏览器操作）；浏览器二进制按纪律第 7 条探测。
+      返回 PhasePlan（batches 2 到 4 项）。`);
+
+    const results8: BatchResult[] = [];
+    phase("逐批实施 Phase 8");
+    for (let i8 = 0; i8 < plan8.batches.length; i8++) {
+      const b8 = plan8.batches[i8];
+      const prev8 = results8.slice(-1)[0];
+      const r8 = await agent().ask<BatchResult>(`${DISCIPLINE}
+
+      你是 Phase 8 实施员（全新上下文，每批独立以控成本）。执行批次 ${b8.id}（第 ${i8 + 1}/${plan8.batches.length} 批）：${b8.goal}
+      关键路径：${b8.paths.join("、")}
+      本批自验：${b8.check}
+      ${prev8 ? `上一批交接（done 与 caveats）：${JSON.stringify({ done: prev8.done, caveats: prev8.caveats })}` : `这是 Phase 8 首批。基线：Phase 7 已收口（commit ${commit7.hash}）：agent-engine 执行闭环与九类运行控制、013 三类 Memory、014 运行控制、015 trace 关联（v_trace_chain 视图、rp_server /api/traces 端点、TracePage 链路页）、五区壳层与 Agent Studio 页全部在位，工作树与 origin/main 同步；迁移下一可用编号 016。`}
+      复用优先：通用逻辑用成熟库或仓库既有实现；迁移只新增编号文件在测试副本验证；web 面不动既有页面行为，新 npm 依赖只进 web/ 并锁定版本。完成后返回 BatchResult：files、check、caveats。`);
+      results8.push(r8);
+      report({ batch: r8.batch, done: r8.done, caveats: r8.caveats.join("；") });
+    }
+
+    phase("跑 Phase 8 门禁");
+    let green8 = false;
+    let fail8 = "";
+    for (let round8 = 1; round8 <= 3; round8++) {
+      const t8g = await world.run("bash", ["-lc", "cargo test --offline --workspace"], { timeoutMs: 900000, output: { tail: 8192 } });
+      const c8g = await world.run("bash", ["-lc", "cargo clippy --offline --workspace --all-targets -- -D warnings"], { timeoutMs: 900000, output: { tail: 8192 } });
+      const u8g = await world.run("bash", ["-lc", "python3 -m unittest discover -s workers/python/tests"], { timeoutMs: 300000, output: { tail: 4096 } });
+      const fb8g = await world.run("bash", ["-lc", "cd web && npm run build"], { timeoutMs: 600000, output: { tail: 8192 } });
+      const ft8g = await world.run("bash", ["-lc", "cd web && npm run test"], { timeoutMs: 600000, output: { tail: 8192 } });
+      if (t8g.exitCode === 0 && c8g.exitCode === 0 && u8g.exitCode === 0 && fb8g.exitCode === 0 && ft8g.exitCode === 0) {
+        green8 = true;
+        fail8 = "";
+        log(`Phase 8 五道门禁全绿（第 ${round8} 轮）`);
+        break;
+      }
+      fail8 = [
+        t8g.exitCode !== 0 ? `cargo test exit=${t8g.exitCode}\n${t8g.stdout.slice(-1000)}` : "",
+        c8g.exitCode !== 0 ? `clippy exit=${c8g.exitCode}\n${c8g.stdout.slice(-1000)}` : "",
+        u8g.exitCode !== 0 ? `unittest exit=${u8g.exitCode}\n${u8g.stderr.slice(-1000)}` : "",
+        fb8g.exitCode !== 0 ? `npm build exit=${fb8g.exitCode}\n${fb8g.stdout.slice(-1000)}` : "",
+        ft8g.exitCode !== 0 ? `npm test exit=${ft8g.exitCode}\n${ft8g.stdout.slice(-1000)}` : "",
+      ].filter((s) => s !== "").join("\n----\n");
+      await agent().ask<string>(`${DISCIPLINE}
+
+      你是 Phase 8 门禁修复员（全新上下文，看工作树与失败输出定位修复，只修失败不推翻既有实现）。第 ${round8} 轮失败：\n${fail8}`);
+    }
+
+    phase("Phase 8 独立验收");
+    const acc8 = await agent("Phase 8 验收员", `${DISCIPLINE}
+
+      你是 Phase 8 独立验收员，立场是挑毛病而不是放行。读实现找证据并实测（浏览器实测画布全流程：先加载 browser-use:control-browser 技能，截图落 docs/phase8/browser-e2e/01/ 起新目录；浏览器二进制按纪律第 7 条探测，本机已知 Playwright 用户缓存有 Chrome for Testing 151（/home/emo/.distrobox/ubuntu-home/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome），设 PW_CHROMIUM 指向该二进制即可）；脚本已跑五道门禁。`).ask<PhaseAcceptance>(`逐条核验：
+      ${plan8.acceptance.map((a) => "- " + a).join("\n")}
+      批次摘要：${JSON.stringify(results8.map((r) => ({ batch: r.batch, done: r.done, caveats: r.caveats })))}
+      另必核验 Phase 7 未回归：1) Agent 端到端与 trace 六 ID 关联查询（/api/traces 与 TracePage 双向可达）；2) AgentRun 暂停/恢复/取消不回归；3) 五区壳层与 Agent Studio 不回归；4) 复用检查与旧页面不回归（selftest_auth 11 项：bash apps/server/selftest_auth.sh）。
+      返回 PhaseAcceptance。`);
+    for (let round8 = 1; round8 <= 2 && !acc8.acceptable; round8++) {
+      await agent().ask<string>(`${DISCIPLINE}
+
+      你是 Phase 8 修复员。按验收意见修复（第 ${round8} 轮）：${JSON.stringify(acc8.fixes)}`);
+      const reacc8 = await agent().ask<PhaseAcceptance>(`${DISCIPLINE}
+
+      你是 Phase 8 复审员，复核上轮 fixes 并复测问题点（含浏览器复测），返回 PhaseAcceptance。上轮结论：${JSON.stringify(acc8.items.filter((x) => !x.pass))}`);
+      acc8.items = reacc8.items;
+      acc8.acceptable = reacc8.acceptable;
+      acc8.fixes = reacc8.fixes;
+    }
+
+    phase("Phase 8 入库");
+    const ok8 = acc8.acceptable && green8;
+    const commit8 = await agent("Phase 8 入库员", `${DISCIPLINE}
+
+      你是入库员：只做 add/commit/push，禁止 reset/clean/checkout/rebase/force push，commit 消息中文无长横线。`).ask<CommitResult>(`入库 Phase 8 整段：1) git status 核对范围与暂存卫生（无 node_modules、dist、*.db）。2) 按 DOC-STANDARD 写 docs/releases/RELEASE_<date +%F>_PHASE8.md（总账：批次汇总、五道门禁数字、画布与 checkpoint/恢复说明、浏览器实测截图路径引用、已知取舍、回滚方式），docs/README.md 登记 Phase 8 行。3) docs/SESSION-HANDOFF.md 第三节新增 Phase 8 完成行（含 push 短哈希回填注记）。4) git add -A，commit（中文：RIP 2.0 Phase 8 Workflow Studio），push origin main（push 失败重试 2 到 3 次，仍失败如实报错原文不伪造）。返回 CommitResult。`);
+    report({ phase: TRACKED[3], status: ok8 && commit8.pushed ? "完成" : "受阻", note: `commit ${commit8.hash}，验收${ok8 ? "通过" : "有遗留"}，门禁${green8 ? "全绿" : "未全绿"}，push ${commit8.pushed ? "成功" : "待核"}` }, "phases");
+    log(`Phase 8 ${ok8 && commit8.pushed ? "完成" : "受阻"}：commit ${commit8.hash}`);
+
+    return await hole<FinalReport>(
+      "Phase 9 起逐阶段实施",
+      [
+        `接手核对：${verified.ok ? "通过" : "有偏差：" + JSON.stringify(verified.gaps)}`,
+        `Phase 7 结果：完成，commit ${commit7.hash}，push 成功；验收全部通过`,
+        `Phase 8 结果：${ok8 && commit8.pushed ? "完成" : "受阻"}，commit ${commit8.hash}，push ${commit8.pushed ? "成功" : commit8.note}`,
+        `Phase 8 验收：${acc8.acceptable ? "全部通过" : JSON.stringify(acc8.items.filter((x) => !x.pass))}`,
+        `批次摘要：${results8.map((r) => `${r.batch}:${r.done}${r.caveats.length > 0 ? "（caveats：" + r.caveats.join("；") + "）" : ""}`).join("；")}`,
+        `继续方式：读 docs/phase0/PHASE-ROADMAP.md 的 Phase 9 节（MCP/REST/CLI 对外能力）与 2.0 计划 §11、SESSION-HANDOFF §十（correlation id 对外、MCP 与 Tool Center 同源验收）。写「实施 Phase 9」填充：规划员 → 每批新实施员（MCP server、REST 对外收口、CLI 面向外部用户，correlation/trace id 对外透出与 Phase 8 工作流运行衔接）→ 五道门禁 → 独立验收（MCP 客户端实测、REST 端到端、CLI 冒烟）→ 入库 RELEASE_PHASE9；结尾留 Phase 10 尾洞。`,
+      ].join("\n"),
+    );
+  },
   );
   },
 );

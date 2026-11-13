@@ -1,0 +1,18 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-human-node",
+  "version": 1,
+  "name": "P8-3 人工介入节点样例（awaiting_approval 停等与批准注入）",
+  "description": "P8-3 批次样例：start -> review(human) -> done。human 节点执行即写 018 workflow_run_control 介入记录（approval_node_id + approval_request_json，approval_json 置空），run 转 paused 停在 awaiting_approval；params.prompt 为给审批人的说明，params.key 为批准参数在 run state 的落键（缺省 approval）。批准：rp-workflow resume <run_id> --input '{\"approval\": {\"ok\": true}}' 注入参数（浅并入恢复态 + approval_json 留痕）后节点重派发即成功，下游续跑。",
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "review", "type": "human", "params": { "prompt": "是否批准对该目标的外部访问?", "key": "approval" } },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "review" },
+      { "from": "review", "to": "done" }
+    ]
+  }
+}

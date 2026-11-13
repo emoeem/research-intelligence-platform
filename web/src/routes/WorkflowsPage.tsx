@@ -1,22 +1,21 @@
-import { WorkspacePlaceholder } from "./WorkspacePlaceholder";
+import { lazy } from "react";
 
-/** 流程工作区（占位，P7-1）：Workflow Studio（画布、节点配置、运行与
- *  版本）由 Phase 8 实施（SESSION-HANDOFF §11.4，计划 §10.4 G）。 */
+/** P8-4 bundle 探针（开工前实测，实施后即替换为实页）：懒加载 @xyflow/react
+ *  空画布 + 官方样式表，测量 vendor-xyflow 分组的体积影响。 */
+const ProbeCanvas = lazy(async () => {
+  await import("@xyflow/react/dist/style.css");
+  const { ReactFlow } = await import("@xyflow/react");
+  function Probe() {
+    return <div style={{ width: 600, height: 400 }}><ReactFlow nodes={[]} edges={[]} /></div>;
+  }
+  return { default: Probe };
+});
+
 export function WorkflowsPage() {
   return (
-    <WorkspacePlaceholder
-      title="Workflow Studio"
-      workspaceNumber="8"
-      fillsIn="Phase 8"
-      planItems={[
-        "流程画布与节点配置（P8-4）",
-        "Workflow 模板与版本",
-        "WorkflowRun 运行状态与日志",
-      ]}
-      related={[
-        { to: "/runs", label: "运行记录" },
-        { to: "/projects", label: "项目区" },
-      ]}
-    />
+    <div className="space-y-4">
+      <h2 className="text-sm font-semibold">Workflow Studio</h2>
+      <ProbeCanvas />
+    </div>
   );
 }

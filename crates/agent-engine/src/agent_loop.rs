@@ -158,6 +158,10 @@ pub struct RunRequest {
     /// 受理面生成新 `tr-` trace（一次 run 一个新链，跨 run 关联靠 task_id
     /// 与 RunControl::retry 的 trace 继承）。
     pub trace_id: Option<String>,
+    /// run id 钉定（P8-3 additive）：Some 时受理面以该 id 落行（workflow
+    /// agent 节点派发前预生成并先行落节点链接列，跨进程控制传播据此发现
+    /// 运行中实体）；None = 受理面生成（既有行为，零改动）。
+    pub run_id: Option<String>,
     /// 显式工具入参（覆盖规划器推导；合工具 input_schema）。
     pub input: Option<Value>,
     /// 规划器。
@@ -324,7 +328,10 @@ impl AgentLoop {
             }
             None => crate::new_id("tr"),
         };
-        let run_id = AgentStore::new_run_id();
+        let run_id = match &req.run_id {
+            Some(pinned) => RunId::try_new(pinned.clone())?,
+            None => AgentStore::new_run_id(),
+        };
         let run = AgentRun::try_new(
             run_id.clone(),
             req.task_id.clone(),

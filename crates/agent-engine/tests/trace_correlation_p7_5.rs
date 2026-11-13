@@ -148,6 +148,7 @@ fn e2e_run_writes_one_trace_across_all_families_and_both_query_directions_work()
             goal: "检索 nmap 端口扫描相关知识并调用登记工具".to_string(),
             task_id: Some("task-p75-accept".to_string()),
             trace_id: Some("tr-p75-e2e".to_string()),
+            run_id: None,
             input: None,
             planner: Box::new(KeywordSearchPlanner),
             confirmer: Box::new(FirstFamilyConfirmer::new(

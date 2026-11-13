@@ -153,6 +153,62 @@ pub enum DomainError {
         /// 被拒绝的原始值。
         String,
     ),
+    /// WorkflowId 非法（P8-1：非空且不超过 128 字符）。
+    InvalidWorkflowId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// Workflow 节点字段非法（节点 id 形状等）。
+    InvalidWorkflowNode {
+        /// 被拒绝的字段名。
+        field: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// Workflow 边字段非法（端点 id 形状等）。
+    InvalidWorkflowEdge {
+        /// 被拒绝的字段名。
+        field: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// WorkflowDefinition 字段非法（name 空、version 0、节点 id 重复等）。
+    InvalidWorkflowDefinition {
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// WorkflowRun 字段非法（workflow_version 0、节点状态重复等）。
+    InvalidWorkflowRun(
+        /// 拒绝原因。
+        String,
+    ),
+    /// Workflow 节点类型出现未知变体（P8-1 七值词表之外）。
+    UnknownWorkflowNodeKind(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// Workflow 边类型出现未知变体（seq/branch 之外）。
+    UnknownWorkflowEdgeKind(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// Workflow 兼容面出现未知变体（016 CHECK 域两值之外）。
+    UnknownWorkflowCompat(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// WorkflowRun 状态出现未知变体（P8-1 六值词表之外）。
+    UnknownWorkflowRunState(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// Workflow 节点运行状态出现未知变体（五值词表之外）。
+    UnknownWorkflowNodeRunState(
+        /// 被拒绝的原始值。
+        String,
+    ),
 }
 
 impl fmt::Display for DomainError {
@@ -250,6 +306,36 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidPluginTrust(v) => {
                 write!(f, "invalid plugin trust level: {v:?}")
+            }
+            DomainError::InvalidWorkflowId { value, reason } => {
+                write!(f, "invalid workflow id {value:?}: {reason}")
+            }
+            DomainError::InvalidWorkflowNode { field, reason } => {
+                write!(f, "invalid workflow node field {field:?}: {reason}")
+            }
+            DomainError::InvalidWorkflowEdge { field, reason } => {
+                write!(f, "invalid workflow edge field {field:?}: {reason}")
+            }
+            DomainError::InvalidWorkflowDefinition { reason } => {
+                write!(f, "invalid workflow definition: {reason}")
+            }
+            DomainError::InvalidWorkflowRun(reason) => {
+                write!(f, "invalid workflow run: {reason}")
+            }
+            DomainError::UnknownWorkflowNodeKind(v) => {
+                write!(f, "unknown workflow node kind: {v:?}")
+            }
+            DomainError::UnknownWorkflowEdgeKind(v) => {
+                write!(f, "unknown workflow edge kind: {v:?}")
+            }
+            DomainError::UnknownWorkflowCompat(v) => {
+                write!(f, "unknown workflow compat marker: {v:?}")
+            }
+            DomainError::UnknownWorkflowRunState(v) => {
+                write!(f, "unknown workflow run state: {v:?}")
+            }
+            DomainError::UnknownWorkflowNodeRunState(v) => {
+                write!(f, "unknown workflow node run state: {v:?}")
             }
         }
     }

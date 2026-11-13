@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rip.local/schemas/workflow/definition-v1.schema.json",
+  "title": "RIP Workflow Definition v1",
+  "description": "Phase 8 P8-1 workflow 定义面（计划 §12:701 WorkflowDefinition：workflow_id、version、graph、input_schema）。graph 为节点/边两向量图 DSL（参考 LangGraph 状态机建模：START/END 边界 + seq/branch 边词形，节点类型对齐计划 Phase 8 五类执行体 start/end/tool/knowledge/agent/condition/parallel）。compat=legacy-method-reference 为 003 存量行（RTIS 方法层定义）的只读参考标记，空图仅对该词面放行（条件约束）；可执行图（graph-v1）要求至少一个节点、恰好一个 start、至少一个 end，环/孤立节点/必填参数/非法边端点由 workflow-engine validate 静态校验承担（本 Schema 只管形状与词表）。运行期消费面：P8-2 非智能节点执行器、P8-3 Agent 节点执行器与 human 人工介入节点执行器（human 停在 awaiting_approval，批准/注入参数后恢复续跑；词表 P8-3 批内扩展，017 CHECK 域同批补入）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "workflow_id", "version", "name", "graph"],
+  "properties": {
+    "schema": {
+      "const": "workflow/definition-v1"
+    },
+    "workflow_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "domain::WorkflowId 同口径（非空且不超过 128 字符，兼容存量 WF-00 形式参考行与 wf- 前缀新行）"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "定义版本；put 语义为存储侧分配（现有最大版本 + 1），文档内字段作为声明随行保存"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "description": {
+      "type": "string"
+    },
+    "compat": {
+      "enum": ["graph-v1", "legacy-method-reference"],
+      "description": "兼容面标记，词值 = 016 迁移 workflow_definition.compat CHECK 域 = domain::WorkflowCompat；缺省 graph-v1"
+    },
+    "input_schema": {
+      "type": "object",
+      "description": "工作流输入 JSON Schema 文档（形状开放，消费面 P8-2 执行器受理输入时冻结校验口径）"
+    },
+    "graph": {
+      "$ref": "#/$defs/graph"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "compat": {
+            "const": "legacy-method-reference"
+          }
+        },
+        "required": ["compat"]
+      },
+      "then": true,
+      "else": {
+        "properties": {
+          "graph": {
+            "properties": {
+              "nodes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/edge"
+          }
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "description": "图内唯一；domain check_node_id 同口径"
+        },
+        "type": {
+          "enum": ["start", "end", "tool", "knowledge", "agent", "human", "condition", "parallel"]
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "节点参数（开放对象）；必填参数键按类型词表由 workflow-engine validate 承担：tool 必填 tool_id、knowledge 必填 query、agent 必填 agent_id、condition 必填 expression"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/node_id"
+        },
+        "to": {
+          "$ref": "#/$defs/node_id"
+        },
+        "kind": {
+          "enum": ["seq", "branch"],
+          "description": "缺省 seq；branch 为 condition/parallel 出边词形，运行期判定走向"
+        },
+        "when": {
+          "type": ["object", "array", "string", "boolean", "number"],
+          "description": "branch 边条件载荷（声明式，形状 P8-2 条件执行器冻结）"
+        }
+      }
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  }
+}

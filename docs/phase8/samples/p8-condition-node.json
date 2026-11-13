@@ -1,0 +1,52 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-condition",
+  "version": 1,
+  "name": "P8-2 Condition 节点最小样例（分支判定 + 未选中 skip 级联）",
+  "description": "P8-2 自验第 1 条与第 2 条：input target=example.com 时 true 分支执行、false 分支 skip；换 target=other 时反向。condition 节点 params.expression 为 JSON Schema 纯函数谓词（对 run state 求值），branch 出边 when 为布尔字面量，未选中下游级联 skipped",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target": { "type": "string" }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      {
+        "id": "check",
+        "type": "condition",
+        "params": {
+          "expression": {
+            "type": "object",
+            "required": ["target"],
+            "properties": { "target": { "const": "example.com" } }
+          }
+        }
+      },
+      {
+        "id": "hit",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.keyword_search",
+          "input": { "keyword": "$/target" }
+        }
+      },
+      {
+        "id": "miss",
+        "type": "knowledge",
+        "params": { "query": "condition miss path" }
+      },
+      { "id": "done-hit", "type": "end" },
+      { "id": "done-miss", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "check" },
+      { "from": "check", "to": "hit", "kind": "branch", "when": true },
+      { "from": "check", "to": "miss", "kind": "branch", "when": false },
+      { "from": "hit", "to": "done-hit" },
+      { "from": "miss", "to": "done-miss" }
+    ]
+  }
+}

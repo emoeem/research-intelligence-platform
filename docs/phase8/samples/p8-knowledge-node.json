@@ -1,0 +1,29 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-p8-knowledge",
+  "version": 1,
+  "name": "P8-2 Knowledge 节点最小样例（start -> knowledge -> end）",
+  "description": "P8-2 自验第 1 条：run wf-p8-knowledge --input '{\"target\":\"example.com\"}' 跑通 exit 0；knowledge 节点经 context-broker Broker::assemble 检索（manifest/audit 落库 correlation_id=run_id），query 的 $/target 为 run state 引用",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target": { "type": "string" }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      {
+        "id": "retrieve",
+        "type": "knowledge",
+        "params": { "query": "$/target" }
+      },
+      { "id": "done", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "retrieve" },
+      { "from": "retrieve", "to": "done" }
+    ]
+  }
+}

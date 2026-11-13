@@ -4,7 +4,7 @@
 //!
 //! 流程：把 dev-p7.db 拷贝到临时目录（原件零写入），连续执行两次
 //! database::migrate：第一次应只落 013..014（12 个既有迁移按 user_version
-//! 跳过；P7-4 起 014_agent_run_control 为链尾），第二次必须 no-op，且两次
+//! 跳过；P7-4 起 014_agent_run_control，P8-1 起 016_workflow_definition 为链尾），第二次必须 no-op，且两次
 //! 之间 sqlite_master 快照零差异。
 //!
 //! dev-p7.db 不入 git（gitignore），缺席时本测试跳过并打印说明（不伪造
@@ -72,8 +72,8 @@ fn migration_013_is_idempotent_on_dev_copy() {
     let first = database::migrate(&pool, &migrations_dir).unwrap();
     assert_eq!(
         first.iter().map(|m| m.version).collect::<Vec<_>>(),
-        vec![13, 14, 15],
-        "开发副本上第一次迁移应只落 013..015（链尾演进至 015，编号冻结规则顺延；P7-5 trace 关联 015 同链落列）"
+        vec![13, 14, 15, 16, 17, 18],
+        "开发副本上第一次迁移应只落 013..018（链尾演进至 018，编号冻结规则顺延；P7-5 trace 关联 015 同链落列，P8-1 workflow 定义版本化 016 同链落表，P8-2 workflow 运行持久化 017 同链落表，P8-3 workflow 控制面与六 ID 关联 018 同链落列）"
     );
     let snapshot_after_first = schema_snapshot(&pool);
 
@@ -88,7 +88,7 @@ fn migration_013_is_idempotent_on_dev_copy() {
     let after_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(after_version, 15, "链尾 015（P7-5 trace 统一关联）");
+    assert_eq!(after_version, 18, "链尾 018（P8-3 workflow 控制面与六 ID 关联；前序 017 P8-2 运行持久化、016 P8-1 定义版本化）");
 
     // 三表在场 + 生产库未触核对（原件 user_version 仍为 12）。
     for table in [
