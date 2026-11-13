@@ -97,6 +97,16 @@ fn cli_adapter(cache_dir: &Path, command: &[String]) -> PythonWorkerAdapter {
 
 #[test]
 fn b2_three_readonly_calls_succeed_with_schema_valid_output() {
+    // 三个 CLI worker 以只读方式打开 migrations/platform.db（gitignore 的
+    // 本机运行时数据；脚本本体按 TOOL-CONTRACT §10.2 B2 行红线零修改，
+    // 生产库零写入）。该文件不在仓库内时（CI、新机器）按 V-9 跳过：
+    // B2 工具面在受控环境（本地验收）实测。
+    if !repo_root().join("migrations/platform.db").exists() {
+        eprintln!(
+            "SKIP: migrations/platform.db 不在本地（gitignore 的运行时数据），B2 三件只读工具无法打开库（V-9，受控环境端到端）"
+        );
+        return;
+    }
     let (engine, registry, _) = fresh_engine();
     let cache_dir = std::env::temp_dir().join(format!(
         "rip-b2-cache-{}-{}",
