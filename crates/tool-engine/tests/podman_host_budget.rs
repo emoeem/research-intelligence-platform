@@ -66,7 +66,10 @@ fn podman_available() -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_image() {
+/// 镜像就绪（并发测试共用一把锁）。引用取自 manifest digest 钉死，镜像属
+/// 运行时数据（ADR §3.2），不在仓库内也无法现建命中同一 digest：只在已
+/// 准备镜像的受控环境执行，否则按 V-9 跳过。
+fn ensure_image() -> Option<()> {
     let _guard = IMAGE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let image = image_ref();
     let exists = Command::new("podman")
@@ -74,26 +77,11 @@ fn ensure_image() {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    if exists {
-        return;
+    if !exists {
+        eprintln!("SKIP: 验收镜像 {image} 不在本地镜像库，digest 钉死无法现建命中（V-9，受控环境端到端）");
+        return None;
     }
-    let dir = repo_root().join("containerfiles/rip-tool-base");
-    let out = Command::new("podman")
-        .args([
-            "build",
-            "-t",
-            "localhost/rip-tool-base:smoke",
-            "-f",
-            &dir.join("Containerfile").to_string_lossy(),
-            &dir.to_string_lossy(),
-        ])
-        .output()
-        .expect("podman build spawn");
-    assert!(
-        out.status.success(),
-        "podman build failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    Some(())
 }
 
 fn fresh_env(tag: &str) -> (Pool, Engine, PathBuf) {
@@ -299,7 +287,9 @@ fn same_image_second_dispatch_hits_cache() {
         return;
     }
     let _e2e = E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    ensure_image();
+    if ensure_image().is_none() {
+        return;
+    }
     let (_pool, engine, ws_root) = fresh_env("cache");
     let wrapper = make_podman_wrapper(&ws_root);
     let config = PodmanHostConfig {
@@ -368,7 +358,9 @@ fn budget_timeout_registers_partial_artifact() {
         return;
     }
     let _e2e = E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    ensure_image();
+    if ensure_image().is_none() {
+        return;
+    }
     let (pool, engine, ws_root) = fresh_env("partial");
     let config = PodmanHostConfig {
         workspace_root: ws_root.clone(),
@@ -451,7 +443,9 @@ fn oversized_output_is_truncated_with_artifact_carrier() {
         return;
     }
     let _e2e = E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    ensure_image();
+    if ensure_image().is_none() {
+        return;
+    }
     let (_pool, engine, ws_root) = fresh_env("trunc");
     let config = PodmanHostConfig {
         workspace_root: ws_root.clone(),

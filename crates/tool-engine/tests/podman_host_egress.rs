@@ -56,44 +56,23 @@ fn podman_available() -> bool {
         .unwrap_or(false)
 }
 
-/// webresearch 镜像就绪（缺失时按 P3-1 Containerfile 构建，宿主零安装）。
-fn ensure_image() -> String {
+/// webresearch 镜像就绪（并发测试共用一把锁）。验收镜像按 digest 钉死
+/// （containerfiles/README.md 台账），镜像属运行时数据（ADR §3.2），不在
+/// 仓库内也无法现建命中同一 digest：只在已准备镜像的受控环境执行，否则
+/// 按 V-9 跳过。
+fn ensure_image() -> Option<String> {
     let _guard = IMAGE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let pinned = format!("{IMAGE_TAG}@sha256:{IMAGE_DIGEST}");
     let exists = Command::new("podman")
-        .args(["image", "exists", IMAGE_TAG])
+        .args(["image", "exists", &pinned])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !exists {
-        let dir = repo_root().join("containerfiles/rip-tool-webresearch");
-        let out = Command::new("podman")
-            .args([
-                "build",
-                "-t",
-                IMAGE_TAG,
-                "-f",
-                &dir.join("Containerfile").to_string_lossy(),
-                &dir.to_string_lossy(),
-            ])
-            .output()
-            .expect("podman build spawn");
-        assert!(
-            out.status.success(),
-            "podman build failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        eprintln!("SKIP: 验收镜像 {pinned} 不在本地镜像库，digest 钉死无法现建命中（V-9，受控环境端到端）");
+        return None;
     }
-    let digest = Command::new("podman")
-        .args(["inspect", "--format", "{{.Digest}}", IMAGE_TAG])
-        .output()
-        .expect("podman inspect spawn");
-    let text = String::from_utf8_lossy(&digest.stdout).trim().to_string();
-    assert_eq!(
-        text,
-        format!("sha256:{IMAGE_DIGEST}"),
-        "local image digest must match containerfiles/README.md digest ledger"
-    );
-    format!("{IMAGE_TAG}@sha256:{IMAGE_DIGEST}")
+    Some(pinned)
 }
 
 /// rip.http.inspect 测试 Manifest（镜像/入口与 P3-1 交付物一致；正式
@@ -355,7 +334,10 @@ fn egress_allowlisted_get_succeeds_through_proxy() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
-    let image = ensure_image();
+    let image = match ensure_image() {
+        Some(image) => image,
+        None => return,
+    };
     let (_pool, engine, ws_root) = fresh_env("ok", http_inspect_manifest(&image));
     let adapter = PodmanHostAdapter::new(PodmanHostConfig {
         workspace_root: ws_root.clone(),
@@ -465,7 +447,10 @@ fn non_allowlisted_host_connect_rejected_structured() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
-    let image = ensure_image();
+    let image = match ensure_image() {
+        Some(image) => image,
+        None => return,
+    };
     let (_pool, engine, ws_root) = fresh_env("deny", http_inspect_manifest(&image));
     let adapter = PodmanHostAdapter::new(PodmanHostConfig {
         workspace_root: ws_root.clone(),
@@ -558,7 +543,10 @@ fn egress_env_injection_frozen_via_live_inspect() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
-    let image = ensure_image();
+    let image = match ensure_image() {
+        Some(image) => image,
+        None => return,
+    };
     let (_pool, engine, ws_root) = fresh_env("env", env_probe_manifest(&image));
     let adapter = PodmanHostAdapter::new(PodmanHostConfig {
         workspace_root: ws_root.clone(),
@@ -688,7 +676,10 @@ fn network_none_dispatch_stays_isolated() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
-    let image = ensure_image();
+    let image = match ensure_image() {
+        Some(image) => image,
+        None => return,
+    };
     let (_pool, engine, ws_root) = fresh_env("none", http_inspect_manifest(&image));
     let adapter = PodmanHostAdapter::new(PodmanHostConfig {
         workspace_root: ws_root.clone(),

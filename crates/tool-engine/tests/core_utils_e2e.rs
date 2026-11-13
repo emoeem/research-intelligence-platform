@@ -59,42 +59,21 @@ fn podman_available() -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_image() -> String {
+/// 验收镜像按 digest 钉死（containerfiles/README.md 台账）。镜像属运行时
+/// 数据（ADR §3.2），不在仓库内也无法现建命中同一 digest：只在已准备
+/// 镜像的受控环境（本地验收）执行，否则按 V-9 跳过。
+fn ensure_image() -> Option<String> {
+    let pinned = format!("{IMAGE_TAG}@sha256:{IMAGE_DIGEST}");
     let exists = Command::new("podman")
-        .args(["image", "exists", IMAGE_TAG])
+        .args(["image", "exists", &pinned])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !exists {
-        let dir = repo_root().join("containerfiles/rip-tool-coreutils");
-        let out = Command::new("podman")
-            .args([
-                "build",
-                "-t",
-                IMAGE_TAG,
-                "-f",
-                &dir.join("Containerfile").to_string_lossy(),
-                &dir.to_string_lossy(),
-            ])
-            .output()
-            .expect("podman build spawn");
-        assert!(
-            out.status.success(),
-            "podman build failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        eprintln!("SKIP: 验收镜像 {pinned} 不在本地镜像库，digest 钉死无法现建命中（V-9，受控环境端到端）");
+        return None;
     }
-    let digest = Command::new("podman")
-        .args(["inspect", "--format", "{{.Digest}}", IMAGE_TAG])
-        .output()
-        .expect("podman inspect spawn");
-    let text = String::from_utf8_lossy(&digest.stdout).trim().to_string();
-    assert_eq!(
-        text,
-        format!("sha256:{IMAGE_DIGEST}"),
-        "local image digest must match containerfiles/README.md digest ledger"
-    );
-    format!("{IMAGE_TAG}@sha256:{IMAGE_DIGEST}")
+    Some(pinned)
 }
 
 fn manifest_value(tool_id: &str) -> Value {
@@ -107,9 +86,9 @@ fn manifest_value(tool_id: &str) -> Value {
     .unwrap()
 }
 
-/// 开发库副本（文件库）+ 五 Manifest 登记 + 引擎。
-fn fresh_dev_env(tag: &str) -> (Pool, Engine, PathBuf, String) {
-    let image = ensure_image();
+/// 开发库副本（文件库）+ 五 Manifest 登记 + 引擎（镜像由调用侧先经
+/// ensure_image 取得，便于无镜像环境在测试侧按 V-9 跳过）。
+fn fresh_dev_env(tag: &str, image: String) -> (Pool, Engine, PathBuf, String) {
     let base = std::env::temp_dir().join(format!("rip-p34-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
@@ -221,7 +200,11 @@ fn five_tools_end_to_end_with_artifact_reconciliation() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
-    let (pool, engine, ws_root, image) = fresh_dev_env("ok");
+    let image = match ensure_image() {
+        Some(image) => image,
+        None => return,
+    };
+    let (pool, engine, ws_root, image) = fresh_dev_env("ok", image);
     let sample = "rip core utils p3-4 sample\n";
     let rows_json = r#"[{"a":1,"b":"x"},{"a":2,"b":"y"}]"#;
 
@@ -404,7 +387,11 @@ fn error_paths_bad_input_yaml_gate_and_truncation() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
-    let (pool, engine, ws_root, image) = fresh_dev_env("err");
+    let image = match ensure_image() {
+        Some(image) => image,
+        None => return,
+    };
+    let (pool, engine, ws_root, image) = fresh_dev_env("err", image);
 
     // 坏输入（schema 合法、执行面失败）：路径不存在 → FAILED，跃迁合法。
     let outcome = dispatch_and_run(
