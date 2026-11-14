@@ -54,6 +54,10 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 > 接手记录（2026-11-13 WIP 收口）：停运行遗留的 P7-5 trace 关联半成品已按 §二.3 纪律 WIP 备份入库推送（40ced58，71 文件 3993 插入：agent-engine trace.rs 733 行、migrations/015_trace_correlation.sql、agent-engine 与 tool-engine 两侧 trace_correlation_p7_5 测试、TracePage.tsx、trace-smoke 测试、selftest_phase7_trace.sh）。新机器 clone 即含此半成品：RESUME 脚本钉死规格中标注（新）的路径已有对应文件在树，P7-5 批次在其上续作补齐并通过规格 check 即可，勿推倒重来。本机推送坑位（仅本机适用，新机器无关）：ZCode shell 的 HOME 指向 distrobox 家目录，known_hosts 按默认路径找不到，仓库本地 core.sshCommand 已补 UserKnownHostsFile=/home/emo/.ssh/known_hosts（仓库本地 user 身份 emoeem / 3353745917@qq.com 已按历史回填）；push 间歇 Connection closed 重试即通，与 §六 记载一致（本次第 1 次失败第 2 次成功）。
 >
 > 接手记录（2026-11-14 Phase 9 收口 + rmcp 迁移在途 + 用户三裁决）：编排运行 dwfrun-c1c996f2-0a44-4aa6-b84e-289155fbad1a（本机活体，journal 不跨机）已完成 Phase 7（102cab5）、Phase 8（8f0446b）、Phase 9（95f4e5e）三阶段收口入库与 CI 修复链（5acca49/2fc63b9/452fa38/0ddb397/da9e0c1/d04eca2，七层 V-9 守卫后仓库史上首次 CI 全绿）；随后按外部审计（docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md，用户定案「按照这个方案」）填充执行 rmcp 迁移前置批（在途）与 Phase 10、项目完成自查收尾（填充体已在脚本内）。用户三项裁决已生效并写入 AGENTS.md 与 SESSION-HANDOFF：1) 收尾闭环删除 ChatGPT 全面审阅步骤（暂缓）；2) 实战校验三面暂缓（项目完成并由用户启动后才做）；3) 成熟库优先硬约束并入 AGENTS.md（vendor 不在不是拒绝理由，手写须例外 ADR），许可证双面清单删除，平台不内置渗透测试授权要求（项目定位是工具，法律顾虑以使用免责声明处理，一切由使用者自行承担，免责声明落点由用户定稿）。跨机续作要点：仓库本地 .git/config（core.sshCommand 与 user 身份）不随 clone 走，新机器必须自配 SSH 密钥与 git identity；rip3 计划书修订版 R2 已入库 docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（含 2026-11-14 修订：RTIS 唯一事实源、成熟库硬约束、无授权内置）；CI 在 GitHub 上自动跑，push 后以全绿为阶段硬门槛。
+>
+> 接手记录（2026-11-14 rmcp 批入库 + Phase 10 四批实施 + 编排运行死亡）：rmcp 迁移整改批已提交入库（8adbf1c，15:03），原编排运行随后把 Phase 10 四批全部实施到工作树（P10-1/2/3 写完批次报告，P10-4 任务书标已实施但批次报告未写），更新交接文档（3731d5b，17:01）后死亡：全盘 journal 无 dwfrun-c1c996f2 残留，ResumeWorkflowRun 不可达。
+>
+> 接手记录（2026-11-14 Phase 10 收口，新会话 d 案手动推进）：新会话按 §二 清单接手，判 c 案但本环境无 CreateWorkflow 类工具（动态工作流接口不在该会话工具面），改 d 案纯手动：1) 工作树 WIP 备份 159f1b2（150 文件 9089 插入，含 .gitignore 补 *.db-journal 一条）已推送；2) 五道门禁与扩展门禁收口复测全绿（cargo test 644 passed 0 failed 116 目标、clippy 零告警、unittest 211 OK 跳 11、web build/vitest 120/prettier 全过、视觉门 71 passed 用户缓存 chromium-1254、cargo-deny 0.20.2 licenses ok、selftest release 29/29 + auth 11/11 + backup 16/16 + plugin_eco 52/52）；3) 补写 docs/phase10/P10-4-BATCH-REPORT.md；4) 阶段总账 docs/releases/RELEASE_2026-11-14_PHASE10.md + docs/README.md Phase 10 行登记。复测期并发负载 flake（cargo rtis_source 1 例 + vitest 3 例）隔离/静场复跑全过，详见 P10-4 报告第三节；视觉基线在 chromium-1234 到 1254 相邻版本漂移下 0.02 容差内全过未重落。剩队列第 7 项（收尾闭环）。
 
 ## 三、剩余任务队列（完成即按序执行）
 
@@ -63,8 +67,8 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 | 2 | ~~Phase 7 Agent Engine + 壳层升级~~ | ✅ 完成（102cab5，2026-11-13） |
 | 3 | ~~Phase 8 Workflow Studio~~ | ✅ 完成（8f0446b，2026-11-14） |
 | 4 | ~~Phase 9 MCP/REST/CLI~~ | ✅ 完成（95f4e5e，2026-11-14） |
-| 5 | rmcp 迁移阻断性整改批 | 审计 §5 十项任务（docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md）：协议层换官方 rmcp、P0/P1 修复、增量 vendor、真实客户端端到端、离线验收 |
-| 6 | Phase 10 生态与发布 | ROADMAP Phase 10 + §十（backup/restore 实演、FTS 重建校验、保留归档、axe 对比度、视觉基线）+ autoresearch 性能基准；成熟库七小节强制 |
+| 5 | ~~rmcp 迁移阻断性整改批~~ | ✅ 完成（8adbf1c，2026-11-14：rmcp 3.10.0 + P0/P1 修复 + 增量 vendor + 真实客户端 e2e 留证；干净态全量离线验收由 Phase 10 收口的 fresh clone 演练承载，644 passed exit 0） |
+| 6 | ~~Phase 10 生态与发布~~ | ✅ 完成（2026-11-14 阶段收口，RELEASE_2026-11-14_PHASE10.md：P10-1 到 P10-4 四批 + cargo-deny 许可证门 + axe 阻断化 + 视觉基线 47 张 + 四 guides + fresh clone 演练 §17 五场景；门禁复测 644 passed / clippy 零告警 / unittest 211 / web 120 + 视觉门 71 / selftest 四脚本全过，生产库五库指纹零写一致） |
 | 7 | 项目完成自查与收尾（修订版闭环） | 2.0 计划 §17 全绿自查修复循环 + GitHub 知识库与武器库补齐；ChatGPT 步骤与实战校验三面已按用户裁决删除暂缓 |
 
 ## 四、贯穿纪律（用户硬性要求，违反即返工）

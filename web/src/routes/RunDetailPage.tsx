@@ -267,9 +267,7 @@ export function RunDetailPage() {
 
       <section className="rounded-surface border border-edge bg-base-100 p-4">
         <h2 className="text-sm font-semibold">Artifact 列表</h2>
-        {artifactsNote ? (
-          <p className="mt-2 text-xs text-muted">{artifactsNote}</p>
-        ) : null}
+        {artifactsNote ? <p className="mt-2 text-xs text-muted">{artifactsNote}</p> : null}
         {artifacts.length === 0 ? (
           <p className="mt-2 text-xs text-muted">
             {artifactsNote
@@ -288,9 +286,7 @@ export function RunDetailPage() {
                     {artifact.role ?? "artifact"}
                   </span>
                   <span className="text-[11px] text-muted">{artifact.mime_type}</span>
-                  <span className="text-[11px] text-muted">
-                    {formatBytes(artifact.size_bytes)}
-                  </span>
+                  <span className="text-[11px] text-muted">{formatBytes(artifact.size_bytes)}</span>
                   <a
                     href={artifact.uri}
                     target="_blank"

@@ -336,10 +336,7 @@ function SourceEntriesView() {
                   {item.title}
                 </p>
                 {item.category_path.length > 0 ? (
-                  <p
-                    className="mt-1 text-[11px] text-muted"
-                    data-testid="source-category"
-                  >
+                  <p className="mt-1 text-[11px] text-muted" data-testid="source-category">
                     分类：{item.category_path.join(" / ")}
                   </p>
                 ) : null}
@@ -495,14 +492,10 @@ function PlatformKnowledgeView() {
                             {verifiedLabel(item.verified)}
                           </span>
                           {item.component ? (
-                            <span className="text-[11px] text-muted">
-                              {item.component}
-                            </span>
+                            <span className="text-[11px] text-muted">{item.component}</span>
                           ) : null}
                           {item.severity ? (
-                            <span className="text-[11px] text-muted">
-                              {item.severity}
-                            </span>
+                            <span className="text-[11px] text-muted">{item.severity}</span>
                           ) : null}
                         </div>
                         <p className="mt-1.5 text-sm font-medium leading-5">{item.title}</p>

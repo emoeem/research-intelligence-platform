@@ -274,10 +274,7 @@ function DialogPanel({
           <h3 id={titleId} className="text-base font-bold tracking-tight">
             {title}
           </h3>
-          <p
-            id={descId}
-            className="mt-1 whitespace-pre-wrap text-sm leading-6 text-muted"
-          >
+          <p id={descId} className="mt-1 whitespace-pre-wrap text-sm leading-6 text-muted">
             {message}
           </p>
         </div>

@@ -49,9 +49,7 @@ function WfNode({ data, selected }: NodeProps<Node<WfNodeData>>) {
         <span className="badge badge-xs badge-outline mr-1 align-middle">{data.nodeType}</span>
         {entry?.label ?? data.nodeType}
       </p>
-      {paramSummary ? (
-        <p className="mt-1 truncate text-[10px] text-muted">{paramSummary}</p>
-      ) : null}
+      {paramSummary ? <p className="mt-1 truncate text-[10px] text-muted">{paramSummary}</p> : null}
       {!isEnd ? <Handle type="source" position={Position.Right} /> : null}
     </div>
   );

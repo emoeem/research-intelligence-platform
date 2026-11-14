@@ -38,9 +38,7 @@ export function NodePalette({
               title={`${entry.label}：${entry.hint}`}
             >
               <span className="text-xs font-medium">{entry.label}</span>
-              <span className="ml-1.5 font-mono text-[10px] text-muted">
-                {entry.type}
-              </span>
+              <span className="ml-1.5 font-mono text-[10px] text-muted">{entry.type}</span>
               <p className="mt-0.5 text-[10px] leading-4 text-muted">{entry.hint}</p>
               {entry.required.length > 0 ? (
                 <p className="text-[10px] text-warning">必填参数：{entry.required.join("、")}</p>

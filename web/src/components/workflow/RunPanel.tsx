@@ -149,9 +149,7 @@ export function RunPanel({
           {runsLoading ? (
             <p className="text-xs text-muted">加载中…</p>
           ) : runs.length === 0 ? (
-            <p className="text-xs text-muted">
-              暂无运行记录：在上方运行配置发起一次 run。
-            </p>
+            <p className="text-xs text-muted">暂无运行记录：在上方运行配置发起一次 run。</p>
           ) : (
             <ul className="max-h-40 space-y-1 overflow-y-auto pr-1">
               {runs.map((item) => (
@@ -179,9 +177,7 @@ export function RunPanel({
         {/* 选中 run 详情 */}
         <div className="min-w-0 border-l border-edge-soft pl-3">
           {!selectedRunId ? (
-            <p className="text-xs text-muted">
-              选择左侧一条 run 查看节点状态、控制行与产物。
-            </p>
+            <p className="text-xs text-muted">选择左侧一条 run 查看节点状态、控制行与产物。</p>
           ) : detailLoading && !detail ? (
             <p className="text-xs text-muted">加载详情…</p>
           ) : detail && detail.run ? (

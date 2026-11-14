@@ -164,9 +164,7 @@ function AgentDetailPanel({
             {detail.tool_bindings.map((binding) => (
               <li key={binding.tool_id} className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="break-all font-medium">{binding.tool_id}</span>
-                {binding.version ? (
-                  <span className="text-muted">v{binding.version}</span>
-                ) : null}
+                {binding.version ? <span className="text-muted">v{binding.version}</span> : null}
                 {binding.registered === true ? (
                   <span className="badge badge-sm badge-success">
                     已注册{binding.lifecycle ? ` · ${binding.lifecycle}` : ""}
@@ -256,17 +254,13 @@ function StepRow({ step }: { step: AgentRunStepRow }) {
           {step.artifact_id ? <TraceIdLink id={step.artifact_id} /> : null}
           {step.evidence_id ? <TraceIdLink id={step.evidence_id} /> : null}
           {step.content_hash ? (
-            <span className="break-all text-muted">
-              sha256 {step.content_hash.slice(0, 16)}…
-            </span>
+            <span className="break-all text-muted">sha256 {step.content_hash.slice(0, 16)}…</span>
           ) : null}
         </p>
       ) : null}
       {step.input !== null && step.input !== undefined ? (
         <details className="mt-1.5">
-          <summary className="cursor-pointer text-[11px] text-muted">
-            计划入参快照
-          </summary>
+          <summary className="cursor-pointer text-[11px] text-muted">计划入参快照</summary>
           <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[11px] leading-4">
             {JSON.stringify(step.input, null, 2)}
           </pre>
@@ -410,9 +404,7 @@ export function AgentsPage() {
       >
         <h2 className="text-sm font-semibold">
           运行记录与步骤轨迹回放
-          <span className="ml-2 text-xs font-normal text-muted">
-            共 {runs.data?.total ?? 0} 条
-          </span>
+          <span className="ml-2 text-xs font-normal text-muted">共 {runs.data?.total ?? 0} 条</span>
         </h2>
         {runs.loading ? (
           <SkeletonPanel lines={4} />
@@ -528,9 +520,7 @@ export function AgentsPage() {
                 <div className="rounded-control border border-edge-soft p-3">
                   <h3 className="text-xs font-semibold">
                     步骤轨迹回放（agent_run_step，seq 升序）
-                    <span className="ml-2 font-normal text-muted">
-                      {detail.counts.steps} 步
-                    </span>
+                    <span className="ml-2 font-normal text-muted">{detail.counts.steps} 步</span>
                   </h3>
                   {detail.steps.length === 0 ? (
                     <p className="mt-1 text-xs text-muted">

@@ -108,9 +108,7 @@ export function ProjectsPage() {
                   </div>
                   <p className="mt-1.5 text-sm font-medium leading-5">{task.title}</p>
                   {task.objective ? (
-                    <p className="mt-1 line-clamp-2 text-xs text-muted">
-                      {task.objective}
-                    </p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted">{task.objective}</p>
                   ) : null}
                   <p className="mt-1 text-[11px] text-muted">
                     {task.task_id}

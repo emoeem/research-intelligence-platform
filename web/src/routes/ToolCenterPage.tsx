@@ -223,14 +223,10 @@ export function ToolCenterPage() {
                       </span>
                     ) : null}
                     {tool.health_state ? (
-                      <span className="text-[11px] text-muted">
-                        health: {tool.health_state}
-                      </span>
+                      <span className="text-[11px] text-muted">health: {tool.health_state}</span>
                     ) : null}
                     {tool.permission_level ? (
-                      <span className="text-[11px] text-muted">
-                        {tool.permission_level}
-                      </span>
+                      <span className="text-[11px] text-muted">{tool.permission_level}</span>
                     ) : null}
                   </div>
                   <p className="mt-1.5 text-sm font-medium">{tool.name}</p>
