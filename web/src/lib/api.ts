@@ -787,3 +787,42 @@ export interface WorkflowPutResult {
 export function workflowPut(definition: Record<string, unknown>): Promise<WorkflowPutResult> {
   return apiSend<WorkflowPutResult>("POST", "/api/workflows", { definition });
 }
+
+// ---------------------------------------------------------------------------
+// P9-4 MCP 目录同步状态（/api/mcp-catalog，apps/server rp_server.py；Tool
+// Center MCP 状态卡数据面）：目录条数 + 读时对账结果。跨通道 wire 级对账
+// 由 crates/rp-mcp-parity CI 门禁常驻承载，本端点是读面快照。
+// ---------------------------------------------------------------------------
+
+/** 对账漂移条目（注册面投影完整性检查失败项）。 */
+export interface McpCatalogDrift {
+  check: string;
+  tool_id?: string | null;
+  detail: string;
+}
+
+/** MCP 目录同步状态载荷（读时对账，不落状态行）。 */
+export interface McpCatalogStatus {
+  available?: boolean;
+  source?: string;
+  catalog_count: number;
+  capability_count: number;
+  capability_tools: string[];
+  reconciliation: {
+    ok: boolean;
+    reconciled_at: string;
+    drift: McpCatalogDrift[];
+    scope: string;
+  };
+  note?: string;
+  /** 数据面不可读时的诚实空态说明（available=false）。 */
+  reason?: string;
+  message?: string;
+}
+
+/** 取 MCP 目录同步状态（Tool Center MCP 状态卡）。 */
+export async function fetchMcpCatalog(
+  options: { signal?: AbortSignal } = {},
+): Promise<McpCatalogStatus> {
+  return apiGet<McpCatalogStatus>("/api/mcp-catalog", options);
+}

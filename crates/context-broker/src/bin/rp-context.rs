@@ -31,16 +31,22 @@ fn main() {
     exit(run());
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-context <sub> [flags]\n\
+     \n\
+     subcommands:\n\
+     \x20 assemble --task-id <id> [--text <text>] [--db <path>] [--budget <n>] [--migrations-dir <dir>]\n\
+     \x20 expand --manifest-id <id> --item-id <id> [--db <path>]\n\
+     \x20 manifest-show --manifest-id <id> [--db <path>]\n\
+     \x20 cache-stats [--data-dir <dir>]\n\
+     \n\
+     help: rp-context --help（stdout, exit 0）"
+}
+
 fn usage() -> i32 {
-    eprintln!(
-        "usage: rp-context <sub> [flags]\n\
-         \n\
-         subcommands:\n\
-         \x20 assemble --task-id <id> [--text <text>] [--db <path>] [--budget <n>] [--migrations-dir <dir>]\n\
-         \x20 expand --manifest-id <id> --item-id <id> [--db <path>]\n\
-         \x20 manifest-show --manifest-id <id> [--db <path>]\n\
-         \x20 cache-stats [--data-dir <dir>]"
-    );
+    // P9-3 帮助面统一口径：误用 = usage 到 stderr + exit 2；
+    // 显式 --help/-h = usage 到 stdout + exit 0（见 run()）。
+    eprintln!("{}", usage_text());
     2
 }
 
@@ -170,6 +176,10 @@ fn build_broker(flags: &Flags) -> Broker {
 
 fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        return 0;
+    }
     let Some(sub) = args.first() else {
         return usage();
     };

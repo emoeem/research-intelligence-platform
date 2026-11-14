@@ -1,5 +1,6 @@
 //! rp-tool CLI：Tool Registry 校验/注册/查询最小命令面（ROADMAP P6-9，
-//! SESSION-HANDOFF §八「添加新工具 = 一条可复制路径」的登记侧载体）。
+//! SESSION-HANDOFF §八「添加新工具 = 一条可复制路径」的登记侧载体）+
+//! P9-2 run/status/cancel 对外执行子命令（ROADMAP §10.3 P9-2 判据面）。
 //!
 //! 子命令：
 //! - `validate --manifest <path>`：七条静态校验（复用 validate_static +
@@ -7,12 +8,29 @@
 //! - `register --manifest <path> --db <path>`：migrate + 七条 + rule 2
 //!   版本可比 + tool/tool_version 落库（tool-registry 既有 Registry 门面）；
 //! - `list --db <path>`：catalog::discover（tool 表全量）；
-//! - `get --db <path> <tool_id>`：catalog::query（tool 行 + 版本面）。
+//! - `get --db <path> <tool_id>`：catalog::query（tool 行 + 版本面）；
+//! - `run --db <run_db> --tool <tool_id> --input <json>`（P9-2）：经
+//!   rp-mcp 的 rip.run_tool 通道执行（本子命令是最小 MCP 客户端：spawn
+//!   rp-mcp 子进程、一次性 stdio NDJSON JSON-RPC 交换、不另建第二套派发
+//!   逻辑；执行面 = mcp-server dispatch.rs 同一实现，与 MCP 外部 AI 面同
+//!   源）。运行库默认 rip-data/tool-runs.db（可写数据面，gitignore 运行
+//!   时数据）；工具须先 `register --db <run_db>` 登记；
+//! - `status --db <run_db> --run <run_id>`（P9-2）：经 rip.get_run_status
+//!   查询运行状态与 Artifact/Evidence 引用；
+//! - `cancel --db <run_db> --run <run_id>`（P9-2）：经 rip.cancel_run 发起
+//!   协作式取消（D-TC-04，RUNNING / WAITING_FOR_RUNNER 受理）。
+//!
+//! run/status/cancel 的 rp-mcp 定位：RP_MCP_BIN 环境变量优先，缺省
+//! target/debug/rp-mcp（先例 rip_new_tool.py 的 target/debug 二进制直调）；
+//! 令牌为一次性自生成（经环境变量注入子进程，禁止匿名纪律由 MCP 握手
+//! 鉴权承载，token 不落盘不回显）。
 //!
 //! Manifest 支持 YAML 与 JSON（serde_yaml_ng 解析，JSON 是 YAML 1.2 子集）。
 //! 输出统一为单行 JSON（机器可读）；exit 0 成功、1 失败、2 用法错误。
 
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 use tool_registry::{catalog, Options, Registry};
@@ -22,13 +40,24 @@ fn die_json(code: &str, message: &str) -> ! {
     std::process::exit(1);
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-tool validate --manifest <path>\n       \
+     rp-tool register --manifest <path> --db <path>\n       \
+     rp-tool list --db <path>\n       \
+     rp-tool get --db <path> <tool_id>\n       \
+     rp-tool run --db <run_db> --tool <tool_id> --input '<json>' [--task <id>]\n       \
+       [--authorization-ref <ref>] [--version <v>] [--workspace <id>] [--budget '<json>']\n       \
+       [--db-main <main_db>] [--manifest-dirs <csv>] [--migrations-dir <dir>]\n       \
+     rp-tool status --db <run_db> --run <run_id>\n       \
+     rp-tool cancel --db <run_db> --run <run_id>\n\n\
+     help: rp-tool --help（stdout, exit 0；run/status/cancel 经 rp-mcp 执行通道，\n\
+     RP_MCP_BIN 可指路，缺省 target/debug/rp-mcp）"
+}
+
 fn usage() -> ! {
-    eprintln!(
-        "usage: rp-tool validate --manifest <path>\n       \
-         rp-tool register --manifest <path> --db <path>\n       \
-         rp-tool list --db <path>\n       \
-         rp-tool get --db <path> <tool_id>"
-    );
+    // P9-3 帮助面统一口径：误用（无子命令/缺参/未知子命令）= usage 到
+    // stderr + exit 2；显式 --help/-h = usage 到 stdout + exit 0（见 main）。
+    eprintln!("{}", usage_text());
     std::process::exit(2);
 }
 
@@ -59,6 +88,10 @@ fn open_pool(db: &str) -> database::Pool {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        std::process::exit(0);
+    }
     let Some(command) = args.first() else { usage() };
     let rest = &args[1..];
 
@@ -149,9 +182,170 @@ fn main() {
                 })
             );
         }
+        "run" | "status" | "cancel" => run_via_mcp(command.as_str(), &flag_value),
         other => {
             eprintln!("unknown command: {other:?}");
             usage();
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// P9-2 run/status/cancel：最小 MCP 客户端（spawn rp-mcp 一次性 stdio 交换）
+// ---------------------------------------------------------------------------
+
+/// run/status/cancel 共用：装配 tools/call arguments 后经 rp-mcp 的
+/// rip.run_tool / rip.get_run_status / rip.cancel_run 通道执行（与外部 AI
+/// MCP 面同一实现，不另建派发逻辑）。isError=true 时 exit 1。
+fn run_via_mcp(
+    command: &str,
+    flag_value: &dyn Fn(&str) -> Option<String>,
+) -> ! {
+    let capability = match command {
+        "run" => "rip.run_tool",
+        "status" => "rip.get_run_status",
+        _ => "rip.cancel_run",
+    };
+    let Some(db) = flag_value("--db") else { usage() };
+    let arguments = match command {
+        "run" => {
+            let Some(tool_id) = flag_value("--tool") else { usage() };
+            let input_raw = flag_value("--input").unwrap_or_else(|| "{}".to_string());
+            let input: Value = serde_json::from_str(&input_raw)
+                .unwrap_or_else(|e| die_json("input_json_invalid", &format!("--input parse: {e}")));
+            if input.as_object().is_none() {
+                die_json("input_json_invalid", "--input must be a JSON object");
+            }
+            let mut arguments = json!({
+                "tool_id": tool_id,
+                "input": input,
+            });
+            if let Some(obj) = arguments.as_object_mut() {
+                if let Some(v) = flag_value("--task") {
+                    obj.insert("task_id".to_string(), json!(v));
+                }
+                if let Some(v) = flag_value("--authorization-ref") {
+                    obj.insert("authorization_ref".to_string(), json!(v));
+                }
+                if let Some(v) = flag_value("--version") {
+                    obj.insert("tool_version".to_string(), json!(v));
+                }
+                if let Some(v) = flag_value("--workspace") {
+                    obj.insert("workspace_id".to_string(), json!(v));
+                }
+                if let Some(v) = flag_value("--budget") {
+                    let budget: Value = serde_json::from_str(&v).unwrap_or_else(|e| {
+                        die_json("budget_json_invalid", &format!("--budget parse: {e}"))
+                    });
+                    obj.insert("budget".to_string(), budget);
+                }
+            }
+            arguments
+        }
+        _ => {
+            let Some(run_id) = flag_value("--run") else { usage() };
+            json!({ "run_id": run_id })
+        }
+    };
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": { "name": capability, "arguments": arguments },
+    });
+
+    // rp-mcp 定位：RP_MCP_BIN 优先，缺省 target/debug/rp-mcp（rip_new_tool.py
+    // 的 target/debug 直调先例）。
+    let mcp_bin = std::env::var("RP_MCP_BIN")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "target/debug/rp-mcp".to_string());
+    if !std::path::Path::new(&mcp_bin).exists() {
+        die_json(
+            "mcp_bin_missing",
+            &format!(
+                "rp-mcp 不在 {mcp_bin:?}；先 cargo build --offline -p mcp-server --bin rp-mcp（或用 RP_MCP_BIN 指路）"
+            ),
+        );
+    }
+
+    // 一次性握手令牌（禁止匿名纪律由 MCP 握手鉴权承载；token 只经环境变量
+    // 进子进程，不落盘不回显）。
+    let token = ephemeral_token();
+    let mut cmd = Command::new(&mcp_bin);
+    cmd.env("RP_MCP_TOKEN", token)
+        .env("RP_RUN_DB", &db)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    if let Some(main_db) = flag_value("--db-main") {
+        cmd.env("RP_DB_PATH", main_db);
+    }
+    if let Some(dirs) = flag_value("--manifest-dirs") {
+        cmd.env("RP_MANIFEST_DIRS", dirs);
+    }
+    if let Some(dir) = flag_value("--migrations-dir") {
+        cmd.env("RP_MIGRATIONS_DIR", dir);
+    }
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => die_json("mcp_spawn_failed", &format!("spawn {mcp_bin:?}: {e}")),
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        die_json("mcp_spawn_failed", "rp-mcp stdin unavailable");
+    };
+    if let Err(e) = writeln!(stdin, "{request}") {
+        die_json("mcp_write_failed", &format!("write request: {e}"));
+    }
+    // 关 stdin 触发 EOF 收尾（rp-mcp 逐行处理，EOF 退出 0）。
+    drop(stdin);
+
+    let Some(stdout) = child.stdout.take() else {
+        die_json("mcp_spawn_failed", "rp-mcp stdout unavailable");
+    };
+    let mut reply: Option<Value> = None;
+    for line in std::io::BufReader::new(stdout).lines() {
+        let Ok(line) = line else { break };
+        let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
+        if msg.get("id").and_then(Value::as_i64) == Some(1) {
+            reply = Some(msg);
+            break;
+        }
+    }
+    let _ = child.wait();
+    let Some(reply) = reply else {
+        die_json(
+            "mcp_no_reply",
+            "rp-mcp 未回 id=1 响应（stderr 已静默；可用 RP_MCP_BIN 直跑观测）",
+        );
+    };
+    if let Some(err) = reply.get("error") {
+        eprintln!("{}", json!({"error": err}));
+        std::process::exit(1);
+    }
+    let result = reply.get("result").cloned().unwrap_or(json!({}));
+    let is_error = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
+    let text = result
+        .get("content")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("text"))
+        .and_then(Value::as_str)
+        .unwrap_or("{}")
+        .to_string();
+    println!("{text}");
+    if is_error {
+        std::process::exit(1);
+    }
+    std::process::exit(0);
+}
+
+/// 一次性令牌（nanos + pid 经 sha256 折叠；tool-registry 既有 hash 面）。
+fn ephemeral_token() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let material = format!("rp-tool:{}:{}:{}", nanos, std::process::id(), "rp-mcp-ephemeral");
+    tool_registry::hash::sha256_hex(material.as_bytes())
 }

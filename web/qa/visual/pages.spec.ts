@@ -79,6 +79,26 @@ const API_STUBS: Record<string, unknown> = {
       },
     ],
   },
+  "/api/mcp-catalog": {
+    available: true,
+    source: "main",
+    catalog_count: 20,
+    capability_count: 6,
+    capability_tools: [
+      "rip.list_tools",
+      "rip.get_tool_schema",
+      "rip.run_tool",
+      "rip.search_knowledge",
+      "rip.get_run_status",
+      "rip.cancel_run",
+    ],
+    reconciliation: {
+      ok: true,
+      reconciled_at: "2026-11-14T08:00:00Z",
+      drift: [],
+      scope: "读面对账（注册面完整性 + 能力面词表）；跨通道 wire 对账归 rp-mcp-parity CI 门禁",
+    },
+  },
   "/api/runs": {
     available: true,
     source: "aux",

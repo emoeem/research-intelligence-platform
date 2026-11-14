@@ -103,7 +103,7 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
         "discover must see 001..017 in order (006 = P7-1 提前通道，007 = P2-4a RuntimeNode 数据面，008 = P4-1 Context Broker 三表，均按合入顺序顺延；013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化)"
     );
 
@@ -136,16 +136,17 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
             (16, "_workflow_definition".to_string()),
             (17, "_workflow_run".to_string()),
             (18, "_workflow_control_correlation".to_string()),
+            (19, "_external_api_audit".to_string()),
         ],
-        "first run must apply exactly 001..018"
+        "first run must apply exactly 001..019"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 18,
-        "user_version must be 18 after first run (chain tail 018)"
+        uv1, 19,
+        "user_version must be 19 after first run (chain tail 019)"
     );
     assert!(
         sv1.iter()

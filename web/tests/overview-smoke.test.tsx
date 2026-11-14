@@ -80,9 +80,7 @@ describe("Overview 页（P5-5）", () => {
     // 同值「20」节点双渲染（getByText 全局匹配撞多元素，见 CI #47 到 #49），
     // 故用 getAllByRole 按可访问名收窄并容忍重复：断言意图是「工具 20 卡
     // 在场」，不依赖全局唯一。
-    expect(
-      screen.getAllByRole("link", { name: /^工具\s*20/ }).length,
-    ).toBeGreaterThanOrEqual(1); // 工具
+    expect(screen.getAllByRole("link", { name: /^工具\s*20/ }).length).toBeGreaterThanOrEqual(1); // 工具
     // P7-1 壳层里功能地图工作区卡编号（3=Research）与 KPI 数值同屏：
     // 运行 KPI 断言收窄到运行卡本身（可访问名含数值）。
     expect(screen.getByRole("link", { name: /^运行 3/ })).toBeTruthy(); // 运行

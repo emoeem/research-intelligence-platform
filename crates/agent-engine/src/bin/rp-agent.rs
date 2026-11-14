@@ -47,23 +47,29 @@ fn main() {
     exit(run());
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-agent <sub> [args] [flags]\n\
+     \n\
+     subcommands:\n\
+     \x20 run <agent_id> --goal <text> [--input <json>] [--task-id <id>] [--agent-version <v>]\n\
+     \x20   [--db <path>] [--budget <n>] [--workspace <id>] [--artifacts-dir <dir>]\n\
+     \x20   [--max-tool-calls <n>] [--max-confirm-rounds <n>] [--rulepack-dir <dir>]\n\
+     \x20   [--manifest-dirs <csv>] [--migrations-dir <dir>] [--out <path>]\n\
+     \x20 def-add --agent-id <id> --version <v> --name <n> [--caps \"tool@ver,tool2\"]\n\
+     \x20   [--policy <json>] [--db <path>]\n\
+     \x20 def-show <agent_id> [--version <v>] [--db <path>]\n\
+     \x20 run-show <run_id> [--db <path>]\n\
+     \x20 run-steps <run_id> [--db <path>] [--out <path>]  (AgentRun 步骤轨迹, P7-7)\n\
+     \x20 trace <id> [--db <path>] [--out <path>]  (按任一关联 ID 汇全链, P7-5)\n\
+     \x20 run <agent_id> 追加: [--trace-id <id>]  (自定义链路追踪 ID)\n\
+     \n\
+     help: rp-agent --help（stdout, exit 0）"
+}
+
 fn usage() -> i32 {
-    eprintln!(
-        "usage: rp-agent <sub> [args] [flags]\n\
-         \n\
-         subcommands:\n\
-         \x20 run <agent_id> --goal <text> [--input <json>] [--task-id <id>] [--agent-version <v>]\n\
-         \x20   [--db <path>] [--budget <n>] [--workspace <id>] [--artifacts-dir <dir>]\n\
-         \x20   [--max-tool-calls <n>] [--max-confirm-rounds <n>] [--rulepack-dir <dir>]\n\
-         \x20   [--manifest-dirs <csv>] [--migrations-dir <dir>] [--out <path>]\n\
-         \x20 def-add --agent-id <id> --version <v> --name <n> [--caps \"tool@ver,tool2\"]\n\
-         \x20   [--policy <json>] [--db <path>]\n\
-         \x20 def-show <agent_id> [--version <v>] [--db <path>]\n\
-         \x20 run-show <run_id> [--db <path>]\n\
-         \x20 run-steps <run_id> [--db <path>] [--out <path>]  (AgentRun 步骤轨迹, P7-7)\n\
-         \x20 trace <id> [--db <path>] [--out <path>]  (按任一关联 ID 汇全链, P7-5)\n\
-         \x20 run <agent_id> 追加: [--trace-id <id>]  (自定义链路追踪 ID)"
-    );
+    // P9-3 帮助面统一口径：误用（无子命令/缺参/未知子命令）= usage 到
+    // stderr + exit 2；显式 --help/-h = usage 到 stdout + exit 0（见 run()）。
+    eprintln!("{}", usage_text());
     2
 }
 
@@ -320,6 +326,10 @@ fn resolve_python_worker(
 
 fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        return 0;
+    }
     let Some(sub) = args.first().cloned() else {
         return usage();
     };

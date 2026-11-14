@@ -27,27 +27,37 @@ fn main() {
     exit(run());
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-research <sub> [args]\n\
+     \n\
+     subcommands:\n\
+     \x20 list\n\
+     \x20   列七能力词表（先过 14 份内嵌 Schema 的 meta-schema 全量门）\n\
+     \x20 run <capability_id> --input '<json>' [--run-id <id>] [--trace-id <id>]\n\
+     \x20   [--task-id <id>] [--capability-version <v>] [--out <path>]\n\
+     \x20   装配请求信封，request-v1 校验后派发，result-v1 自检，单行 JSON 进 stdout\n\
+     \x20   exit: SUCCEEDED=0, FAILED=1, 用法/契约违规=2, 内部不变量违规=3\n\
+     \n\
+     capability_id 词表: research.planner | research.source-discovery |\n\
+     \x20 research.evidence-extraction | research.verification | research.synthesis |\n\
+     \x20 research.citation | research.evaluator\n\
+     \n\
+     help: rp-research --help（stdout, exit 0）"
+}
+
 fn usage() -> i32 {
-    eprintln!(
-        "usage: rp-research <sub> [args]\n\
-         \n\
-         subcommands:\n\
-         \x20 list\n\
-         \x20   列七能力词表（先过 14 份内嵌 Schema 的 meta-schema 全量门）\n\
-         \x20 run <capability_id> --input '<json>' [--run-id <id>] [--trace-id <id>]\n\
-         \x20   [--task-id <id>] [--capability-version <v>] [--out <path>]\n\
-         \x20   装配请求信封，request-v1 校验后派发，result-v1 自检，单行 JSON 进 stdout\n\
-         \x20   exit: SUCCEEDED=0, FAILED=1, 用法/契约违规=2, 内部不变量违规=3\n\
-         \n\
-         capability_id 词表: research.planner | research.source-discovery |\n\
-         \x20 research.evidence-extraction | research.verification | research.synthesis |\n\
-         \x20 research.citation | research.evaluator"
-    );
+    // P9-3 帮助面统一口径：误用 = usage 到 stderr + exit 2；
+    // 显式 --help/-h = usage 到 stdout + exit 0（见 run()）。
+    eprintln!("{}", usage_text());
     2
 }
 
 fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        return 0;
+    }
     match args.first().map(String::as_str) {
         Some("list") => cmd_list(),
         Some("run") => {

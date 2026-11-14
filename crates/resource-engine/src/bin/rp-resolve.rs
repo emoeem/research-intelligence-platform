@@ -23,15 +23,18 @@ struct Args {
 }
 
 fn usage() -> &'static str {
-    "rp-resolve --db PATH [--migrate-dir DIR] --keywords k1,k2 [--limit N]
-             [--task-id T] [--resource-type T] [--writable]
+    "usage: rp-resolve --db PATH [--migrate-dir DIR] --keywords k1,k2 [--limit N]
+                   [--task-id T] [--resource-type T] [--writable]
 
 --db           SQLite 路径，或 :memory:（内存库，配合 --migrate-dir）
 --migrate-dir  执行迁移的目录（NNN_name.sql，幂等）
 --keywords     逗号分隔关键词
 --limit        返回上限，默认 5
 --task-id      任务 ID，默认 adhoc
---writable     以可写方式打开文件库（默认只读）"
+--writable     以可写方式打开文件库（默认只读）
+
+exit: ok=0, 运行失败=2（error + usage 到 stderr）
+help: rp-resolve --help（stdout, exit 0）"
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -94,7 +97,9 @@ fn parse_args() -> Result<Args, String> {
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("rp-resolve: error: {err}");
+        // P9-3 帮助面统一口径：误用/失败 = error + usage 到 stderr + exit 2；
+        // 显式 --help/-h = usage 到 stdout + exit 0（见 parse_args）。
+        eprintln!("rp-resolve: error: {err}\n\n{}", usage());
         std::process::exit(2);
     }
 }

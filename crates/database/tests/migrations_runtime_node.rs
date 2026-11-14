@@ -68,24 +68,24 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-        "discover must see 001..017 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        "discover must see 001..019 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 019 = P9-3 REST 对外访问审计)"
     );
 
     let pool = open_memory_pool();
 
-    // 第一次：全链 001..018 落地，链尾 018_workflow_control_correlation（007/008 落于链中段）。
+    // 第一次：全链 001..019 落地，链尾 019_external_api_audit（007/008 落于链中段）。
     let first = migrate(&pool, &dir).unwrap();
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (18, "_workflow_control_correlation"),
-        "first run must land 018 last"
+        (19, "_external_api_audit"),
+        "first run must land 019 last"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
-    assert_eq!(uv1, 18, "user_version must be 18 after first run");
+    assert_eq!(uv1, 19, "user_version must be 19 after first run");
 
     // 第二次：执行器按 user_version 全跳过，零变更。
     let second = migrate(&pool, &dir).unwrap();

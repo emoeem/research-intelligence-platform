@@ -33,21 +33,30 @@ struct Args {
 }
 
 fn usage() -> &'static str {
-    "rp-search-index build --platform-db P --catalog-db C --index-db I [--rebuild]
-rp-search-index query --index-db I --keywords k1,k2 [--limit N] [--offset N]
-                      [--grade A] [--license-status S] [--maintenance-status S]
-                      [--resource-type T]
+    "usage: rp-search-index build --platform-db P --catalog-db C --index-db I [--rebuild]
+        rp-search-index query --index-db I --keywords k1,k2 [--limit N] [--offset N]
+                              [--grade A] [--license-status S] [--maintenance-status S]
+                              [--resource-type T]
 
 build  从 platform 库（resource + resource_source）与 catalog 库（github_metadata）
        构建派生 FTS5 索引；--rebuild 先删既有索引表再重灌（可重建纪律）
-query  对已构建索引库执行混合检索（bm25 50% / quality 30% / keyword 覆盖 20%）"
+query  对已构建索引库执行混合检索（bm25 50% / quality 30% / keyword 覆盖 20%）
+
+exit: ok=0, 运行失败=2（error + usage 到 stderr）
+help: rp-search-index --help（stdout, exit 0）"
 }
 
 fn parse_args() -> Result<Args, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    if argv.iter().any(|a| a == "--help" || a == "-h") || argv.is_empty() {
+    if argv.iter().any(|a| a == "--help" || a == "-h") {
         println!("{}", usage());
         std::process::exit(0);
+    }
+    if argv.is_empty() {
+        // P9-3 帮助面统一口径：无参 = 误用（usage 到 stderr + exit 2），
+        // 不再与显式 --help 同路径（原实现无参打印帮助 exit 0）。
+        eprintln!("{}", usage());
+        std::process::exit(2);
     }
     let mode = argv[0].as_str();
     if mode != "build" && mode != "query" {

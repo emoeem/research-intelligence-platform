@@ -53,6 +53,10 @@ pub struct RegisteredOutcome {
 pub struct EvidenceRegistrar {
     pool: Pool,
     artifacts_dir: Option<std::path::PathBuf>,
+    /// 登记者面名（captured_by 前缀与 provenance 首词；缺省 agent-engine，
+    /// P9-2 MCP 执行面经 [`EvidenceRegistrar::with_face`] 覆写为 rp-mcp，
+    /// 登记逻辑与行形状保持同一实现，不另写第二套 INSERT）。
+    face: String,
 }
 
 impl EvidenceRegistrar {
@@ -61,7 +65,14 @@ impl EvidenceRegistrar {
         Self {
             pool,
             artifacts_dir: None,
+            face: "agent-engine".to_string(),
         }
+    }
+
+    /// 覆写登记者面名（P9-2 rp-mcp 执行面复用同一登记实现）。
+    pub fn with_face(mut self, face: impl Into<String>) -> Self {
+        self.face = face.into();
+        self
     }
 
     /// 挂产物落盘目录（存在即写文件）。
@@ -99,8 +110,8 @@ impl EvidenceRegistrar {
         };
 
         let provenance = format!(
-            "agent-engine 登记工具结构化输出（P7-2 最小闭环）：{}@{}",
-            reg.tool_id, reg.tool_version
+            "{} 登记工具结构化输出（P7-2 最小闭环）：{}@{}",
+            self.face, reg.tool_id, reg.tool_version
         );
         self.pool
             .with_conn(|c| {
@@ -124,7 +135,7 @@ impl EvidenceRegistrar {
             .map_err(AgentError::from)?;
 
         let evidence_id = new_id("ev");
-        let captured_by = format!("agent-engine:{}", reg.agent_id);
+        let captured_by = format!("{}:{}", self.face, reg.agent_id);
         self.pool
             .with_conn(|c| {
                 c.execute(

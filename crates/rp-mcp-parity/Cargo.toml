@@ -1,0 +1,26 @@
+[package]
+name = "rp-mcp-parity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "P9-4 协议一致性载具（ROADMAP §10.5 风险 1 常驻 CI 门禁）：五个业务操作（列工具、查 Schema、跑工具、查 Run、查 trace）对 REST（apps/server/rp_server.py 真实 HTTP 进程）与 MCP（mcp-server McpServer 协议面）两通道断言同一输出形状与同一审计链。crate 本体只有测试（tests/parity.rs），lib 仅为占位模块"
+
+[dependencies]
+# 依赖面（复用优先纪律，全部为 workspace 既有 crate，零新增外部依赖）：
+# - mcp-server：MCP 通道协议面（handle_line 与 bin rp-mcp stdio 循环同一入口；
+#   stdio 循环本身由 mcp-server tests 与 bin 覆盖，载具不重复）；
+# - database：fixture 库迁移（001 链 + 全量链）与只读对账查询；
+# - tool-registry：运行库工具登记（Registry::register，rp-tool register 库面
+#   同款）；
+# - serde_json：HTTP / JSON-RPC 载荷解析。HTTP 客户端为 std TcpStream 薄实现
+#   （vendor 无 HTTP client crate，引入即破坏 --offline 红线；rp_server 响应
+#   恒带 Content-Length，无需 chunked 支持，tests/parity.rs 内 ~80 行实现）。
+serde_json = { workspace = true }
+database = { workspace = true }
+tool-registry = { workspace = true }
+# mcp-server 未列入 workspace.dependencies（仅本载具反向依赖协议面），走 path。
+mcp-server = { path = "../mcp-server" }
+
+[lib]
+path = "src/lib.rs"

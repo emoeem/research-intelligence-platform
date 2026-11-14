@@ -62,44 +62,54 @@ fn main() {
     exit(run());
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-workflow <sub> [args]\n\
+     \n\
+     subcommands:\n\
+     \x20 validate <file>\n\
+     \x20   装载门 + 静态校验，不改库；通过 exit 0\n\
+     \x20 put <file> [--db <path>]\n\
+     \x20   四道门后追加一版定义，输出 {{workflow_id, version, ...}} 单行 JSON\n\
+     \x20 get <workflow_id> [--version <n>] [--db <path>]\n\
+     \x20   回读定义原文（缺 --version 取最新版；历史版本逐字节可查）\n\
+     \x20 list [--db <path>]\n\
+     \x20   每 workflow_id 一行（最新版 + 版本数）+ 汇总行\n\
+     \x20 import-legacy --src <db> [--db <path>]\n\
+     \x20   003 workflow 表存量行只读参考导入（compat=legacy-method-reference）\n\
+     \x20 run <workflow_id> --input '<json>' [--version <n>] [--node-timeout-ms <n>]\n\
+     \x20      [--db <path>] [--rulepack-dir <dir>] [--manifest-dirs <csv>]\n\
+     \x20   受理门后执行到终态（四类非智能节点，Agent 节点属 P8-3 拒绝）\n\
+     \x20 status <run_id> [--db <path>]\n\
+     \x20   run 头行投影（六态 + 输入/输出/错误载荷）\n\
+     \x20 nodes <run_id> [--db <path>]\n\
+     \x20   节点状态行（五态 + attempt + 输出/错误）+ checkpoint 汇总\n\
+     \x20 resume <run_id> [--db <path>]\n\
+     \x20   断点恢复：从最近 checkpoint 续跑，已完成节点不重跑\n\
+     \x20 retry <run_id> --node <node_id> [--db <path>]\n\
+     \x20   失败重试：新 run 承载，只重跑目标失败节点（attempt 递增）\n\
+     \x20 cancel <run_id> [--db <path>]\n\
+     \x20   协作式取消（queued/running/paused -> cancelled）\n\
+     \n\
+     exit: ok=0, run 终态 FAILED/静态校验拒绝/存储失败=1,\n\
+     装载失败/受理拒绝/用法错误=2\n\
+     默认 --db migrations/dev-p8.db（platform*.db 一律拒绝）\n\
+     \n\
+     help: rp-workflow --help（stdout, exit 0）"
+}
+
 fn usage() -> i32 {
-    eprintln!(
-        "usage: rp-workflow <sub> [args]\n\
-         \n\
-         subcommands:\n\
-         \x20 validate <file>\n\
-         \x20   装载门 + 静态校验，不改库；通过 exit 0\n\
-         \x20 put <file> [--db <path>]\n\
-         \x20   四道门后追加一版定义，输出 {{workflow_id, version, ...}} 单行 JSON\n\
-         \x20 get <workflow_id> [--version <n>] [--db <path>]\n\
-         \x20   回读定义原文（缺 --version 取最新版；历史版本逐字节可查）\n\
-         \x20 list [--db <path>]\n\
-         \x20   每 workflow_id 一行（最新版 + 版本数）+ 汇总行\n\
-         \x20 import-legacy --src <db> [--db <path>]\n\
-         \x20   003 workflow 表存量行只读参考导入（compat=legacy-method-reference）\n\
-         \x20 run <workflow_id> --input '<json>' [--version <n>] [--node-timeout-ms <n>]\n\
-         \x20      [--db <path>] [--rulepack-dir <dir>] [--manifest-dirs <csv>]\n\
-         \x20   受理门后执行到终态（四类非智能节点，Agent 节点属 P8-3 拒绝）\n\
-         \x20 status <run_id> [--db <path>]\n\
-         \x20   run 头行投影（六态 + 输入/输出/错误载荷）\n\
-         \x20 nodes <run_id> [--db <path>]\n\
-         \x20   节点状态行（五态 + attempt + 输出/错误）+ checkpoint 汇总\n\
-         \x20 resume <run_id> [--db <path>]\n\
-         \x20   断点恢复：从最近 checkpoint 续跑，已完成节点不重跑\n\
-         \x20 retry <run_id> --node <node_id> [--db <path>]\n\
-         \x20   失败重试：新 run 承载，只重跑目标失败节点（attempt 递增）\n\
-         \x20 cancel <run_id> [--db <path>]\n\
-         \x20   协作式取消（queued/running/paused -> cancelled）\n\
-         \n\
-         exit: ok=0, run 终态 FAILED/静态校验拒绝/存储失败=1,\n\
-         装载失败/受理拒绝/用法错误=2\n\
-         默认 --db migrations/dev-p8.db（platform*.db 一律拒绝）"
-    );
+    // P9-3 帮助面统一口径：误用 = usage 到 stderr + exit 2；
+    // 显式 --help/-h = usage 到 stdout + exit 0（见 run()）。
+    eprintln!("{}", usage_text());
     2
 }
 
 fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        return 0;
+    }
     match args.first().map(String::as_str) {
         Some("validate") => {
             if args.len() < 2 {

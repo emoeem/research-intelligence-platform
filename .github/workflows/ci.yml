@@ -49,6 +49,34 @@ jobs:
       - name: clippy 零警告
         run: cargo clippy --offline --workspace --all-targets -- -D warnings
 
+  # P9-4 协议一致性载具（ROADMAP §10.5 风险 1 常驻门禁，不是一次性验收）：
+  # 五个业务操作对 REST（rp_server.py 真实 HTTP 进程）与 MCP（mcp-server 协议
+  # 面）两通道断言同一输出形状与同一审计链。runner 自带 python3（rp_server
+  # 与 worker 依赖）；rp-workflow 二进制由载具内 ensure_bin 按 --offline 构建。
+  parity:
+    name: 协议一致性载具（REST vs MCP 双通道）
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-parity-${{ hashFiles('Cargo.lock') }}
+
+      - name: 双通道一致性断言（cargo test --offline -p rp-mcp-parity）
+        run: cargo test --offline -p rp-mcp-parity
+
   python-workers:
     name: Python worker 测试
     runs-on: ubuntu-latest

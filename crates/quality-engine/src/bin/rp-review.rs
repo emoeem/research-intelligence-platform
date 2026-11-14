@@ -25,18 +25,27 @@ struct Args {
 }
 
 fn usage() -> &'static str {
-    "rp-review propose --db GOV_DB --quarantine-dir migrations/quarantine
-rp-review decide  --db GOV_DB --review-id ID --decision D [--reviewer R]
-                  [--confidence F] [--reason TEXT]
-rp-review pending --db GOV_DB
-rp-review counts  --db GOV_DB"
+    "usage: rp-review propose --db GOV_DB --quarantine-dir migrations/quarantine
+        rp-review decide  --db GOV_DB --review-id ID --decision D [--reviewer R]
+                          [--confidence F] [--reason TEXT]
+        rp-review pending --db GOV_DB
+        rp-review counts  --db GOV_DB
+
+exit: ok=0, 运行失败=2（error + usage 到 stderr）
+help: rp-review --help（stdout, exit 0）"
 }
 
 fn parse_args() -> Result<Args, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    if argv.iter().any(|a| a == "--help" || a == "-h") || argv.is_empty() {
+    if argv.iter().any(|a| a == "--help" || a == "-h") {
         println!("{}", usage());
         std::process::exit(0);
+    }
+    if argv.is_empty() {
+        // P9-3 帮助面统一口径：无参 = 误用（usage 到 stderr + exit 2），
+        // 不再与显式 --help 同路径（原实现无参打印帮助 exit 0）。
+        eprintln!("{}", usage());
+        std::process::exit(2);
     }
     let mut db = None;
     let mut quarantine_dir = None;

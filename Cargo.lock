@@ -450,9 +450,15 @@ dependencies = [
 name = "mcp-server"
 version = "0.2.0"
 dependencies = [
+ "agent-engine",
  "database",
+ "domain",
+ "runtime-gateway",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
+ "tool-engine",
+ "tool-registry",
 ]
 
 [[package]]
@@ -762,6 +768,16 @@ dependencies = [
  "resource-engine",
  "search-engine",
  "serde_json",
+]
+
+[[package]]
+name = "rp-mcp-parity"
+version = "0.2.0"
+dependencies = [
+ "database",
+ "mcp-server",
+ "serde_json",
+ "tool-registry",
 ]
 
 [[package]]

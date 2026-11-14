@@ -27,12 +27,17 @@ use serde_json::{json, Value};
 use tool_engine::adapter::egress_proxy::EgressAllowlist;
 use tool_engine::document_fetch::{fetch_document, FetchInput, FetchPolicy, ProxyTransport};
 
+fn usage_text() -> &'static str {
+    "usage: rp-knowledge-fetch --db <path> --url <url> [--allow-domain D]...\n       \
+     [--source-id S] [--entry-key K] [--max-bytes N] [--max-redirects N]\n       \
+     [--allow-port P]... [--no-require-approved] [--out PATH]\n\n\
+     help: rp-knowledge-fetch --help（stdout, exit 0）"
+}
+
 fn usage() -> ! {
-    eprintln!(
-        "usage: rp-knowledge-fetch --db <path> --url <url> [--allow-domain D]...\n       \
-         [--source-id S] [--entry-key K] [--max-bytes N] [--max-redirects N]\n       \
-         [--allow-port P]... [--no-require-approved] [--out PATH]"
-    );
+    // P9-3 帮助面统一口径：误用（缺必填旗标）= usage 到 stderr + exit 2；
+    // 显式 --help/-h = usage 到 stdout + exit 0（见 main）。
+    eprintln!("{}", usage_text());
     std::process::exit(2);
 }
 
@@ -77,6 +82,10 @@ fn guard_db_path(db: &Path) {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        std::process::exit(0);
+    }
     let db = flag_value(&raw, "--db");
     let url = match flag_value(&raw, "--url") {
         Some(u) if !u.is_empty() => u,

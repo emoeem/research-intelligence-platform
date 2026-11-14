@@ -24,8 +24,18 @@ fn die_json(code: &str, message: &str) -> ! {
     std::process::exit(1);
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-tool-health ping --manifest <path> [--timeout-ms <n>]\n\n\
+     commands:\n\
+     \x20 ping  Worker Protocol v1 握手探测（spawn worker 一次 initialize/ping 交换）\n\n\
+     exit: ok=0, 探测失败=1, 用法错误=2\n\
+     help: rp-tool-health --help（stdout, exit 0）"
+}
+
 fn usage() -> ! {
-    eprintln!("usage: rp-tool-health ping --manifest <path> [--timeout-ms <n>]");
+    // P9-3 帮助面统一口径：误用（无命令/未知命令/缺参）= usage 到 stderr +
+    // exit 2；显式 --help/-h = usage 到 stdout + exit 0（见 main）。
+    eprintln!("{}", usage_text());
     std::process::exit(2);
 }
 
@@ -43,6 +53,10 @@ fn parse_manifest(path: &str) -> Value {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        std::process::exit(0);
+    }
     let Some(command) = args.first() else { usage() };
     if command != "ping" {
         eprintln!("unknown command: {command:?}");

@@ -114,12 +114,15 @@ fn make_aux_db(path: &std::path::Path) {
     conn.close().unwrap();
 }
 
-/// 组装 server。
+/// 组装 server（run_channel: None = 执行面未配置；执行面用例见
+/// tests/run_tool_e2e.rs）。
 fn server_for(main: &std::path::Path, aux: Option<&std::path::Path>, token: Option<&str>) -> McpServer {
     McpServer {
         main_db: main.to_path_buf(),
         aux_db: aux.map(PathBuf::from),
+        plugin_db: None,
         token: token.map(str::to_string),
+        run_channel: None,
     }
 }
 
@@ -364,6 +367,7 @@ fn filters_apply_to_registry_segment() {
             "rip.run_tool",
             "rip.search_knowledge",
             "rip.get_run_status",
+            "rip.cancel_run",
             "rip.zzz",
             "rip.rip.kb.rtis"
         ],
@@ -432,23 +436,65 @@ fn get_tool_schema_serves_registry_and_capability_on_demand() {
 #[test]
 fn unwired_tools_return_structured_is_error() {
     let (_m, _a, server) = fixture();
-    for name in ["rip.run_tool", "rip.search_knowledge", "rip.get_run_status"] {
+    // P9-2 后仍未接线的能力面只剩 search_knowledge（后续批次，不伪造成功）。
+    let resp = roundtrip(
+        &server,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"rip.search_knowledge","arguments":{}}}),
+    );
+    assert_eq!(resp["result"]["isError"], true, "search_knowledge 未接线必须 isError=true");
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("\"wired_in\""), "search_knowledge 指明接线归属: {text}");
+    // run/get_run_status/cancel_run 已接线：RunChannel 未配置时如实返回
+    // 未配置说明（不伪造执行），测试面 run_channel=None 即此态。
+    let resp = roundtrip(
+        &server,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"rip.run_tool","arguments":{"tool_id":"rip.doc.parse","input":{"text":"x"}}}}),
+    );
+    assert_eq!(resp["result"]["isError"], true, "未配置执行面必须 isError=true");
+    assert!(
+        resp["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("run face"),
+        "run_tool 说明 run face 未配置: {}",
+        resp["result"]["content"][0]["text"]
+    );
+    for (name, arguments) in [
+        ("rip.get_run_status", json!({"run_id": "rn-x"})),
+        ("rip.cancel_run", json!({"run_id": "rn-x"})),
+    ] {
+        let resp = roundtrip(
+            &server,
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+                "name":name,"arguments":arguments}}),
+        );
+        assert_eq!(resp["result"]["isError"], true, "{name} 未配置执行面必须 isError=true");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("run face"),
+            "{name} 说明 run face 未配置: {text}"
+        );
+    }
+    // get_run_status / cancel_run 缺 run_id = -32602（协议参数面）。
+    for name in ["rip.get_run_status", "rip.cancel_run"] {
         let resp = roundtrip(
             &server,
             json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
                 "name":name,"arguments":{}}}),
         );
-        assert_eq!(resp["result"]["isError"], true, "{name} 未接线必须 isError=true");
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("\"wired_in\": \"P9-2\""), "{name} 指明接线批次: {text}");
+        assert_eq!(resp["error"]["code"], -32602, "{name} 缺 run_id = -32602");
     }
-    // 已通告的注册面工具同样未接线（P9-2 经 rip.run_tool 派发）。
+    // 注册面直呼指向 rip.run_tool 通道（P9-2 起执行面统一走该通道）。
     let resp = roundtrip(
         &server,
         json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
             "name":"rip.aaa","arguments":{}}}),
     );
     assert_eq!(resp["result"]["isError"], true);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("rip.run_tool"), "注册面直呼指明执行通道: {text}");
     // 目录外工具 = -32602 unknown tool。
     let resp = roundtrip(
         &server,
@@ -491,13 +537,53 @@ fn method_dispatch_follows_subset_surface() {
     // ping。
     let resp = roundtrip(&server, json!({"jsonrpc":"2.0","id":1,"method":"ping"}));
     assert_eq!(resp["result"], json!({}));
-    // P9-5 前置占位：空 resources / prompts。
+    // P9-4 resources / prompts 面（七 resource = 静态四 + 模板三；prompt 三条）。
     let resp = roundtrip(&server, json!({"jsonrpc":"2.0","id":2,"method":"resources/list"}));
-    assert_eq!(resp["result"]["resources"], json!([]));
-    let resp = roundtrip(&server, json!({"jsonrpc":"2.0","id":3,"method":"prompts/list"}));
-    assert_eq!(resp["result"]["prompts"], json!([]));
-    // 子集外方法 = -32601。
-    let resp = roundtrip(&server, json!({"jsonrpc":"2.0","id":4,"method":"resources/read"}));
+    let uris: Vec<&str> = resp["result"]["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["uri"].as_str().unwrap())
+        .collect();
+    assert_eq!(uris.len(), 4, "静态资源四件: {uris:?}");
+    let resp = roundtrip(
+        &server,
+        json!({"jsonrpc":"2.0","id":3,"method":"resources/templates/list"}),
+    );
+    let templates: Vec<&str> = resp["result"]["resourceTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["uriTemplate"].as_str().unwrap())
+        .collect();
+    assert_eq!(templates.len(), 3, "模板资源三件: {templates:?}");
+    let resp = roundtrip(&server, json!({"jsonrpc":"2.0","id":4,"method":"prompts/list"}));
+    let prompts: Vec<&str> = resp["result"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        prompts,
+        vec!["rip.tool_run_playbook", "rip.run_audit_review", "rip.knowledge_brief"]
+    );
+    // 词表外资源与 prompt = -32602。
+    let resp = roundtrip(
+        &server,
+        json!({"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"rip://nope"}}),
+    );
+    assert_eq!(resp["error"]["code"], -32602);
+    let resp = roundtrip(
+        &server,
+        json!({"jsonrpc":"2.0","id":6,"method":"prompts/get","params":{"name":"rip.nope"}}),
+    );
+    assert_eq!(resp["error"]["code"], -32602);
+    // 子集外方法 = -32601（resources/subscribe 未纳入子集）。
+    let resp = roundtrip(
+        &server,
+        json!({"jsonrpc":"2.0","id":7,"method":"resources/subscribe"}),
+    );
     assert_eq!(resp["error"]["code"], -32601);
     // notifications/initialized 静默。
     let out = server.handle_line(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}).to_string());

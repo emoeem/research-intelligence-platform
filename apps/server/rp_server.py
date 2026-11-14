@@ -32,6 +32,18 @@
     一律经 subprocess 调 rp-plugin CLI（plugin-runtime 状态机 + audit-engine
     唯一出口），本文件不新增任何直连 SQL 写（写面零 SQL，selftest 有静态断言）；
   * 写端点强制 Bearer Token（与 GET 同一 require_auth），鉴权关闭时拒绝写。
+- P9-3 REST 对外契约收口（docs/phase9/REST-API-CONTRACT.md 同源）：
+  * trace 关联透出（SESSION-HANDOFF §十 Phase 9 追加项）：run/trace 详情
+    响应体带 correlation_id 顶层锚（六 ID 关联字段既有 correlation 字段不
+    动），HTTP 层按 trace_response_headers 统一透出 X-Trace-Id 与
+    X-Correlation-Id 响应头（锚不在场不发头）；
+  * 全局限频：服务进程级滑动窗口（RP_RATE_LIMIT_RPM，默认 600 req/60s，
+    0 关闭），超限 429 rate_limited + Retry-After；
+  * 对外访问审计：RP_API_AUDIT_LOG 指向 JSONL 文件时每个 /api/* 请求落
+    一行 api_access 事件（行形状与 migrations/019_external_api_audit.sql
+    的 external_api_audit 表列对应）；本文件零 SQL 写纪律不变；
+  * 子进程超时口径显式常量：rp-plugin 600s（PLUGIN_SUBPROCESS_TIMEOUT_S）、
+    rp-workflow 同步 60s（WORKFLOW_SYNC_TIMEOUT_S）。
 
 环境变量：
 - RP_PORT            监听端口，默认 7800
@@ -44,6 +56,16 @@
 - RP_PLUGIN_BIN       rp-plugin 可执行（默认 cargo）
 - RP_PLUGIN_BIN_ARGS  rp-plugin 前置参数（默认 run --offline -q -p plugin-runtime
                       --bin rp-plugin --；预编译后可换 target/debug/rp-plugin）
+- RP_RATE_LIMIT_RPM   全局限频阈值（req/60s，默认 600；0 = 关闭）。P9-3：
+                      服务进程级滑动窗口，只计 /api/* 请求（静态资源不计），
+                      超限 429 rate_limited + Retry-After
+- RP_API_AUDIT_LOG    对外访问审计 JSONL 落盘路径（缺省关闭）。P9-3：每个
+                      /api/* 请求追加一行 api_access 事件（ts/method/path/
+                      status/remote/duration_ms/trace_id/correlation_id/
+                      rate_limited/auth_enabled），行形状与
+                      migrations/019_external_api_audit.sql 的
+                      external_api_audit 表列一一对应（供消费侧装载）；
+                      本文件零 SQL 写（Phase 6 静态门禁）不变
 """
 
 from __future__ import annotations
@@ -57,7 +79,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
@@ -119,6 +143,19 @@ MAX_LIMIT = 200
 DEFAULT_LIMIT = 50
 REVIEWS_PER_QUEUE_CAP = 100
 
+# P9-3 对外契约显式常量（REST-API-CONTRACT.md §限频与超时口径同源）：
+# - 子进程超时口径：rp-plugin 同步子进程 600s（504 plugin_cmd_timeout）；
+#   rp-workflow 同步子进程 60s（504 workflow_cmd_timeout）；workflow run/
+#   resume/retry 为异步承载（Popen 不等待，日志落 WORKFLOW_LOG_DIR），
+#   不适用同步超时。
+# - 全局限频：服务进程级滑动窗口，只计 /api/*（静态资源不计）；
+#   RP_RATE_LIMIT_RPM=0 关闭；超限 429 rate_limited + Retry-After。
+PLUGIN_SUBPROCESS_TIMEOUT_S = 600
+WORKFLOW_SYNC_TIMEOUT_S = 60
+RATE_LIMIT_WINDOW_S = 60
+RATE_LIMIT_RPM = int((os.environ.get("RP_RATE_LIMIT_RPM") or "600").strip() or "600")
+API_AUDIT_LOG = (os.environ.get("RP_API_AUDIT_LOG") or "").strip() or None
+
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -136,6 +173,73 @@ class ApiError(Exception):
         self.status = status
         self.code = code
         self.message = message
+
+
+# ---------------------------------------------------------------------------
+# P9-3 对外契约三件：全局限频 / 对外访问审计 / trace 关联头
+# ---------------------------------------------------------------------------
+
+_rate_lock = threading.Lock()
+_rate_hits: deque[float] = deque()
+
+
+def check_rate_limit() -> None:
+    """全局限频（超限 429）：服务进程级滑动窗口，/api/* 每请求一个命中。
+    ThreadingHTTPServer 多线程并发下用锁串行记账；静态资源不计。"""
+    if RATE_LIMIT_RPM <= 0:
+        return
+    now = time.monotonic()
+    with _rate_lock:
+        while _rate_hits and now - _rate_hits[0] >= RATE_LIMIT_WINDOW_S:
+            _rate_hits.popleft()
+        if len(_rate_hits) >= RATE_LIMIT_RPM:
+            raise ApiError(429, "rate_limited",
+                           f"请求超过全局限频阈值（{RATE_LIMIT_RPM} req/"
+                           f"{RATE_LIMIT_WINDOW_S}s），请稍后重试")
+        _rate_hits.append(now)
+
+
+def audit_api_access(record: dict) -> None:
+    """对外访问审计：追加一行 JSON 到 RP_API_AUDIT_LOG（缺省关闭）。
+    本文件零 SQL 写（Phase 6 selftest 静态门禁），审计落盘走 JSONL 流，
+    行形状与 migrations/019_external_api_audit.sql 的 external_api_audit
+    表列一一对应（rate_limited/auth_enabled 以 0/1 记，供装载对账）。"""
+    if not API_AUDIT_LOG:
+        return
+    try:
+        with open(API_AUDIT_LOG, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError as exc:
+        print(f"[rp-server] 审计写入失败（不阻塞响应）：{exc}", file=sys.stderr)
+
+
+def trace_response_headers(payload: dict) -> dict:
+    """P9-3 trace 透出（SESSION-HANDOFF §十 Phase 9 追加项）：从响应载荷
+    提取关联锚透出到响应头。取值顺序（第一个非空者胜）：
+    - X-Trace-Id：顶层 trace_id > run.trace_id > correlation.trace_id；
+    - X-Correlation-Id：顶层 correlation_id > run.run_id。
+    锚不在场的载荷（列表页、空态说明）两个头都不发（契约见
+    docs/phase9/REST-API-CONTRACT.md §trace 关联透出）。"""
+    trace_id = payload.get("trace_id")
+    if not trace_id:
+        run = payload.get("run")
+        if isinstance(run, dict) and run.get("trace_id"):
+            trace_id = run["trace_id"]
+        else:
+            corr = payload.get("correlation")
+            if isinstance(corr, dict):
+                trace_id = corr.get("trace_id")
+    correlation_id = payload.get("correlation_id")
+    if not correlation_id:
+        run = payload.get("run")
+        if isinstance(run, dict) and run.get("run_id"):
+            correlation_id = run["run_id"]
+    headers: dict = {}
+    if trace_id:
+        headers["X-Trace-Id"] = str(trace_id)
+    if correlation_id:
+        headers["X-Correlation-Id"] = str(correlation_id)
+    return headers
 
 
 def connect_ro() -> sqlite3.Connection:
@@ -708,6 +812,37 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
     # governance 过滤（Phase 5 Web 前端 Tool Center 契约，P5-7 起提供）
     governance = check_enum(params, "governance", TOOL_GOVERNANCE)
     limit = parse_limit(params)
+    total, items = _tool_catalog_rows(conn, src, keyword, lifecycle, governance, limit)
+    return {
+        "available": True,
+        "source": src,
+        "total": total,
+        "returned": len(items),
+        "limit": limit,
+        "filters": {"keyword": keyword, "lifecycle": lifecycle, "governance": governance},
+        "items": items,
+    }
+
+
+# MCP 能力面固定词表（crates/mcp-server/src/lib.rs CAPABILITY_TOOLS 六条的
+# 同源镜像；P9-4 /api/mcp-catalog 对账用，wire 级一致由 rp-mcp-parity CI 门禁
+# 断言：MCP tools/list 能力面 == 本词表）。
+MCP_CAPABILITY_TOOLS = (
+    "rip.list_tools",
+    "rip.get_tool_schema",
+    "rip.run_tool",
+    "rip.search_knowledge",
+    "rip.get_run_status",
+    "rip.cancel_run",
+)
+
+
+def _tool_catalog_rows(conn: sqlite3.Connection, src: str, keyword: str | None,
+                       lifecycle: str | None, governance: str | None,
+                       limit: int) -> tuple[int, list]:
+    """工具目录合并读面（handle_tools 列表分支原逻辑抽为共用）：P9-4 起由
+    /api/tools（分页列表）与 /api/mcp-catalog（MCP 目录同步对账）共用同一
+    实现，不建第二套合并逻辑。返回 (total, items)。"""
     where, args = [], []
     if keyword:
         needle = f"%{like_escape(keyword)}%"
@@ -732,7 +867,6 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
     # 是 ETL 全量注册面，aux 只补主库没有的行，不重复主库已有条目）。
     aux_ids = {item["tool_id"] for item in items}
     if "aux" in attached_schemas(conn) and table_exists(conn, "aux", "tool"):
-        aux_total = conn.execute("SELECT COUNT(*) FROM aux.tool").fetchone()[0]
         aux_items = query_all(
             conn,
             f"SELECT {TOOL_LIST_COLUMNS} FROM aux.tool"
@@ -743,14 +877,54 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
                 items.append(row)
                 total += 1
                 aux_ids.add(row["tool_id"])
+    return total, items
+
+
+def handle_mcp_catalog(conn: sqlite3.Connection, params: dict) -> dict:
+    """P9-4 MCP 目录同步状态（Tool Center MCP 状态卡数据面）：目录条数 +
+    读时对账结果。对账语义（rp_server 只读纪律，不落状态行，每次请求即对）：
+    1. catalog_count = 合并注册面条数（与 MCP tools/list 注册面 total 同一
+       读面，共用 _tool_catalog_rows）；
+    2. 注册面投影完整性：tool_id 非空且无重复、lifecycle/governance 落词表
+       （MCP 目录投影 rip.<tool_id> 与 Tool Center 列表同列，词表外即漂移）；
+    3. 能力面词表 = MCP_CAPABILITY_TOOLS 六条（mcp-server lib 同源镜像）。
+    跨通道 wire 级对账（MCP tools/list vs /api/tools vs 本端点）由
+    crates/rp-mcp-parity CI 门禁常驻承载，本端点是读面快照不是替代品。"""
+    src = phase14_source(conn, "tool")
+    if src is None:
+        return phase14_unavailable(conn, "tool")
+    total, items = _tool_catalog_rows(conn, src, "", None, None, MAX_LIMIT)
+    drift: list = []
+    seen: set = set()
+    for row in items:
+        tool_id = row.get("tool_id") or ""
+        if not tool_id:
+            drift.append({"check": "tool_id_present", "tool_id": tool_id, "detail": "tool_id 为空"})
+        elif tool_id in seen:
+            drift.append({"check": "tool_id_unique", "tool_id": tool_id, "detail": "tool_id 重复"})
+        else:
+            seen.add(tool_id)
+        lifecycle = row.get("lifecycle")
+        if lifecycle is not None and lifecycle not in TOOL_LIFECYCLE:
+            drift.append({"check": "lifecycle_wordlist", "tool_id": tool_id,
+                          "detail": f"lifecycle={lifecycle} 不在词表"})
+        governance = row.get("governance")
+        if governance is not None and governance not in TOOL_GOVERNANCE:
+            drift.append({"check": "governance_wordlist", "tool_id": tool_id,
+                          "detail": f"governance={governance} 不在词表"})
     return {
         "available": True,
         "source": src,
-        "total": total,
-        "returned": len(items),
-        "limit": limit,
-        "filters": {"keyword": keyword, "lifecycle": lifecycle, "governance": governance},
-        "items": items,
+        "catalog_count": total,
+        "capability_count": len(MCP_CAPABILITY_TOOLS),
+        "capability_tools": list(MCP_CAPABILITY_TOOLS),
+        "reconciliation": {
+            "ok": len(drift) == 0 and len(MCP_CAPABILITY_TOOLS) == 6,
+            "reconciled_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "drift": drift,
+            "scope": "读面对账（注册面完整性 + 能力面词表）；跨通道 wire 对账归 rp-mcp-parity CI 门禁",
+        },
+        "note": "MCP tools/list 注册面与 /api/tools 共用同一 tool 表读面（catalog.rs 对齐 handle_tools 口径）；本端点为 Tool Center MCP 状态卡数据面，读时对账不落状态行。",
     }
 
 
@@ -833,6 +1007,9 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
             e.get("evidence_id") for e in result["evidence"]
         ]
         result["correlation"] = correlation
+        # P9-3 对外契约：顶层 correlation_id = tool run_id（audit_event
+        # correlation_id 同锚语义）；trace 关联头由 HTTP 层统一透出。
+        result["correlation_id"] = run_id
         if evidence_note:
             result["evidence_note"] = evidence_note
         if artifacts_note:
@@ -1232,11 +1409,12 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
     try:
         proc = subprocess.run(
             [PLUGIN_BIN, *PLUGIN_BIN_ARGS, "--db", PLUGIN_DB_PATH, *args],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, timeout=PLUGIN_SUBPROCESS_TIMEOUT_S,
             cwd=REPO_ROOT,
         )
     except subprocess.TimeoutExpired as exc:
-        raise ApiError(504, "plugin_cmd_timeout", f"rp-plugin {action} 超时：{exc}") from exc
+        raise ApiError(504, "plugin_cmd_timeout",
+                       f"rp-plugin {action} 超时（{PLUGIN_SUBPROCESS_TIMEOUT_S}s）：{exc}") from exc
     except OSError as exc:
         raise ApiError(502, "plugin_cmd_spawn_failed", f"rp-plugin 启动失败：{exc}") from exc
     payload: dict = {}
@@ -1557,6 +1735,10 @@ def handle_traces(conn: sqlite3.Connection, params: dict) -> dict:
         "query_id": query_id,
         "trace_ids": trace_ids,
         "matched_via": matched_via,
+        # P9-3 对外契约：correlation_id = 请求的关联锚（query_id）；单锚命中
+        # 时 trace_id = 唯一链锚（多锚命中不猜，仍走 trace_ids 列表）。
+        "correlation_id": query_id,
+        "trace_id": trace_ids[0] if len(trace_ids) == 1 else None,
     }
     if not trace_ids:
         chain["counts"] = {}
@@ -2047,6 +2229,9 @@ def handle_agent_runs(conn: sqlite3.Connection, params: dict) -> dict:
             "memories": memories,
             "control": control,
             "correlation": correlation,
+            # P9-3 对外契约：顶层 correlation_id = agent_run_id（AgentRun 的
+            # 审计关联锚；trace 关联头由 HTTP 层按 correlation.trace_id 透出）。
+            "correlation_id": run_id,
             "counts": {
                 "steps": len(unique_steps),
                 "task_memory": len(memories["task"]),
@@ -2290,6 +2475,10 @@ def handle_workflow_runs(conn: sqlite3.Connection, params: dict) -> dict:
             "artifact_id": item.get("artifact_id"),
             "evidence_id": item.get("evidence_id"),
         }
+        # P9-3 对外契约：顶层 correlation_id = run_id（audit_event.correlation_id
+        # 同锚语义，015）；trace 关联头（X-Trace-Id/X-Correlation-Id）由 HTTP
+        # 层按 trace_response_headers 统一透出。
+        detail["correlation_id"] = run_id
         # 015 trace 面双向对账入口：trace_id 即链锚（= run_id），全链经
         # /api/traces?id=<trace_id> 汇出。
         detail["trace_query"] = f"/api/traces?id={item.get('trace_id')}" if item.get("trace_id") else None
@@ -2373,8 +2562,9 @@ def _spawn_workflow(args: list[str], log_name: str) -> dict:
     return {"pid": proc.pid, "log": log_path}
 
 
-def _run_workflow_sync(args: list[str], timeout: int = 60) -> dict:
-    """同步承载 rp-workflow 子进程（pause 用；JSON stdout 解析失败带原文）。"""
+def _run_workflow_sync(args: list[str], timeout: int = WORKFLOW_SYNC_TIMEOUT_S) -> dict:
+    """同步承载 rp-workflow 子进程（pause/put 用；JSON stdout 解析失败带原文）。
+    同步超时口径 = WORKFLOW_SYNC_TIMEOUT_S（60s，超限 504 workflow_cmd_timeout）。"""
     try:
         proc = subprocess.run(
             [WORKFLOW_BIN, *args],
@@ -2382,7 +2572,8 @@ def _run_workflow_sync(args: list[str], timeout: int = 60) -> dict:
             cwd=REPO_ROOT,
         )
     except subprocess.TimeoutExpired as exc:
-        raise ApiError(504, "workflow_cmd_timeout", f"rp-workflow 超时：{exc}") from exc
+        raise ApiError(504, "workflow_cmd_timeout",
+                       f"rp-workflow 超时（{timeout}s）：{exc}") from exc
     except OSError as exc:
         raise ApiError(502, "workflow_cmd_spawn_failed", f"rp-workflow 启动失败：{exc}") from exc
     payload: dict = {}
@@ -2472,7 +2663,8 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
             raise ApiError(400, "bad_run_id", "run_id 形状须为 wfr-<alnum>（run-request-v1）")
         args += ["--run-id", run_id, *common]
         spawned = _spawn_workflow(args, f"run-{run_id}.log")
-        return {"result": "accepted", "action": "run", "run_id": run_id, **spawned,
+        return {"result": "accepted", "action": "run", "run_id": run_id,
+                "correlation_id": run_id, **spawned,
                 "status_query": f"/api/workflow-runs?id={run_id}"}
 
     if not run_id or not run_id.startswith("wfr-"):
@@ -2483,7 +2675,8 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
         if not out.get("ok"):
             raise ApiError(502, "workflow_cmd_failed",
                            f"rp-workflow pause 失败：{out.get('stderr_tail') or out}")
-        return {"result": "pause-requested", "action": "pause", "run_id": run_id, **out}
+        return {"result": "pause-requested", "action": "pause", "run_id": run_id,
+                "correlation_id": run_id, **out}
 
     if action == "resume":
         args = ["resume", run_id]
@@ -2496,7 +2689,8 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
             args += ["--input", json.dumps(inject, ensure_ascii=False)]
         args += common
         spawned = _spawn_workflow(args, f"resume-{run_id}.log")
-        return {"result": "accepted", "action": "resume", "run_id": run_id, **spawned,
+        return {"result": "accepted", "action": "resume", "run_id": run_id,
+                "correlation_id": run_id, **spawned,
                 "status_query": f"/api/workflow-runs?id={run_id}"}
 
     if action == "retry":
@@ -2510,7 +2704,7 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
         args += ["--run-id", new_run_id, *common]
         spawned = _spawn_workflow(args, f"retry-{new_run_id}.log")
         return {"result": "accepted", "action": "retry", "run_id": run_id,
-                "new_run_id": new_run_id, **spawned,
+                "new_run_id": new_run_id, "correlation_id": new_run_id, **spawned,
                 "status_query": f"/api/workflow-runs?id={new_run_id}"}
 
     raise ApiError(404, "no_route", f"未知 workflow 写动作：{action}")
@@ -2526,6 +2720,7 @@ API_ROUTES = {
     "/api/overview": handle_overview,
     "/api/knowledge": handle_knowledge,
     "/api/tools": handle_tools,
+    "/api/mcp-catalog": handle_mcp_catalog,
     "/api/runs": handle_runs,
     "/api/runtime": handle_runtime,
     "/api/traces": handle_traces,
@@ -2550,12 +2745,25 @@ class RpHandler(BaseHTTPRequestHandler):
 
     # -- helpers -----------------------------------------------------------
 
+    def _audit_note(self, status: int, payload: dict | None = None,
+                    rate_limited: bool = False) -> None:
+        """记录本请求的审计要素（status/trace 锚/限频旗），do_* 收尾落 JSONL。"""
+        self._audit_status = status
+        self._audit_rate_limited = rate_limited
+        if payload:
+            headers = trace_response_headers(payload)
+            self._audit_trace_id = headers.get("X-Trace-Id")
+            self._audit_correlation_id = headers.get("X-Correlation-Id")
+
     def send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in trace_response_headers(payload).items():
+            self.send_header(name, value)
+        self._audit_note(status, payload)
         self.end_headers()
         self.wfile.write(body)
 
@@ -2567,6 +2775,9 @@ class RpHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         if exc.status == 401:
             self.send_header("WWW-Authenticate", "Bearer")
+        if exc.status == 429:
+            self.send_header("Retry-After", str(RATE_LIMIT_WINDOW_S))
+        self._audit_note(exc.status, rate_limited=(exc.code == "rate_limited"))
         self.end_headers()
         self.wfile.write(body)
 
@@ -2611,11 +2822,31 @@ class RpHandler(BaseHTTPRequestHandler):
 
     # -- verbs --------------------------------------------------------------
 
+    def _finish_audit(self, method: str, parsed_path: str, t0: float) -> None:
+        """P9-3 对外访问审计收尾：/api/* 请求落一行 JSONL（缺省关闭）。"""
+        if not API_AUDIT_LOG or not parsed_path.startswith("/api/"):
+            return
+        audit_api_access({
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "event": "api_access",
+            "method": method,
+            "path": parsed_path,
+            "remote": self.address_string(),
+            "status": int(getattr(self, "_audit_status", 0) or 0),
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "trace_id": getattr(self, "_audit_trace_id", None),
+            "correlation_id": getattr(self, "_audit_correlation_id", None),
+            "rate_limited": 1 if getattr(self, "_audit_rate_limited", False) else 0,
+            "auth_enabled": 1 if AUTH_ENABLED else 0,
+        })
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query, keep_blank_values=True)
+        t0 = time.monotonic()
         try:
             if parsed.path.startswith("/api/"):
+                check_rate_limit()
                 self.require_auth()
                 handler = API_ROUTES.get(parsed.path)
                 if handler is not None:
@@ -2642,12 +2873,16 @@ class RpHandler(BaseHTTPRequestHandler):
             pass
         except Exception as exc:  # 兜底：不泄露堆栈给客户端
             self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
+        finally:
+            self._finish_audit("GET", parsed.path, t0)
 
     def _reject_write(self) -> None:
         self.send_json(
             {"error": {"code": "readonly", "message": "只读工作台：该路径不提供写端点"}},
             status=405,
         )
+
+    do_PUT = do_DELETE = do_PATCH = _reject_write
 
     def do_POST(self) -> None:  # noqa: N802
         """写面白名单（本文件对数据面零直连 SQL 写）：
@@ -2660,9 +2895,12 @@ class RpHandler(BaseHTTPRequestHandler):
           put 子进程落库，版本存储侧递增）。
         其余路径保持只读 405。写端点强制 Bearer（鉴权关闭时明确拒绝写），
         鉴权四件套（require_auth / constant-time 比较 / 失败节流 / 写面
-        强制鉴权）保持不变。"""
+        强制鉴权）保持不变。P9-3 增量：全局限频先行（429 rate_limited +
+        Retry-After），对外访问审计收尾落 JSONL。"""
         parsed = urlparse(self.path)
+        t0 = time.monotonic()
         try:
+            check_rate_limit()
             # P8-4 workflow 定义保存（画布图转 definition JSON 走版本递增）。
             if parsed.path == "/api/workflows":
                 self.require_auth()
@@ -2724,6 +2962,8 @@ class RpHandler(BaseHTTPRequestHandler):
             self.send_api_error(exc)
         except Exception as exc:  # 兜底：不泄露堆栈
             self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
+        finally:
+            self._finish_audit("POST", parsed.path, t0)
 
     def _read_json_body(self) -> dict:
         """读 POST JSON 请求体（上限 1 MiB，防无界读）。"""
@@ -2735,8 +2975,6 @@ class RpHandler(BaseHTTPRequestHandler):
             return json.loads(raw) if raw else {}
         except json.JSONDecodeError:
             raise ApiError(400, "bad_json", "请求体不是合法 JSON")
-
-    do_PUT = do_DELETE = do_PATCH = _reject_write
 
 
 def main() -> int:

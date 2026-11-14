@@ -5,3 +5,6 @@ coverage/
 .DS_Store
 test-results/
 playwright-report/
+qa/plugins/.run/
+qa/mcp/.run/
+qa/mcp/.run-e2e/

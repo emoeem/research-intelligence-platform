@@ -47,11 +47,30 @@ fn die_paths(err: plugin_runtime::PathsError) -> ! {
     std::process::exit(1);
 }
 
+fn usage_text() -> &'static str {
+    "usage: rp-plugin --db <path> [--migrations <dir>] [--data-dir <dir>] [--plugins-dir <dir>] \n\
+     \x20           [--data-root <dir>] <command> ...\n\
+     \n\
+     commands:\n\
+     \x20 install <id> [--package DIR] [--dry-run] [--max-files N] [--max-bytes N]\n\
+     \x20   [--max-seconds S] [--retries N]\n\
+     \x20 enable|disable|uninstall|activate|deactivate <id>\n\
+     \x20 load <id> | mark-error <id> | list\n\
+     \x20 upgrade <id> [--new-version V] [--package DIR]\n\
+     \x20 update-check <id>\n\
+     \x20 ingest [--dry-run] [--idempotency-key K] [--max-files N] [--max-bytes N]\n\
+     \x20   [--max-seconds S] [--retries N]\n\
+     \x20 sync <id> [--dry-run] [--idempotency-key K] [--map-candidates]\n\
+     \x20 review <id> --keys k1,k2 --status APPROVED\n\
+     \n\
+     exit: ok=0, 运行时拒绝=1, 用法错误=2\n\
+     help: rp-plugin --help（stdout, exit 0）"
+}
+
 fn usage() -> ! {
-    eprintln!(
-        "usage: rp-plugin --db <path> [--migrations <dir>] [--data-dir <dir>] [--plugins-dir <dir>] \
-         [--data-root <dir>] <install|enable|disable|uninstall|upgrade|update-check|ingest [--dry-run]|sync <id> [--dry-run] [--idempotency-key K] [--max-files N] [--max-bytes N] [--max-seconds S] [--retries N] [--new-version V] [--package DIR] [--map-candidates]|review <id> --keys k1,k2 --status APPROVED|load|activate|deactivate|mark-error|list> ..."
-    );
+    // P9-3 帮助面统一口径：误用 = usage 到 stderr + exit 2；
+    // 显式 --help/-h = usage 到 stdout + exit 0（见 main）。
+    eprintln!("{}", usage_text());
     std::process::exit(2);
 }
 
@@ -298,6 +317,11 @@ fn manifest_id_version(manifest: &Value) -> (String, String) {
 }
 
 fn main() {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        std::process::exit(0);
+    }
     let args = parse_args();
     let ctx = open_context(&args);
     let out: Value = match args.command.as_str() {

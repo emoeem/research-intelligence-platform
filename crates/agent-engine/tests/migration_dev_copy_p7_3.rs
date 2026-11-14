@@ -72,8 +72,8 @@ fn migration_013_is_idempotent_on_dev_copy() {
     let first = database::migrate(&pool, &migrations_dir).unwrap();
     assert_eq!(
         first.iter().map(|m| m.version).collect::<Vec<_>>(),
-        vec![13, 14, 15, 16, 17, 18],
-        "开发副本上第一次迁移应只落 013..018（链尾演进至 018，编号冻结规则顺延；P7-5 trace 关联 015 同链落列，P8-1 workflow 定义版本化 016 同链落表，P8-2 workflow 运行持久化 017 同链落表，P8-3 workflow 控制面与六 ID 关联 018 同链落列）"
+        vec![13, 14, 15, 16, 17, 18, 19],
+        "开发副本上第一次迁移应只落 013..019（链尾演进至 019，编号冻结规则顺延；P7-5 trace 关联 015 同链落列，P8-1 workflow 定义版本化 016 同链落表，P8-2 workflow 运行持久化 017 同链落表，P8-3 workflow 控制面与六 ID 关联 018 同链落列，P9-3 REST 对外访问审计 019 同链落表）"
     );
     let snapshot_after_first = schema_snapshot(&pool);
 
@@ -88,7 +88,7 @@ fn migration_013_is_idempotent_on_dev_copy() {
     let after_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(after_version, 18, "链尾 018（P8-3 workflow 控制面与六 ID 关联；前序 017 P8-2 运行持久化、016 P8-1 定义版本化）");
+    assert_eq!(after_version, 19, "链尾 019（P9-3 REST 对外访问审计 external_api_audit；前序 018 P8-3 workflow 控制面与六 ID 关联）");
 
     // 三表在场 + 生产库未触核对（原件 user_version 仍为 12）。
     for table in [
