@@ -17,6 +17,7 @@
 pub mod adapter;
 pub mod document_fetch;
 pub mod envelope;
+pub mod image_ledger;
 pub mod mock_runner;
 pub mod request;
 pub mod state;
@@ -25,7 +26,7 @@ use std::time::Instant;
 
 use database::{DbError, Pool};
 use domain::ToolRunStatus;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tool_registry::Registry;
 
 use crate::mock_runner::{MockRunner, Outcome};
@@ -696,6 +697,31 @@ impl Engine {
                 }
             })?
             .ok_or_else(|| EngineError::NotFound(run_id.to_string()))
+    }
+
+    /// 按状态列出 run id（P10-3 网关批量恢复用；created_at 升序，至多
+    /// limit 条）。只投影 run_id，不触碰行。
+    pub fn runs_by_status(
+        &self,
+        status: ToolRunStatus,
+        limit: usize,
+    ) -> Result<Vec<String>, EngineError> {
+        let mut ids = Vec::new();
+        self.pool.with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT run_id FROM tool_run WHERE status = ?1
+                 ORDER BY created_at ASC, run_id ASC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(
+                database::rusqlite::params![status.as_str(), limit as i64],
+                |r| r.get::<_, String>(0),
+            )?;
+            for row in rows {
+                ids.push(row?);
+            }
+            Ok::<(), database::rusqlite::Error>(())
+        })?;
+        Ok(ids)
     }
 
     /// 按 §3.2 表推进一行（乐观锁式 status 匹配，非法对与并发漂移都拒绝）。

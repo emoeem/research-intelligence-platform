@@ -118,10 +118,10 @@ function TraceSection({
     <section className="rounded-surface border border-edge bg-base-100 p-4">
       <h2 className="text-sm font-semibold">
         {title}
-        <span className="ml-2 text-xs font-normal text-base-content/50">{rows.length} 行</span>
+        <span className="ml-2 text-xs font-normal text-muted">{rows.length} 行</span>
       </h2>
       {rows.length === 0 ? (
-        <p className="mt-2 text-xs text-base-content/50">
+        <p className="mt-2 text-xs text-muted">
           空段（015 之前落库行 trace_id 为 NULL，不参与关联，如实呈现）。
         </p>
       ) : (
@@ -129,7 +129,7 @@ function TraceSection({
           {rows.map((row, i) => (
             <li key={i} className="rounded-control border border-edge-soft p-2 text-xs">
               <IdLink id={cell(row, idKey) || `#${i + 1}`} />
-              <span className="ml-2 text-base-content/60">
+              <span className="ml-2 text-muted">
                 {columns
                   .filter((c) => cell(row, c))
                   .map((c) => `${c}=${cell(row, c)}`)
@@ -169,15 +169,15 @@ export function TracePage() {
         <>
           <div className="rounded-surface border border-edge bg-base-100 p-4">
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-base-content/50">查询入参</span>
+              <span className="text-muted">查询入参</span>
               <span className="break-all font-medium">{chain.data?.query_id}</span>
-              <span className="text-base-content/50">命中面</span>
+              <span className="text-muted">命中面</span>
               <span className="badge badge-sm badge-info">{chain.data?.matched_via}</span>
             </div>
-            <p className="mt-2 break-all text-xs text-base-content/60">
+            <p className="mt-2 break-all text-xs text-muted">
               trace_ids: {(chain.data?.trace_ids ?? []).join(", ")}
             </p>
-            <p className="mt-1 text-[11px] text-base-content/40">
+            <p className="mt-1 text-[11px] text-muted">
               {Object.entries(chain.data?.counts ?? {})
                 .map(([k, v]) => `${k} ${v}`)
                 .join(" · ")}

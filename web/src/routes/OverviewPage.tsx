@@ -50,10 +50,10 @@ interface KpiSpec {
 function KpiCard({ spec }: { spec: KpiSpec }) {
   const body = (
     <>
-      <p className="text-xs text-base-content/60">{spec.label}</p>
+      <p className="text-xs text-muted">{spec.label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums">{spec.value}</p>
       {spec.note ? (
-        <p className="mt-1 truncate text-[11px] text-base-content/50" title={spec.note}>
+        <p className="mt-1 truncate text-[11px] text-muted" title={spec.note}>
           {spec.note}
         </p>
       ) : null}
@@ -157,7 +157,7 @@ export function OverviewPage() {
           <div className="rounded-surface border border-edge bg-base-100 p-4">
             <h2 className="text-sm font-semibold">知识生命周期分布</h2>
             {lifecycleEntries.length === 0 ? (
-              <p className="mt-3 text-sm text-base-content/60">暂无生命周期数据。</p>
+              <p className="mt-3 text-sm text-muted">暂无生命周期数据。</p>
             ) : (
               <EChart
                 style={{ height: 240 }}
@@ -186,9 +186,9 @@ export function OverviewPage() {
           {featureMap.map((workspace) => (
             <div key={workspace.id} className="rounded-control border border-edge-soft p-3">
               <p className="text-sm font-medium">
-                <span className="mr-2 tabular-nums text-base-content/50">{workspace.number}</span>
+                <span className="mr-2 tabular-nums text-muted">{workspace.number}</span>
                 {workspace.label}
-                <span className="ml-2 text-xs text-base-content/50">{workspace.hint}</span>
+                <span className="ml-2 text-xs text-muted">{workspace.hint}</span>
               </p>
               {workspace.badges.length > 0 ? (
                 <p className="mt-1 flex gap-2">
@@ -202,7 +202,7 @@ export function OverviewPage() {
               <ul className="mt-2 space-y-1">
                 {workspace.tabs.map((tab) => (
                   <li key={tab.to} className="text-xs text-base-content/70" title={tab.hint}>
-                    <span className="mr-2 tabular-nums opacity-60">{tab.number}</span>
+                    <span className="mr-2 tabular-nums text-muted">{tab.number}</span>
                     {tab.label}
                   </li>
                 ))}

@@ -1,13 +1,15 @@
 import { type Page, test, expect } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 
-/** /workflows 专项视觉与交互门禁（P8-4）：在 pages.spec.ts 的 11 页矩阵之外
- *  对 Workflow Studio 画布页加专项断言：
+/** /workflows 专项视觉与交互门禁（P8-4；P10-4 基线与阻断化）：在 pages.spec.ts
+ *  的 11 页矩阵之外对 Workflow Studio 画布页加专项断言：
  *  1. 五区落位（面板/画布/Inspector/底部 Run/版本区）与画布节点 DOM 计数；
- *  2. 画布主题覆盖（深空/浅色）零 console.error、零 pageerror、无横向溢出；
+ *  2. 画布主题覆盖（深空/浅色）零 console.error、零 pageerror、无横向溢出，
+ *     并落 viewport 级视觉快照基线（qa/visual/baseline/，统一字体环境同
+ *     pages.spec 口径）；
  *  3. 移动端只读降级徽标（<768px matchMedia）；
- *  4. axe AA 桌面深空扫描（serious/critical = 0，color-contrast 收集不阻断，
- *     与 pages.spec 同口径）。
+ *  4. axe AA 桌面（深空 + 晨白）扫描（serious/critical = 0，color-contrast
+ *     已清零并与 pages.spec 同口径阻断）。
  *  全部 /api/** 请求在 page.route 层 mock（离线静态服务器模式）。 */
 
 const WORKFLOW_ID = "wf-p84-visual";
@@ -98,13 +100,16 @@ async function openPage(page: Page, theme: string): Promise<void> {
   });
   await page.goto("http://127.0.0.1:4177/workflows");
   await page.waitForLoadState("domcontentloaded");
+  // 统一字体环境（P10-4）：与 pages.spec.ts 同一口径，快照钉死单一 CJK 字族
+  await page.addStyleTag({
+    content:
+      ':root { --font-sans: "Noto Sans CJK SC", sans-serif !important; --font-mono: "Noto Sans Mono CJK SC", monospace !important; }',
+  });
   // 列表落位后选中 workflow（与真实用户路径一致），画布 graph 随详情装载
   await expect(page.getByTestId("workflow-id-select")).toBeVisible({ timeout: 5000 });
   await page.getByTestId("workflow-id-select").fill(WORKFLOW_ID);
   await expect(page.getByTestId("version-chip-2")).toBeVisible({ timeout: 5000 });
 }
-
-const contrastFindings: string[] = [];
 
 async function assertClean(page: Page, label: string): Promise<void> {
   const overflow = await page.evaluate(() => ({
@@ -143,6 +148,9 @@ test("画布桌面深空：五区落位 + 画布节点/柄计数 + 零 console �
   expect(consoleErrors, `console.error: ${consoleErrors.join(" | ")}`).toEqual([]);
   expect(pageErrors, `pageerror: ${pageErrors.join(" | ")}`).toEqual([]);
   await assertClean(page, "/workflows desktop dark");
+  // 画布布局动画收尾后快照（react-flow 节点定位有入场过渡）
+  await page.waitForTimeout(500);
+  await expect(page).toHaveScreenshot("_workflows-rip-dark-desktop.png");
 });
 
 test("画布浅色主题：节点词徽标渲染 + 零 console 错误", async ({ page }) => {
@@ -162,6 +170,8 @@ test("画布浅色主题：节点词徽标渲染 + 零 console 错误", async ({
   expect(consoleErrors, `console.error: ${consoleErrors.join(" | ")}`).toEqual([]);
   expect(pageErrors, `pageerror: ${pageErrors.join(" | ")}`).toEqual([]);
   await assertClean(page, "/workflows desktop light");
+  await page.waitForTimeout(500);
+  await expect(page).toHaveScreenshot("_workflows-rip-light-desktop.png");
 });
 
 test("移动端只读降级：窄视口徽标 + 画布只读 + 无横向溢出", async ({ page }) => {
@@ -176,33 +186,27 @@ test("移动端只读降级：窄视口徽标 + 画布只读 + 无横向溢出",
   await expect(page.locator(".react-flow__node")).toHaveCount(4, { timeout: 5000 });
   expect(consoleErrors, `console.error: ${consoleErrors.join(" | ")}`).toEqual([]);
   await assertClean(page, "/workflows mobile");
+  await page.waitForTimeout(500);
+  await expect(page).toHaveScreenshot("_workflows-rip-dark-mobile.png");
 });
 
-test("axe AA /workflows（桌面深空）", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openPage(page, "rip-dark");
-  await expect(page.locator(".react-flow__node").first()).toBeVisible({ timeout: 5000 });
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-    .analyze();
-  const serious = results.violations.filter(
-    (v) => v.impact === "serious" || v.impact === "critical",
-  );
-  for (const violation of serious) {
-    if (violation.id === "color-contrast") {
-      contrastFindings.push(`/workflows: color-contrast x${violation.nodes.length}`);
-      continue;
-    }
+for (const theme of ["rip-dark", "rip-light"] as const) {
+  test(`axe AA /workflows（桌面 ${theme === "rip-dark" ? "深空" : "晨白"}）`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openPage(page, theme);
+    await expect(page.locator(".react-flow__node").first()).toBeVisible({ timeout: 5000 });
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    const serious = results.violations.filter(
+      (v) => v.impact === "serious" || v.impact === "critical",
+    );
+    // P10-4 阻断化：color-contrast 已清零，不再豁免（与 pages.spec 同口径）
     expect(
-      serious.filter((v) => v.id !== "color-contrast"),
-      `axe ${violation.id} (${violation.impact}) on /workflows: ${violation.nodes.length} 处`,
+      serious,
+      `axe serious/critical on /workflows ${theme}: ${serious
+        .map((v) => `${v.id}(${v.impact})x${v.nodes.length}`)
+        .join(", ")}`,
     ).toEqual([]);
-  }
-});
-
-test.afterAll(async () => {
-  // eslint-disable-next-line no-console
-  console.log(
-    `[axe color-contrast findings] ${contrastFindings.length} 处: ${contrastFindings.join("; ")}`,
-  );
-});
+  });
+}

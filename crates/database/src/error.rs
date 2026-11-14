@@ -39,6 +39,10 @@ pub enum DbError {
         /// 第二个使用该版本号的文件。
         second_file: String,
     },
+    /// 备份失败（快照 / 归档打包 / 清单生成，原因见内）。
+    Backup(String),
+    /// 恢复失败（解包 / 校验不符 / 原子替换，原因见内）。
+    Restore(String),
 }
 
 impl fmt::Display for DbError {
@@ -65,6 +69,8 @@ impl fmt::Display for DbError {
                 version,
                 second_file,
             } => write!(f, "duplicate migration version {version} in {second_file}"),
+            DbError::Backup(reason) => write!(f, "backup failed: {reason}"),
+            DbError::Restore(reason) => write!(f, "restore failed: {reason}"),
         }
     }
 }

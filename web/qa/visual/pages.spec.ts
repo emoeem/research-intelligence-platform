@@ -1,14 +1,19 @@
 import { type Page, test, expect } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 
-/** 视觉矩阵（P5-10，ROADMAP P5-9 裁剪版；P7-1 五区壳层重拍）：11 页 × 2 主题
- *  × 2 视口 = 44 组合（新壳含 Inspector/Activity，axe 断言并轨覆盖）。
- *  断言（无快照基线，ROADMAP 风险 3）：
+/** 视觉矩阵（P5-10，ROADMAP P5-9 裁剪版；P7-1 五区壳层重拍；P10-4 基线与阻断化）：
+ *  11 页 × 2 主题 × 2 视口 = 44 组合（新壳含 Inspector/Activity，axe 断言并轨覆盖）。
+ *  断言：
  *  1. 零 console.error 与零 pageerror；
  *  2. 无横向溢出（scrollWidth <= innerWidth + 1）；
  *  3. 页面关键内容标记在位（数据来自 route-mock 的真实形状 JSON）；
- *  4. axe AA 尝试：每页桌面深空组合扫描，serious/critical 级违规为 0
- *     （color-contrast 单独收集打印进验收文档，不阻断，属已知待修项）。
+ *  4. 视觉快照基线（P10-4）：viewport 级 toHaveScreenshot，基线在
+ *     qa/visual/baseline/pages.spec.ts/，统一字体环境注入（Noto Sans CJK SC
+ *     钉死，机器无关口径见 playwright.config.ts 注释）；基线重生成命令
+ *     `npx playwright test --update-snapshots`；
+ *  5. axe AA 阻断：每页桌面（深空 + 晨白）扫描，serious/critical 级违规为 0，
+ *     color-contrast 已清零（P10-4 token 实色 muted + primary 压暗）并与其他
+ *     违规同口径阻断，不再单独豁免。
  *  全部 /api/** 请求在 page.route 层 mock（离线静态服务器模式，TELEGRAM §2.5）。 */
 
 const API_STUBS: Record<string, unknown> = {
@@ -313,9 +318,14 @@ async function openPage(page: Page, path: string, theme: string): Promise<void> 
   });
   await page.goto(`http://127.0.0.1:4177${path}`);
   await page.waitForLoadState("domcontentloaded");
+  // 统一字体环境（P10-4）：快照与渲染钉死单一 CJK 字族，机器无关（参照项目
+  // a1796e8 教训：基线只能由统一字体环境生成）。!important 压过应用层
+  // @theme 的 --font-sans 声明；本机缺该字族时按 config 注释重落基线。
+  await page.addStyleTag({
+    content:
+      ':root { --font-sans: "Noto Sans CJK SC", sans-serif !important; --font-mono: "Noto Sans Mono CJK SC", monospace !important; }',
+  });
 }
-
-const contrastFindings: string[] = [];
 
 for (const pageSpec of PAGES) {
   for (const theme of THEMES) {
@@ -333,6 +343,8 @@ for (const pageSpec of PAGES) {
 
         // 关键内容标记（真实形状 mock 数据落地）
         await expect(page.getByText(pageSpec.marker).first()).toBeVisible({ timeout: 5000 });
+        // 图表类页面（echarts canvas）等待首帧渲染完成再快照
+        await page.waitForTimeout(400);
 
         // 零 console.error / 零 pageerror
         expect(
@@ -353,38 +365,37 @@ for (const pageSpec of PAGES) {
           overflow.scrollWidth,
           `横向溢出 on ${pageSpec.path} ${theme} ${viewport.label}: scrollWidth ${overflow.scrollWidth} > innerWidth ${overflow.innerWidth}`,
         ).toBeLessThanOrEqual(overflow.innerWidth + 1);
+
+        // 视觉快照基线（P10-4）：viewport 级，基线目录 qa/visual/baseline/
+        const snapName =
+          (pageSpec.path === "/" ? "root" : pageSpec.path.replace(/^\//, "").replace(/\//g, "-")) +
+          `-${theme}-${viewport.label}.png`;
+        await expect(page).toHaveScreenshot(snapName);
       });
     }
   }
 
-  test(`axe AA ${pageSpec.path}（桌面深空）`, async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await openPage(page, pageSpec.path, "rip-dark");
-    await page.getByText(pageSpec.marker).first().waitFor({ state: "visible", timeout: 5000 });
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-      .analyze();
-    const serious = results.violations.filter(
-      (v) => v.impact === "serious" || v.impact === "critical",
-    );
-    for (const violation of serious) {
-      if (violation.id === "color-contrast") {
-        // 已知待修项：主题对比度为设计目标值（PHASE5-PLAN 风险 5），收集进验收文档，不阻断门禁
-        contrastFindings.push(`${pageSpec.path}: color-contrast x${violation.nodes.length}`);
-        continue;
-      }
+  for (const theme of THEMES) {
+    test(`axe AA ${pageSpec.path}（桌面 ${theme === "rip-dark" ? "深空" : "晨白"}）`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openPage(page, pageSpec.path, theme);
+      await page.getByText(pageSpec.marker).first().waitFor({ state: "visible", timeout: 5000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+        .analyze();
+      const serious = results.violations.filter(
+        (v) => v.impact === "serious" || v.impact === "critical",
+      );
+      // P10-4 阻断化：color-contrast 已清零（token.css muted 实色 + light
+      // primary 压暗），不再豁免，与其他 serious/critical 违规同口径阻断。
       expect(
-        serious.filter((v) => v.id !== "color-contrast"),
-        `axe ${violation.id} (${violation.impact}) on ${pageSpec.path}: ${violation.nodes.length} 处`,
+        serious,
+        `axe serious/critical on ${pageSpec.path} ${theme}: ${serious
+          .map((v) => `${v.id}(${v.impact})x${v.nodes.length}`)
+          .join(", ")}`,
       ).toEqual([]);
-    }
-  });
+    });
+  }
 }
-
-// color-contrast 收尾汇总：打印全部发现（验收文档摘录），上限断言防失控膨胀
-test.afterAll(async () => {
-  // eslint-disable-next-line no-console
-  console.log(
-    `[axe color-contrast findings] ${contrastFindings.length} 处: ${contrastFindings.join("; ")}`,
-  );
-});

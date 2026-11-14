@@ -43,13 +43,13 @@ export function VersionList({
     >
       <h2 className="text-xs font-semibold text-base-content/70">
         Workflow 版本与历史回看
-        <span className="ml-2 text-[10px] font-normal text-base-content/40">
+        <span className="ml-2 text-[10px] font-normal text-muted">
           016 workflow_definition · 存储侧版本递增
         </span>
       </h2>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-xs">
-          <span className="text-base-content/50">workflow</span>
+          <span className="text-muted">workflow</span>
           <input
             type="text"
             className="input input-bordered input-sm w-[220px] font-mono text-xs"
@@ -67,7 +67,7 @@ export function VersionList({
         </label>
         <div className="flex flex-wrap items-center gap-1" data-testid="version-chips">
           {versions.length === 0 ? (
-            <span className="text-[10px] text-base-content/40">该 workflow 尚无已保存版本</span>
+            <span className="text-[10px] text-muted">该 workflow 尚无已保存版本</span>
           ) : (
             versions.map((row) => (
               <button
@@ -130,7 +130,7 @@ export function VersionList({
           {saveMessage}
         </p>
       ) : null}
-      <p className="mt-1 text-[10px] leading-4 text-base-content/40">
+      <p className="mt-1 text-[10px] leading-4 text-muted">
         画布图保存为 definition-v1 JSON：graph 节点/边向量经 rp-workflow put 四道门后追加一版， 文档
         version 仅作声明，落库版本由存储侧分配（现有最大版本 + 1）。
       </p>

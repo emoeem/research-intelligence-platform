@@ -1,4 +1,5 @@
 [package]
+publish = false  # 私有工程线（P10-4：cargo-deny [licenses] private.ignore 口径）
 name = "workflow-engine"
 version.workspace = true
 edition.workspace = true

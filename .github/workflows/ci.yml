@@ -5,6 +5,11 @@ name: CI
 # 二进制与已验收基线）；容器端到端按 V-9 保持受控环境执行（镜像属运行时数据）。
 # migrations/verify.py 不在 CI 内跑：它对账的源快照与 dryrun 库含生产衍生数据，不入库；
 # 该对账在本地执行并以 sources-snapshot manifest 为准。
+# P10-3/P10-4 门随 workspace 全量测试生效（rust job `cargo test --offline --workspace`）：
+# runtime-gateway multi_runner_failover（双 Runner 调度、主节点离线转投备用、恢复续跑）
+# 与 tool-engine security_matrix（T0/T1/T2 越界拒绝矩阵 + secrets 不泄露核查，D-TC-06）。
+# 性能基准（#[ignore] bench_assemble_latency / bench_dispatch_latency）按 P10-4 口径
+# 保持本地执行（autoresearch 载具，见 docs/phase10/PERF-BASELINE.md），不进 CI。
 
 on:
   push:

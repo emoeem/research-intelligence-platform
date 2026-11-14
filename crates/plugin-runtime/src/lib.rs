@@ -62,7 +62,7 @@ pub use retention::{RetentionAction, RetentionItem, RetentionReport};
 pub use source_sync::{SyncAttempt, SyncOptions, SyncReport};
 pub use state_store::{snapshot_of, transition_record, StateStore};
 pub use store::{capabilities_from_manifest, PluginStore};
-pub use upgrade::{UpgradeOutcome, UpgradePlan};
+pub use upgrade::{CleanupReport, SkippedDir, UpgradeOutcome, UpgradePlan};
 
 use std::path::{Path, PathBuf};
 
@@ -661,7 +661,8 @@ impl PluginRuntime {
     }
 
     /// update_check（§5.1）：远端存在兼容新版本时叠加 UPDATE_PENDING 标记
-    /// （状态本身不变），无新版（版本相同或更旧）清除标记。
+    /// （状态本身不变），无新版（版本相同或更旧）清除标记。manual 口径：
+    /// 对全部信任级可用（手动检查不受 D10 约束）。
     pub fn update_check(
         &self,
         plugin_id: &str,
@@ -685,6 +686,72 @@ impl PluginRuntime {
         self.store
             .set_update_pending(plugin_id, &plugin.version, has_new)?;
         Ok(has_new)
+    }
+
+    /// update_check 自动提示口径（P10-2 生效 D10）：仅 official 信任级允许
+    /// 自动提示（PLUGIN-CONTRACT §6 + 草案 D10）；其余信任级拒绝且
+    /// Emit `plugin.update_check`（mode=auto, result=blocked）留痕，manual
+    /// 路径不受影响。通过时与 [`Self::update_check`] 同语义并 Emit
+    /// mode=auto（result=prompted | no_new_version）。
+    pub fn update_check_auto(
+        &self,
+        actor: &str,
+        plugin_id: &str,
+        remote_version: &str,
+    ) -> Result<bool, RuntimeError> {
+        let plugin = self.store.get_active(plugin_id)?.ok_or_else(|| {
+            RuntimeError::new(
+                "unknown_plugin",
+                format!("plugin {plugin_id:?} not installed"),
+            )
+        })?;
+        let trust = trust_to_registry(plugin.trust_level);
+        if !plugin_registry::auto_update_prompt_allowed(trust) {
+            self.emit(
+                actor,
+                plugin_actions::UPDATE_CHECK,
+                plugin_id,
+                &plugin.version,
+                json!({"mode": "auto", "result": "blocked", "trust_level": trust.as_str(),
+                       "reason": "D10: auto update prompt only for official (manual check still allowed)"}),
+            );
+            return Err(RuntimeError::new(
+                "update_check_auto_not_allowed",
+                format!(
+                    "trust level {:?} is not allowed auto update prompts (D10); run manual update-check instead",
+                    trust.as_str()
+                ),
+            ));
+        }
+        let has_new = self.update_check(plugin_id, remote_version)?;
+        self.emit(
+            actor,
+            plugin_actions::UPDATE_CHECK,
+            plugin_id,
+            &plugin.version,
+            json!({"mode": "auto",
+                   "result": if has_new { "prompted" } else { "no_new_version" },
+                   "trust_level": trust.as_str(), "remote_version": remote_version}),
+        );
+        Ok(has_new)
+    }
+
+    /// 回滚窗口清理（§5.3 第 5 步执行面，D6；语义见
+    /// [`crate::upgrade::cleanup_rollback_window`]）。
+    pub fn cleanup_rollback_window(
+        &self,
+        actor: &str,
+        plugin_id: &str,
+        confirmed: bool,
+    ) -> Result<upgrade::CleanupReport, RuntimeError> {
+        upgrade::cleanup_rollback_window(
+            &self.store,
+            &self.audit,
+            actor,
+            self.data_root.as_deref(),
+            plugin_id,
+            confirmed,
+        )
     }
 
     /// upgrade（§5.3）：见 [`crate::upgrade`]。Emit `plugin.upgrade`
@@ -843,6 +910,17 @@ impl PluginRuntime {
     }
 }
 
+/// domain::PluginTrust → plugin-registry::TrustLevel（P10-2 起唯一映射面：
+/// build_lock 与 D10 门控共用，防两处映射漂移）。
+fn trust_to_registry(trust: PluginTrust) -> plugin_registry::TrustLevel {
+    match trust {
+        PluginTrust::Official => plugin_registry::TrustLevel::Official,
+        PluginTrust::Community => plugin_registry::TrustLevel::Community,
+        PluginTrust::Local => plugin_registry::TrustLevel::Local,
+        PluginTrust::Remote => plugin_registry::TrustLevel::Remote,
+    }
+}
+
 /// Manifest 规范化（BTreeMap 键序确定性 JSON，存储列口径与 content_hash 一致）。
 fn normalize(manifest: &Value) -> Result<Value, RuntimeError> {
     serde_json::to_value(manifest).map_err(|e| {
@@ -984,12 +1062,7 @@ fn build_lock(
                             .to_string()
                     }),
             });
-    let trust_level = match trust {
-        PluginTrust::Official => plugin_registry::TrustLevel::Official,
-        PluginTrust::Community => plugin_registry::TrustLevel::Community,
-        PluginTrust::Local => plugin_registry::TrustLevel::Local,
-        PluginTrust::Remote => plugin_registry::TrustLevel::Remote,
-    };
+    let trust_level = trust_to_registry(trust);
     Ok(plugin_registry::PluginLock {
         plugin_id: plugin_id.to_string(),
         resolved_version: version.to_string(),

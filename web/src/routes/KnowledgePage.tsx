@@ -84,7 +84,7 @@ function MetaRow({ label, value }: { label: string; value: string | null | undef
   if (value === null || value === undefined || value === "") return null;
   return (
     <div className="flex gap-2 text-xs">
-      <span className="w-20 shrink-0 text-base-content/50">{label}</span>
+      <span className="w-20 shrink-0 text-muted">{label}</span>
       <span className="min-w-0 flex-1 break-words">{value}</span>
     </div>
   );
@@ -132,18 +132,18 @@ function DetailSidebar({
           ) : null}
         </div>
         <h2 className="mt-2 text-sm font-semibold leading-5">{item.title}</h2>
-        <p className="mt-1 break-all text-[11px] text-base-content/40">{item.knowledge_id}</p>
+        <p className="mt-1 break-all text-[11px] text-muted">{item.knowledge_id}</p>
       </div>
 
       {item.description ? (
         <section>
-          <h3 className="text-xs font-semibold text-base-content/60">描述</h3>
+          <h3 className="text-xs font-semibold text-muted">描述</h3>
           <p className="mt-1 whitespace-pre-wrap text-xs leading-5">{item.description}</p>
         </section>
       ) : null}
 
       <section>
-        <h3 className="text-xs font-semibold text-base-content/60">元数据</h3>
+        <h3 className="text-xs font-semibold text-muted">元数据</h3>
         <div className="mt-1 space-y-1">
           <MetaRow label="组件" value={item.component} />
           <MetaRow label="CVE" value={item.cve} />
@@ -173,12 +173,12 @@ function DetailSidebar({
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold text-base-content/60">来源</h3>
+        <h3 className="text-xs font-semibold text-muted">来源</h3>
         <div className="mt-1 space-y-1">
           <MetaRow label="来源" value={item.source} />
           {item.source_url ? (
             <div className="flex gap-2 text-xs">
-              <span className="w-20 shrink-0 text-base-content/50">链接</span>
+              <span className="w-20 shrink-0 text-muted">链接</span>
               <a
                 href={item.source_url}
                 target="_blank"
@@ -193,7 +193,7 @@ function DetailSidebar({
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold text-base-content/60">正文摘要</h3>
+        <h3 className="text-xs font-semibold text-muted">正文摘要</h3>
         {item.content ? (
           <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[11px] leading-4">
             {truncate(item.content, 1200)}
@@ -203,7 +203,7 @@ function DetailSidebar({
             {truncate(item.usage, 1200)}
           </pre>
         ) : (
-          <p className="mt-1 text-xs text-base-content/50">该条目无正文内容（仅元数据记录）。</p>
+          <p className="mt-1 text-xs text-muted">该条目无正文内容（仅元数据记录）。</p>
         )}
       </section>
     </div>
@@ -288,7 +288,7 @@ function SourceEntriesView() {
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
         />
-        <span className="text-xs opacity-50" data-testid="source-total">
+        <span className="text-xs text-muted" data-testid="source-total">
           共 {total} 条（显示 {items.length}）
         </span>
       </div>
@@ -330,20 +330,20 @@ function SourceEntriesView() {
                       {item.source_commit.slice(0, 7)}
                     </span>
                   ) : null}
-                  <span className="text-[11px] text-base-content/50">{item.plugin_id}</span>
+                  <span className="text-[11px] text-muted">{item.plugin_id}</span>
                 </div>
                 <p className="mt-1.5 text-sm font-medium leading-5" data-testid="source-title">
                   {item.title}
                 </p>
                 {item.category_path.length > 0 ? (
                   <p
-                    className="mt-1 text-[11px] text-base-content/50"
+                    className="mt-1 text-[11px] text-muted"
                     data-testid="source-category"
                   >
                     分类：{item.category_path.join(" / ")}
                   </p>
                 ) : null}
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-base-content/40">
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
                   {item.canonical_url ? (
                     <a
                       href={item.canonical_url}
@@ -465,7 +465,7 @@ function PlatformKnowledgeView() {
             />
           ) : (
             <>
-              <p className="mb-2 text-xs text-base-content/50">
+              <p className="mb-2 text-xs text-muted">
                 {keyword ? `检索「${keyword}」：` : ""}共 {total} 条（显示 {items.length}）
               </p>
               <ul className="space-y-2">
@@ -495,18 +495,18 @@ function PlatformKnowledgeView() {
                             {verifiedLabel(item.verified)}
                           </span>
                           {item.component ? (
-                            <span className="text-[11px] text-base-content/50">
+                            <span className="text-[11px] text-muted">
                               {item.component}
                             </span>
                           ) : null}
                           {item.severity ? (
-                            <span className="text-[11px] text-base-content/50">
+                            <span className="text-[11px] text-muted">
                               {item.severity}
                             </span>
                           ) : null}
                         </div>
                         <p className="mt-1.5 text-sm font-medium leading-5">{item.title}</p>
-                        <p className="mt-1 text-[11px] text-base-content/40">
+                        <p className="mt-1 text-[11px] text-muted">
                           {item.updated_at ? formatDateTime(item.updated_at) : "-"}
                           {item.hit_count ? ` · 命中 ${item.hit_count}` : ""}
                         </p>

@@ -1,8 +1,17 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { pluginAction, pluginInstall, pluginUpgrade } from "../lib/api";
+import {
+  pluginAction,
+  pluginCleanupRollback,
+  pluginInstall,
+  pluginUpgrade,
+  resolveTrustTier,
+  type PluginConfirmFields,
+  type TrustPolicy,
+} from "../lib/api";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
+import { TrustConfirmDialog } from "../components/TrustConfirmDialog";
 import { formatDateTime } from "../lib/format";
 import type { PluginDetail } from "../lib/api";
 
@@ -90,14 +99,20 @@ function DependencyGraph({ detail }: { detail: PluginDetail }) {
   );
 }
 
+type ConfirmKind = "install" | "upgrade" | null;
+
 export function PluginDetailPage() {
   const { pluginId = "" } = useParams();
   const [level, setLevel] = useState<1 | 2 | 3>(2);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [confirmKind, setConfirmKind] = useState<ConfirmKind>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupNote, setCleanupNote] = useState<string | null>(null);
   const detail = useApi<PluginDetail>(
     `/api/plugins/${encodeURIComponent(pluginId)}?level=${level}`,
   );
+  const policy = useApi<TrustPolicy>("/api/plugins/trust-policy");
 
   async function runAction(action: "enable" | "disable" | "uninstall" | "ingest") {
     setActionError(null);
@@ -112,14 +127,14 @@ export function PluginDetailPage() {
     }
   }
 
-  async function runUpgrade() {
+  // P10-2：install/upgrade 一律走分级确认对话框（确认强度按信任级策略表）。
+  async function runConfirmedInstall(fields: PluginConfirmFields) {
+    setConfirmKind(null);
     setActionError(null);
     setActionBusy(true);
     try {
-      // 升级 Manifest 默认取同目录 0.2.0 命名（P6-2 升级语义：新旧并存）；
-      // 真实路径由维护者在插件包内准备。
-      const manifestPath = `schemas/plugin-manifest/examples/${pluginId}-0.2.0.yaml`;
-      await pluginUpgrade(pluginId, manifestPath);
+      const manifestPath = `schemas/plugin-manifest/examples/${pluginId}.yaml`;
+      await pluginInstall(manifestPath, "local", fields);
       await detail.retry();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -128,17 +143,42 @@ export function PluginDetailPage() {
     }
   }
 
-  async function runInstall() {
+  async function runConfirmedUpgrade(fields: PluginConfirmFields) {
+    setConfirmKind(null);
     setActionError(null);
     setActionBusy(true);
     try {
-      const manifestPath = `schemas/plugin-manifest/examples/${pluginId}.yaml`;
-      await pluginInstall(manifestPath, "local");
+      // 升级 Manifest 默认取同目录 0.2.0 命名（P6-2 升级语义：新旧并存）；
+      // 真实路径由维护者在插件包内准备。升级信任级由服务端沿用当前插件。
+      const manifestPath = `schemas/plugin-manifest/examples/${pluginId}-0.2.0.yaml`;
+      await pluginUpgrade(pluginId, manifestPath, fields);
       await detail.retry();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function runCleanupRollback() {
+    setCleanupNote(null);
+    setCleanupBusy(true);
+    try {
+      const res = await pluginCleanupRollback(pluginId);
+      const report = (res.result?.report ?? {}) as {
+        cleaned?: string[];
+        retained?: string[];
+      };
+      setCleanupNote(
+        `回滚窗口清理完成：清理 ${(report.cleaned ?? []).length} 个旧版本，保留 ${
+          (report.retained ?? []).length
+        } 个历史版本`,
+      );
+      await detail.retry();
+    } catch (error) {
+      setCleanupNote(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCleanupBusy(false);
     }
   }
 
@@ -161,6 +201,9 @@ export function PluginDetailPage() {
   const canIngest = (data.capabilities ?? []).some(
     (cap) => cap.capability_type === "knowledge_source",
   );
+  // P10-2：确认强度按插件当前信任级（install 为 local 安装语义）。
+  const upgradeTier = resolveTrustTier(policy.data ?? null, data.trust_level ?? "local");
+  const installTier = resolveTrustTier(policy.data ?? null, "local");
 
   return (
     <div>
@@ -203,7 +246,7 @@ export function PluginDetailPage() {
               <button
                 className="btn btn-sm btn-primary"
                 disabled={actionBusy}
-                onClick={runInstall}
+                onClick={() => setConfirmKind("install")}
                 data-testid="action-install"
               >
                 安装
@@ -213,7 +256,7 @@ export function PluginDetailPage() {
               <button
                 className="btn btn-sm btn-secondary"
                 disabled={actionBusy}
-                onClick={runUpgrade}
+                onClick={() => setConfirmKind("upgrade")}
                 data-testid="action-upgrade"
               >
                 升级
@@ -239,6 +282,17 @@ export function PluginDetailPage() {
                 摄取
               </button>
             ) : null}
+            {data.is_active && data.state !== "UNINSTALLED" ? (
+              <button
+                className="btn btn-sm btn-ghost"
+                disabled={cleanupBusy || actionBusy}
+                onClick={runCleanupRollback}
+                title="P10-2 D6：回滚窗口清理（清理上一版本旧目录，active 版本不动）"
+                data-testid="action-cleanup-rollback"
+              >
+                清理旧版本
+              </button>
+            ) : null}
           </div>
         }
       />
@@ -250,6 +304,37 @@ export function PluginDetailPage() {
           {actionError}
         </div>
       ) : null}
+      {cleanupNote ? (
+        <div
+          role="status"
+          className="mb-4 rounded-control border border-info bg-info/10 p-3 text-sm"
+          data-testid="cleanup-note"
+        >
+          {cleanupNote}
+        </div>
+      ) : null}
+      <TrustConfirmDialog
+        open={confirmKind === "install"}
+        onClose={() => setConfirmKind(null)}
+        tier={installTier}
+        pluginId={pluginId}
+        confirmText="确认安装"
+        onConfirm={runConfirmedInstall}
+        busy={actionBusy}
+        contextNote={
+          data ? `本地来源安装：schemas/plugin-manifest/examples/${pluginId}.yaml` : undefined
+        }
+      />
+      <TrustConfirmDialog
+        open={confirmKind === "upgrade"}
+        onClose={() => setConfirmKind(null)}
+        tier={upgradeTier}
+        pluginId={pluginId}
+        confirmText="确认升级"
+        onConfirm={runConfirmedUpgrade}
+        busy={actionBusy}
+        contextNote={`升级确认强度按当前信任级 ${data.trust_level}（策略表单一来源 plugin-registry::trust_policy）`}
+      />
 
       <div className="mb-4 flex items-center gap-2 text-xs" data-testid="level-switch">
         <span className="opacity-70">加载级别：</span>
@@ -262,7 +347,7 @@ export function PluginDetailPage() {
             L{candidate}
           </button>
         ))}
-        <span className="opacity-60">
+        <span className="text-muted">
           {level === 1
             ? "目录级元数据"
             : level === 2
@@ -322,7 +407,7 @@ export function PluginDetailPage() {
           </dl>
           {level >= 2 && data.knowledge_provides?.content_kinds?.length ? (
             <div className="mt-3" data-testid="detail-knowledge-provides">
-              <h3 className="text-xs font-semibold text-base-content/60">内容类型与许可策略</h3>
+              <h3 className="text-xs font-semibold text-muted">内容类型与许可策略</h3>
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {data.knowledge_provides.content_kinds.map((kind) => (
                   <span
@@ -345,7 +430,7 @@ export function PluginDetailPage() {
           ) : null}
           {level >= 2 && data.knowledge_stats ? (
             <div className="mt-3" data-testid="detail-knowledge-stats">
-              <h3 className="text-xs font-semibold text-base-content/60">审核状态</h3>
+              <h3 className="text-xs font-semibold text-muted">审核状态</h3>
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {Object.entries(data.knowledge_stats.review ?? {}).map(([status, n]) => (
                   <span key={status} className="badge badge-sm badge-ghost">
@@ -353,7 +438,7 @@ export function PluginDetailPage() {
                   </span>
                 ))}
                 {data.knowledge_stats.last_seen_at ? (
-                  <span className="text-[11px] opacity-50">
+                  <span className="text-[11px] text-muted">
                     最近摄取 {formatDateTime(data.knowledge_stats.last_seen_at)}
                   </span>
                 ) : null}
@@ -394,7 +479,7 @@ export function PluginDetailPage() {
                     <span className="badge badge-sm badge-ghost">{cap.capability_type}</span>
                   </div>
                   <p className="mt-1 opacity-80">{cap.summary}</p>
-                  <p className="mt-1 font-mono text-xs opacity-60">entry: {cap.entry}</p>
+                  <p className="mt-1 font-mono text-xs text-muted">entry: {cap.entry}</p>
                 </li>
               ))}
             </ul>

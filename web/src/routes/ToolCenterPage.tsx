@@ -79,7 +79,7 @@ function McpCatalogCard() {
         className="mb-4 rounded-surface border border-edge bg-base-100 p-3"
       >
         <h2 className="text-sm font-medium">MCP 目录同步状态</h2>
-        <p className="mt-1 text-xs text-base-content/50">
+        <p className="mt-1 text-xs text-muted">
           MCP 目录状态读取失败（{status.error.message}）。MCP 工具目录本身可用 （tools/list
           与本页共用同一 tool 表读面），仅状态卡不可用。
         </p>
@@ -95,7 +95,7 @@ function McpCatalogCard() {
         className="mb-4 rounded-surface border border-edge bg-base-100 p-3"
       >
         <h2 className="text-sm font-medium">MCP 目录同步状态</h2>
-        <p className="mt-1 text-xs text-base-content/50">
+        <p className="mt-1 text-xs text-muted">
           {data?.message ?? "MCP 目录状态面暂不可读（真实空态说明）。"}
         </p>
       </section>
@@ -115,15 +115,15 @@ function McpCatalogCard() {
           <span className="badge badge-sm badge-warning">对账漂移 {recon.drift.length} 条</span>
         )}
       </div>
-      <p className="mt-1 text-xs text-base-content/60">
+      <p className="mt-1 text-xs text-muted">
         目录条数 {data.catalog_count}（能力面 {data.capability_count} 条固定）· 最后对账{" "}
         {formatDateTime(recon.reconciled_at)}
       </p>
-      <p className="mt-0.5 text-[11px] text-base-content/40">{recon.scope}</p>
+      <p className="mt-0.5 text-[11px] text-muted">{recon.scope}</p>
       {recon.drift.length > 0 ? (
         <ul className="mt-2 space-y-1">
           {recon.drift.map((item, index) => (
-            <li key={index} className="text-xs text-base-content/60">
+            <li key={index} className="text-xs text-muted">
               <span className="badge badge-sm badge-ghost">{item.check}</span>{" "}
               {item.tool_id ? `${item.tool_id}：` : ""}
               {item.detail}
@@ -195,7 +195,7 @@ export function ToolCenterPage() {
         />
       ) : (
         <>
-          <p className="mb-2 text-xs text-base-content/50">
+          <p className="mb-2 text-xs text-muted">
             {filtered ? "过滤后：" : ""}共 {list.data?.total ?? 0} 个工具（显示 {items.length}
             ，数据源：
             {list.data?.source === "main" ? "主库注册面" : list.data?.source}）
@@ -223,18 +223,18 @@ export function ToolCenterPage() {
                       </span>
                     ) : null}
                     {tool.health_state ? (
-                      <span className="text-[11px] text-base-content/50">
+                      <span className="text-[11px] text-muted">
                         health: {tool.health_state}
                       </span>
                     ) : null}
                     {tool.permission_level ? (
-                      <span className="text-[11px] text-base-content/50">
+                      <span className="text-[11px] text-muted">
                         {tool.permission_level}
                       </span>
                     ) : null}
                   </div>
                   <p className="mt-1.5 text-sm font-medium">{tool.name}</p>
-                  <p className="mt-1 text-[11px] text-base-content/40">
+                  <p className="mt-1 text-[11px] text-muted">
                     {tool.tool_id}
                     {tool.kind ? ` · ${tool.kind}` : ""}
                     {tool.updated_at ? ` · ${formatDateTime(tool.updated_at)}` : ""}

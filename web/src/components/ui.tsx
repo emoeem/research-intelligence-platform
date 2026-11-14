@@ -61,7 +61,7 @@ export function ErrorPanel({ error, onRetry }: { error: ApiError; onRetry: () =>
         </span>
         <div>
           <h2 className="text-base font-semibold">{title}</h2>
-          {hint ? <p className="mt-1 text-sm text-base-content/60">{hint}</p> : null}
+          {hint ? <p className="mt-1 text-sm text-muted">{hint}</p> : null}
         </div>
         <button type="button" className="btn btn-sm" onClick={onRetry}>
           <RotateCw className="h-4 w-4" aria-hidden="true" />
@@ -84,8 +84,8 @@ export function EmptyPanel({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-surface border border-edge bg-base-100 py-10 text-center text-sm text-base-content/60">
-      <span className="grid h-12 w-12 place-items-center rounded-full bg-base-200 text-base-content/50">
+    <div className="flex flex-col items-center gap-3 rounded-surface border border-edge bg-base-100 py-10 text-center text-sm text-muted">
+      <span className="grid h-12 w-12 place-items-center rounded-full bg-base-200 text-muted">
         {icon ?? <Inbox className="h-6 w-6" aria-hidden="true" />}
       </span>
       <div>{text}</div>

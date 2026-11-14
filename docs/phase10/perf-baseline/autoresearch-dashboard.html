@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autoresearch: rip-p10-perf-baseline</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1f2328; --muted: #59636e;
+    --border: #d9dde1; --card-bg: #ffffff; --th-bg: #f5f6f8; --code-bg: #f0f1f3;
+    --keep: #1a7f37; --discard: #b35900; --fail: #c62828; --neutral: #6e7781;
+    --badge-keep-bg: #d4edda; --badge-discard-bg: #ffe5c2;
+    --badge-fail-bg: #f8d7da; --badge-neutral-bg: #e8eaed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1;
+      --border: #3d444d; --card-bg: #161b22; --th-bg: #1c2129; --code-bg: #21262d;
+      --keep: #3fb950; --discard: #d29a22; --fail: #f85149; --neutral: #9198a1;
+      --badge-keep-bg: #12261e; --badge-discard-bg: #2d230f;
+      --badge-fail-bg: #2d1416; --badge-neutral-bg: #21262d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); margin: 2rem auto; max-width: 900px; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; }
+  .meta { color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .card { border: 1px solid var(--border); background: var(--card-bg); border-radius: 8px; padding: .8rem 1.2rem; }
+  .card .n { font-size: 1.4rem; font-weight: 600; }
+  .trend { margin-bottom: 1.5rem; }
+  .trend svg { display: block; width: 100%; height: auto; }
+  .trend .line { fill: none; stroke: var(--muted); opacity: .55; }
+  .trend .base { stroke: var(--muted); stroke-dasharray: 5 4; }
+  .trend .gline { stroke: var(--border); }
+  .trend .c-keep { fill: var(--keep); }
+  .trend .c-discard { fill: var(--card-bg); stroke: var(--discard); stroke-width: 1.5; }
+  .trend .c-fail { fill: var(--card-bg); stroke: var(--fail); stroke-width: 1.5; }
+  .trend .c-noop { fill: var(--card-bg); stroke: var(--neutral); stroke-width: 1.5; }
+  .trend text { fill: var(--muted); font-size: 10px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { position: sticky; top: 0; background: var(--th-bg); color: var(--fg); }
+  .keep { color: var(--keep); }
+  .discard { color: var(--discard); }
+  .crash { color: var(--fail); }
+  .noop { color: var(--neutral); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .78rem; }
+  .badge.keep { background: var(--badge-keep-bg); }
+  .badge.discard { background: var(--badge-discard-bg); }
+  .badge.crash { background: var(--badge-fail-bg); }
+  .badge.noop { background: var(--badge-neutral-bg); }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: .85em; }
+  .desc { max-width: 340px; overflow-wrap: anywhere; }
+  .revisits { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+</style>
+</head>
+<body>
+<h1>autoresearch · rip-p10-perf-baseline</h1>
+<div class="meta">
+  metric <code>assemble_ms</code> · direction <code>lower</code>
+   · unit <code>ms</code>
+</div>
+<div class="cards">
+  <div class="card"><div class="n">1</div>experiments</div>
+  <div class="card"><div class="n">0</div>kept</div>
+  <div class="card"><div class="n">1</div>reverted</div>
+  <div class="card"><div class="n">2.399</div>baseline</div>
+  <div class="card"><div class="n">—</div>best</div>
+  
+</div>
+
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>#</th><th>status</th><th>metric</th><th>Δ vs baseline</th><th>commit</th><th>description</th></tr></thead>
+<tbody>
+<tr>
+  <td>1</td>
+  <td><span class="badge noop">no-op</span></td>
+  <td>2.399</td>
+  <td class="noop">▼ +0</td>
+  <td>—</td>
+  <td class="desc">P10-3/P10-4 首版性能基线（repeat=3 中位数）：Phase 4 装配 assemble_ms=2.399（runs 2.399/2.463/2.148），Phase 2 派发 dispatch_ms=0.474（runs 0.474/0.454/0.475）；基线口径与不回归门见 docs/phase10/PERF-BASELINE.md</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+</body>
+</html>

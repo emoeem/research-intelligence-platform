@@ -61,7 +61,7 @@ export function ProjectsPage() {
         <EmptyPanel text={list.data?.message ?? "暂无任务。"} />
       ) : (
         <>
-          <p className="mb-2 text-xs text-base-content/50">
+          <p className="mb-2 text-xs text-muted">
             共 {list.data?.total ?? 0} 个任务（显示 {items.length}）
           </p>
           <div className="mb-4 flex flex-wrap gap-1" aria-label="状态计数">
@@ -101,18 +101,18 @@ export function ProjectsPage() {
                       <span className="badge badge-sm badge-outline">{task.task_type}</span>
                     ) : null}
                     {task.target ? (
-                      <span className="min-w-0 text-[11px] break-all text-base-content/50">
+                      <span className="min-w-0 text-[11px] break-all text-muted">
                         {task.target}
                       </span>
                     ) : null}
                   </div>
                   <p className="mt-1.5 text-sm font-medium leading-5">{task.title}</p>
                   {task.objective ? (
-                    <p className="mt-1 line-clamp-2 text-xs text-base-content/60">
+                    <p className="mt-1 line-clamp-2 text-xs text-muted">
                       {task.objective}
                     </p>
                   ) : null}
-                  <p className="mt-1 text-[11px] text-base-content/40">
+                  <p className="mt-1 text-[11px] text-muted">
                     {task.task_id}
                     {task.updated_at ? ` · ${formatDateTime(task.updated_at)}` : ""}
                   </p>

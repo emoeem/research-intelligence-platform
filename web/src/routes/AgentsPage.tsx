@@ -74,7 +74,7 @@ function CorrelationRow({ label, ids }: { label: string; ids: string[] }) {
   if (ids.length === 0) return null;
   return (
     <div className="flex gap-2 text-xs">
-      <span className="w-24 shrink-0 text-base-content/50">{label}</span>
+      <span className="w-24 shrink-0 text-muted">{label}</span>
       <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1 break-all">
         {ids.map((id) =>
           label === "tool_run" ? (
@@ -113,9 +113,9 @@ function DefinitionCard({
       }`}
     >
       <p className="break-all text-sm font-medium">
-        {definition.agent_id} <span className="text-base-content/50">@ v{definition.version}</span>
+        {definition.agent_id} <span className="text-muted">@ v{definition.version}</span>
       </p>
-      <p className="mt-0.5 text-xs text-base-content/60">{definition.name}</p>
+      <p className="mt-0.5 text-xs text-muted">{definition.name}</p>
       {(definition.capability_refs ?? []).length > 0 ? (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {definition.capability_refs?.map((ref) => (
@@ -158,14 +158,14 @@ function AgentDetailPanel({
       <div className="rounded-control border border-edge-soft p-3">
         <h3 className="text-xs font-semibold">能力绑定对账（tool 注册面）</h3>
         {detail.tool_bindings.length === 0 ? (
-          <p className="mt-1 text-xs text-base-content/50">本 agent 无能力绑定引用。</p>
+          <p className="mt-1 text-xs text-muted">本 agent 无能力绑定引用。</p>
         ) : (
           <ul className="mt-2 space-y-1">
             {detail.tool_bindings.map((binding) => (
               <li key={binding.tool_id} className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="break-all font-medium">{binding.tool_id}</span>
                 {binding.version ? (
-                  <span className="text-base-content/50">v{binding.version}</span>
+                  <span className="text-muted">v{binding.version}</span>
                 ) : null}
                 {binding.registered === true ? (
                   <span className="badge badge-sm badge-success">
@@ -184,7 +184,7 @@ function AgentDetailPanel({
       <div className="rounded-control border border-edge-soft p-3">
         <h3 className="text-xs font-semibold">
           运行摘要
-          <span className="ml-2 font-normal text-base-content/50">
+          <span className="ml-2 font-normal text-muted">
             共 {detail.runs_total} 条
             {detail.runs_by_state && Object.keys(detail.runs_by_state).length > 0
               ? ` · ${Object.entries(detail.runs_by_state)
@@ -194,7 +194,7 @@ function AgentDetailPanel({
           </span>
         </h3>
         {detail.runs.length === 0 ? (
-          <p className="mt-1 text-xs text-base-content/50">该 agent 暂无运行记录。</p>
+          <p className="mt-1 text-xs text-muted">该 agent 暂无运行记录。</p>
         ) : (
           <ul className="mt-2 space-y-1">
             {detail.runs.map((run) => (
@@ -212,10 +212,10 @@ function AgentDetailPanel({
                 <StateBadge state={run.state} />
                 {run.trace_id ? <TraceIdLink id={run.trace_id} /> : null}
                 {run.steps_count !== undefined ? (
-                  <span className="text-base-content/50">{run.steps_count} 步</span>
+                  <span className="text-muted">{run.steps_count} 步</span>
                 ) : null}
                 {run.created_at ? (
-                  <span className="text-base-content/40">{formatDateTime(run.created_at)}</span>
+                  <span className="text-muted">{formatDateTime(run.created_at)}</span>
                 ) : null}
               </li>
             ))}
@@ -236,9 +236,9 @@ function StepRow({ step }: { step: AgentRunStepRow }) {
           {step.tool_id}
           {step.tool_version ? ` @ v${step.tool_version}` : ""}
         </span>
-        <span className="text-[11px] text-base-content/50">round {step.round}</span>
+        <span className="text-[11px] text-muted">round {step.round}</span>
         {step.elapsed_ms !== undefined ? (
-          <span className="text-[11px] text-base-content/50">{step.elapsed_ms} ms</span>
+          <span className="text-[11px] text-muted">{step.elapsed_ms} ms</span>
         ) : null}
         {step.tool_run_id ? (
           <Link
@@ -249,14 +249,14 @@ function StepRow({ step }: { step: AgentRunStepRow }) {
           </Link>
         ) : null}
       </div>
-      {step.summary ? <p className="mt-1 text-xs text-base-content/60">{step.summary}</p> : null}
+      {step.summary ? <p className="mt-1 text-xs text-muted">{step.summary}</p> : null}
       {step.error ? <p className="mt-1 text-xs text-error">{step.error}</p> : null}
       {step.artifact_id || step.evidence_id ? (
         <p className="mt-1 flex flex-wrap gap-x-3 text-[11px]">
           {step.artifact_id ? <TraceIdLink id={step.artifact_id} /> : null}
           {step.evidence_id ? <TraceIdLink id={step.evidence_id} /> : null}
           {step.content_hash ? (
-            <span className="break-all text-base-content/40">
+            <span className="break-all text-muted">
               sha256 {step.content_hash.slice(0, 16)}…
             </span>
           ) : null}
@@ -264,7 +264,7 @@ function StepRow({ step }: { step: AgentRunStepRow }) {
       ) : null}
       {step.input !== null && step.input !== undefined ? (
         <details className="mt-1.5">
-          <summary className="cursor-pointer text-[11px] text-base-content/50">
+          <summary className="cursor-pointer text-[11px] text-muted">
             计划入参快照
           </summary>
           <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[11px] leading-4">
@@ -289,7 +289,7 @@ function MemoryBlock({
     <div className="rounded-control border border-edge-soft p-3">
       <h3 className="text-xs font-semibold">
         {title}
-        <span className="ml-2 font-normal text-base-content/50">{count} 行</span>
+        <span className="ml-2 font-normal text-muted">{count} 行</span>
       </h3>
       {children}
     </div>
@@ -337,7 +337,7 @@ export function AgentsPage() {
       >
         <h2 className="text-sm font-semibold">
           Agent 定义与能力绑定
-          <span className="ml-2 text-xs font-normal text-base-content/50">
+          <span className="ml-2 text-xs font-normal text-muted">
             共 {defs.data?.total ?? 0} 条定义（{defs.data?.agents ?? 0} 个 agent）
           </span>
         </h2>
@@ -354,7 +354,7 @@ export function AgentsPage() {
           />
         ) : (
           <>
-            <p className="mt-1 text-[11px] text-base-content/40">
+            <p className="mt-1 text-[11px] text-muted">
               {defs.data?.runs_by_state && Object.keys(defs.data.runs_by_state).length > 0
                 ? `运行合计 ${defs.data.runs_total ?? 0} 条 · ${Object.entries(
                     defs.data.runs_by_state,
@@ -379,7 +379,7 @@ export function AgentsPage() {
             </div>
             {selectedAgent ? (
               <div className="mt-3 border-t border-edge-soft pt-3">
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-muted">
                   当前 agent：<span className="break-all font-medium">{selectedAgent}</span>
                   <button
                     type="button"
@@ -410,7 +410,7 @@ export function AgentsPage() {
       >
         <h2 className="text-sm font-semibold">
           运行记录与步骤轨迹回放
-          <span className="ml-2 text-xs font-normal text-base-content/50">
+          <span className="ml-2 text-xs font-normal text-muted">
             共 {runs.data?.total ?? 0} 条
           </span>
         </h2>
@@ -439,16 +439,16 @@ export function AgentsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <StateBadge state={run.state} />
                     {run.steps_count !== undefined ? (
-                      <span className="text-[11px] text-base-content/50">{run.steps_count} 步</span>
+                      <span className="text-[11px] text-muted">{run.steps_count} 步</span>
                     ) : null}
                     {run.created_at ? (
-                      <span className="text-[11px] text-base-content/40">
+                      <span className="text-[11px] text-muted">
                         发起 {formatDateTime(run.created_at)}
                       </span>
                     ) : null}
                   </div>
                   <p className="mt-1.5 break-all text-sm font-medium">{run.run_id}</p>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-base-content/40">
+                  <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                     <span className="break-all">
                       {run.agent_id} @ v{run.agent_version}
                     </span>
@@ -461,7 +461,7 @@ export function AgentsPage() {
         )}
         {selectedRun ? (
           <div className="mt-3 border-t border-edge-soft pt-3">
-            <p className="text-xs text-base-content/50">
+            <p className="text-xs text-muted">
               当前 run：<span className="break-all font-medium">{selectedRun}</span>
               <button
                 type="button"
@@ -481,7 +481,7 @@ export function AgentsPage() {
                   <h3 className="text-xs font-semibold">概要与关联（P7-5 六 ID 面）</h3>
                   <div className="mt-2 space-y-1">
                     <div className="flex gap-2 text-xs">
-                      <span className="w-24 shrink-0 text-base-content/50">agent</span>
+                      <span className="w-24 shrink-0 text-muted">agent</span>
                       <span className="min-w-0 flex-1 break-all">
                         {detail.run.agent_id} @ v{detail.run.agent_version}
                       </span>
@@ -499,18 +499,18 @@ export function AgentsPage() {
                     <CorrelationRow label="evidence" ids={detail.correlation.evidence_ids} />
                     {detail.control?.goal_text ? (
                       <div className="flex gap-2 text-xs">
-                        <span className="w-24 shrink-0 text-base-content/50">goal</span>
+                        <span className="w-24 shrink-0 text-muted">goal</span>
                         <span className="min-w-0 flex-1 break-all">{detail.control.goal_text}</span>
                       </div>
                     ) : null}
                     {detail.control?.retry_of_run_id ? (
                       <div className="flex gap-2 text-xs">
-                        <span className="w-24 shrink-0 text-base-content/50">retry_of</span>
+                        <span className="w-24 shrink-0 text-muted">retry_of</span>
                         <TraceIdLink id={detail.control.retry_of_run_id} />
                       </div>
                     ) : null}
                     <div className="flex gap-2 text-xs">
-                      <span className="w-24 shrink-0 text-base-content/50">时间</span>
+                      <span className="w-24 shrink-0 text-muted">时间</span>
                       <span className="min-w-0 flex-1 break-all">
                         {detail.run.created_at
                           ? `发起 ${formatDateTime(detail.run.created_at)}`
@@ -528,12 +528,12 @@ export function AgentsPage() {
                 <div className="rounded-control border border-edge-soft p-3">
                   <h3 className="text-xs font-semibold">
                     步骤轨迹回放（agent_run_step，seq 升序）
-                    <span className="ml-2 font-normal text-base-content/50">
+                    <span className="ml-2 font-normal text-muted">
                       {detail.counts.steps} 步
                     </span>
                   </h3>
                   {detail.steps.length === 0 ? (
-                    <p className="mt-1 text-xs text-base-content/50">
+                    <p className="mt-1 text-xs text-muted">
                       该 run 无步骤轨迹（014 轨迹面为空：轨迹落库失败降级或历史 run）。
                     </p>
                   ) : (
@@ -557,7 +557,7 @@ export function AgentsPage() {
       >
         <h2 className="text-sm font-semibold">
           Task / Evidence / Research Memory 视图
-          <span className="ml-2 text-xs font-normal text-base-content/50">013 三记忆表</span>
+          <span className="ml-2 text-xs font-normal text-muted">013 三记忆表</span>
         </h2>
         {!selectedRun ? (
           <EmptyPanel text="在上方第二区选择一条运行后，展示该 run 的三类 Memory 视图（run 内工作记忆 / 证据指针台账 / 可追溯研究成果）。" />
@@ -572,13 +572,13 @@ export function AgentsPage() {
               count={memories.task.length}
             >
               {memories.task.length === 0 ? (
-                <p className="mt-1 text-xs text-base-content/50">该 run 无 Task Memory 行。</p>
+                <p className="mt-1 text-xs text-muted">该 run 无 Task Memory 行。</p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {memories.task.map((row) => (
                     <li key={row.memory_id} className="text-xs">
                       <span className="break-all font-medium">{row.memory_id}</span>
-                      <span className="ml-2 text-base-content/50">round {row.round}</span>
+                      <span className="ml-2 text-muted">round {row.round}</span>
                       <span className="ml-2 badge badge-sm badge-ghost">{row.lifecycle}</span>
                       {row.summary ? <span className="ml-2 break-all">{row.summary}</span> : null}
                     </li>
@@ -591,7 +591,7 @@ export function AgentsPage() {
               count={memories.evidence.length}
             >
               {memories.evidence.length === 0 ? (
-                <p className="mt-1 text-xs text-base-content/50">该 run 无 Evidence Memory 行。</p>
+                <p className="mt-1 text-xs text-muted">该 run 无 Evidence Memory 行。</p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {memories.evidence.map((row) => (
@@ -601,7 +601,7 @@ export function AgentsPage() {
                       {row.artifact_id ? <TraceIdLink id={row.artifact_id} /> : null}
                       <span className="badge badge-sm badge-ghost">{row.lifecycle}</span>
                       {row.content_hash ? (
-                        <span className="break-all text-[11px] text-base-content/40">
+                        <span className="break-all text-[11px] text-muted">
                           sha256 {row.content_hash.slice(0, 16)}…
                         </span>
                       ) : null}
@@ -615,7 +615,7 @@ export function AgentsPage() {
               count={memories.research.length}
             >
               {memories.research.length === 0 ? (
-                <p className="mt-1 text-xs text-base-content/50">该 run 无 Research Memory 行。</p>
+                <p className="mt-1 text-xs text-muted">该 run 无 Research Memory 行。</p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {memories.research.map((row) => (
@@ -623,11 +623,11 @@ export function AgentsPage() {
                       <span className="break-all font-medium">{row.memory_id}</span>
                       <span className="ml-2">{row.title}</span>
                       <span className="ml-2 badge badge-sm badge-ghost">{row.lifecycle}</span>
-                      <span className="ml-2 text-base-content/50">
+                      <span className="ml-2 text-muted">
                         {Array.isArray(row.refs) ? `${row.refs.length} 条回链` : "0 条回链"}
                       </span>
                       {row.summary ? (
-                        <p className="mt-0.5 break-all text-base-content/60">{row.summary}</p>
+                        <p className="mt-0.5 break-all text-muted">{row.summary}</p>
                       ) : null}
                     </li>
                   ))}

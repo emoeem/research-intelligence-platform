@@ -1370,7 +1370,130 @@ def handle_plugin_detail(conn: sqlite3.Connection, params: dict, plugin_id: str)
         ro.close()
 
 
-PLUGIN_WRITE_ACTIONS = ("enable", "disable", "uninstall", "ingest")
+PLUGIN_WRITE_ACTIONS = ("enable", "disable", "uninstall", "ingest", "cleanup-rollback")
+
+# P10-2：信任级策略表缓存（plugin-registry::trust_policy 单一事实来源，
+# rp-plugin trust-policy 子命令承载；进程内缓存一次，CLI 词形漂移即失效）。
+_TRUST_POLICY_CACHE: dict | None = None
+
+
+def _rp_plugin_json(extra_args: list, timeout_s: int = PLUGIN_SUBPROCESS_TIMEOUT_S) -> dict:
+    """跑 rp-plugin 子进程并解析单行 JSON stdout（no-db 只读子命令通道：
+    manifest-inspect / trust-policy）。非零退出 → 502（stderr 机器可读
+    JSON 原样透出 code/message）。"""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            [PLUGIN_BIN, *PLUGIN_BIN_ARGS, *extra_args],
+            capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "plugin_cmd_timeout", f"rp-plugin 超时（{timeout_s}s）：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "plugin_cmd_spawn_failed", f"rp-plugin 启动失败：{exc}") from exc
+    if proc.returncode != 0:
+        try:
+            err = json.loads(proc.stderr) if proc.stderr.strip() else {}
+        except json.JSONDecodeError:
+            err = {}
+        raise ApiError(502, err.get("code", "plugin_cmd_failed"),
+                       err.get("message", f"rp-plugin 退出码 {proc.returncode}"))
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "plugin_cmd_bad_output", f"rp-plugin 输出非 JSON：{exc}") from exc
+
+
+def load_trust_policy() -> dict:
+    """四档信任级策略表（§6 确认强度分级 + D10；缓存一次）。"""
+    global _TRUST_POLICY_CACHE
+    if _TRUST_POLICY_CACHE is None:
+        payload = _rp_plugin_json(["trust-policy"])
+        _TRUST_POLICY_CACHE = payload.get("policy") or {}
+        if not _TRUST_POLICY_CACHE.get("tiers"):
+            raise ApiError(502, "trust_policy_unavailable",
+                           "信任级策略表为空（rp-plugin trust-policy 输出异常）")
+    return _TRUST_POLICY_CACHE
+
+
+def trust_tier(trust: str) -> dict:
+    """取单档策略（install_confirmation / required_confirm_fields 等）。"""
+    for tier in load_trust_policy().get("tiers", []):
+        if tier.get("trust_level") == trust:
+            return tier
+    raise ApiError(500, "trust_policy_missing_tier", f"策略表缺少信任级：{trust}")
+
+
+def handle_plugin_trust_policy(_conn, params) -> dict:  # noqa: ARG001
+    """/api/plugins/trust-policy：四档策略表（web 对话框与文档面单一来源）。"""
+    return load_trust_policy()
+
+
+def plugin_manifest_inspect(body: dict) -> dict:
+    """POST /api/plugins/manifest-inspect：Manifest 只读预检（安装确认
+    对话框的预览面：id/version/license + 来源推导信任档位与确认强度）。"""
+    manifest_path = (body.get("manifest_path") or "").strip()
+    if not manifest_path:
+        raise ApiError(400, "manifest_path_required", "manifest-inspect 需要 manifest_path")
+    rel = _resolve_repo_manifest(manifest_path)
+    payload = _rp_plugin_json(["manifest-inspect", "--manifest", rel])
+    return {"ok": True, "result": payload}
+
+
+def _resolve_repo_manifest(manifest_path: str) -> str:
+    """仓库内真实文件守卫（install/upgrade/manifest-inspect 共用）。"""
+    real = os.path.realpath(os.path.join(REPO_ROOT, manifest_path))
+    root = os.path.realpath(REPO_ROOT)
+    if not (real.startswith(root + os.sep) and os.path.isfile(real)):
+        raise ApiError(400, "manifest_path_outside_repo",
+                       f"manifest_path 必须是仓库内的真实文件：{manifest_path}")
+    return os.path.relpath(real, root)
+
+
+def _active_plugin_trust(plugin_id: str) -> str:
+    """当前 active 插件的信任级（upgrade 沿用；无 active 行 → 404）。"""
+    if not plugin_db_ready():
+        raise ApiError(503, "plugin_db_missing", f"插件数据面不存在：{PLUGIN_DB_PATH}")
+    conn = connect_plugin_ro()
+    try:
+        row = query_one(
+            conn,
+            "SELECT trust_level FROM plugin WHERE plugin_id = ?1 AND is_active = 1",
+            (plugin_id,),
+        )
+    finally:
+        conn.close()
+    if row is None:
+        raise ApiError(404, "plugin_not_found", f"插件不存在或非 active：{plugin_id}")
+    return row["trust_level"]
+
+
+def _enforce_confirmation(trust: str, body: dict, plugin_id: str, manifest_rel: str) -> None:
+    """安装/升级确认分级强制（§6 信任级驱动 + D10 语义的写入闸）：
+    按策略表 required_confirm_fields 执行；remote 的 confirm_id 与
+    Manifest id 对账（服务端 CLI 预检，fail-closed）。"""
+    tier = trust_tier(trust)
+    required = tier.get("required_confirm_fields") or []
+    if "confirm" in required and not body.get("confirm"):
+        raise ApiError(
+            400, "install_confirmation_required",
+            f"信任级 {trust}（{tier.get('confirmation_label', trust)}）需要 confirm=true",
+        )
+    if "confirm_id" in required:
+        expected = _rp_plugin_json(["manifest-inspect", "--manifest", manifest_rel]).get("id")
+        if not expected:
+            raise ApiError(502, "manifest_inspect_failed",
+                           f"Manifest id 解析失败：{manifest_rel}")
+        if body.get("confirm_id") != expected:
+            raise ApiError(
+                400, "install_confirm_id_mismatch",
+                f"信任级 {trust} 需要输入插件 id 二次确认：期望 {expected!r}，"
+                f"收到 {body.get('confirm_id')!r}",
+            )
+    if not plugin_id:
+        # install 场景 plugin_id 允许为空（body 只带 manifest_path）。
+        return
 
 
 def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
@@ -1383,27 +1506,32 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
         manifest_path = (body.get("manifest_path") or "").strip()
         if not manifest_path:
             raise ApiError(400, "manifest_path_required", "install 需要 manifest_path")
-        real = os.path.realpath(os.path.join(REPO_ROOT, manifest_path))
-        root = os.path.realpath(REPO_ROOT)
-        if not (real.startswith(root + os.sep) and os.path.isfile(real)):
-            raise ApiError(400, "manifest_path_outside_repo",
-                           f"manifest_path 必须是仓库内的真实文件：{manifest_path}")
-        rel = os.path.relpath(real, root)
+        rel = _resolve_repo_manifest(manifest_path)
         args += ["install", "--manifest", rel]
         trust = (body.get("trust") or "local").strip()
         if trust not in ("official", "community", "local", "remote"):
             raise ApiError(400, "bad_trust", f"trust 取值非法：{trust!r}")
         args += ["--trust", trust]
+        # P10-2：安装确认强度分级强制（§6 信任级驱动，策略表单一来源
+        # plugin-registry::trust_policy）。official 无额外字段；community/
+        # local 需 confirm=true；remote 需 confirm=true 且 confirm_id 与
+        # Manifest id 一致（服务端 CLI 预检解析，fail-closed）。
+        _enforce_confirmation(trust, body, plugin_id, rel)
     elif action == "upgrade":
         manifest_path = (body.get("manifest_path") or "").strip()
         if not manifest_path:
             raise ApiError(400, "manifest_path_required", "upgrade 需要 manifest_path（新版本 Manifest）")
-        real = os.path.realpath(os.path.join(REPO_ROOT, manifest_path))
-        root = os.path.realpath(REPO_ROOT)
-        if not (real.startswith(root + os.sep) and os.path.isfile(real)):
-            raise ApiError(400, "manifest_path_outside_repo",
-                           f"manifest_path 必须是仓库内的真实文件：{manifest_path}")
-        args += ["upgrade", plugin_id, "--manifest", os.path.relpath(real, root)]
+        rel = _resolve_repo_manifest(manifest_path)
+        # P10-2：升级信任级沿用当前 active 插件信任级（§6 信任级驱动升级
+        # 确认强度；CLI 缺省 local 会静默降档，server 侧显式对齐）。
+        current_trust = _active_plugin_trust(plugin_id)
+        args += ["upgrade", plugin_id, "--manifest", rel, "--trust", current_trust]
+        _enforce_confirmation(current_trust, body, plugin_id, rel)
+    elif action == "cleanup-rollback":
+        # P10-2 D6：回滚窗口清理（§5.3 第 5 步，用户确认后清理）。
+        args += ["cleanup-rollback", plugin_id]
+        if body.get("confirm"):
+            args += ["--confirm"]
     else:
         args += [action, plugin_id]
     try:
@@ -2712,6 +2840,7 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
 
 API_ROUTES = {
     "/api/plugins": handle_plugins_list,
+    "/api/plugins/trust-policy": handle_plugin_trust_policy,
     "/api/knowledge_sources": handle_knowledge_sources,
     "/api/stats": lambda conn, params: handle_stats(conn),
     "/api/resources": handle_resources,
@@ -2950,6 +3079,10 @@ class RpHandler(BaseHTTPRequestHandler):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3 and parts[2] == "install":
                 self.send_json(plugin_write("install", body.get("plugin_id") or "", body))
+                return
+            # P10-2：Manifest 只读预检（安装确认对话框的预览面，零写入）。
+            if len(parts) == 3 and parts[2] == "manifest-inspect":
+                self.send_json(plugin_manifest_inspect(body))
                 return
             if len(parts) == 4:
                 plugin_id, action = unquote(parts[2]), parts[3]

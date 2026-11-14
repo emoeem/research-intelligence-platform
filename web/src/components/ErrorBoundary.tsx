@@ -61,13 +61,13 @@ export class ErrorBoundary extends Component<Props, State> {
               </svg>
             </div>
             <h2 className="text-lg font-bold tracking-tight">页面出错了</h2>
-            <p className="mt-1 text-sm text-base-content/60">
+            <p className="mt-1 text-sm text-muted">
               {import.meta.env.PROD
                 ? "出现了一个意外错误，请刷新页面重试。"
                 : error.message || error.name || "未知错误"}
             </p>
             {!import.meta.env.PROD && error.stack ? (
-              <pre className="mt-3 max-h-32 overflow-auto rounded-control bg-base-200 p-3 text-left text-[11px] leading-5 text-base-content/60">
+              <pre className="mt-3 max-h-32 overflow-auto rounded-control bg-base-200 p-3 text-left text-[11px] leading-5 text-muted">
                 {error.stack}
               </pre>
             ) : null}

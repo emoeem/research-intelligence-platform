@@ -99,7 +99,7 @@ export function RunsPage() {
         <EmptyPanel text="暂无 Run：工具派发链（Phase 1/3）未产生运行记录。" />
       ) : (
         <>
-          <p className="mb-2 text-xs text-base-content/50">
+          <p className="mb-2 text-xs text-muted">
             {status ? `过滤 ${status}：` : ""}共 {list.data?.total ?? 0} 条（显示 {items.length}
             ，数据源：
             {list.data?.source === "aux" ? "RP_AUX_DB 开发库副本" : list.data?.source}）
@@ -123,13 +123,13 @@ export function RunsPage() {
                       <span className="badge badge-sm badge-error">{run.error_category}</span>
                     ) : null}
                     {run.duration_ms !== null && run.duration_ms !== undefined ? (
-                      <span className="text-[11px] text-base-content/50">{run.duration_ms} ms</span>
+                      <span className="text-[11px] text-muted">{run.duration_ms} ms</span>
                     ) : null}
                   </div>
                   <p className="mt-1.5 break-all text-sm font-medium">{run.run_id}</p>
                   {run.trace_id ? (
                     <p className="mt-1 text-[11px]">
-                      <span className="text-base-content/50">trace </span>
+                      <span className="text-muted">trace </span>
                       <Link
                         to={`/traces?id=${encodeURIComponent(run.trace_id)}`}
                         className="text-primary underline underline-offset-2"
@@ -138,7 +138,7 @@ export function RunsPage() {
                       </Link>
                     </p>
                   ) : null}
-                  <p className="mt-1 text-[11px] text-base-content/40">
+                  <p className="mt-1 text-[11px] text-muted">
                     {run.tool_id}
                     {run.tool_version ? ` @ v${run.tool_version}` : ""}
                     {run.created_at ? ` · 发起 ${formatDateTime(run.created_at)}` : ""}

@@ -149,7 +149,7 @@ export function NodeInspector({
 
       {selectedNode && data ? (
         <div className="rounded-control border border-edge-soft p-2">
-          <p className="text-[10px] text-base-content/50">
+          <p className="text-[10px] text-muted">
             选中节点 <span className="font-mono">{data.nodeType}</span>
             {entry ? ` · ${entry.label}` : ""}
           </p>
@@ -250,7 +250,7 @@ export function NodeInspector({
             </div>
           ) : null}
           {data.nodeType === "start" || data.nodeType === "end" || data.nodeType === "parallel" ? (
-            <p className="mt-2 text-[10px] text-base-content/50">该类型无参数（DSL 词表口径）。</p>
+            <p className="mt-2 text-[10px] text-muted">该类型无参数（DSL 词表口径）。</p>
           ) : null}
 
           <button
@@ -263,7 +263,7 @@ export function NodeInspector({
           </button>
         </div>
       ) : (
-        <p className="text-[11px] text-base-content/50">
+        <p className="text-[11px] text-muted">
           点击或拖拽画布节点后在此编辑参数；未选中时保持空白（不伪造表单）。
         </p>
       )}
@@ -273,7 +273,7 @@ export function NodeInspector({
           className="rounded-control border border-edge-soft p-2"
           data-testid="inspector-edge-form"
         >
-          <p className="text-[10px] text-base-content/50">
+          <p className="text-[10px] text-muted">
             选中边{" "}
             <span className="font-mono">
               {String(selectedEdge.source)} → {String(selectedEdge.target)}

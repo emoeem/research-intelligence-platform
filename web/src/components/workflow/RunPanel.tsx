@@ -61,7 +61,7 @@ function NodeRow({
       <span className={`badge badge-sm ${NODE_STATE_BADGE[node.state] ?? "badge-ghost"}`}>
         {node.state}
       </span>
-      <span className="text-base-content/50">attempt {node.attempt}</span>
+      <span className="text-muted">attempt {node.attempt}</span>
       {node.tool_run_id ? (
         <Link
           to={`/runs/${encodeURIComponent(node.tool_run_id)}`}
@@ -83,7 +83,7 @@ function NodeRow({
       ) : null}
       {node.output !== null && node.output !== undefined ? (
         <details className="w-full">
-          <summary className="cursor-pointer text-[10px] text-base-content/50">节点产物</summary>
+          <summary className="cursor-pointer text-[10px] text-muted">节点产物</summary>
           <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[10px] leading-4">
             {JSON.stringify(node.output, null, 2)}
           </pre>
@@ -139,7 +139,7 @@ export function RunPanel({
     >
       <h2 className="text-xs font-semibold text-base-content/70">
         执行日志、节点状态与产物
-        <span className="ml-2 text-[10px] font-normal text-base-content/40">
+        <span className="ml-2 text-[10px] font-normal text-muted">
           WorkflowRun {runs.length} 条 · 节点行 017 · 控制行 018
         </span>
       </h2>
@@ -147,9 +147,9 @@ export function RunPanel({
         {/* run 列表 */}
         <div className="min-w-0">
           {runsLoading ? (
-            <p className="text-xs text-base-content/50">加载中…</p>
+            <p className="text-xs text-muted">加载中…</p>
           ) : runs.length === 0 ? (
-            <p className="text-xs text-base-content/50">
+            <p className="text-xs text-muted">
               暂无运行记录：在上方运行配置发起一次 run。
             </p>
           ) : (
@@ -166,7 +166,7 @@ export function RunPanel({
                   >
                     <StateBadge state={item.state} />
                     <span className="break-all font-mono">{item.run_id}</span>
-                    <span className="ml-auto text-[10px] text-base-content/40">
+                    <span className="ml-auto text-[10px] text-muted">
                       {item.created_at ? formatDateTime(item.created_at) : ""}
                     </span>
                   </button>
@@ -179,11 +179,11 @@ export function RunPanel({
         {/* 选中 run 详情 */}
         <div className="min-w-0 border-l border-edge-soft pl-3">
           {!selectedRunId ? (
-            <p className="text-xs text-base-content/50">
+            <p className="text-xs text-muted">
               选择左侧一条 run 查看节点状态、控制行与产物。
             </p>
           ) : detailLoading && !detail ? (
-            <p className="text-xs text-base-content/50">加载详情…</p>
+            <p className="text-xs text-muted">加载详情…</p>
           ) : detail && detail.run ? (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -202,7 +202,7 @@ export function RunPanel({
                   </span>
                 ) : null}
                 {detail.checkpoint_seq !== null && detail.checkpoint_seq !== undefined ? (
-                  <span className="text-[10px] text-base-content/40">
+                  <span className="text-[10px] text-muted">
                     checkpoint seq {detail.checkpoint_seq}
                   </span>
                 ) : null}
@@ -228,7 +228,7 @@ export function RunPanel({
                 </span>
               </div>
               <p className="break-all font-mono text-xs">{detail.run.run_id}</p>
-              <p className="text-[11px] text-base-content/50">
+              <p className="text-[11px] text-muted">
                 {detail.run.workflow_id} @ v{detail.run.workflow_version}
                 {detail.run.trace_id ? (
                   <>
@@ -267,7 +267,7 @@ export function RunPanel({
                 </div>
               ) : null}
               {correlation ? (
-                <p className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-base-content/40">
+                <p className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
                   {correlation.task_id ? <span>task {correlation.task_id}</span> : null}
                   {correlation.tool_run_id ? <span>tool_run {correlation.tool_run_id}</span> : null}
                   {correlation.agent_run_id ? (
@@ -289,11 +289,11 @@ export function RunPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-[11px] text-base-content/40">该 run 暂无节点状态行。</p>
+                <p className="text-[11px] text-muted">该 run 暂无节点状态行。</p>
               )}
               {run?.output !== null && run?.output !== undefined ? (
                 <details>
-                  <summary className="cursor-pointer text-[10px] text-base-content/50">
+                  <summary className="cursor-pointer text-[10px] text-muted">
                     run 产物 output
                   </summary>
                   <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[10px] leading-4">
@@ -311,7 +311,7 @@ export function RunPanel({
               </button>
             </div>
           ) : (
-            <p className="text-xs text-base-content/50">详情不可读（服务端守卫降级）。</p>
+            <p className="text-xs text-muted">详情不可读（服务端守卫降级）。</p>
           )}
         </div>
       </div>

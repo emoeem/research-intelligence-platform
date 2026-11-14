@@ -43,7 +43,10 @@
   --noise: 0;
 }
 
-/* RIP 晨白（明亮主题），同一色相家族的浅色映射。 */
+/* RIP 晨白（明亮主题），同一色相家族的浅色映射。
+ * P10-4 axe AA 对比度门：primary 从 L=0.55 压到 L=0.52（浅底 4.36:1 不达
+ * AA 4.5:1，压后 base-100 4.91 / base-200 4.52 / sidebar 4.65，实测口径见
+ * docs/phase10/DEPENDENCIES-WEB.md 同批 axe 报告）。 */
 @plugin "daisyui/theme" {
   name: "rip-light";
   default: false;
@@ -52,7 +55,7 @@
   --color-base-200: oklch(0.955 0.005 240);
   --color-base-300: oklch(0.91 0.008 240);
   --color-base-content: oklch(0.24 0.02 255);
-  --color-primary: oklch(0.55 0.11 215);
+  --color-primary: oklch(0.52 0.11 215);
   --color-primary-content: oklch(0.985 0.005 215);
   --color-secondary: oklch(0.5 0.12 300);
   --color-secondary-content: oklch(0.985 0.005 300);
@@ -80,12 +83,18 @@
 
 /* 应用层 token（第二层）：随主题切换的语义面颜色，写在自己的
  * data-theme 块里，经下方 @theme inline 映射成 Tailwind 工具类
- * （bg-surface-2、border-edge 之类）。 */
+ * （bg-surface-2、border-edge 之类）。
+ * --muted（P10-4 axe AA 对比度门）：弱化文字的实色 token，取代
+ * text-base-content/40 至 /60 与 opacity 0.5 至 0.6 的透明度稀释
+ * （透明度混色在浅底上不可达 4.5:1，实色才能过 AA；两主题取值
+ * 在自身全部底色（base-100/200/300、surface-2、sidebar）上实测
+ * ≥5.79:1，计算口径见批次报告）。 */
 [data-theme="rip-dark"] {
   --edge: oklch(0.32 0.02 255);
   --edge-soft: oklch(0.26 0.02 255);
   --sidebar: oklch(0.18 0.025 255);
   --surface-2: oklch(0.27 0.02 255);
+  --muted: oklch(0.713 0.024 260.7);
 }
 
 [data-theme="rip-light"] {
@@ -93,6 +102,7 @@
   --edge-soft: oklch(0.93 0.006 240);
   --sidebar: oklch(0.965 0.005 240);
   --surface-2: oklch(0.935 0.007 240);
+  --muted: oklch(0.446 0.026 256.8);
 }
 
 @theme inline {
@@ -100,6 +110,7 @@
   --color-edge-soft: var(--edge-soft);
   --color-sidebar: var(--sidebar);
   --color-surface-2: var(--surface-2);
+  --color-muted: var(--muted);
 }
 
 @theme {

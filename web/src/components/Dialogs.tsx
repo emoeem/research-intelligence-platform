@@ -276,7 +276,7 @@ function DialogPanel({
           </h3>
           <p
             id={descId}
-            className="mt-1 whitespace-pre-wrap text-sm leading-6 text-base-content/60"
+            className="mt-1 whitespace-pre-wrap text-sm leading-6 text-muted"
           >
             {message}
           </p>
@@ -300,7 +300,7 @@ function DialogPanel({
               ref={cancelRef}
               type="button"
               onClick={() => onClose(false)}
-              className="flex-1 border-r border-edge-soft py-3 text-sm font-semibold text-base-content/60 transition-colors hover:bg-base-200"
+              className="flex-1 border-r border-edge-soft py-3 text-sm font-semibold text-muted transition-colors hover:bg-base-200"
             >
               {cancelLabel}
             </button>

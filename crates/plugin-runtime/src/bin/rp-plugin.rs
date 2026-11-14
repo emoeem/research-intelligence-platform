@@ -57,11 +57,20 @@ fn usage_text() -> &'static str {
      \x20 enable|disable|uninstall|activate|deactivate <id>\n\
      \x20 load <id> | mark-error <id> | list\n\
      \x20 upgrade <id> [--new-version V] [--package DIR]\n\
-     \x20 update-check <id>\n\
+     \x20 update-check <id> --new-version X.Y.Z [--auto]\n\
+     \x20 rollback-window <id> | cleanup-rollback <id> [--confirm]\n\
      \x20 ingest [--dry-run] [--idempotency-key K] [--max-files N] [--max-bytes N]\n\
      \x20   [--max-seconds S] [--retries N]\n\
      \x20 sync <id> [--dry-run] [--idempotency-key K] [--map-candidates]\n\
      \x20 review <id> --keys k1,k2 --status APPROVED\n\
+     \n\
+     no-db commands（不需要 --db，只读注册表面）：\n\
+     \x20 trust-policy\n\
+     \x20 manifest-inspect --manifest <path>\n\
+     \x20 catalog-publish --out <path> [--manifests-dir <dir>]\n\
+     \x20   [--trust-default official|community|local|remote]\n\
+     \x20   [--trust-override id=trust]...\n\
+     \x20 catalog-verify --catalog <path>\n\
      \n\
      exit: ok=0, 运行时拒绝=1, 用法错误=2\n\
      help: rp-plugin --help（stdout, exit 0）"
@@ -162,6 +171,23 @@ fn flag_value(rest: &[String], flag: &str) -> Option<String> {
         .position(|a| a == flag)
         .and_then(|i| rest.get(i + 1))
         .cloned()
+}
+
+/// 同名旗标全部取值（P10-2 catalog-publish --trust-override 可多次）。
+fn flag_values(rest: &[String], flag: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == flag {
+            if let Some(v) = rest.get(i + 1) {
+                out.push(v.clone());
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    out
 }
 
 fn positional_arg(rest: &[String], index: usize) -> Option<String> {
@@ -316,11 +342,143 @@ fn manifest_id_version(manifest: &Value) -> (String, String) {
     (id, version)
 }
 
+/// 不需要数据库的命令（只读注册表/策略面：P10-2 trust-policy、
+/// manifest-inspect、catalog-publish、catalog-verify）。在 parse_args 的
+/// --db 门禁之前分发。
+const NO_DB_COMMANDS: [&str; 4] = [
+    "trust-policy",
+    "manifest-inspect",
+    "catalog-publish",
+    "catalog-verify",
+];
+
+fn run_no_db_command(command: &str, raw: &[String]) -> Value {
+    match command {
+        "trust-policy" => {
+            // P10-2：四档信任级策略表（§6 确认强度分级 + D10），server/web
+            // 共用同一份（单一事实来源 plugin-registry::trust_policy）。
+            json!({"command": "trust-policy", "policy": plugin_registry::trust_policy_json()})
+        }
+        "manifest-inspect" => {
+            // 只读 Manifest 预检（server install 确认分级与 web 对话框的
+            // 预览面）：id/version/kind/license/source + 按来源推导的信任
+            // 档位与确认强度建议。
+            let (_, manifest) = manifest_with_path(raw);
+            let (id, version) = manifest_id_version(&manifest);
+            let source = manifest.get("source").cloned().unwrap_or(json!({}));
+            let source_type = source
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let default_trust = plugin_registry::source_default_trust(source_type);
+            let confirmation = plugin_registry::install_confirmation(default_trust);
+            json!({"command": "manifest_inspect", "id": id, "version": version,
+                   "kind": manifest.get("kind").and_then(Value::as_str).unwrap_or_default(),
+                   "license": manifest.get("license").and_then(Value::as_str).unwrap_or_default(),
+                   "homepage": manifest.get("homepage").and_then(Value::as_str),
+                   "source": source,
+                   "source_default_trust": default_trust.as_str(),
+                   "install_confirmation": confirmation.as_str(),
+                   "confirmation_label": confirmation.label(),
+                   "auto_update_prompt": plugin_registry::auto_update_prompt_allowed(default_trust)})
+        }
+        "catalog-publish" => {
+            // P10-2：目录发布形态（ROADMAP P10-1）——从 Manifest 目录构建
+            // 确定性目录文档（逐条目 trust + 确认强度 + sha 完整性）并落盘。
+            let out = flag_value(raw, "--out").unwrap_or_else(|| usage());
+            let dir = flag_value(raw, "--manifests-dir")
+                .unwrap_or_else(|| "manifests/plugins".to_string());
+            let default_trust = match flag_value(raw, "--trust-default") {
+                Some(t) => plugin_registry::TrustLevel::parse(&t).unwrap_or_else(|| {
+                    die(plugin_runtime::RuntimeError {
+                        code: "trust_invalid".into(),
+                        message: format!(
+                            "--trust-default {t:?} not in official/community/local/remote"
+                        ),
+                        details: None,
+                    })
+                }),
+                None => plugin_registry::TrustLevel::Official,
+            };
+            let mut overrides: Vec<(String, plugin_registry::TrustLevel)> = Vec::new();
+            // 形态：--trust-override id=trust（可多次，全部收集）。
+            for pair in flag_values(raw, "--trust-override") {
+                let Some((id, trust)) = pair.split_once('=') else {
+                    die(plugin_runtime::RuntimeError {
+                        code: "trust_invalid".into(),
+                        message: format!("--trust-override {pair:?} must be id=trust"),
+                        details: None,
+                    });
+                };
+                match plugin_registry::TrustLevel::parse(trust) {
+                    Some(t) => overrides.push((id.to_string(), t)),
+                    None => die(plugin_runtime::RuntimeError {
+                        code: "trust_invalid".into(),
+                        message: format!("--trust-override {pair:?}: trust {trust:?} invalid"),
+                        details: None,
+                    }),
+                }
+            }
+            let catalog =
+                plugin_registry::build_catalog(Path::new(&dir), default_trust, &overrides)
+                    .unwrap_or_else(|e| {
+                        die(plugin_runtime::RuntimeError {
+                            code: "catalog_publish_failed".into(),
+                            message: e.to_string(),
+                            details: None,
+                        })
+                    });
+            let out_path = PathBuf::from(&out);
+            plugin_registry::write_catalog(&catalog, &out_path).unwrap_or_else(|e| {
+                die(plugin_runtime::RuntimeError {
+                    code: "catalog_publish_failed".into(),
+                    message: e.to_string(),
+                    details: None,
+                })
+            });
+            json!({"command": "catalog_publish", "out": out_path.to_string_lossy(),
+                   "default_trust": catalog.default_trust,
+                   "entries": catalog.entries.len(),
+                   "content_sha256": catalog.content_sha256,
+                   "item": catalog.entries.iter().map(|e| json!({
+                       "plugin_id": e.plugin_id, "version": e.version,
+                       "trust_level": e.trust_level,
+                       "install_confirmation": e.install_confirmation,
+                       "auto_update_prompt": e.auto_update_prompt,
+                       "manifest_path": e.manifest_path,
+                   })).collect::<Vec<_>>()})
+        }
+        "catalog-verify" => {
+            // 发布物消费面：sha 完整性 + 排序 + schema 版本校验（防篡改）。
+            let catalog_path = flag_value(raw, "--catalog").unwrap_or_else(|| usage());
+            let catalog = plugin_registry::read_and_verify_catalog(Path::new(&catalog_path))
+                .unwrap_or_else(|e| {
+                    die(plugin_runtime::RuntimeError {
+                        code: "catalog_verify_failed".into(),
+                        message: e.to_string(),
+                        details: None,
+                    })
+                });
+            json!({"command": "catalog_verify", "catalog": catalog_path,
+                   "ok": true, "entries": catalog.entries.len(),
+                   "default_trust": catalog.default_trust,
+                   "content_sha256": catalog.content_sha256})
+        }
+        _ => usage(),
+    }
+}
+
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     if raw.iter().any(|a| a == "--help" || a == "-h") {
         println!("{}", usage_text());
         std::process::exit(0);
+    }
+    // no-db 命令早分发（不触数据库与迁移，只读注册表/策略面）。
+    if let Some(command) = raw.iter().find(|a| NO_DB_COMMANDS.contains(&a.as_str())) {
+        let out = run_no_db_command(command, &raw);
+        println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+        return;
     }
     let args = parse_args();
     let ctx = open_context(&args);
@@ -649,12 +807,61 @@ fn main() {
         "update-check" => {
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
             let new_version = flag_value(&args.rest, "--new-version").unwrap_or_else(|| usage());
-            let has_new = ctx
+            // P10-2 D10 门控：--auto 走 update_check_auto（仅 official 放行，
+            // 其余信任级拒绝并 Emit blocked 留痕）；缺省 manual（全档可用）。
+            let auto = args.rest.iter().any(|a| a == "--auto");
+            let (has_new, mode) = if auto {
+                (
+                    ctx.runtime
+                        .update_check_auto("user:cli", &id, &new_version)
+                        .unwrap_or_else(|e| die(e)),
+                    "auto",
+                )
+            } else {
+                (
+                    ctx.runtime
+                        .update_check(&id, &new_version)
+                        .unwrap_or_else(|e| die(e)),
+                    "manual",
+                )
+            };
+            let state = ctx.sync_state(&[]);
+            json!({"command": "update_check", "mode": mode, "has_compatible_new_version": has_new, "state_files": state})
+        }
+        "rollback-window" => {
+            // P10-2 D6：回滚窗口版本集只读视图（非 active 版本行）。
+            let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let active = ctx.runtime.store().get_active(&id).unwrap_or_else(|e| {
+                die(plugin_runtime::RuntimeError {
+                    code: "db".into(),
+                    message: e.to_string(),
+                    details: None,
+                })
+            });
+            let active_version = match active {
+                Some(p) => p.version.clone(),
+                None => die(plugin_runtime::RuntimeError {
+                    code: "unknown_plugin".into(),
+                    message: format!("plugin {id:?} not installed"),
+                    details: None,
+                }),
+            };
+            let versions = plugin_runtime::upgrade::rollback_window(ctx.runtime.store(), &id)
+                .unwrap_or_else(|e| die(e));
+            json!({"command": "rollback_window", "plugin_id": id,
+                   "active_version": active_version, "rollback_window_versions": versions})
+        }
+        "cleanup-rollback" => {
+            // P10-2 §5.3 第 5 步执行面：回滚窗口清理（--confirm 显式确认；
+            // 未确认拒绝）。清理后 active 版本与 data_root 之外目录不动。
+            let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let confirmed = args.rest.iter().any(|a| a == "--confirm");
+            let report = ctx
                 .runtime
-                .update_check(&id, &new_version)
+                .cleanup_rollback_window("user:cli", &id, confirmed)
                 .unwrap_or_else(|e| die(e));
             let state = ctx.sync_state(&[]);
-            json!({"command": "update_check", "has_compatible_new_version": has_new, "state_files": state})
+            json!({"command": "cleanup_rollback", "report": report, "state_files": state})
         }
         "upgrade" => {
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());

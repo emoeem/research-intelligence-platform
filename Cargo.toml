@@ -28,8 +28,11 @@ rust-version = "1.99"
 authors = ["RIP core team"]
 
 [workspace.dependencies]
-# 依赖锁定最少集（DEC-001 / PROBE-RESULT.md 约定：rusqlite bundled 免系统 sqlite）
-rusqlite = { version = "0.32", features = ["bundled"] }
+# 依赖锁定最少集（DEC-001 / PROBE-RESULT.md 约定：rusqlite bundled 免系统 sqlite）。
+# backup feature（P10-1）：rusqlite 自带 backup 模块（Online Backup API 快照，
+# 纯 Rust 门控模块，bundled libsqlite3-sys 内置完整 SQLite，无新增 C 依赖与
+# 无新增 vendor）；P10-5 backup() 用它做 WAL 一致快照。
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"

@@ -1,0 +1,28 @@
+# cargo-deny 许可证合规配置（P10-4，docs/phase10/DEPENDENCIES-RUST.md）。
+# 工具口径：cargo-deny 0.20.2（EmbarkStudios 维护的成熟许可证/依赖审计工具，
+# 用户级安装 ~/.cargo/bin，不属于 workspace 依赖，vendor 零增量）。
+# 运行：仓库根 `cargo deny check licenses`（读 Cargo.lock + vendor/ 实装源，
+# 离线可跑）；输出 JSON 版本 `cargo deny check licenses --format json`。
+# 允许清单 = 逐包实装值的超集（弱著作权与许可型许可证，具体清单见批次报告）；
+# 任何 GPL/AGPL/LGPL 类强著作权或未知许可（unlicensed）一律 deny。
+
+[graph]
+# 全图（含 dev-dependencies 与 build-dependencies）：许可证合规对整棵依赖树生效。
+all-features = true
+
+[licenses]
+version = 2
+# workspace 自有 crate 已在 Cargo.toml 标 publish = false（私有工程线，不发布
+# crates.io），经 private.ignore = true 排除出许可证审计面：本清单只约束
+# 第三方依赖树（第三方未声明许可 = 不匹配 allow 清单 = deny，fail-closed）。
+private = { ignore = true }
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+# 信任 crates.io 元数据（vendor/ 内 Cargo.toml 的 license 字段与 crates.io
+# 一致，manifest 逐包人工抽样核对记录在 DEPENDENCIES-RUST.md）。
+confidence-threshold = 0.93

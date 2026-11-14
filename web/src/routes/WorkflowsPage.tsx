@@ -555,15 +555,15 @@ export function WorkflowsPage() {
           ) : null}
           {runs.error !== null ? <ErrorPanel error={runs.error} onRetry={runs.retry} /> : null}
           {runs.data?.message ? (
-            <p className="text-[11px] text-base-content/40">{runs.data.message}</p>
+            <p className="text-[11px] text-muted">{runs.data.message}</p>
           ) : null}
           {defs.data?.message && workflowId === "" ? (
-            <p className="text-[11px] text-base-content/40" data-testid="defs-empty-note">
+            <p className="text-[11px] text-muted" data-testid="defs-empty-note">
               {defs.data.message}
             </p>
           ) : null}
           {selectedRunId && runDetail.data ? (
-            <p className="text-[10px] text-base-content/40">
+            <p className="text-[10px] text-muted">
               当前 run 状态：
               <StateBadge state={runDetail.data.run?.state} />
             </p>

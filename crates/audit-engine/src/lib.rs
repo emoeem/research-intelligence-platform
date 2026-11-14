@@ -44,6 +44,9 @@ pub mod plugin_actions {
     /// 候选资源映射（SK-3：APPROVED skill_candidate 到 Resource 候选，
     /// resource-engine 受控写面）。
     pub const KNOWLEDGE_MAP_CANDIDATES: &str = "plugin.knowledge.map_candidates";
+    /// 更新检查（P10-2：mode=auto|manual，result=prompted|no_new_version|
+    /// blocked；D10 门控留痕：非 official 自动提示被拒也 Emit）。
+    pub const UPDATE_CHECK: &str = "plugin.update_check";
 }
 
 /// 审计引擎。

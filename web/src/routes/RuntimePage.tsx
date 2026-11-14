@@ -64,7 +64,7 @@ export function RuntimePage() {
         title="运行时"
         actions={<span className="badge badge-ghost">实时心跳待 Gateway 常驻编排（待验证）</span>}
       />
-      <p className="mb-3 text-xs text-base-content/50">
+      <p className="mb-3 text-xs text-muted">
         实时心跳依赖 Gateway 常驻编排（PHASE2-ACCEPTANCE §7 载明未落地，心跳为按需探测 + 600s
         间隔守卫）， 本页展示登记节点与最近心跳快照。
       </p>
@@ -80,7 +80,7 @@ export function RuntimePage() {
         <EmptyPanel text="暂无运行时节点：runtime_node 为空（Gateway 心跳尚未接入或节点未登记）。" />
       ) : (
         <>
-          <p className="mb-2 text-xs text-base-content/50">
+          <p className="mb-2 text-xs text-muted">
             共 {list.data?.total ?? 0} 个节点（数据源：
             {list.data?.source === "aux" ? "RP_AUX_DB 开发库副本" : list.data?.source}）
           </p>
@@ -101,14 +101,14 @@ export function RuntimePage() {
                     </span>
                   ) : null}
                   {node.version ? (
-                    <span className="text-[11px] text-base-content/50">{node.version}</span>
+                    <span className="text-[11px] text-muted">{node.version}</span>
                   ) : null}
                 </div>
                 <p className="mt-1.5 break-all text-sm font-medium">{node.node_id}</p>
-                <p className="mt-1 text-[11px] text-base-content/40">
+                <p className="mt-1 text-[11px] text-muted">
                   {node.endpoint ? `endpoint: ${node.endpoint}` : "endpoint: 未上报"}
                 </p>
-                <p className="mt-1 text-[11px] text-base-content/40">心跳: {heartbeatText(node)}</p>
+                <p className="mt-1 text-[11px] text-muted">心跳: {heartbeatText(node)}</p>
               </li>
             ))}
           </ul>

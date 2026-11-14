@@ -67,7 +67,7 @@ function MetaRow({ label, value }: { label: string; value: string | null | undef
   if (value === null || value === undefined || value === "") return null;
   return (
     <div className="flex gap-2 text-xs">
-      <span className="w-24 shrink-0 text-base-content/50">{label}</span>
+      <span className="w-24 shrink-0 text-muted">{label}</span>
       <span className="min-w-0 flex-1 break-all">{value}</span>
     </div>
   );
@@ -78,7 +78,7 @@ function SchemaBlock({ title, schema }: { title: string; schema: unknown }) {
     <section className="rounded-surface border border-edge bg-base-100 p-4">
       <h2 className="text-sm font-semibold">{title}</h2>
       {schema === null || schema === undefined ? (
-        <p className="mt-2 text-xs text-base-content/50">
+        <p className="mt-2 text-xs text-muted">
           该工具未登记 Schema（M 期盘点面记录，Phase 1 契约登记后此处显示真实 JSON Schema）。
         </p>
       ) : (
@@ -125,7 +125,7 @@ export function ToolDetailPage() {
     return (
       <div>
         <PageHeader title="工具详情" />
-        <p className="text-sm text-base-content/60">条目不存在。</p>
+        <p className="text-sm text-muted">条目不存在。</p>
       </div>
     );
   }
@@ -172,7 +172,7 @@ export function ToolDetailPage() {
             >
               试运行
             </button>
-            <span className="text-[11px] text-base-content/50">
+            <span className="text-[11px] text-muted">
               依赖 Phase 1/3 派发链（本阶段只读 API 无执行面）
             </span>
           </div>
@@ -216,7 +216,7 @@ export function ToolDetailPage() {
       <section className="rounded-surface border border-edge bg-base-100 p-4">
         <h2 className="text-sm font-semibold">tool_version 历史</h2>
         {versions.length === 0 ? (
-          <p className="mt-2 text-xs text-base-content/50">无版本记录。</p>
+          <p className="mt-2 text-xs text-muted">无版本记录。</p>
         ) : (
           <ul className="mt-2 space-y-2">
             {versions.map((version) => (
@@ -231,18 +231,18 @@ export function ToolDetailPage() {
                     </span>
                   ) : null}
                   {version.validated_at ? (
-                    <span className="text-[11px] text-base-content/50">
+                    <span className="text-[11px] text-muted">
                       验证于 {formatDateTime(version.validated_at)}
                     </span>
                   ) : null}
                   {version.created_at ? (
-                    <span className="text-[11px] text-base-content/50">
+                    <span className="text-[11px] text-muted">
                       登记于 {formatDateTime(version.created_at)}
                     </span>
                   ) : null}
                 </div>
                 {version.content_hash ? (
-                  <p className="mt-1 break-all text-[11px] text-base-content/40">
+                  <p className="mt-1 break-all text-[11px] text-muted">
                     sha: {version.content_hash}
                   </p>
                 ) : null}

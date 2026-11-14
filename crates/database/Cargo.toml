@@ -1,4 +1,5 @@
 [package]
+publish = false  # 私有工程线（P10-4：cargo-deny [licenses] private.ignore 口径）
 name = "database"
 version.workspace = true
 edition.workspace = true
@@ -8,3 +9,18 @@ description = "RIP 数据库基础设施：rusqlite 连接池化封装（with_co
 
 [dependencies]
 rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# 归档容器（P10-1 backup/restore）：复用 plugin-registry 已 vendor 的成熟 tar
+# 实现不手写归档解析器；无压缩 .tar 口径与 P6-4 fixture 同款（免引 flate2），
+# 完整性由 manifest 逐成员 sha256 承担，压缩面（zstd）待 P10-5 收口批次按需评估。
+tar = "0.4"
+# 逐成员 sha256 校验（manifest 完整性）：sha2 已在 vendor（0.10.9），hex 编码
+# 复用已 vendor 的 data-encoding（HEXLOWER），不手写哈希与编码轮子。
+sha2 = "0.10"
+data-encoding = "2"
+
+[[bin]]
+name = "rp-admin"
+path = "src/bin/rp-admin.rs"

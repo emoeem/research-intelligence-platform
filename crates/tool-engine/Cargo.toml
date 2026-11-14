@@ -1,4 +1,5 @@
 [package]
+publish = false  # 私有工程线（P10-4：cargo-deny [licenses] private.ignore 口径）
 name = "tool-engine"
 version.workspace = true
 edition.workspace = true
@@ -27,3 +28,8 @@ path = "src/bin/rp-tool-health.rs"
 [[bin]]
 name = "rp-knowledge-fetch"
 path = "src/bin/rp-knowledge-fetch.rs"
+
+[[bin]]
+# P10-2：镜像 digest 台账 CLI（ADR §6 镜像回滚语义命令载具）。
+name = "rp-image-pin"
+path = "src/bin/rp-image-pin.rs"

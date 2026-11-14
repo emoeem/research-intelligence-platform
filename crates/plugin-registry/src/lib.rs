@@ -20,10 +20,12 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod catalog;
 pub mod checksums;
 pub mod lock;
 pub mod manifest;
 pub mod source;
+pub mod trust_policy;
 pub mod validate;
 
 pub use checksums::{
@@ -40,6 +42,16 @@ pub use manifest::{
 pub use source::{
     default_trust as source_default_trust, fetch as source_fetch, verify as source_verify,
     FetchOutcome, Source, SourceError,
+};
+// P10-2：信任级策略面（§6 确认强度分级 + D10 自动更新默认策略）单一事实来源。
+pub use trust_policy::{
+    auto_update_prompt_allowed, install_confirmation, policy_json as trust_policy_json,
+    InstallConfirmation,
+};
+// P10-2：插件目录发布形态（ROADMAP P10-1「目录发布形态」落地）。
+pub use catalog::{
+    build_catalog, read_and_verify_catalog, write_catalog, CatalogEntry, CatalogError,
+    PluginCatalog,
 };
 // sha256 复用面（来源校验测试与外部对账用；实现为 tool-registry 既有封装）。
 pub use tool_registry::hash;

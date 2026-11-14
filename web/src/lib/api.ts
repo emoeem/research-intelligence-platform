@@ -253,26 +253,114 @@ export async function pluginAction(
   );
 }
 
+/** P10-2：四档信任级策略条目（plugin-registry::trust_policy 单一来源，
+ * /api/plugins/trust-policy）。 */
+export interface TrustPolicyTier {
+  trust_level: string;
+  install_confirmation: string;
+  confirmation_label: string;
+  extra_steps: number;
+  requires_provenance: boolean;
+  requires_typed_id: boolean;
+  required_confirm_fields: string[];
+  auto_update_prompt: boolean;
+}
+
+export interface TrustPolicy {
+  schema_version: string;
+  source: string;
+  tiers: TrustPolicyTier[];
+  notes?: string;
+}
+
+export async function fetchTrustPolicy(
+  options: { signal?: AbortSignal } = {},
+): Promise<TrustPolicy> {
+  return apiGet<TrustPolicy>("/api/plugins/trust-policy", options);
+}
+
+/** P10-2：按信任级取策略档；策略不可得时 fail-closed 走最强档
+ *（remote：显式二次确认），绝不静默降档。 */
+export function resolveTrustTier(
+  policy: TrustPolicy | null | undefined,
+  trustLevel: string,
+): TrustPolicyTier {
+  const fallback: TrustPolicyTier = {
+    trust_level: trustLevel,
+    install_confirmation: "double_confirm_typed",
+    confirmation_label: "未知来源：输入插件 id 二次确认",
+    extra_steps: 1,
+    requires_provenance: false,
+    requires_typed_id: true,
+    required_confirm_fields: ["confirm", "confirm_id"],
+    auto_update_prompt: false,
+  };
+  if (!policy?.tiers?.length) return fallback;
+  return policy.tiers.find((tier) => tier.trust_level === trustLevel) ?? fallback;
+}
+
+/** P10-2：Manifest 只读预检（安装确认对话框预览面）。 */
+export interface ManifestInspectResult {
+  id: string;
+  version: string;
+  kind: string;
+  license: string;
+  homepage?: string | null;
+  source: Record<string, unknown>;
+  source_default_trust: string;
+  install_confirmation: string;
+  confirmation_label: string;
+  auto_update_prompt: boolean;
+}
+
+export async function pluginManifestInspect(
+  manifestPath: string,
+): Promise<{ ok: boolean; result: ManifestInspectResult }> {
+  return apiSend("POST", "/api/plugins/manifest-inspect", {
+    manifest_path: manifestPath,
+  });
+}
+
+export interface PluginConfirmFields {
+  /** P10-2 确认分级：community/local 需要 true；official 可省略。 */
+  confirm?: boolean;
+  /** remote 显式二次确认：必须与 Manifest id 一致（服务端 CLI 预检对账）。 */
+  confirm_id?: string;
+}
+
 export async function pluginInstall(
   manifestPath: string,
   trust: string,
+  confirm?: PluginConfirmFields,
 ): Promise<PluginWriteResult> {
   return apiSend<PluginWriteResult>("POST", "/api/plugins/install", {
     manifest_path: manifestPath,
     trust,
+    ...confirm,
   });
 }
 
 export async function pluginUpgrade(
   pluginId: string,
   manifestPath: string,
+  confirm?: PluginConfirmFields,
 ): Promise<PluginWriteResult> {
   return apiSend<PluginWriteResult>(
     "POST",
     `/api/plugins/${encodeURIComponent(pluginId)}/upgrade`,
     {
       manifest_path: manifestPath,
+      ...confirm,
     },
+  );
+}
+
+/** P10-2 D6：回滚窗口清理（§5.3 第 5 步，confirm 后清理旧版本目录）。 */
+export async function pluginCleanupRollback(pluginId: string): Promise<PluginWriteResult> {
+  return apiSend<PluginWriteResult>(
+    "POST",
+    `/api/plugins/${encodeURIComponent(pluginId)}/cleanup-rollback`,
+    { confirm: true },
   );
 }
 

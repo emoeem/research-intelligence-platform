@@ -116,13 +116,13 @@
   border-radius: var(--radius-control);
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-base-content);
-  opacity: 0.72;
+  /* P10-4 axe AA：实色 muted 取代 opacity 稀释（浅底透明混色不可达 4.5:1） */
+  color: var(--muted);
 }
 
 .rail-icon:hover {
   background: var(--surface-2);
-  opacity: 1;
+  color: var(--color-base-content);
 }
 
 .rail-icon.is-active {
@@ -233,13 +233,13 @@
   border-radius: var(--radius-control);
   border: 1px solid transparent;
   font-size: 13px;
-  color: var(--color-base-content);
-  opacity: 0.8;
+  /* P10-4 axe AA：实色 muted 取代 opacity 稀释（子元素对比度不再被叠乘稀释） */
+  color: var(--muted);
 }
 
 .topbar-item:hover {
   background: var(--surface-2);
-  opacity: 1;
+  color: var(--color-base-content);
 }
 
 .topbar-item[aria-expanded="true"] {
@@ -336,7 +336,7 @@
 .notif-note {
   margin-top: 4px;
   font-size: 12px;
-  opacity: 0.6;
+  color: var(--muted);
 }
 
 /* ---- 工作区行：中央多标签 + 右侧 Inspector ---- */
@@ -486,7 +486,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .inspector-body {
@@ -530,7 +530,7 @@
 .inspector-row dt {
   flex-shrink: 0;
   width: 44px;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .inspector-row dd {
@@ -561,7 +561,7 @@
 .inspector-note {
   width: 100%;
   font-size: 11px;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 /* ---- 底部 Activity 面板（可折叠，移动端并入纵向流） ---- */
@@ -646,7 +646,7 @@
 }
 
 .placeholder-related-label {
-  opacity: 0.6;
+  color: var(--muted);
 }
 
 .placeholder-link {
@@ -666,7 +666,7 @@
   border: 1px solid var(--edge);
   border-radius: 6px;
   font-size: 11px;
-  opacity: 0.65;
+  color: var(--muted);
 }
 
 /* ---- ⌘K 全局搜索面板 ---- */
@@ -732,7 +732,7 @@
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .search-hit {
@@ -762,14 +762,14 @@
 .search-hit-meta {
   flex-shrink: 0;
   font-size: 11px;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .search-hint {
   padding: 24px;
   font-size: 13px;
   text-align: center;
-  opacity: 0.6;
+  color: var(--muted);
 }
 
 .search-popular {
@@ -781,7 +781,7 @@
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .search-chips {
@@ -807,5 +807,5 @@
   padding: 8px 14px;
   border-top: 1px solid var(--edge-soft);
   font-size: 11px;
-  opacity: 0.5;
+  color: var(--muted);
 }

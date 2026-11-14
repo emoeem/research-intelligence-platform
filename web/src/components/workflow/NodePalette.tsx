@@ -21,7 +21,7 @@ export function NodePalette({
       className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto rounded-surface border border-edge bg-base-100 p-3"
     >
       <h2 className="text-xs font-semibold text-base-content/70">节点分类面板</h2>
-      <p className="text-[10px] leading-4 text-base-content/40">
+      <p className="text-[10px] leading-4 text-muted">
         点击追加或拖入画布；词表与 workflow-engine DSL 单源
       </p>
       <ul className="flex flex-col gap-1.5">
@@ -38,10 +38,10 @@ export function NodePalette({
               title={`${entry.label}：${entry.hint}`}
             >
               <span className="text-xs font-medium">{entry.label}</span>
-              <span className="ml-1.5 font-mono text-[10px] text-base-content/40">
+              <span className="ml-1.5 font-mono text-[10px] text-muted">
                 {entry.type}
               </span>
-              <p className="mt-0.5 text-[10px] leading-4 text-base-content/50">{entry.hint}</p>
+              <p className="mt-0.5 text-[10px] leading-4 text-muted">{entry.hint}</p>
               {entry.required.length > 0 ? (
                 <p className="text-[10px] text-warning">必填参数：{entry.required.join("、")}</p>
               ) : null}

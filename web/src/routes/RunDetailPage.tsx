@@ -88,7 +88,7 @@ function MetaRow({
   if (value === null || value === undefined || value === "") return null;
   return (
     <div className="flex gap-2 text-xs">
-      <span className="w-24 shrink-0 text-base-content/50">{label}</span>
+      <span className="w-24 shrink-0 text-muted">{label}</span>
       <span className="min-w-0 flex-1 break-all">
         {linkTemplate ? (
           <Link
@@ -111,7 +111,7 @@ function IdListRow({ label, ids }: { label: string; ids: string[] }) {
   if (ids.length === 0) return null;
   return (
     <div className="flex gap-2 text-xs">
-      <span className="w-24 shrink-0 text-base-content/50">{label}</span>
+      <span className="w-24 shrink-0 text-muted">{label}</span>
       <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1 break-all">
         {ids.map((id) => (
           <Link
@@ -155,7 +155,7 @@ export function RunDetailPage() {
     return (
       <div>
         <PageHeader title="Run 详情" />
-        <p className="text-sm text-base-content/60">缺少 run_id。</p>
+        <p className="text-sm text-muted">缺少 run_id。</p>
       </div>
     );
   }
@@ -180,7 +180,7 @@ export function RunDetailPage() {
     return (
       <div>
         <PageHeader title="Run 详情" />
-        <p className="text-sm text-base-content/60">条目不存在。</p>
+        <p className="text-sm text-muted">条目不存在。</p>
       </div>
     );
   }
@@ -220,7 +220,7 @@ export function RunDetailPage() {
           <MetaRow label="workspace" value={run.workspace_id} />
           {run.task_id ? (
             <div className="flex gap-2 text-xs">
-              <span className="w-24 shrink-0 text-base-content/50">task</span>
+              <span className="w-24 shrink-0 text-muted">task</span>
               <Link
                 to={`/projects?task_id=${encodeURIComponent(run.task_id)}`}
                 className="text-primary underline underline-offset-2"
@@ -268,10 +268,10 @@ export function RunDetailPage() {
       <section className="rounded-surface border border-edge bg-base-100 p-4">
         <h2 className="text-sm font-semibold">Artifact 列表</h2>
         {artifactsNote ? (
-          <p className="mt-2 text-xs text-base-content/50">{artifactsNote}</p>
+          <p className="mt-2 text-xs text-muted">{artifactsNote}</p>
         ) : null}
         {artifacts.length === 0 ? (
-          <p className="mt-2 text-xs text-base-content/50">
+          <p className="mt-2 text-xs text-muted">
             {artifactsNote
               ? "本 Run 无已登记 artifact。"
               : "本 Run 暂无 artifact 记录（产物未登记或已归档）。"}
@@ -287,8 +287,8 @@ export function RunDetailPage() {
                   <span className="badge badge-sm badge-outline">
                     {artifact.role ?? "artifact"}
                   </span>
-                  <span className="text-[11px] text-base-content/50">{artifact.mime_type}</span>
-                  <span className="text-[11px] text-base-content/50">
+                  <span className="text-[11px] text-muted">{artifact.mime_type}</span>
+                  <span className="text-[11px] text-muted">
                     {formatBytes(artifact.size_bytes)}
                   </span>
                   <a
@@ -301,7 +301,7 @@ export function RunDetailPage() {
                   </a>
                 </div>
                 <p className="mt-1 break-all text-xs">{artifact.uri}</p>
-                <p className="mt-1 break-all text-[11px] text-base-content/40">
+                <p className="mt-1 break-all text-[11px] text-muted">
                   {artifact.artifact_id} · sha256 {artifact.sha256.slice(0, 16)}…
                   {artifact.created_at ? ` · ${formatDateTime(artifact.created_at)}` : ""}
                 </p>

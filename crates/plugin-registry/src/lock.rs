@@ -68,6 +68,17 @@ impl TrustLevel {
             TrustLevel::Remote => "remote",
         }
     }
+
+    /// 解析小写词形（P10-2：信任级策略面与目录形态共用）。
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "official" => Some(TrustLevel::Official),
+            "community" => Some(TrustLevel::Community),
+            "local" => Some(TrustLevel::Local),
+            "remote" => Some(TrustLevel::Remote),
+            _ => None,
+        }
+    }
 }
 
 /// 版本固定记录（对应 Manifest source.pinned；archive 来源以 sha256 为
