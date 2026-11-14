@@ -452,8 +452,22 @@ fn op2_get_tool_schema_identical_both_channels() {
 // 判据三：跑工具（REST workflow 受理 vs MCP rip.run_tool，同一 tool-engine）
 // ---------------------------------------------------------------------------
 
+/// 执行链三测（op3/op4/op5）的 workflow 运行 rip.kb.keyword_search，其脚本
+/// 只读打开 migrations/platform.db（gitignore 运行时数据，B2/B5 同款）。
+/// CI 与新机器上该文件不在，按 V-9 跳过；目录与 Schema 一致性（op1/op2）
+/// 自建 001 水位库不受影响，受控环境（本地验收）实跑全链。
+fn platform_db_ready() -> bool {
+    repo_root().join("migrations/platform.db").exists()
+}
+
 #[test]
 fn op3_run_tool_same_engine_both_channels() {
+    if !platform_db_ready() {
+        eprintln!(
+            "SKIP: migrations/platform.db 不在本地（gitignore 运行时数据），执行链 parity 无法实测（V-9，受控环境端到端）"
+        );
+        return;
+    }
     let fix = fixture();
     let port = fix.port;
 
@@ -524,6 +538,10 @@ fn op3_run_tool_same_engine_both_channels() {
 
 #[test]
 fn op4_get_run_cross_channel_same_correlation() {
+    if !platform_db_ready() {
+        eprintln!("SKIP: migrations/platform.db 不在本地（V-9，受控环境端到端）");
+        return;
+    }
     let fix = fixture();
     let port = fix.port;
     let (wfr_id, rest_run_id, mcp_run_id, mcp_payload) = run_both_channels(401);
@@ -587,6 +605,10 @@ fn op4_get_run_cross_channel_same_correlation() {
 
 #[test]
 fn op5_trace_same_audit_chain_both_channels() {
+    if !platform_db_ready() {
+        eprintln!("SKIP: migrations/platform.db 不在本地（V-9，受控环境端到端）");
+        return;
+    }
     let fix = fixture();
     let port = fix.port;
     let (wfr_id, rest_run_id, mcp_run_id, _mcp_payload) = run_both_channels(501);

@@ -73,7 +73,7 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 
 按 SESSION-HANDOFF §十二与 §十四顺序执行，每轮产出问题清单，问 ChatGPT 后优化修复入库，直到 2.0 计划 §17 全绿：
 
-1. **ChatGPT 全面审阅**：browser-use 打开 chatgpt.com（复用用户已登录会话），fill 提问后必须点「发送」按钮（Enter 无效），轮询「停止」按钮消失即完成，对话 region innerText 回收全文；给它仓库地址加 ROADMAP 与 releases 清单；会话「仓库快速审阅」可续问。
+1. **ChatGPT 全面审阅（2026-11-14 用户指示：本步骤删除暂缓，恢复时启用）**：原流程 browser-use 打开 chatgpt.com（复用用户已登录会话），fill 提问后必须点「发送」按钮（Enter 无效），轮询「停止」按钮消失即完成，对话 region innerText 回收全文；给它仓库地址加 ROADMAP 与 releases 清单；会话「仓库快速审阅」可续问。**当前闭环改为**：2.0 计划 §17 全绿自查修复循环 + GitHub 知识库与武器库补齐 + 实战校验三面，全程无外部 AI 询问环节。
 2. **GitHub 知识库与武器库补齐**：三源插件 Manifest/catalog 元数据/checksums 入库（课程原文不批量镜像、*.db 不入库）；Tool Pack Containerfile/Manifest 与首批安全工具（静态分析类先行）。
 3. **实战校验三面**（每面跑 RIP 端到端：建任务 → Context 检索 → Tool 派发 → Evidence → 报告）：本地 podman 靶场（vulhub/DVWA 类）；在线授权靶场；公益 SRC（补天等授权项目，低并发、间隔不小于 1s、只打授权范围，漏洞细节只提交平台不进公开仓库）。
 4. 每轮后回第 1 步。

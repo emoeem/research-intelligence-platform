@@ -324,6 +324,14 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
         eprintln!("SKIP: python3 unavailable（V-9）");
         return;
     }
+    // 同源目录读面（Tool Center 同源）依赖 migrations/platform.db（gitignore
+    // 运行时数据，B2/B5 同款）：CI 与新机器不在时按 V-9 跳过；受控环境实跑。
+    if !repo_root().join("migrations/platform.db").exists() {
+        eprintln!(
+            "SKIP: migrations/platform.db 不在本地（gitignore 运行时数据），run_tool 同源回退全链无法实测（V-9，受控环境端到端）"
+        );
+        return;
+    }
     let fix = fixture("doc-parse");
     register_manifest(&fix, &read_repo_manifest("manifests/tools/rip.doc.parse.json"));
     let server = fix.server(Some("tok"));
