@@ -99,6 +99,9 @@ impl RunChannel {
             busy_timeout: Duration::from_secs(5),
         })
         .map_err(|e| format!("run db open failed: {e}"))?;
+        // WAL 显式开启（RIP3 P1-1，R2 §6.9）：运行库为高频写面；只读面
+        // （open_pool_readonly）与生产 platform*.db 不受影响。
+        pool.enable_wal().map_err(|e| format!("run db wal failed: {e}"))?;
         database::migrate(&pool, &self.migrations_dir)
             .map_err(|e| format!("run db migrate failed: {e}"))?;
         Ok(pool)

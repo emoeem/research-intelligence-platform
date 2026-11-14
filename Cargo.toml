@@ -18,6 +18,7 @@ members = [
     "crates/workflow-engine",
     "crates/mcp-server",
     "crates/rp-mcp-parity",
+    "crates/intel-db",
     "tests",
 ]
 
@@ -51,6 +52,16 @@ rmcp = { version = "=3.10.0", default-features = false, features = ["server", "t
 # tokio：rmcp server 的 async 运行时面（bin rp-mcp 的 async main + stdio
 # transport 拉起）；feature 按本仓实际使用取子集，与 rmcp 自身 tokio 要求统一。
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "sync", "time"] }
+
+# RIP3 情报核 PG 依赖（ADR-0001，P1-1）：同步栈（现有 crates 无 tokio，13 号
+# 文档与 12-STORAGE 定稿口径）。选型与版本记录 docs/rip3/decisions/ADR-0002。
+postgres = "0.19"
+r2d2 = "0.8"
+r2d2_postgres = "0.18"
+# refinery：PG 迁移执行（同步、每文件事务、checksum），migrations_pg/ 目录。
+refinery = { version = "0.8", features = ["postgres"] }
+# pgvector Rust 类型映射（vector(512) 列的 ToSql/FromSql）。
+pgvector = { version = "0.4", features = ["postgres"] }
 
 # workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
 domain = { path = "crates/domain" }

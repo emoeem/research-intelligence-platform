@@ -209,6 +209,39 @@ pub enum DomainError {
         /// 被拒绝的原始值。
         String,
     ),
+    /// DocumentId 非法（P1-2，03-DOMAIN-MODEL：非空且不超过 128 字符）。
+    InvalidDocumentId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// DocumentRevisionId 非法（同上口径）。
+    InvalidDocumentRevisionId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// DocumentBlock 的 block id 非法（同上口径）。
+    InvalidBlockId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// SourceRecord 的 source id 非法（同上口径）。
+    InvalidSourceRecordId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// 文档可见性词出现未知变体（private/shared/public 之外）。
+    InvalidDocumentVisibility {
+        /// 被拒绝的原始值。
+        value: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -336,6 +369,21 @@ impl fmt::Display for DomainError {
             }
             DomainError::UnknownWorkflowNodeRunState(v) => {
                 write!(f, "unknown workflow node run state: {v:?}")
+            }
+            DomainError::InvalidDocumentId { value, reason } => {
+                write!(f, "invalid document id {value:?}: {reason}")
+            }
+            DomainError::InvalidDocumentRevisionId { value, reason } => {
+                write!(f, "invalid document revision id {value:?}: {reason}")
+            }
+            DomainError::InvalidBlockId { value, reason } => {
+                write!(f, "invalid document block id {value:?}: {reason}")
+            }
+            DomainError::InvalidSourceRecordId { value, reason } => {
+                write!(f, "invalid source record id {value:?}: {reason}")
+            }
+            DomainError::InvalidDocumentVisibility { value } => {
+                write!(f, "unknown document visibility: {value:?}")
             }
         }
     }

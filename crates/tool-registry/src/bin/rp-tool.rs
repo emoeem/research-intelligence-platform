@@ -82,6 +82,10 @@ fn open_pool(db: &str) -> database::Pool {
         busy_timeout: std::time::Duration::from_secs(5),
     })
     .unwrap_or_else(|e| die_json("db_open_failed", &format!("open {db:?}: {e}")));
+    // WAL 显式开启（RIP3 P1-1，R2 §6.9）：可写运行库（tool-runs 面）高频写；
+    // 生产 migrations/platform*.db 只读打开不经此路径，journal_mode 不变。
+    pool.enable_wal()
+        .unwrap_or_else(|e| die_json("db_open_failed", &format!("wal: {e}")));
     database::migrate(&pool, std::path::Path::new("migrations"))
         .unwrap_or_else(|e| die_json("migration_failed", &format!("migrate: {e}")));
     pool

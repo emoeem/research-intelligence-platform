@@ -248,6 +248,22 @@ fn open_connection(path: &DbPath, readonly: bool, busy_timeout: Duration) -> DbR
     Ok(conn)
 }
 
+impl Pool {
+    /// 显式开启 WAL（RIP3 P1-1，R2 §6.9 SQLite 运行约束落地）。
+    ///
+    /// 口径：仅高频写运行库（tool-runs 等）在创建时由调用方显式开启，不做
+    /// open_connection 自动设置，生产 migrations/platform*.db（只读打开 +
+    /// P10 指纹红线）journal_mode 保持不变。WAL 持久化在库文件头（一次
+    /// 设置随库生效），synchronous=NORMAL 为 WAL 推荐档（12-STORAGE 第五节）。
+    pub fn enable_wal(&self) -> DbResult<()> {
+        self.with_conn(|c| -> DbResult<()> {
+            c.pragma_update(None, "journal_mode", "WAL")?;
+            c.pragma_update(None, "synchronous", "NORMAL")?;
+            Ok(())
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

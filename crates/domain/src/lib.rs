@@ -29,6 +29,7 @@
 pub mod agent;
 pub mod audit;
 pub mod context;
+pub mod document;
 pub mod error;
 pub mod ids;
 pub mod knowledge;
@@ -43,6 +44,10 @@ pub use agent::{
     AgentDefinition, AgentId, AgentRun, AgentRunState, CapabilityRef, EvidenceMemoryEntry,
     MemoryKind, MemoryLifecycle, MemoryObjectRef, MemoryRefType, ResearchMemoryEntry,
     TaskMemoryEntry,
+};
+pub use document::{
+    BlockId, DocumentId, DocumentLifecycle, DocumentRevisionId, DocumentVisibility, RevisionStatus,
+    SourceRecordId,
 };
 pub use context::{
     ContentRef, ContextItemKind, ContextLayer, InclusionForm, IntentQuery, IntentStatus, RefEvent,

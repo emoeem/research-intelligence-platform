@@ -40,6 +40,7 @@
 | `localhost/rip-tool-webresearch:latest` | `sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58` | 2026-11-11 重建（同上事件；原值 bf910119 见 git 历史） | P3-1 / P5-10 重建 |
 | `localhost/rip-tool-coreutils:latest` | `sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf` | 2026-11-11 重建（同上事件；原值 c90631b9 见 git 历史） | P3-1 / P5-10 重建 |
 | `localhost/rip-tool-source:latest` | `sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29` | 2026-11-14 建成（基础镜像 digest 同 coreutils 行，受控拉取后离线构建；distrobox 侧经 distrobox-host-exec shim 调宿主 podman 6.2.0 构建） | 收尾武器库批 |
+| `localhost/rip-pg17:latest` | `sha256:229189e4c66a2eb8ddd1fcf4bc08ee4726cacd8aee7445ec3c6f1499a357ef45` | 2026-11-14 建成（RIP3 情报核 PG 17.11：基座 paradedb/paradedb:pg17@sha256:7cb29053… 受控拉取 + pg_jieba 多阶段构建（third_party/ 内置源码含 cppjieba 子模块，零构建期网络），vector/pg_search/pg_jieba 三扩展实测在位，jiebacfg 中文分词实测正确） | RIP3 P1-1 |
 
 构建口径（P3-1 实测）：两族镜像内零包安装（工具本体 Python 纯标准库，基础镜像自带能力），构建全程离线（基础镜像 digest 已在本地 containers-storage）；构建期宿主 `pacman -Q` 基线 2415 行无变化。工具本体功能在容器内验证（hash 与宿主 sha256sum 对账一致、gzip 回读一致、json 转 csv、filemeta、YAML 显式不支持负向、路径穿越拒绝负向、GET example.com 200 且 body sha256 宿主对账一致、无网与非 GET 拒绝负向）。
 
