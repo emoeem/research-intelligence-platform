@@ -402,7 +402,174 @@ return await hole<FinalReport>(
           `Phase 9 验收：${acc9.acceptable ? "全部通过" : JSON.stringify(acc9.items.filter((x) => !x.pass))}`,
           `批次摘要：${results9.map((r) => `${r.batch}:${r.done}${r.caveats.length > 0 ? "（caveats：" + r.caveats.join("；") + "）" : ""}`).join("；")}`,
           `继续方式：读 docs/phase0/PHASE-ROADMAP.md 的 Phase 10 节（生态与发布）与 2.0 计划 §12、SESSION-HANDOFF §十（backup/restore、FTS 重建校验、保留归档、许可证逐包清单、axe 对比度、视觉基线）与 autoresearch 性能基准要求。写「实施 Phase 10」填充：规划员 → 每批新实施员（备份恢复实现、FTS 重建校验、许可证逐包清单、axe 对比度修正、视觉基线建立、autoresearch 性能基准）→ 五道门禁 → 独立验收（备份恢复实演、基线校验，浏览器实测）→ 入库 RELEASE_PHASE10；结尾留收尾闭环尾洞（SESSION-HANDOFF §十二与 §十四：ChatGPT 全面审阅、GitHub 知识库与武器库补齐、实战校验三面）。`,
-        ].join("\n"),
+        ].join("\n"), async () => {
+        report({ phase: "rmcp 迁移（阻断性整改批）", status: "进行中", note: "Phase 9 已收口（commit 95f4e5e）且 CI 绿（ae73b92 文档批次后），按用户定案审计方案执行 rmcp 迁移前置批" }, "phases");
+
+        phase("rmcp 迁移前置整改批");
+        const rR = await agent().ask<BatchResult>(`${DISCIPLINE}
+
+          你是 rmcp 迁移整改批实施员（全新上下文）。背景：Phase 9 的 crates/mcp-server 手写了 MCP 2024-11-05 子集协议层，外部审计（docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md，先完整读它）判定不可长期保留并给出十项整改任务，用户定案「按照这个方案」。本批执行审计 §5 全部十项：
+          1) 复核最终树：git log --oneline -5 与 git status -sb 记录基线；通读 crates/mcp-server/、crates/rp-mcp-parity/、apps/server/selftest_phase9_mcp.sh、docs/phase9/ 设计文档。
+          2) rmcp 选型记录（写入 docs/phase9/RMCP-MIGRATION.md）：官方 crates.io 发布版（不跟 git main），记录版本、MSRV、许可证、依赖树、安全公告、feature 集与 2024-11-05 兼容性；版本号必须以实际构建验证为准。
+          3) 增量 vendor：cargo 已配 rsproxy 镜像（AGENTS.md 记载），受控联网拉取 rmcp 最小依赖集（只启用 server 与 stdio 所需 feature，不引入 HTTP/OAuth/client/elicitation），更新 Cargo.lock 与 vendor/，恢复 .cargo/config 的 vendored 口径后在干净状态验证 --offline 构建与测试可复现。
+          4) rp-mcp 改造为 rmcp server + stdio transport：RIP 业务 handler（目录查询、tools/call 派发）接入 SDK，协议解析、initialize 生命周期、版本协商、协议错误封装、stdio I/O 全部交给 rmcp。
+          5) 修 P0：tools/list 每个 Tool 对象必须含标准必需 name 与 inputSchema（description 可精简）；mcp_protocol.rs 里断言 inputSchema 不得出现的旧测试改写为标准一致性断言；分页保留用于控量，不得用省略必需 Schema 控 Token；rip.get_tool_schema 保留为平台自定义按需详情工具。
+          6) 修 P1：initialize 版本协商由 SDK 处理（支持则协商，不支持按规范报错或返回服务端版本），不得回显任意客户端版本。
+          7) 保留并复核这些设计不被破坏：MCP 目录与 Tool Center 同一 tool 表读面（主库优先 aux 回退）、catalog 只读零 SQL 写、工具执行唯一经 tool-engine Engine/Gateway 派发（不建第二套）、EvidenceRegistrar 复用、rip.* 命名空间、stdout 只出协议消息 stderr 走日志。
+          8) 重定义 RP_MCP_TOKEN 安全边界：明确「宿主进程环境变量注入即授权边界」与「客户端协议认证」的区别并写进部署文档与测试（缺失/错误/正确令牌三态实测）；不发明 MCP 标准外的认证字段。
+          9) 真实 MCP 客户端端到端验收：initialize（含版本协商）→ notifications/initialized → tools/list 多页（含 inputSchema 校验）→ tools/call 成功与失败 → 未知工具 → 通知与超时处理 → stdout/stderr 分离 → 进程退出；留日志或截图证据到 docs/phase9/rmcp-client-e2e/。
+          10) conformance 测试：覆盖 2024-11-05 与 rmcp 实际支持协议版本；测试不得以手写期望固化非标准行为；apps/server/selftest_phase9_mcp.sh 与 REST/MCP parity 断言按新协议行为同步更新（parity op1/op2 必须继续全过）。
+          离线验收：cargo test --offline --workspace 全过、clippy -D warnings 零告警、bash apps/server/selftest_phase9_mcp.sh 全过、生产 platform*.db 零写指纹一致。
+          红线：integrations/rtis/ 与 scripts/ 零修改；不建第二套 Tool Registry 或派发链；受控联网仅限 crates.io 与 rsproxy 拉依赖，vendor 完成后一切回归离线。
+          成熟库七小节（审计 §6.6）随 RMCP-MIGRATION.md 交付：成熟方案检索结果/候选比较/采用库与 feature/vendor 方案/自研边界（业务 handler 清单）/例外 ADR（无）/兼容性能安全回归验收。
+          完成后返回 BatchResult：files、check、caveats。`);
+        report({ batch: rR.batch, done: rR.done, caveats: rR.caveats.join("；") });
+
+        phase("rmcp 迁移门禁");
+        let greenR = false;
+        let failR = "";
+        for (let roundR = 1; roundR <= 3; roundR++) {
+          const tRg = await world.run("bash", ["-lc", "cargo test --offline --workspace"], { timeoutMs: 900000, output: { tail: 8192 } });
+          const cRg = await world.run("bash", ["-lc", "cargo clippy --offline --workspace --all-targets -- -D warnings"], { timeoutMs: 900000, output: { tail: 8192 } });
+          const uRg = await world.run("bash", ["-lc", "python3 -m unittest discover -s workers/python/tests"], { timeoutMs: 300000, output: { tail: 4096 } });
+          const fbRg = await world.run("bash", ["-lc", "cd web && npm run build"], { timeoutMs: 600000, output: { tail: 8192 } });
+          const ftRg = await world.run("bash", ["-lc", "cd web && npm run test"], { timeoutMs: 600000, output: { tail: 8192 } });
+          if (tRg.exitCode === 0 && cRg.exitCode === 0 && uRg.exitCode === 0 && fbRg.exitCode === 0 && ftRg.exitCode === 0) {
+            greenR = true;
+            failR = "";
+            log(`rmcp 迁移批五道门禁全绿（第 ${roundR} 轮）`);
+            break;
+          }
+          failR = [
+            tRg.exitCode !== 0 ? `cargo test exit=${tRg.exitCode}\n${tRg.stdout.slice(-1000)}` : "",
+            cRg.exitCode !== 0 ? `clippy exit=${cRg.exitCode}\n${cRg.stdout.slice(-1000)}` : "",
+            uRg.exitCode !== 0 ? `unittest exit=${uRg.exitCode}\n${uRg.stderr.slice(-1000)}` : "",
+            fbRg.exitCode !== 0 ? `npm build exit=${fbRg.exitCode}\n${fbRg.stdout.slice(-1000)}` : "",
+            ftRg.exitCode !== 0 ? `npm test exit=${ftRg.exitCode}\n${ftRg.stdout.slice(-1000)}` : "",
+          ].filter((s) => s !== "").join("\n----\n");
+          await agent().ask<string>(`${DISCIPLINE}
+
+          你是 rmcp 迁移门禁修复员（看工作树与失败输出定位修复，只修失败）。第 ${roundR} 轮失败：\n${failR}`);
+        }
+
+        phase("rmcp 迁移入库");
+        const accR = await agent("rmcp 迁移验收员", `${DISCIPLINE}
+
+          你是 rmcp 迁移独立验收员，立场是挑毛病而不是放行。按审计 §5 验收标准逐条核验：协议解析/initialize 生命周期/版本协商/tools list/协议错误/stdio transport 是否全部由 rmcp 承担；tools/list 每条目是否含必需 inputSchema；是否存在第二套 Registry 或派发链；vendor 是否含 rmcp 全依赖树且干净环境 --offline 可复现；真实客户端端到端证据是否完整（docs/phase9/rmcp-client-e2e/）；RP_MCP_TOKEN 三态测试是否在；被固化的非标准断言是否已改写；生产库零写。脚本已跑五道门禁。`).ask<PhaseAcceptance>(`逐条核验（对照 docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md §5）：
+          - 十项任务逐项给证据（命令与输出摘要）
+          - 批次摘要：${JSON.stringify({ done: rR.done, caveats: rR.caveats, files: rR.files })}
+          返回 PhaseAcceptance。`);
+        for (let roundR = 1; roundR <= 2 && !accR.acceptable; roundR++) {
+          await agent().ask<string>(`${DISCIPLINE}
+
+          你是 rmcp 迁移修复员。按验收意见修复（第 ${roundR} 轮）：${JSON.stringify(accR.fixes)}`);
+          const reaccR = await agent().ask<PhaseAcceptance>(`${DISCIPLINE}
+
+          你是 rmcp 迁移复审员，复核上轮 fixes 并复测问题点，返回 PhaseAcceptance。上轮结论：${JSON.stringify(accR.items.filter((x) => !x.pass))}`);
+          accR.items = reaccR.items;
+          accR.acceptable = reaccR.acceptable;
+          accR.fixes = reaccR.fixes;
+        }
+        const commitR = await agent("rmcp 迁移入库员", `${DISCIPLINE}
+
+          你是入库员：只做 add/commit/push，禁止 reset/clean/checkout/rebase/force push，commit 消息中文无长横线。`).ask<CommitResult>(`入库 rmcp 迁移整改批：1) git status 核对范围与暂存卫生（无 node_modules、dist、*.db；vendor/ 与 Cargo.lock 更新必须在列）。2) git add -A，commit（中文：RIP 2.0 rmcp 迁移整改批次（MCP 协议层换官方 SDK，P0 与 P1 修复，增量 vendor）），push origin main（失败重试 2 到 3 次，仍失败如实报错不伪造）。返回 CommitResult。`);
+        report({ phase: "rmcp 迁移（阻断性整改批）", status: accR.acceptable && greenR && commitR.pushed ? "完成" : "受阻", note: `commit ${commitR.hash}，验收${accR.acceptable ? "通过" : "有遗留"}，门禁${greenR ? "全绿" : "未全绿"}` }, "phases");
+        log(`rmcp 迁移批 ${accR.acceptable && greenR && commitR.pushed ? "完成" : "受阻"}：commit ${commitR.hash}`);
+
+        phase("规划 Phase 10 批次");
+        const plan10 = await agent("Phase 10 规划员").ask<PhasePlan>(`${DISCIPLINE}
+
+          你是 Phase 10 规划员。读 docs/phase0/PHASE-ROADMAP.md 的 Phase 10 节（生态与发布）、2.0 计划（docs/RIP-2.0-PLATFORM-AND-TOOLING-PLAN.md）§12 与 §14 Phase 10、docs/SESSION-HANDOFF.md §十（backup/restore 实现、FTS 重建校验、保留归档、许可证逐包清单、axe 对比度、视觉基线）与 §十二（收尾审阅口径）、git log --oneline -10（Phase 9 commit ${commit9.hash} 与 rmcp 迁移批 commit ${commitR.hash} 刚入库）。产出 Phase 10 批次清单。硬性要求：
+          1. 覆盖 ROADMAP Phase 10 全部交付：backup/restore 实现与实演、FTS 重建校验、保留归档、许可证逐包清单（Rust vendor + npm 双面）、axe 对比度修正、Playwright 视觉基线建立、autoresearch 性能基准。
+          2. 成熟库优先硬约束（AGENTS.md 成熟库优先节 + 审计 §6）：每个任务书必须含七小节（成熟方案检索结果/候选比较/采用库与 feature/vendor 方案/自研边界/例外 ADR 仅当拒绝/兼容性能安全回归验收）；备份压缩、归档、许可证清单、基准等通用能力优先用成熟维护库（Rust 走增量 vendor，Python/web 走容器或项目本地）。
+          3. 批次基于现状续作：Phase 7 到 9 全部交付面在库（trace 六 ID、agent-engine、workflow-engine 与画布、MCP/REST/CLI 三面同源 + parity 载具）。
+          4. acceptance 对应 2.0 计划 §14 Phase 10 验收逐条可核验；每批自验 check 写明命令与预期输出；备份恢复必须真实实演（备份 → 受控破坏副本 → 恢复 → 校验一致）。
+          5. UI 相关批次必须含浏览器实测与视觉基线落盘；浏览器二进制按纪律第 7 条探测。
+          返回 PhasePlan（batches 2 到 4 项）。`);
+
+        const results10: BatchResult[] = [];
+        phase("逐批实施 Phase 10");
+        for (let i10 = 0; i10 < plan10.batches.length; i10++) {
+          const b10 = plan10.batches[i10];
+          const prev10 = results10.slice(-1)[0];
+          const r10 = await agent().ask<BatchResult>(`${DISCIPLINE}
+
+          你是 Phase 10 实施员（全新上下文，每批独立以控成本）。执行批次 ${b10.id}（第 ${i10 + 1}/${plan10.batches.length} 批）：${b10.goal}
+          关键路径：${b10.paths.join("、")}
+          本批自验：${b10.check}
+          ${prev10 ? `上一批交接（done 与 caveats）：${JSON.stringify({ done: prev10.done, caveats: prev10.caveats })}` : `这是 Phase 10 首批。基线：Phase 7/8/9 全部收口（Phase 9 commit ${commit9.hash}、rmcp 迁移批 commit ${commitR.hash} 且 CI 全绿），MCP 三面同源 + parity 载具在库，trace 六 ID 贯穿，迁移下一可用编号从 migrations/ 实际清单确认。`}
+          成熟库优先：通用能力先评估成熟维护库并按需增量 vendor（七小节随批次设计文档交付），不手写已有库覆盖的通用逻辑；迁移只新增编号文件在测试副本验证；web 面不动既有页面行为。完成后返回 BatchResult：files、check、caveats。`);
+          results10.push(r10);
+          report({ batch: r10.batch, done: r10.done, caveats: r10.caveats.join("；") });
+        }
+
+        phase("跑 Phase 10 门禁");
+        let green10 = false;
+        let fail10 = "";
+        for (let round10 = 1; round10 <= 3; round10++) {
+          const t10g = await world.run("bash", ["-lc", "cargo test --offline --workspace"], { timeoutMs: 900000, output: { tail: 8192 } });
+          const c10g = await world.run("bash", ["-lc", "cargo clippy --offline --workspace --all-targets -- -D warnings"], { timeoutMs: 900000, output: { tail: 8192 } });
+          const u10g = await world.run("bash", ["-lc", "python3 -m unittest discover -s workers/python/tests"], { timeoutMs: 300000, output: { tail: 4096 } });
+          const fb10g = await world.run("bash", ["-lc", "cd web && npm run build"], { timeoutMs: 600000, output: { tail: 8192 } });
+          const ft10g = await world.run("bash", ["-lc", "cd web && npm run test"], { timeoutMs: 600000, output: { tail: 8192 } });
+          if (t10g.exitCode === 0 && c10g.exitCode === 0 && u10g.exitCode === 0 && fb10g.exitCode === 0 && ft10g.exitCode === 0) {
+            green10 = true;
+            fail10 = "";
+            log(`Phase 10 五道门禁全绿（第 ${round10} 轮）`);
+            break;
+          }
+          fail10 = [
+            t10g.exitCode !== 0 ? `cargo test exit=${t10g.exitCode}\n${t10g.stdout.slice(-1000)}` : "",
+            c10g.exitCode !== 0 ? `clippy exit=${c10g.exitCode}\n${c10g.stdout.slice(-1000)}` : "",
+            u10g.exitCode !== 0 ? `unittest exit=${u10g.exitCode}\n${u10g.stderr.slice(-1000)}` : "",
+            fb10g.exitCode !== 0 ? `npm build exit=${fb10g.exitCode}\n${fb10g.stdout.slice(-1000)}` : "",
+            ft10g.exitCode !== 0 ? `npm test exit=${ft10g.exitCode}\n${ft10g.stdout.slice(-1000)}` : "",
+          ].filter((s) => s !== "").join("\n----\n");
+          await agent().ask<string>(`${DISCIPLINE}
+
+          你是 Phase 10 门禁修复员（看工作树与失败输出定位修复，只修失败）。第 ${round10} 轮失败：\n${fail10}`);
+        }
+
+        phase("Phase 10 独立验收");
+        const acc10 = await agent("Phase 10 验收员", `${DISCIPLINE}
+
+          你是 Phase 10 独立验收员，立场是挑毛病而不是放行。读实现找证据并实测：备份/恢复真实实演复核（备份 → 破坏副本 → 恢复 → 校验一致的证据链）；FTS 重建校验实测；许可证逐包清单对账（Rust vendor 与 npm 双面）；axe 对比度与视觉基线落盘核验（浏览器实测：加载 browser-use:control-browser 技能，截图落 docs/phase10/browser-e2e/01/，浏览器二进制按纪律第 7 条探测：本机已知 Playwright 用户缓存 Chrome for Testing 151 于 /home/emo/.distrobox/ubuntu-home/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome，设 PW_CHROMIUM 指向即可）；autoresearch 性能基准数据复核；脚本已跑五道门禁。`).ask<PhaseAcceptance>(`逐条核验：
+          ${plan10.acceptance.map((a) => "- " + a).join("\n")}
+          批次摘要：${JSON.stringify(results10.map((r) => ({ batch: r.batch, done: r.done, caveats: r.caveats })))}
+          另必核验 Phase 7 到 9 未回归：1) rmcp conformance 与 parity op1/op2（CI 口径）；2) trace 六 ID 关联查询双向；3) workflow 画布端到端；4) selftest_auth 11 项：bash apps/server/selftest_auth.sh。
+          返回 PhaseAcceptance。`);
+        for (let round10 = 1; round10 <= 2 && !acc10.acceptable; round10++) {
+          await agent().ask<string>(`${DISCIPLINE}
+
+          你是 Phase 10 修复员。按验收意见修复（第 ${round10} 轮）：${JSON.stringify(acc10.fixes)}`);
+          const reacc10 = await agent().ask<PhaseAcceptance>(`${DISCIPLINE}
+
+          你是 Phase 10 复审员，复核上轮 fixes 并复测问题点（含浏览器复测），返回 PhaseAcceptance。上轮结论：${JSON.stringify(acc10.items.filter((x) => !x.pass))}`);
+          acc10.items = reacc10.items;
+          acc10.acceptable = reacc10.acceptable;
+          acc10.fixes = reacc10.fixes;
+        }
+
+        phase("Phase 10 入库");
+        const ok10 = acc10.acceptable && green10;
+        const commit10 = await agent("Phase 10 入库员", `${DISCIPLINE}
+
+          你是入库员：只做 add/commit/push，禁止 reset/clean/checkout/rebase/force push，commit 消息中文无长横线。`).ask<CommitResult>(`入库 Phase 10 整段：1) git status 核对范围与暂存卫生（无 node_modules、dist、*.db）。2) 按 DOC-STANDARD 写 docs/releases/RELEASE_<date +%F>_PHASE10.md（总账：批次汇总、五道门禁数字、备份恢复实演证据、许可证清单与视觉基线路径引用、性能基准数字、已知取舍、回滚方式），docs/README.md 登记 Phase 10 行。3) docs/SESSION-HANDOFF.md 第三节新增 Phase 10 完成行（含 push 短哈希回填注记）。4) git add -A，commit（中文：RIP 2.0 Phase 10 生态与发布），push origin main（失败重试 2 到 3 次，仍失败如实报错不伪造）。返回 CommitResult。`);
+        report({ phase: TRACKED[5], status: ok10 && commit10.pushed ? "完成" : "受阻", note: `commit ${commit10.hash}，验收${ok10 ? "通过" : "有遗留"}，门禁${green10 ? "全绿" : "未全绿"}，push ${commit10.pushed ? "成功" : "待核"}` }, "phases");
+        log(`Phase 10 ${ok10 && commit10.pushed ? "完成" : "受阻"}：commit ${commit10.hash}`);
+
+        return await hole<FinalReport>(
+          "项目完成自查与收尾",
+          [
+            `接手核对：${verified.ok ? "通过" : "有偏差：" + JSON.stringify(verified.gaps)}`,
+            `Phase 7 结果：完成，commit 102cab5；Phase 8 结果：完成，commit ${commit8.hash}；Phase 9 结果：完成，commit ${commit9.hash}；rmcp 迁移批：commit ${commitR.hash}，验收${accR.acceptable ? "通过" : "有遗留"}；Phase 10 结果：${ok10 && commit10.pushed ? "完成" : "受阻"}，commit ${commit10.hash}，push ${commit10.pushed ? "成功" : commit10.note}`,
+            `Phase 10 验收：${acc10.acceptable ? "全部通过" : JSON.stringify(acc10.items.filter((x) => !x.pass))}`,
+            `批次摘要：${results10.map((r) => `${r.batch}:${r.done}${r.caveats.length > 0 ? "（caveats：" + r.caveats.join("；") + "）" : ""}`).join("；")}`,
+            `用户已定案指令：收尾闭环删除 ChatGPT 全面审阅步骤（暂缓）；实战校验三面暂缓（项目完成并由用户启动后才做，ROE 照旧）。`,
+            `继续方式：写「2.0 计划 §17 全绿自查收尾」填充：以 2.0 计划 §17 验收清单为面，自查员逐条实测（含五道门禁与 CI 口径），不合格项进修复循环（至多 3 轮），随后 GitHub 知识库与武器库补齐（三源插件 Manifest/catalog 元数据/checksums 入库、Tool Pack Containerfile/Manifest 与首批静态分析安全工具，课程原文不批量镜像、*.db 不入库）；全程无外部 AI 询问、无实战校验。全部完成后返回最终 FinalReport（2.0 全景总结：各阶段 commit、门禁数字、CI 状态、已知取舍、暂缓项清单）。`,
+          ].join("\n"),
+        );
+      },
       );
     },
     );

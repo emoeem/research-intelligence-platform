@@ -100,8 +100,8 @@ pub fn get(name: &str, args: &Value) -> Result<(String, Vec<Value>), String> {
                     "content": { "type": "text", "text": format!(
                         "{target}你是通过 MCP 接入 RIP（Research Intelligence Platform）的外部 AI，\
                          没有本地工具，平台能力由 RIP 提供。按以下八步完成一次工具调用：\n\
-                         1. tools/list 分页发现目录（条目为摘要，无完整说明，不要期待 inputSchema）；\n\
-                         2. rip.get_tool_schema 按 tool_id 取入参 Schema（按需获取，不整目录拉取）；\n\
+                         1. tools/list 分页发现目录（每条含标准 name 与 inputSchema；注册面条目无 description，完整元数据见下一步）；\n\
+                         2. rip.get_tool_schema 按 tool_id 取出参与出参 Schema 与平台元数据详情（按需获取，不整目录拉取）；\n\
                          3. 按 Schema 构造 input，T2 工具必须携带 authorization_ref（缺省按 POLICY_DENIED 拒绝）；\n\
                          4. rip.run_tool 执行（tool_id + input）；\n\
                          5. 从响应取 run_id 与 status（SUCCEEDED 才有 result；失败读 error.category 词表：\

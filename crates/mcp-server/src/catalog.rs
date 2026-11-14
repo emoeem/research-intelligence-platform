@@ -122,6 +122,18 @@ pub struct RegistryRow {
     pub updated_at: Option<String>,
 }
 
+/// 注册面行 + input_schema 列直读（tools/list 标准 Tool 对象的必需
+/// inputSchema 来源；rmcp 迁移批次新增，摘要十二列投影不变，schema 列只在
+/// 本读面取，rip.list_tools 信封仍走 TOOL_LIST_COLUMNS 十二列原口径）。
+#[derive(Debug, Clone)]
+pub struct RegistryRowWithSchema {
+    /// 十二列摘要投影（与 [`RegistryRow`] 同源同序）。
+    pub row: RegistryRow,
+    /// tool 表 input_schema 列（NULL / 坏 JSON / 非 object 形态一律 None，
+    /// 上层回退宽松 object Schema；parse_json_or_none 口径加 object 形态守卫）。
+    pub input_schema: Option<Value>,
+}
+
 /// 按需 Schema 查询结果（tool 表 input_schema / output_schema 列直读）。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolSchema {
@@ -194,6 +206,20 @@ impl Catalog {
         &self,
         filters: &RegistryFilters,
     ) -> Result<Vec<RegistryRow>, CatalogError> {
+        Ok(self
+            .list_registry_with_schema(filters)?
+            .into_iter()
+            .map(|entry| entry.row)
+            .collect())
+    }
+
+    /// 列出合并后的注册面并直读 input_schema 列（[`RegistryRowWithSchema`]；
+    /// tools/list 标准 Tool 对象必需 Schema 用，合并与排序语义与
+    /// [`Catalog::list_registry`] 完全同一实现）。
+    pub fn list_registry_with_schema(
+        &self,
+        filters: &RegistryFilters,
+    ) -> Result<Vec<RegistryRowWithSchema>, CatalogError> {
         validate_filters(filters)?;
         let like = filters.keyword.as_deref().map(like_escape);
         let (where_sql, where_args) = build_where(&like, filters);
@@ -211,11 +237,11 @@ impl Catalog {
             return Err(self.unavailable_error());
         }
 
-        let mut rows: Vec<RegistryRow> = Vec::new();
+        let mut rows: Vec<RegistryRowWithSchema> = Vec::new();
         if main_has {
             // 主库段（过滤 + 排序）与主库全量 id 集合一次取出。
             let (main_rows, main_ids) = self.main.with_conn(|c| {
-                let rows = query_rows(c, &where_sql, &where_args)?;
+                let rows = query_rows_with_schema(c, &where_sql, &where_args)?;
                 let ids: HashSet<String> = c
                     .prepare("SELECT tool_id FROM tool")?
                     .query_map([], |r| r.get::<_, String>(0))?
@@ -226,14 +252,18 @@ impl Catalog {
             // aux 增量合并：只补主库没有的行（全局 id 集合口径，见模块注释）。
             if aux_has {
                 if let Some(aux_pool) = self.aux.as_ref() {
-                    let aux_rows =
-                        aux_pool.with_conn(|c| query_rows(c, &where_sql, &where_args))?;
-                    rows.extend(aux_rows.into_iter().filter(|r| !main_ids.contains(&r.tool_id)));
+                    let aux_rows = aux_pool
+                        .with_conn(|c| query_rows_with_schema(c, &where_sql, &where_args))?;
+                    rows.extend(
+                        aux_rows
+                            .into_iter()
+                            .filter(|entry| !main_ids.contains(&entry.row.tool_id)),
+                    );
                 }
             }
         } else if let Some(aux_pool) = self.aux.as_ref() {
             // 主库缺表回退 aux（handle_tools 数据面回退口径）。
-            rows.extend(aux_pool.with_conn(|c| query_rows(c, &where_sql, &where_args))?);
+            rows.extend(aux_pool.with_conn(|c| query_rows_with_schema(c, &where_sql, &where_args))?);
         }
         Ok(rows)
     }
@@ -371,25 +401,28 @@ fn build_where(like: &Option<String>, filters: &RegistryFilters) -> (String, Vec
 }
 
 /// 读投影列表（排序同 handle_tools：updated_at DESC, name COLLATE NOCASE ASC）。
-fn query_rows(
+/// 十二列摘要 + input_schema 列（第 13 列直读，[`RegistryRowWithSchema`]）。
+fn query_rows_with_schema(
     conn: &rusqlite::Connection,
     where_sql: &str,
     where_args: &[String],
-) -> Result<Vec<RegistryRow>, rusqlite::Error> {
+) -> Result<Vec<RegistryRowWithSchema>, rusqlite::Error> {
     let sql = format!(
-        "SELECT {TOOL_LIST_COLUMNS} FROM tool {where_sql} \
+        "SELECT {TOOL_LIST_COLUMNS}, input_schema FROM tool {where_sql} \
          ORDER BY updated_at DESC, name COLLATE NOCASE ASC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(where_args.iter()), map_row)?
+        .query_map(rusqlite::params_from_iter(where_args.iter()), map_row_with_schema)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
 
-/// 行映射（rusqlite 列序与 TOOL_LIST_COLUMNS 一致）。
-fn map_row(r: &rusqlite::Row<'_>) -> Result<RegistryRow, rusqlite::Error> {
-    Ok(RegistryRow {
+/// 行映射（rusqlite 列序与 TOOL_LIST_COLUMNS + input_schema 第 13 列一致）。
+fn map_row_with_schema(
+    r: &rusqlite::Row<'_>,
+) -> Result<RegistryRowWithSchema, rusqlite::Error> {
+    let row = RegistryRow {
         tool_id: r.get(0)?,
         name: r.get(1)?,
         kind: r.get(2)?,
@@ -402,7 +435,17 @@ fn map_row(r: &rusqlite::Row<'_>) -> Result<RegistryRow, rusqlite::Error> {
         source_system: r.get(9)?,
         created_at: r.get(10)?,
         updated_at: r.get(11)?,
-    })
+    };
+    let input_schema = match r.get::<_, Option<String>>(12)? {
+        None => None,
+        Some(text) => match serde_json::from_str::<Value>(&text) {
+            Ok(v) if v.is_object() => Some(v),
+            // 坏 JSON 或非 object 形态一律回退宽松 Schema（parse_json_or_none
+            // 口径 + object 形态守卫，不把非法 Schema 发上线）。
+            _ => None,
+        },
+    };
+    Ok(RegistryRowWithSchema { row, input_schema })
 }
 
 /// 读单行 schema（input_schema / output_schema 列直读，NULL 或坏 JSON 记 null，

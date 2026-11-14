@@ -24,9 +24,9 @@
 //!   + RP_WORKFLOW_BIN 指向 target/debug/rp-workflow），HTTP 客户端为 std
 //!     TcpStream 薄实现（vendor 无 HTTP client crate；rp_server 响应恒带
 //!     Content-Length 且请求带 Connection: close，读至 EOF）；
-//! - MCP 通道 = mcp-server [`McpServer::handle_line`]（bin rp-mcp stdio 循环
-//!   同一入口；stdio 循环本身由 mcp-server tests 与 selftest_phase9_mcp.sh
-//!   覆盖，载具不重复）；
+//! - MCP 通道 = 真实 rp-mcp 二进制 spawn（rmcp 迁移批次 2026-11-14 起，
+//!   bin 层 rmcp stdio 协议面同一入口；薄 JSON-RPC 行驱动按 id 匹配响应，
+//!   不引入 rmcp client feature，Mutex 串行化多测试共享同一子进程）；
 //! - 两通道指向同一临时主库（001 水位，platform.db 同款水位）+ 同一临时
 //!   运行库（全量迁移 + rp-tool register 同库面登记），生产 platform*.db
 //!   零接触零写。
@@ -34,18 +34,15 @@
 //! 前置守卫（V-9）：python3 在位（worker 与 rp_server 都需要）；rp-workflow
 //! 二进制缺位时按 Cargo 自动构建（cargo build --offline，vendor 在库）。
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::OnceLock;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use database::{rusqlite, DbPath, Pool, PoolConfig};
 use serde_json::{json, Value};
-
-use mcp_server::dispatch::RunChannel;
-use mcp_server::{LineOutcome, McpServer};
 
 const TOOL_ID: &str = "rip.kb.keyword_search";
 const WORKFLOW_ID: &str = "wf-p8-tool";
@@ -55,11 +52,13 @@ const KEYWORD: &str = "etl";
 
 static FIXTURE: OnceLock<Fixture> = OnceLock::new();
 
-/// 载具夹具：临时主库 + 临时运行库 + REST 进程 + MCP 协议面。
+/// 载具夹具：临时主库 + 临时运行库 + REST 进程 + MCP 真实 rp-mcp 子进程。
 struct Fixture {
     run_db: PathBuf,
     port: u16,
-    mcp: McpServer,
+    /// MCP 通道 = 真实 rp-mcp 二进制（bin 层 rmcp stdio 协议面同一入口；
+    /// Mutex 串行化多测试共享，JSON-RPC 行交换按 id 匹配响应）。
+    mcp: Mutex<McpClient>,
     _server: std::process::Child,
     server_stdout: PathBuf,
 }
@@ -184,25 +183,19 @@ fn fixture() -> &'static Fixture {
             .spawn()
             .expect("spawn rp_server.py");
 
-        // MCP 通道：协议面（bin rp-mcp stdio 循环同一入口），同一主库 + 同一
+        // MCP 通道：真实 rp-mcp 二进制（bin 层 rmcp stdio 协议面同一入口，
+        // rmcp 迁移批次 2026-11-14 起 spawn 而非进程内直调），同一主库 + 同一
         // aux + 同一运行库（run_tool 自锚定 trace_id 载具断言前提）。
-        let mcp = McpServer {
-            main_db: main_db.clone(),
-            aux_db: Some(run_db.clone()),
-            plugin_db: None,
-            token: Some(TOKEN.to_string()),
-            run_channel: Some(RunChannel {
-                run_db: run_db.clone(),
-                migrations_dir: repo_root().join("migrations"),
-                manifest_dirs: vec![repo_root().join("manifests/tools")],
-                artifacts_dir: dir.join("artifacts"),
-                workspaces_root: dir.join("workspaces"),
-                runtime_node_id: "parity-host".to_string(),
-                working_dir: Some(repo_root()),
-            }),
-        };
+        let rp_mcp = ensure_bin("rp-mcp", "mcp-server");
+        let mcp = McpClient::spawn(
+            &rp_mcp,
+            &main_db,
+            &run_db,
+            &run_db,
+            &dir.join("artifacts"),
+        );
 
-        let fix = Fixture { run_db, port, mcp, _server: server, server_stdout };
+        let fix = Fixture { run_db, port, mcp: Mutex::new(mcp), _server: server, server_stdout };
         wait_rest_ready(&fix);
         fix
     })
@@ -292,32 +285,112 @@ fn header(headers: &str, name: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// MCP 通道（协议面 roundtrip）
+// MCP 通道（真实 rp-mcp 子进程，stdio JSON-RPC 行交换）
 // ---------------------------------------------------------------------------
 
-fn mcp_roundtrip(server: &McpServer, request: Value) -> Value {
-    match server.handle_line(&request.to_string()) {
-        LineOutcome::Reply(line) => serde_json::from_str(&line).expect("jsonrpc reply"),
-        other => panic!("expected reply, got {other:?}"),
+/// 真实 rp-mcp 客户端驱动：spawn bin（bin 层 rmcp stdio 协议面同一入口），
+/// initialize 2024-11-05 握手 + notifications/initialized 后进入业务面；
+/// 裸 JSON-RPC 行交换按 id 匹配响应（不引入 rmcp client feature，
+/// vendor 红线：只进 server + transport-io 面）。
+struct McpClient {
+    _child: Child,
+    stdin: Option<BufWriter<ChildStdin>>,
+    stdout: std::io::Lines<BufReader<ChildStdout>>,
+    next_id: i64,
+}
+
+impl McpClient {
+    fn spawn(bin: &Path, main_db: &Path, aux_db: &Path, run_db: &Path, artifacts: &Path) -> Self {
+        let mut cmd = Command::new(bin);
+        cmd.env("RP_MCP_TOKEN", TOKEN)
+            .env("RP_DB_PATH", main_db)
+            .env("RP_AUX_DB", aux_db)
+            .env("RP_RUN_DB", run_db)
+            .env("RP_MIGRATIONS_DIR", repo_root().join("migrations"))
+            .env("RP_MANIFEST_DIRS", repo_root().join("manifests/tools"))
+            .env("RP_ARTIFACTS_DIR", artifacts)
+            .env("RP_PLUGIN_DB", "none")
+            .current_dir(repo_root())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let mut child = cmd.spawn().expect("spawn rp-mcp");
+        let stdin = child.stdin.take().expect("rp-mcp stdin");
+        let stdout = child.stdout.take().expect("rp-mcp stdout");
+        let mut client = Self {
+            _child: child,
+            stdin: Some(BufWriter::new(stdin)),
+            stdout: BufReader::new(stdout).lines(),
+            next_id: 100,
+        };
+        let reply = client.request(
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "rp-mcp-parity", "version": "0"}
+            }),
+        );
+        assert_eq!(
+            reply["result"]["protocolVersion"], "2024-11-05",
+            "载具握手协议版本协商回显: {reply}"
+        );
+        client.send_raw(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
+        client
+    }
+
+    fn send_raw(&mut self, line: &str) {
+        let stdin = self.stdin.as_mut().expect("rp-mcp stdin closed");
+        writeln!(stdin, "{line}").expect("write rp-mcp stdin");
+        stdin.flush().expect("flush rp-mcp stdin");
+    }
+
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}).to_string();
+        self.send_raw(&line);
+        loop {
+            let line = self
+                .stdout
+                .next()
+                .expect("rp-mcp closed stdout before matching response")
+                .expect("read rp-mcp stdout line");
+            let msg: Value = serde_json::from_str(&line).expect("rp-mcp stdout line is JSON");
+            if msg.get("id").and_then(Value::as_i64) == Some(id) && msg.get("method").is_none() {
+                return msg;
+            }
+        }
     }
 }
 
-fn mcp_call(server: &McpServer, name: &str, args: Value, id: i64) -> Value {
-    let reply = mcp_roundtrip(
-        server,
-        json!({"jsonrpc":"2.0","id":id,"method":"tools/call",
-               "params":{"name":name,"arguments":args}}),
+impl Drop for McpClient {
+    fn drop(&mut self) {
+        let _ = self._child.kill();
+        let _ = self._child.wait();
+    }
+}
+
+fn mcp_roundtrip(server: &Fixture, request: Value) -> Value {
+    let mut client = server.mcp.lock().expect("mcp mutex");
+    let method = request["method"].as_str().expect("method").to_string();
+    client.request(&method, request["params"].clone())
+}
+
+fn mcp_call(server: &Fixture, name: &str, args: Value, _id: i64) -> Value {
+    let mut client = server.mcp.lock().expect("mcp mutex");
+    let reply = client.request(
+        "tools/call",
+        json!({"name": name, "arguments": args}),
     );
     assert_eq!(reply["result"]["isError"], false, "mcp tools/call {name} 必须 isError=false: {reply}");
     serde_json::from_str(reply["result"]["content"][0]["text"].as_str().expect("text"))
         .expect("payload json")
 }
 
-fn mcp_read_resource(server: &McpServer, uri: &str, id: i64) -> Value {
-    let reply = mcp_roundtrip(
-        server,
-        json!({"jsonrpc":"2.0","id":id,"method":"resources/read","params":{"uri":uri}}),
-    );
+fn mcp_read_resource(server: &Fixture, uri: &str, _id: i64) -> Value {
+    let mut client = server.mcp.lock().expect("mcp mutex");
+    let reply = client.request("resources/read", json!({"uri": uri}));
     assert!(reply.get("error").is_none(), "resources/read {uri} 被拒: {reply}");
     let contents = reply["result"]["contents"].as_array().expect("contents");
     assert_eq!(contents.len(), 1, "单 contents 条目");
@@ -385,7 +458,7 @@ fn op1_list_tools_same_read_face_both_channels() {
     assert_eq!(rest["available"], true);
 
     // MCP 通道（同一读面 handle_tools 口径）。
-    let mcp = mcp_call(&fix.mcp, "rip.list_tools", json!({}), 101);
+    let mcp = mcp_call(fix, "rip.list_tools", json!({}), 101);
 
     // 同一输出形状：total / returned / 工具 id 序列（同排序）/ 逐条核心字段。
     assert_eq!(rest["total"], mcp["total"], "目录 total 双通道一致");
@@ -414,18 +487,29 @@ fn op1_list_tools_same_read_face_both_channels() {
         .iter()
         .map(|v| v.as_str().unwrap().to_string())
         .collect();
+    // rmcp 迁移批次（2026-11-14）：tools/list 标准 Tool 对象不再携带平台
+    // tier 字段（P0：标准必需 name + inputSchema，平台元数据经
+    // rip.list_tools 信封承载），能力面前段固定 6 条（CAPABILITY_TOOLS 次序
+    // = 目录前段次序），wire 级断言改为前段名序对账 + 标准 Tool 形状断言。
     let combined = mcp_roundtrip(
-        &fix.mcp,
-        json!({"jsonrpc":"2.0","id":102,"method":"tools/list","params":{"limit":200}}),
+        fix,
+        json!({"jsonrpc":"2.0","id":102,"method":"tools/list","params":{}}),
     );
-    let wire_capability: Vec<String> = combined["result"]["tools"]
-        .as_array()
-        .unwrap()
+    let wire_tools = combined["result"]["tools"].as_array().expect("tools array");
+    let wire_capability: Vec<String> = wire_tools
         .iter()
-        .filter(|t| t["tier"] == "capability")
-        .map(|t| t["name"].as_str().unwrap().to_string())
+        .take(capability_names.len())
+        .map(|t| t["name"].as_str().expect("tool name").to_string())
         .collect();
-    assert_eq!(capability_names, wire_capability, "能力面词表双通道一致");
+    assert_eq!(capability_names, wire_capability, "能力面词表双通道一致（目录前段固定次序）");
+    for tool in wire_tools {
+        assert!(
+            tool["name"].is_string()
+                && tool["inputSchema"].is_object()
+                && tool["inputSchema"]["type"].is_string(),
+            "tools/list 每条含标准必需 name 与 inputSchema（P0 一致性）: {tool}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,7 +522,7 @@ fn op2_get_tool_schema_identical_both_channels() {
 
     let (status, rest, _h) = rest_get(fix.port, &format!("/api/tools?tool_id={TOOL_ID}"));
     assert_eq!(status, 200);
-    let mcp = mcp_call(&fix.mcp, "rip.get_tool_schema", json!({"tool_id": TOOL_ID}), 201);
+    let mcp = mcp_call(fix, "rip.get_tool_schema", json!({"tool_id": TOOL_ID}), 201);
 
     // 同一输出形状：input/output Schema 逐字节一致（同一 tool 表列直读）。
     assert_eq!(rest["input_schema"], mcp["input_schema"], "input Schema 双通道一致");
@@ -486,7 +570,7 @@ fn op3_run_tool_same_engine_both_channels() {
 
     // MCP 通道：rip.run_tool 同一引擎受理链（submit_correlated 自锚定）。
     let payload = mcp_call(
-        &fix.mcp,
+        fix,
         "rip.run_tool",
         json!({"tool_id": TOOL_ID, "input": {"keyword": KEYWORD, "per_group_limit": 2}}),
         301,
@@ -547,7 +631,7 @@ fn op4_get_run_cross_channel_same_correlation() {
     let (wfr_id, rest_run_id, mcp_run_id, mcp_payload) = run_both_channels(401);
 
     // MCP 通道读 REST 通道 run（同一运行库只读投影）。
-    let mcp_read_rest = mcp_call(&fix.mcp, "rip.get_run_status", json!({"run_id": rest_run_id}), 402);
+    let mcp_read_rest = mcp_call(fix, "rip.get_run_status", json!({"run_id": rest_run_id}), 402);
     assert_eq!(mcp_read_rest["status"], "SUCCEEDED");
     assert_eq!(mcp_read_rest["trace_id"], json!(wfr_id), "MCP 读 REST run 得同一链锚");
 
@@ -589,7 +673,7 @@ fn op4_get_run_cross_channel_same_correlation() {
     assert_eq!(status, 404);
     assert_eq!(rest_err["error"]["code"], "no_run");
     let reply = mcp_roundtrip(
-        &fix.mcp,
+        fix,
         json!({"jsonrpc":"2.0","id":403,"method":"tools/call",
                "params":{"name":"rip.get_run_status","arguments":{"run_id":"rn-parity-unknown"}}}),
     );
@@ -625,9 +709,9 @@ fn op5_trace_same_audit_chain_both_channels() {
     // MCP rip://runs/<run_id>：与 rip.get_run_status 同一投影（run 行 +
     // evidence + artifact + trace 锚），两 run 的链锚与 REST /api/traces
     // 解析一致（同一审计链语义，不因通道而异）。
-    let mcp_resource_rest = mcp_read_resource(&fix.mcp, &format!("rip://runs/{rest_run_id}"), 502);
+    let mcp_resource_rest = mcp_read_resource(fix, &format!("rip://runs/{rest_run_id}"), 502);
     assert_eq!(mcp_resource_rest["trace_id"], json!(wfr_id), "资源面 REST run 链锚一致");
-    let mcp_resource_mcp = mcp_read_resource(&fix.mcp, &format!("rip://runs/{mcp_run_id}"), 503);
+    let mcp_resource_mcp = mcp_read_resource(fix, &format!("rip://runs/{mcp_run_id}"), 503);
     assert_eq!(mcp_resource_mcp["trace_id"], json!(mcp_run_id), "资源面 MCP run 链锚一致");
 
     // evidence 集一致（资源面 evidence 列表 == REST correlation.evidence_ids）。
@@ -649,7 +733,7 @@ fn op5_trace_same_audit_chain_both_channels() {
     // rip://evidence/<id> 实读：evidence 行 + Artifact 快照文本在位
     // （captured_by=rp-mcp:run_tool，storage_ref 指向 artifact 文件）。
     let evidence_id = mcp_resource_evidence[0].to_string();
-    let evidence = mcp_read_resource(&fix.mcp, &format!("rip://evidence/{evidence_id}"), 504);
+    let evidence = mcp_read_resource(fix, &format!("rip://evidence/{evidence_id}"), 504);
     assert_eq!(evidence["evidence_id"], json!(evidence_id));
     assert_eq!(evidence["source_pk"], json!(mcp_run_id), "evidence 回链 run_id");
     assert_eq!(evidence["trace_id"], json!(mcp_run_id), "evidence 同链 trace_id");
@@ -675,7 +759,7 @@ fn run_both_channels(id_base: i64) -> (String, String, String, Value) {
     let rest_run_id =
         detail["correlation"]["tool_run_id"].as_str().expect("tool_run_id").to_string();
     let payload = mcp_call(
-        &fix.mcp,
+        fix,
         "rip.run_tool",
         json!({"tool_id": TOOL_ID, "input": {"keyword": KEYWORD, "per_group_limit": 2}}),
         id_base,

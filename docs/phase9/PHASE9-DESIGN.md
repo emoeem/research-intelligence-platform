@@ -181,3 +181,29 @@ P9-3 判据（ROADMAP §10.3 原文）：同一业务操作（列工具、查 Sc
 - crates/mcp-server/tests/mcp_protocol.rs：method_dispatch 用例更新（resources/list 4 件、templates 3 件、prompts 3 条、词表外 -32602、resources/subscribe -32601）。
 - apps/server/selftest_phase9_rest.sh：路由计数断言随批演进（17 条）。
 - 门禁实测数字与浏览器截图证据见 docs/releases/RELEASE_2026-11-14_PHASE9.md §三。
+
+## 十三、rmcp 迁移整改批次追记（2026-11-14，审计 §5 十项落地）
+
+> 外部审计（[MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md](MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md)）判定手写协议层不可长期保留，用户定案「按照这个方案」。本节记协议形态的批次内演进，选型与七小节台账见 [RMCP-MIGRATION.md](RMCP-MIGRATION.md)。
+
+### 一、协议层交接边界
+
+- 退役：JSON-RPC 2.0 解析、方法派发、result/error 信封、通知静默、initialize 回显、常时令牌比较、`_meta.rp.auth` 出示校验（手写段全部删除）。
+- 接管：rmcp 3.10.0（`default-features=false, features=["server","transport-io"]`，crates.io 发布版精确钉定）承载 initialize 握手状态机、协议版本协商、协议错误信封、通知分发与 stdio transport；tokio 为运行时面直依赖（workspace 最小 feature 子集）。
+- 保留：catalog / dispatch / resources / prompts 四个业务模块零重写，新增 `service.rs`（`impl rmcp::ServerHandler for McpServer`）做业务面映射；stdout 只出协议消息、日志走 stderr 纪律不变。
+
+### 二、协议形态演进（与 §二/§五/§六 的差异）
+
+- P0：tools/list 每条为标准 Tool 对象（必需 name + inputSchema，注册面 input_schema 列直读，缺省宽松 object 形态；分页只控量不省必需 Schema）；标准对象不再携带 tier/tool_id 等平台摘要列，对账面移到 rip.list_tools 信封（十二列同源不变）。
+- P1：initialize 版本协商由 rmcp 承载，支持列表 2024-11-05 至 2025-11-25（2026-07-28 无握手面不在列表）；列表内协商回显、列表外回落服务端声明版本 2025-11-25，不回显任意客户端版本。
+- tools/list 收敛为标准分页（唯一入参 cursor，页大小服务端固定 20）；keyword/lifecycle/governance 过滤与 limit 承载面移到 rip.list_tools（能力不丢失）。
+- RP_MCP_TOKEN 重定义：宿主环境变量注入即授权边界（缺失/空白 fail-closed exit 2 拒启），不实现不发明 MCP 标准外认证字段（§六 的 -32001 三段语义退役，三态实测保留：缺失/错误形态/正确注入）。
+- tools/call 阻塞面（sqlite 与工具执行）经 spawn_blocking 隔离 async 运行时，run 执行期 cancel 仍可并发受理（D-TC-04 不退化）。
+- 连带：rp-tool（P9-2 最小客户端）补 initialize（id=0）+ notifications/initialized 前置（rmcp 状态机首请求必须 initialize），CLI 输出形状不变；剧本 prompt 第 1 步文本同步更正。
+
+### 三、验证面（本批增量）
+
+- crates/mcp-server/tests/ 重写为 spawn 真实 rp-mcp 二进制（tests/common/mod.rs 驱动，CARGO_BIN_EXE）：mcp_protocol.rs 11 用例（三态令牌 / 协商 / P0 标准对象 / 分页 / 同源 / 按需 Schema / 派发面 / conformance）；run_tool_e2e.rs 7 用例（执行链与取消语义原判据保留）。
+- rp-mcp-parity：MCP 通道改 spawn 真实 rp-mcp（Mutex 串行驱动），op1 能力面对账改为目录前段固定次序 + 标准 Tool 形状断言，op2 到 op5 逻辑不变。
+- selftest_phase9_mcp.sh：mcp_req 会话化（initialize 前置）、§4 三态令牌、§5 协商、§6 标准 Tool 对象断言、§8 对账改走 rip.list_tools；26/26 全过。
+- 真实客户端 e2e：docs/phase9/rmcp-client-e2e/（独立 Node 客户端 10 步全过，会话日志留证）。

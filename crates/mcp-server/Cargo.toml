@@ -4,23 +4,26 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-description = "Phase 9 平台 MCP server（bin rp-mcp，stdio NDJSON JSON-RPC 2.0，MCP 2024-11-05 子集）：P9-1 握手鉴权（RP_MCP_TOKEN 环境变量，禁止匿名）+ tools/list 分页目录 + rip.get_tool_schema 按需 Schema；P9-2 rip.run_tool 端到端执行通道（经 tool-engine Engine 受理 D-TC-05 与既有适配器派发，python_worker 走 execute_via_engine、podman 走 Gateway::dispatch + execute_container_via_engine，不建第二套派发逻辑）与 rip.get_run_status / rip.cancel_run 运行面；结构化结果 + Artifact + Evidence 登记复用 agent-engine EvidenceRegistrar（P7-2 同一实现）；目录与 Schema 与 Tool Center 同源（同一 tool 表读面，aux 增量合并同 rp_server.py handle_tools 口径），rip.* 命名空间，初始化只暴露目录与分页发现不暴露工具完整说明（计划 §11:658）；形态参考 integrations/rtis/rtis_mcp.mjs 但代码独立，零新增外部依赖（全部为 workspace 既有 crate，vendor 无 rmcp/tokio）"
+description = "Phase 9 平台 MCP server（bin rp-mcp）：rmcp（MCP 官方 Rust SDK）server + stdio transport 承载协议层（JSON-RPC 2.0 解析、initialize 生命周期、协议版本协商、协议错误信封、stdio I/O 全部交给 SDK），RIP 业务 handler（目录查询 tools/list + tools/call 派发）接入 SDK；P0 整改：tools/list 每个 Tool 对象含标准必需 name 与 inputSchema（注册面 Schema 列直读，缺省宽松 object 形态），分页只控量不省必需 Schema，rip.get_tool_schema 保留为平台自定义按需详情工具；P1 整改：协议版本协商由 rmcp 承载（支持则协商，不支持按规范回落服务端支持版本）；RP_MCP_TOKEN 重定义为宿主进程环境变量注入即授权边界（缺失/空值 fail-closed 拒启，不发明 MCP 标准外认证字段）；rip.run_tool 端到端执行通道经 tool-engine Engine 受理 D-TC-05 与既有适配器派发（python_worker 走 execute_via_engine、podman 走 Gateway::dispatch + execute_container_via_engine，不建第二套派发逻辑）与 rip.get_run_status / rip.cancel_run 运行面；结构化结果 + Artifact + Evidence 登记复用 agent-engine EvidenceRegistrar（P7-2 同一实现）；目录与 Schema 与 Tool Center 同源（同一 tool 表读面，aux 增量合并同 rp_server.py handle_tools 口径），rip.* 命名空间；协议版本面 2024-11-05 至 2025-11-25（rmcp 实际支持口径）"
 
 [dependencies]
-# 依赖面（复用优先纪律）：serde/serde_json 走 workspace 既有条目；数据库读面
-# 复用 database::Pool（rusqlite bundled 随链，只读打开 SQLITE_OPEN_READ_ONLY），
-# 不直接依赖 rusqlite（先例：各 engine 只依赖 database，rusqlite 经其重导出）。
-# 协议层零新增第三方 crate：JSON-RPC 2.0 与 MCP 2024-11-05 子集为薄协议层，
-# 手写派发（rmcp/tokio 不在 vendor，引入即破坏 --offline 构建红线）。
-# P9-2 执行通道依赖（均为 workspace 既有 crate，零新增外部依赖）：
-# tool-engine（Engine 受理/状态机/信封 + adapter 驱动）、tool-registry
-# （Registry + Manifest 解析复用面）、domain（RunId/ToolRunStatus/RuntimeNode）、
-# runtime-gateway（容器路径 Gateway::dispatch 心跳判定，P3-3 同款）、
-# agent-engine（EvidenceRegistrar，P7-2 最小闭环同一登记实现）、
-# serde_yaml_ng（Manifest yaml 登记件解析，tls_inspect 系只有 yaml）。
+# 依赖面（复用优先纪律）：协议层 = rmcp 官方 SDK（审计 §5 整改项，手写
+# JSON-RPC/MCP 子集协议层退役；feature 最小集见 workspace.dependencies 注释
+# 与 docs/phase9/RMCP-MIGRATION.md，tokio 为 rmcp 运行时面直依赖）；serde/
+# serde_json 走 workspace 既有条目；数据库读面复用 database::Pool（rusqlite
+# bundled 随链，只读打开 SQLITE_OPEN_READ_ONLY），不直接依赖 rusqlite（先例：
+# 各 engine 只依赖 database，rusqlite 经其重导出）。
+# P9-2 执行通道依赖（均为 workspace 既有 crate）：tool-engine（Engine 受理/
+# 状态机/信封 + adapter 驱动）、tool-registry（Registry + Manifest 解析复用面）、
+# domain（RunId/ToolRunStatus/RuntimeNode）、runtime-gateway（容器路径
+# Gateway::dispatch 心跳判定，P3-3 同款）、agent-engine（EvidenceRegistrar，
+# P7-2 最小闭环同一登记实现）、serde_yaml_ng（Manifest yaml 登记件解析，
+# tls_inspect 系只有 yaml）。
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
+rmcp = { workspace = true }
+tokio = { workspace = true }
 database = { workspace = true }
 domain = { workspace = true }
 tool-registry = { workspace = true }

@@ -295,10 +295,33 @@ fn run_via_mcp(
     let Some(mut stdin) = child.stdin.take() else {
         die_json("mcp_spawn_failed", "rp-mcp stdin unavailable");
     };
+    // rmcp 迁移批次（2026-11-14）：rp-mcp 协议层改由 rmcp SDK 承载，其
+    // initialize 握手状态机要求首条请求必须为 initialize（否则连接以
+    // ExpectedInitializeRequest 断开），P9-2 原「无状态直呼 tools/call」形态
+    // 随手写协议层退役。本客户端补齐标准握手：initialize（id=0，响应被下方
+    // id=1 读取器自动跳过）→ notifications/initialized（通知无响应）→ 业务
+    // 请求（id=1）。CLI 输出形状不变（仍取 id=1 的 tools/call / 状态响应）。
+    let handshake = json!({
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": { "name": "rp-tool", "version": env!("CARGO_PKG_VERSION") }
+        }
+    });
+    let initialized = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+    if let Err(e) = writeln!(stdin, "{handshake}") {
+        die_json("mcp_write_failed", &format!("write initialize: {e}"));
+    }
+    if let Err(e) = writeln!(stdin, "{initialized}") {
+        die_json("mcp_write_failed", &format!("write notifications/initialized: {e}"));
+    }
     if let Err(e) = writeln!(stdin, "{request}") {
         die_json("mcp_write_failed", &format!("write request: {e}"));
     }
-    // 关 stdin 触发 EOF 收尾（rp-mcp 逐行处理，EOF 退出 0）。
+    // 关 stdin 触发 EOF 收尾（rmcp transport 读到 EOF 收尾，进程退出 0）。
     drop(stdin);
 
     let Some(stdout) = child.stdout.take() else {

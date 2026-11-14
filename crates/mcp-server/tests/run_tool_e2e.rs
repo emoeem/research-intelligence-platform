@@ -1,5 +1,8 @@
-//! P9-2 rip.run_tool 端到端集成测试（ROADMAP §10.3 P9-2 + ask 自验判据）：
-//! - 无令牌 tools/call 被拒（-32001，禁止匿名）；
+//! P9-2 rip.run_tool 端到端集成测试（rmcp 迁移整改批次重写，ROADMAP §10.3
+//! P9-2 + ask 自验判据）：spawn 真实 rp-mcp 二进制（[`common::McpProc`]，
+//! rmcp stdio 协议面同一入口），以裸 JSON-RPC 客户端驱动：
+//! - 令牌授权边界 fail-closed（RP_MCP_TOKEN 缺失 -> exit 2，不落任何运行行；
+//!   审计 §4.3 重定义：环境变量注入即授权边界，无协议认证字段）；
 //! - T2 authorization_ref 校验保留（D-TC-05 POLICY_DENIED，拒绝不落行）；
 //! - 真实 python_worker 全链：run_tool → Engine 受理 → execute_via_engine →
 //!   SUCCEEDED 结构化结果 + Artifact + Evidence 引用（P7-2 同一登记实现，
@@ -10,18 +13,20 @@
 //!   环境跳过本用例，容器全链由 tool-engine web_research_e2e 覆盖）。
 //!
 //! 纪律：临时库自建（不触碰生产 platform*.db 与 rip-data）；python worker
-//! 为真实子进程（python3 缺席按 V-9 跳过）；tool-engine / runtime-gateway
-//! 为 dev-dep（测试装配与守卫用，执行面与 bin 同一 RunChannel 路径）。
+//! 为真实子进程（python3 缺席按 V-9 跳过）；tool-engine 为 dev-dep（判据六
+//! 引擎直受理装配用）；执行面与 bin 同一 RunChannel 路径（经 RP_RUN_DB /
+//! RP_MANIFEST_DIRS 环境变量装配，不建第二套派发）。
+
+mod common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use database::{migrate, DbPath, Pool, PoolConfig};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use mcp_server::dispatch::RunChannel;
-use mcp_server::{LineOutcome, McpServer};
+use common::McpProc;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -32,12 +37,11 @@ fn repo_root() -> PathBuf {
 
 static TMP_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-/// 测试工作区（run_db / artifacts / workspaces / 内联 Manifest 目录）。
+/// 测试工作区（run_db / artifacts / 内联 Manifest 目录）。
 struct Fixture {
     _dir: PathBuf,
     run_db: PathBuf,
     artifacts_dir: PathBuf,
-    workspaces_root: PathBuf,
     manifest_dirs: Vec<PathBuf>,
     extra_manifest_dir: PathBuf,
 }
@@ -52,14 +56,12 @@ fn fixture(tag: &str) -> Fixture {
     std::fs::create_dir_all(&dir).expect("fixture dir");
     let run_db = dir.join("run.db");
     let artifacts_dir = dir.join("artifacts");
-    let workspaces_root = dir.join("workspaces");
     let extra_manifest_dir = dir.join("manifests");
     std::fs::create_dir_all(&extra_manifest_dir).expect("manifest dir");
     Fixture {
         _dir: dir,
         run_db,
         artifacts_dir,
-        workspaces_root,
         manifest_dirs: vec![
             repo_root().join("manifests/tools"),
             repo_root().join("containerfiles/rip-tool-webresearch"),
@@ -70,40 +72,29 @@ fn fixture(tag: &str) -> Fixture {
 }
 
 impl Fixture {
-    fn channel(&self) -> RunChannel {
-        RunChannel {
-            run_db: self.run_db.clone(),
-            migrations_dir: repo_root().join("migrations"),
-            manifest_dirs: self.manifest_dirs.clone(),
-            artifacts_dir: self.artifacts_dir.clone(),
-            workspaces_root: self.workspaces_root.clone(),
-            runtime_node_id: "host-e2e".to_string(),
-            working_dir: Some(repo_root()),
-        }
+    /// spawn 真实 rp-mcp（run face 挂本夹具运行库；aux 不挂载 =
+    /// 目录读面主库单库；执行面由 bin 层同一 RunChannel 装配；CWD = 仓库根，
+    /// python worker 命令为仓库根相对路径）。
+    fn server(&self, token: &str) -> McpProc {
+        McpProc::spawn_in(
+            &[
+                ("RP_MCP_TOKEN", token),
+                ("RP_DB_PATH", repo_root().join("migrations/platform.db").to_string_lossy().as_ref()),
+                ("RP_RUN_DB", self.run_db.to_string_lossy().as_ref()),
+                ("RP_MIGRATIONS_DIR", repo_root().join("migrations").to_string_lossy().as_ref()),
+                ("RP_MANIFEST_DIRS", &self.manifest_dirs_csv()),
+                ("RP_ARTIFACTS_DIR", self.artifacts_dir.to_string_lossy().as_ref()),
+            ],
+            Some(&repo_root()),
+        )
     }
 
-    fn server(&self, token: Option<&str>) -> McpServer {
-        McpServer {
-            main_db: repo_root().join("migrations/platform.db"),
-            aux_db: None,
-            plugin_db: None,
-            token: token.map(str::to_string),
-            run_channel: Some(self.channel()),
-        }
-    }
-}
-
-/// 单请求进出（tools/call → 解析信封）。
-fn roundtrip(server: &McpServer, name: &str, arguments: Value, id: i64) -> Value {
-    let request = json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "method": "tools/call",
-        "params": { "name": name, "arguments": arguments },
-    });
-    match server.handle_line(&request.to_string()) {
-        LineOutcome::Reply(line) => serde_json::from_str(&line).expect("jsonrpc reply"),
-        other => panic!("expected reply, got {other:?}"),
+    fn manifest_dirs_csv(&self) -> String {
+        self.manifest_dirs
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -130,7 +121,7 @@ fn podman_available() -> bool {
         .unwrap_or(false)
 }
 
-/// 运行库直连（断言面；库由 RunChannel 首次调用时迁移建立）。
+/// 运行库直连（断言面；库由 bin 层 RunChannel 首次调用时迁移建立）。
 fn run_pool(fix: &Fixture) -> Pool {
     Pool::open(PoolConfig {
         path: DbPath::File(fix.run_db.clone()),
@@ -218,20 +209,28 @@ fn write_t2_demo_manifest(fix: &Fixture) -> Value {
 }
 
 // ---------------------------------------------------------------------------
-// 判据一：无令牌 tools/call 被拒（禁止匿名）
+// 判据一：令牌授权边界 fail-closed（缺失即 exit 2，不落任何运行行）
 // ---------------------------------------------------------------------------
 
 #[test]
-fn run_tool_without_token_is_rejected_32001() {
+fn run_tool_without_token_fails_closed_before_serving() {
     let fix = fixture("no-token");
-    let server = fix.server(None);
-    let reply = roundtrip(
-        &server,
-        "rip.run_tool",
-        json!({"tool_id": "rip.doc.parse", "input": {"text": "x"}}),
-        1,
+    let mut proc = McpProc::spawn(&[
+        ("RP_MCP_TOKEN", ""),
+        ("RP_RUN_DB", fix.run_db.to_string_lossy().as_ref()),
+        ("RP_MIGRATIONS_DIR", repo_root().join("migrations").to_string_lossy().as_ref()),
+    ]);
+    proc.send_raw(
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"rip.run_tool","arguments":{"tool_id":"rip.doc.parse","input":{"text":"x"}}}})
+            .to_string()
+            .as_str(),
     );
-    assert_eq!(reply["error"]["code"], -32001, "无令牌 run_tool 被拒: {reply}");
+    assert_eq!(
+        proc.wait_exit(),
+        2,
+        "无令牌 spawn 必须 exit 2（fail-closed 授权边界，不进入服务循环）"
+    );
     // 运行库零副作用（未建库未落行）。
     assert!(!fix.run_db.exists(), "无令牌调用不得创建运行库");
 }
@@ -249,12 +248,11 @@ fn t2_without_authorization_ref_is_policy_denied_and_lands_no_run_row() {
     let fix = fixture("t2-denied");
     let manifest = write_t2_demo_manifest(&fix);
     register_manifest(&fix, &manifest);
-    let server = fix.server(Some("tok"));
-    let reply = roundtrip(
-        &server,
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
+    let reply = proc.call(
         "rip.run_tool",
         json!({"tool_id": T2_DEMO_MANIFEST_ID, "input": {"text": "# 标题\n\n正文。"}}),
-        1,
     );
     assert_eq!(reply["result"]["isError"], true, "T2 缺授权引用必须 isError=true: {reply}");
     let payload = payload_of(&reply);
@@ -268,6 +266,7 @@ fn t2_without_authorization_ref_is_policy_denied_and_lands_no_run_row() {
     );
     // D-TC-05：拒绝不落行（tool_run 零行，运行库已建但无 run）。
     assert_eq!(count(&fix, "tool_run", "1=1"), 0, "拒绝不得产生 run 行");
+    proc.wait_exit();
 }
 
 // ---------------------------------------------------------------------------
@@ -283,9 +282,9 @@ fn t2_with_authorization_ref_executes_real_worker() {
     let fix = fixture("t2-granted");
     let manifest = write_t2_demo_manifest(&fix);
     register_manifest(&fix, &manifest);
-    let server = fix.server(Some("tok"));
-    let reply = roundtrip(
-        &server,
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
+    let reply = proc.call(
         "rip.run_tool",
         json!({
             "tool_id": T2_DEMO_MANIFEST_ID,
@@ -293,7 +292,6 @@ fn t2_with_authorization_ref_executes_real_worker() {
             "authorization_ref": "authz-e2e-p92",
             "task_id": "task-p92-t2"
         }),
-        1,
     );
     assert_eq!(reply["result"]["isError"], false, "带授权引用应执行成功: {reply}");
     let payload = payload_of(&reply);
@@ -311,11 +309,12 @@ fn t2_with_authorization_ref_executes_real_worker() {
         count(&fix, "evidence", &format!("source_pk = '{run_id}' AND captured_by = 'rp-mcp:run_tool'")),
         1
     );
+    proc.wait_exit();
 }
 
 // ---------------------------------------------------------------------------
 // 判据四：T0 python_worker 全链（rip.doc.parse 真实执行 + 引用对账 +
-// get_run_status 投影 + 终态 cancel 拒绝）
+// get_run_status 投影 + 终态 cancel 拒绝 + run_db Schema 回退）
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -334,15 +333,14 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
     }
     let fix = fixture("doc-parse");
     register_manifest(&fix, &read_repo_manifest("manifests/tools/rip.doc.parse.json"));
-    let server = fix.server(Some("tok"));
-    let reply = roundtrip(
-        &server,
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
+    let reply = proc.call(
         "rip.run_tool",
         json!({
             "tool_id": "rip.doc.parse",
             "input": {"text": "# 标题\n\n正文一段。", "format": "md"}
         }),
-        1,
     );
     assert_eq!(reply["result"]["isError"], false, "doc.parse 全链应成功: {reply}");
     let payload = payload_of(&reply);
@@ -353,7 +351,7 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
     assert_eq!(count(&fix, "tool_run", &format!("run_id = '{run_id}' AND status = 'SUCCEEDED'")), 1);
 
     // rip.get_run_status：只读投影 + Artifact/Evidence 引用面。
-    let reply = roundtrip(&server, "rip.get_run_status", json!({"run_id": run_id}), 2);
+    let reply = proc.call("rip.get_run_status", json!({"run_id": run_id}));
     assert_eq!(reply["result"]["isError"], false, "get_run_status: {reply}");
     let status = payload_of(&reply);
     assert_eq!(status["status"], "SUCCEEDED");
@@ -362,24 +360,19 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
     assert_eq!(status["evidence_refs"].as_array().unwrap().len(), 1);
 
     // rip.cancel_run：终态 run 不可发起取消（D-TC-04，accepted=false）。
-    let reply = roundtrip(&server, "rip.cancel_run", json!({"run_id": run_id}), 3);
+    let reply = proc.call("rip.cancel_run", json!({"run_id": run_id}));
     let payload = payload_of(&reply);
     assert_eq!(payload["accepted"], false, "终态 run 取消必须拒绝: {payload}");
 
     // 未知 run 的状态查询 = 结构化 isError。
-    let reply = roundtrip(&server, "rip.get_run_status", json!({"run_id": "rn-none"}), 4);
+    let reply = proc.call("rip.get_run_status", json!({"run_id": "rn-none"}));
     assert_eq!(reply["result"]["isError"], true);
     let payload = payload_of(&reply);
     assert!(payload["error"]["message"].as_str().unwrap().contains("not found"), "{payload}");
 
     // rip.get_tool_schema 的 run_db 回退段：目录两库（主库无此行 + aux 未
     // 挂载）没有的行，运行库已登记则按同一形状返回（source=run_db）。
-    let reply = roundtrip(
-        &server,
-        "rip.get_tool_schema",
-        json!({"tool_id": "rip.doc.parse"}),
-        5,
-    );
+    let reply = proc.call("rip.get_tool_schema", json!({"tool_id": "rip.doc.parse"}));
     assert_eq!(reply["result"]["isError"], false, "run_db schema fallback: {reply}");
     let schema = payload_of(&reply);
     assert_eq!(schema["source"], "run_db");
@@ -388,6 +381,7 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
         json!(["text"]),
         "运行库登记件的 input_schema 同源（oneOf 必填形）: {schema}"
     );
+    proc.wait_exit();
 }
 
 // ---------------------------------------------------------------------------
@@ -397,13 +391,9 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
 #[test]
 fn run_tool_unknown_tool_is_rejected_and_lands_no_run_row() {
     let fix = fixture("unknown-tool");
-    let server = fix.server(Some("tok"));
-    let reply = roundtrip(
-        &server,
-        "rip.run_tool",
-        json!({"tool_id": "rip.nope", "input": {}}),
-        1,
-    );
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
+    let reply = proc.call("rip.run_tool", json!({"tool_id": "rip.nope", "input": {}}));
     assert_eq!(reply["result"]["isError"], true);
     let payload = payload_of(&reply);
     assert!(
@@ -411,6 +401,7 @@ fn run_tool_unknown_tool_is_rejected_and_lands_no_run_row() {
         "未登记工具如实报 Manifest 缺失: {payload}"
     );
     assert_eq!(count(&fix, "tool_run", "1=1"), 0, "未知工具不落 run 行");
+    proc.wait_exit();
 }
 
 // ---------------------------------------------------------------------------
@@ -441,24 +432,26 @@ fn cancel_run_marks_cancel_requested_at_for_waiting_run() {
             "workspace_id": "ws-e2e"
         }))
         .expect("submit queued run");
-    let server = fix.server(Some("tok"));
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
     // QUEUED 不可发起取消（accepted=false，无副作用）。
-    let reply = roundtrip(&server, "rip.cancel_run", json!({"run_id": "rn-e2e-cancel"}), 1);
+    let reply = proc.call("rip.cancel_run", json!({"run_id": "rn-e2e-cancel"}));
     let payload = payload_of(&reply);
     assert_eq!(payload["accepted"], false, "QUEUED 不受理取消: {payload}");
     // 第 3 行跃迁落 WAITING_FOR_RUNNER 后取消受理（D-TC-04）。
     engine
         .mark_waiting_for_runner("rn-e2e-cancel")
         .expect("waiting transition");
-    let reply = roundtrip(&server, "rip.cancel_run", json!({"run_id": "rn-e2e-cancel"}), 1);
+    let reply = proc.call("rip.cancel_run", json!({"run_id": "rn-e2e-cancel"}));
     let payload = payload_of(&reply);
     assert_eq!(payload["accepted"], true, "WAITING_FOR_RUNNER 受理取消: {payload}");
-    let reply = roundtrip(&server, "rip.get_run_status", json!({"run_id": "rn-e2e-cancel"}), 2);
+    let reply = proc.call("rip.get_run_status", json!({"run_id": "rn-e2e-cancel"}));
     let status = payload_of(&reply);
     assert!(status["cancel_requested_at"].is_string(), "取消时刻落行: {status}");
     // 未知 run 取消 = 结构化 isError。
-    let reply = roundtrip(&server, "rip.cancel_run", json!({"run_id": "rn-none"}), 3);
+    let reply = proc.call("rip.cancel_run", json!({"run_id": "rn-none"}));
     assert_eq!(reply["result"]["isError"], true);
+    proc.wait_exit();
 }
 
 // ---------------------------------------------------------------------------
@@ -477,12 +470,11 @@ fn container_tool_without_podman_waits_with_run_row_present() {
         &fix,
         &read_repo_manifest("containerfiles/rip-tool-webresearch/tool-manifest.json"),
     );
-    let server = fix.server(Some("tok"));
-    let reply = roundtrip(
-        &server,
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
+    let reply = proc.call(
         "rip.run_tool",
         json!({"tool_id": "rip.http.inspect", "input": {"url": "https://example.com/"}}),
-        1,
     );
     // Gateway 心跳判定：podman 探针失败 → WAITING_FOR_RUNNER（不 FAILED，
     // 不伪造结果；run 行在库对账）。
@@ -497,10 +489,11 @@ fn container_tool_without_podman_waits_with_run_row_present() {
         "rip.http.inspect run 行在库（WAITING_FOR_RUNNER）"
     );
     // 状态查询同见等待态与节点健康说明。
-    let reply = roundtrip(&server, "rip.get_run_status", json!({"run_id": run_id}), 2);
+    let reply = proc.call("rip.get_run_status", json!({"run_id": run_id}));
     let status = payload_of(&reply);
     assert_eq!(status["status"], "WAITING_FOR_RUNNER");
     assert_eq!(status["artifacts"].as_array().unwrap().len(), 0, "非终态无 Artifact");
+    proc.wait_exit();
 }
 
 /// 读仓库登记件（json 形态；yaml 件由 serde_yaml_ng 解析的路径在

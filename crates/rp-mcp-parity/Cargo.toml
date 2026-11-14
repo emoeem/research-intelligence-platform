@@ -4,12 +4,13 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-description = "P9-4 协议一致性载具（ROADMAP §10.5 风险 1 常驻 CI 门禁）：五个业务操作（列工具、查 Schema、跑工具、查 Run、查 trace）对 REST（apps/server/rp_server.py 真实 HTTP 进程）与 MCP（mcp-server McpServer 协议面）两通道断言同一输出形状与同一审计链。crate 本体只有测试（tests/parity.rs），lib 仅为占位模块"
+description = "P9-4 协议一致性载具（ROADMAP §10.5 风险 1 常驻 CI 门禁）：五个业务操作（列工具、查 Schema、跑工具、查 Run、查 trace）对 REST（apps/server/rp_server.py 真实 HTTP 进程）与 MCP（真实 rp-mcp 二进制 spawn，rmcp stdio 协议面同一入口）两通道断言同一输出形状与同一审计链。crate 本体只有测试（tests/parity.rs），lib 仅为占位模块"
 
 [dependencies]
 # 依赖面（复用优先纪律，全部为 workspace 既有 crate，零新增外部依赖）：
-# - mcp-server：MCP 通道协议面（handle_line 与 bin rp-mcp stdio 循环同一入口；
-#   stdio 循环本身由 mcp-server tests 与 bin 覆盖，载具不重复）；
+# - mcp-server：MCP 通道面依赖（rmcp 迁移批次 2026-11-14 起载具 spawn 真实
+#   rp-mcp 二进制走 stdio 协议面，tests/parity.rs 内薄 JSON-RPC 行驱动按 id
+#   匹配响应；依赖仅为 ensure_bin 构建面与 fixture 类型，不做进程内直调）；
 # - database：fixture 库迁移（001 链 + 全量链）与只读对账查询；
 # - tool-registry：运行库工具登记（Registry::register，rp-tool register 库面
 #   同款）；

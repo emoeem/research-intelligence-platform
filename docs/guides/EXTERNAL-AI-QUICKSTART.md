@@ -4,27 +4,31 @@
 
 | 项       | 值 |
 | ---      | --- |
-| 状态     | 生效中（Phase 9 P9-2，2026-11-14） |
+| 状态     | 生效中（Phase 9 P9-2 + rmcp 迁移整改批次，2026-11-14） |
 | 适用版本 | Phase 9 P9-2 及之后 |
 | 相关     | docs/phase9/PHASE9-DESIGN.md、docs/releases/RELEASE_2026-11-14_PHASE9-P9-2.md、apps/server/selftest_phase9_mcp.sh、integrations/rtis/rtis_mcp.mjs（kit 面，非本通道） |
 
 ## 一、30 秒总览
 
-1. 启动方式：stdio 上的 NDJSON JSON-RPC 2.0，一行一请求，宿主把服务当子进程 spawn 并注入令牌环境变量（先例：github-mcp-server 的 GITHUB_TOKEN）。仓库根执行：
+1. 启动方式：stdio 上的 JSON-RPC 2.0（协议面 = MCP 官方 Rust SDK rmcp），一行一消息，宿主把服务当子进程 spawn 并注入令牌环境变量（先例：github-mcp-server 的 GITHUB_TOKEN）。首条请求必须为 initialize（rmcp 握手状态机要求），随后 notifications/initialized，再发业务请求。仓库根执行：
    ~~~bash
    cargo build --offline -p mcp-server --bin rp-mcp
-   RP_MCP_TOKEN=<你的令牌> target/debug/rp-mcp
-   # 之后逐行喂 JSON-RPC 请求；EOF 退出
+   RP_MCP_TOKEN=<你的令牌> target/debug/rp-mcp <<'EOF'
+   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}
+   {"jsonrpc":"2.0","method":"notifications/initialized"}
+   {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+   EOF
+   # EOF 退出 0；协议版本协商由 rmcp 承载（2024-11-05 至 2025-11-25）
    ~~~
-2. 禁止匿名：`RP_MCP_TOKEN` 未配置时所有请求以 -32001 auth_required 拒绝（P9-1 纪律延续）。
-3. 工具目录分两段：能力面（`rip.*` 六条平台协议面）+ 注册面（tool 表逐行投影，MCP 名 = `rip.<tool_id>`）。条目只有摘要列，没有 description 和 inputSchema，Schema 一律经 `rip.get_tool_schema` 按需获取（计划 §11:658：不要在 MCP 初始化时把所有工具的完整说明暴露给模型）。
+2. 授权边界（rmcp 迁移整改批次重定义，审计 §4.3）：`RP_MCP_TOKEN` 由宿主 spawn 时经环境变量注入，注入即授权本实例对外服务；未配置或空白一律 fail-closed 拒启（exit 2，不进入服务循环）。这是宿主侧授权边界，不是客户端协议认证：服务器不实现也不要求任何 MCP 标准外的协议认证字段（原 `_meta.rp.auth` 自定义出示校验已随手写协议层退役）。
+3. 工具目录分两段：能力面（`rip.*` 六条平台协议面，带一行 description）+ 注册面（tool 表逐行投影，MCP 名 = `rip.<tool_id>`，零 description）。P0 整改后每条 Tool 对象都含标准必需 `name` 与 `inputSchema`（注册面 Schema 列直读，缺省宽松 object 形态）；分页只控量不省必需 Schema；平台元数据与出参 Schema 仍经 `rip.get_tool_schema` 按需获取（计划 §11:658：不在初始化与目录面暴露工具完整说明）。
 4. 执行只走 `rip.run_tool` 一个入口：内部经 Tool Engine 受理（D-TC-05）与既有适配器派发，返回结构化结果 + Artifact + Evidence 引用；与 Web Workflow Tool 节点是同一个引擎（`crates/tool-engine/src/lib.rs:147` open、`:157` submit），不是第二套派发。
 
 ## 二、环境变量（宿主 spawn 时注入）
 
 | 变量 | 必填 | 缺省 | 说明 |
 | --- | --- | --- | --- |
-| `RP_MCP_TOKEN` | 是 | 无 | 握手令牌；未配置一律 -32001 |
+| `RP_MCP_TOKEN` | 是 | 无 | 授权边界令牌（宿主注入即授权）；未配置或空白 exit 2 拒启 |
 | `RP_DB_PATH` | 否 | `migrations/platform.db` | 目录主库（只读） |
 | `RP_AUX_DB` | 否 | 不挂载 | 目录 aux 库（只读，handle_tools 同款增量合并） |
 | `RP_RUN_DB` | 否 | `rip-data/tool-runs.db` | 运行库（可写数据面：tool_run / artifact / evidence / runtime_node 行，gitignore 运行时数据；生产 platform.db 零写） |
@@ -89,14 +93,20 @@ run_tool 成功载荷的字段（外部 AI 关心的就是这几把钥匙）：
 | `artifacts` | 信封产物列表（容器工具的 out/ 产物等，role=primary/attachment） |
 | `usage` / `environment` / `transcript` | 用量、环境指纹、状态轨迹（QUEUED 起到终态） |
 
-## 四、不用 rtk 的一次性管道形态（ROADMAP §10.4 验收命令原形）
+## 四、不用 rtk 的一次性管道形态（rmcp 迁移后须 initialize 握手前置）
 
 ~~~bash
-# 发现
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"cursor":""}}' \
+# 发现（rmcp 服务首条请求必须为 initialize，tools/list 为标准 cursor-only 分页）
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   | RP_MCP_TOKEN=<你的令牌> cargo run --offline -p mcp-server --bin rp-mcp
-# 执行（2026-11-14 实测原样结论见 docs/releases/RELEASE_2026-11-14_PHASE9-P9-2.md）
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rip.run_tool","arguments":{"tool_id":"rip.http.inspect","input":{"url":"https://example.com/"}}}}' \
+# 执行（P9-2 实测原样结论见 docs/releases/RELEASE_2026-11-14_PHASE9-P9-2.md；过滤与 limit 走 rip.list_tools）
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"rip.run_tool","arguments":{"tool_id":"rip.http.inspect","input":{"url":"https://example.com/"}}}}' \
   | RP_MCP_TOKEN=<你的令牌> cargo run --offline -p mcp-server --bin rp-mcp
 ~~~
 
@@ -117,7 +127,7 @@ echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rip.run_to
 
 ## 六、CLI 面（rp-tool run/status/cancel）
 
-`rp-tool` 的三个执行子命令是最小 MCP 客户端：spawn `rp-mcp` 子进程做一次性 stdio JSON-RPC 交换，与外部 AI 走同一执行通道（`RP_MCP_BIN` 环境变量可指路，缺省 `target/debug/rp-mcp`；令牌一次性自生成经环境变量注入，不落盘不回显）。
+`rp-tool` 的三个执行子命令是最小 MCP 客户端：spawn `rp-mcp` 子进程做一次性 stdio JSON-RPC 交换（initialize 握手 + notifications/initialized 前置，业务请求 id=1），与外部 AI 走同一执行通道（`RP_MCP_BIN` 环境变量可指路，缺省 `target/debug/rp-mcp`；令牌一次性自生成经环境变量注入，不落盘不回显）。
 
 ~~~bash
 # 帮助面（2026-11-14 实测：八行用法，exit 2）
@@ -147,6 +157,6 @@ con.close()"
 
 ## 八、已知边界
 
-- 能力面 `rip.search_knowledge` 尚未接线（调用返回结构化 isError，后续批次）；resources / prompts 为 P9-5 前置空占位。
+- 能力面 `rip.search_knowledge` 尚未接线（调用返回结构化 isError，后续批次）；resources / prompts 已在 P9-4 落地（rip:// 七 resource 与 prompt 三条）。
 - 容器工具的完整回路需要容器运行时与 digest 钉死的验收镜像（Phase 3 交付）；无 podman 机器上如实等待（见第四节注记），容器全链断言由 `crates/tool-engine/tests/web_research_e2e.rs` 在受控环境承载。
 - 双 MCP 边界（phase6/DUAL-MCP-BOUNDARY.md）：本通道是平台面（rip.* 前缀）；kit 的 rtis_mcp.mjs（redteam_* 前缀）是另一套接入面，勿混用。

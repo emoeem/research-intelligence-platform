@@ -39,6 +39,16 @@ toml = "1.1"
 # 拒绝与 error 语义，MSRV 1.64；YAML 解析属通用逻辑，按复用优先纪律不手写。
 serde_yaml_ng = "0.10"
 
+# MCP 官方 Rust SDK（rmcp 迁移批次采用，选型记录 docs/phase9/RMCP-MIGRATION.md）：
+# crates.io 发布版 3.10.0（2026-11-12 发布，不跟 git main），MSRV 1.88，
+# Apache-2.0；stdio server 面最小 feature 集（default-features=false 只带
+# server + transport-io，不引入 base64/macros 与 client/auth/elicitation/
+# HTTP 传输），版本号经实际构建与测试验证后锁定。
+rmcp = { version = "=3.10.0", default-features = false, features = ["server", "transport-io"] }
+# tokio：rmcp server 的 async 运行时面（bin rp-mcp 的 async main + stdio
+# transport 拉起）；feature 按本仓实际使用取子集，与 rmcp 自身 tokio 要求统一。
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "sync", "time"] }
+
 # workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
 domain = { path = "crates/domain" }
 database = { path = "crates/database" }
