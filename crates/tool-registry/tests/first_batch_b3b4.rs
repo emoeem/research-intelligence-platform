@@ -146,6 +146,15 @@ fn b4_five_rtk_manifests_pass_nine_checks_and_register() {
 /// LICENSE）必须零输出；缓目录（.pytest_cache/__pycache__）不属本体。
 #[test]
 fn b4_toolkit_sources_untouched() {
+    // toolkit 是仓库父目录下的兄弟外仓（本机工作区布局，不入本仓库）：
+    // CI 与新机器的 clone 旁没有该目录，按 V-9 跳过；toolkit 集成面在
+    // 受控环境（本地验收）实测。
+    if !workspace_root().join("toolkit").is_dir() {
+        eprintln!(
+            "SKIP: 兄弟外仓 toolkit/ 不在仓库父目录（本机工作区布局），B4 toolkit 集成面无法核对（V-9，受控环境端到端）"
+        );
+        return;
+    }
     let output = Command::new("git")
         .args(["status", "--porcelain", "--", "toolkit/"])
         .current_dir(workspace_root())
