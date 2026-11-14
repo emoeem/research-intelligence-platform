@@ -1,6 +1,7 @@
 # RIP3 Phase 0 架构审计（00-ARCHITECTURE-AUDIT）
 
 > 状态：Phase 0 交付（2026-11-14）；审计基线 = RIP 2.0 收口提交 2744ada 的真实仓库状态。
+> Phase 1 进展：P1-1 批次（PG 基座 + Document 域 + CAS + rp-doc CLI + SQLite WAL）与 P1-2 web 面（Documents 页 + REST 通道）已入库（41bf3359，CI 全绿）；批次报告见 batches/。
 > 取证纪律（R2 §2.1.3）：结论全部来自实际代码与调用链（path:line 级），文档只作线索；
 > 唯一写入面为 docs/rip3/（本文件与四项冻结物、ADR），零代码/迁移/依赖变更。
 > 取证手段：三个并行取证代理（domain/context/research/resource/database、
