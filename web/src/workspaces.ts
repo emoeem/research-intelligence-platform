@@ -143,6 +143,13 @@ export const WORKSPACES: readonly Workspace[] = [
     hint: "知识条目检索与治理",
     tabs: [
       { order: 1, to: "/knowledge", label: "知识库", icon: "database", hint: "知识条目检索与详情" },
+      {
+        order: 2,
+        to: "/documents",
+        label: "文档中心",
+        icon: "folderKanban",
+        hint: "研究资料导入、版本与来源管理（RIP3）",
+      },
     ],
   },
   {

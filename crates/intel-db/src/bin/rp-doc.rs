@@ -17,7 +17,7 @@ fn usage() -> ! {
         "usage: rp-doc <sub> [args]\n\
 \n\
 subcommands:\n\
-  import --file PATH --title T [--type T] [--source-type ST] [--source-url U]\n\
+  import --file PATH --title T [--original-filename N] [--type T] [--source-type ST] [--source-url U]\n\
          [--source-commit C] [--workspace W] [--visibility V] [--language L]\n\
     magic bytes 检测 + CAS put + 单事务落对象/来源/文档/版本 1；JSON 输出\n\
   add-source --document D --source-type ST [--source-url U] [--source-commit C]\n\
@@ -152,10 +152,15 @@ fn main() {
                         .get("type")
                         .cloned()
                         .unwrap_or_else(|| document_type_from(&ext)),
-                    original_filename: file
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default(),
+                    original_filename: args
+                        .flags
+                        .get("original-filename")
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            file.file_name()
+                                .map(|s| s.to_string_lossy().to_string())
+                                .unwrap_or_default()
+                        }),
                     mime_type: mime,
                     language: args.flags.get("language").cloned(),
                     workspace_id: args

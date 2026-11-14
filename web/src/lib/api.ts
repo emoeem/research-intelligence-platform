@@ -914,3 +914,76 @@ export async function fetchMcpCatalog(
 ): Promise<McpCatalogStatus> {
   return apiGet<McpCatalogStatus>("/api/mcp-catalog", options);
 }
+
+/* ------------------------------------------------------------------ */
+/* RIP3 文档面（P1-2，PG 情报核经 rp-doc 子进程） */
+
+export interface DocumentSummary {
+  document_id: string;
+  title: string;
+  document_type: string;
+  sha256: string;
+  file_size: number;
+  workspace_id: string;
+  visibility: string;
+  lifecycle_status: string;
+  source_count: number;
+  revision_count: number;
+  created_at: string;
+}
+
+export interface DocumentList {
+  items: DocumentSummary[];
+  workspace: string;
+}
+
+export interface DocumentRevisionRow {
+  revision_id: string;
+  revision_number: number;
+  content_hash: string;
+  parser_version: string | null;
+  revision_status: string;
+  created_at: string;
+}
+
+export interface DocumentDetail {
+  document_id: string;
+  revisions: DocumentRevisionRow[];
+}
+
+export interface DocumentImportOutcome {
+  document_id: string;
+  revision_id: string;
+  source_id: string;
+  content_object_created: boolean;
+  content_hash: string;
+}
+
+export async function fetchDocuments(
+  workspace: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<DocumentList> {
+  return apiGet<DocumentList>(`/api/documents?workspace=${encodeURIComponent(workspace)}`, options);
+}
+
+export async function fetchDocumentDetail(
+  documentId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<DocumentDetail> {
+  return apiGet<DocumentDetail>(`/api/documents/${encodeURIComponent(documentId)}`, options);
+}
+
+export async function importDocument(body: {
+  title: string;
+  filename: string;
+  content_base64: string;
+  type?: string;
+  workspace?: string;
+  visibility?: string;
+  language?: string;
+  source_type?: string;
+  source_url?: string;
+  source_commit?: string;
+}): Promise<DocumentImportOutcome> {
+  return apiSend<DocumentImportOutcome>("POST", "/api/documents/import", body);
+}

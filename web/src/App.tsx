@@ -47,6 +47,9 @@ const ResearchPage = lazy(() =>
 const AgentsPage = lazy(() =>
   import("./routes/AgentsPage").then((m) => ({ default: m.AgentsPage })),
 );
+const DocumentsPage = lazy(() =>
+  import("./routes/DocumentsPage").then((m) => ({ default: m.DocumentsPage })),
+);
 const WorkflowsPage = lazy(() =>
   import("./routes/WorkflowsPage").then((m) => ({ default: m.WorkflowsPage })),
 );
@@ -88,6 +91,7 @@ export function App() {
             <Route index element={lazyElement(<OverviewPage />)} />
             <Route path="projects" element={lazyElement(<ProjectsPage />)} />
             <Route path="knowledge" element={lazyElement(<KnowledgePage />)} />
+            <Route path="documents" element={lazyElement(<DocumentsPage />)} />
             <Route path="tools" element={lazyElement(<ToolCenterPage />)} />
             <Route path="tools/:toolId" element={lazyElement(<ToolDetailPage />)} />
             <Route path="runs" element={lazyElement(<RunsPage />)} />

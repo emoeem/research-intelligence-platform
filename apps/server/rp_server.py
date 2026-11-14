@@ -103,6 +103,12 @@ PLUGIN_DB_PATH = (os.environ.get("RIP_PLUGIN_DB") or "").strip() \
 # RP_AUX_DB 只读 ATTACH 通道（主库无 016/017/018 迁移，守卫降级空态说明）。
 WORKFLOW_DB_PATH = (os.environ.get("RP_WORKFLOW_DB") or "").strip()     or (AUX_DB_PATH or "")
 WORKFLOW_BIN = (os.environ.get("RP_WORKFLOW_BIN") or "target/debug/rp-workflow").strip()
+# RIP3 P1-2 文档面：rp-doc 子进程（intel-db PG 存取，python 侧零 PG 驱动依赖；
+# 进程边界即数据边界：文档读取与导入一律经 rp-doc JSON stdout，本文件零直连 PG）。
+DOC_BIN = (os.environ.get("RP_DOC_BIN") or "target/debug/rp-doc").strip()
+DOC_SUBPROCESS_TIMEOUT_S = int(os.environ.get("RP_DOC_TIMEOUT_S") or 120)
+# 导入体上限（原始字节；base64 后 ~4/3；13-SECURITY 单文件帽 512MiB 的 P1 缺省收紧档）。
+DOC_IMPORT_MAX_BYTES = int(os.environ.get("RP_DOC_IMPORT_MAX_BYTES") or 67_108_864)
 WORKFLOW_LOG_DIR = os.environ.get("RP_WORKFLOW_LOG_DIR", "/tmp/rp-workflow-run-logs")
 PLUGIN_BIN = (os.environ.get("RP_PLUGIN_BIN") or "cargo").strip()
 # RP_PLUGIN_BIN_ARGS 语义：显式空串 = 无前置参数（直用预编译二进制时）；
@@ -2838,6 +2844,112 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
     raise ApiError(404, "no_route", f"未知 workflow 写动作：{action}")
 
 
+# ---------------------------------------------------------------------------
+# RIP3 文档面（P1-2）：rp-doc 子进程通道（PG 情报核，ADR-0001）
+# ---------------------------------------------------------------------------
+
+def _rp_doc_json(extra_args: list, timeout_s: int = DOC_SUBPROCESS_TIMEOUT_S) -> dict:
+    """跑 rp-doc 子进程并解析 JSON stdout。非零退出 → 502（stdout 的
+    error JSON 原样透出 code/message；rp-doc 的错误帧走 stdout）。"""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            [DOC_BIN, *extra_args],
+            capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "doc_cmd_timeout", f"rp-doc 超时（{timeout_s}s）：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "doc_cmd_spawn_failed", f"rp-doc 启动失败：{exc}") from exc
+    if proc.returncode != 0:
+        try:
+            err = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        except json.JSONDecodeError:
+            err = {}
+        inner = err.get("error") or {}
+        raise ApiError(502, inner.get("code", "doc_cmd_failed"),
+                       inner.get("message", f"rp-doc 退出码 {proc.returncode}"))
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "doc_cmd_bad_output", f"rp-doc 输出非 JSON：{exc}")
+
+
+def handle_documents(_conn, params) -> dict:  # noqa: ARG001
+    """/api/documents：文档列表（workspace 过滤；all=1 含软删行）。
+    rp-doc list 子进程（PG 情报核，权限前置谓词在 SQL 内）。"""
+    workspace = (params.get("workspace") or ["default"])[0]
+    args = ["list", "--workspace", workspace]
+    if (params.get("all") or ["0"])[0] in ("1", "true"):
+        args.append("--all")
+    payload = _rp_doc_json(args)
+    return {"items": payload.get("items") or [], "workspace": workspace}
+
+
+def handle_document_detail(document_id: str) -> dict:
+    """/api/documents/<id>：版本历史（含 SUPERSEDED 行，历史可访问）。"""
+    if not document_id or "/" in document_id or not document_id.startswith("doc-"):
+        raise ApiError(400, "bad_document_id", f"非法 document_id：{document_id!r}")
+    payload = _rp_doc_json(["show", "--document", document_id])
+    return {"document_id": document_id, "revisions": payload.get("revisions") or []}
+
+
+def documents_import_post(body: dict) -> dict:
+    """POST /api/documents/import：文档导入（base64 内容经临时文件走
+    rp-doc import 子进程：magic bytes 检测 + CAS + 单事务落对象/来源/文档/版本）。
+    体帽 RP_DOC_IMPORT_MAX_BYTES（原始字节口径）；临时文件 0600 用完即删。"""
+    import base64
+    import tempfile
+
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise ApiError(400, "title_required", "导入需要 title")
+    content_b64 = (body.get("content_base64") or "").strip()
+    if not content_b64:
+        raise ApiError(400, "content_base64_required", "导入需要 content_base64")
+    try:
+        content = base64.b64decode(content_b64, validate=True)
+    except Exception as exc:  # noqa: BLE001：bad base64 归一为 400
+        raise ApiError(400, "bad_base64", f"content_base64 非法：{exc}") from exc
+    if len(content) > DOC_IMPORT_MAX_BYTES:
+        raise ApiError(413, "payload_too_large",
+                       f"文档超过导入上限 {DOC_IMPORT_MAX_BYTES} 字节")
+    filename = (body.get("filename") or "import.bin").strip() or "import.bin"
+    # 临时文件保留原扩展名：rp-doc 的格式推断（类型/magic 面）依赖扩展名。
+    ext = os.path.splitext(filename)[1][:16]
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix="rp-doc-import-", suffix=ext)
+        os.write(fd, content)
+        os.close(fd)
+        os.chmod(tmp_path, 0o600)
+        args = ["import", "--file", tmp_path, "--title", title]
+        if body.get("type"):
+            args += ["--type", str(body["type"])]
+        if body.get("source_type"):
+            args += ["--source-type", str(body["source_type"])]
+        if body.get("source_url"):
+            args += ["--source-url", str(body["source_url"])]
+        if body.get("source_commit"):
+            args += ["--source-commit", str(body["source_commit"])]
+        if body.get("workspace"):
+            args += ["--workspace", str(body["workspace"])]
+        if body.get("visibility"):
+            args += ["--visibility", str(body["visibility"])]
+        if body.get("language"):
+            args += ["--language", str(body["language"])]
+        args += ["--original-filename", filename]
+        payload = _rp_doc_json(args, timeout_s=max(DOC_SUBPROCESS_TIMEOUT_S, 300))
+        return payload
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 API_ROUTES = {
     "/api/plugins": handle_plugins_list,
     "/api/plugins/trust-policy": handle_plugin_trust_policy,
@@ -2857,6 +2969,7 @@ API_ROUTES = {
     "/api/agent-runs": handle_agent_runs,
     "/api/workflows": handle_workflows,
     "/api/workflow-runs": handle_workflow_runs,
+    "/api/documents": handle_documents,
 }
 
 
@@ -2991,6 +3104,12 @@ class RpHandler(BaseHTTPRequestHandler):
                     if plugin_id and "/" not in plugin_id:
                         self.send_json(handle_plugin_detail(None, params, plugin_id))
                         return
+                # RIP3 P1-2 文档详情动态路径：/api/documents/<doc_id>（版本历史）。
+                if parsed.path.startswith("/api/documents/"):
+                    document_id = unquote(parsed.path[len("/api/documents/"):]).strip("/")
+                    if document_id and "/" not in document_id:
+                        self.send_json(handle_document_detail(document_id))
+                        return
                 raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
             file_path = self.resolve_static(parsed.path)
             if file_path is None:
@@ -3030,6 +3149,16 @@ class RpHandler(BaseHTTPRequestHandler):
         t0 = time.monotonic()
         try:
             check_rate_limit()
+            # RIP3 P1-2 文档导入写面：base64 内容经 rp-doc 子进程
+            # （magic bytes + CAS + 单事务落对象/来源/文档/版本），本进程零直连 PG。
+            if parsed.path == "/api/documents/import":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "文档导入写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body(DOC_IMPORT_MAX_BYTES * 2)
+                self.send_json(documents_import_post(body))
+                return
             # P8-4 workflow 定义保存（画布图转 definition JSON 走版本递增）。
             if parsed.path == "/api/workflows":
                 self.require_auth()
@@ -3098,11 +3227,12 @@ class RpHandler(BaseHTTPRequestHandler):
         finally:
             self._finish_audit("POST", parsed.path, t0)
 
-    def _read_json_body(self) -> dict:
-        """读 POST JSON 请求体（上限 1 MiB，防无界读）。"""
+    def _read_json_body(self, max_bytes: int = 1_048_576) -> dict:
+        """读 POST JSON 请求体（缺省 1 MiB；文档导入面按
+        RP_DOC_IMPORT_MAX_BYTES*2 放宽，base64 膨胀系数 4/3 余量）。"""
         length = int(self.headers.get("Content-Length") or 0)
-        if length > 1_048_576:
-            raise ApiError(413, "payload_too_large", "请求体超过 1 MiB 上限")
+        if length > max_bytes:
+            raise ApiError(413, "payload_too_large", f"请求体超过 {max_bytes} 字节上限")
         raw = self.rfile.read(length).decode("utf-8") if length else "{}"
         try:
             return json.loads(raw) if raw else {}
