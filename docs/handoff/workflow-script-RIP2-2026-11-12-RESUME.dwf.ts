@@ -307,7 +307,104 @@ return await hole<FinalReport>(
         `Phase 8 验收：${acc8.acceptable ? "全部通过" : JSON.stringify(acc8.items.filter((x) => !x.pass))}`,
         `批次摘要：${results8.map((r) => `${r.batch}:${r.done}${r.caveats.length > 0 ? "（caveats：" + r.caveats.join("；") + "）" : ""}`).join("；")}`,
         `继续方式：读 docs/phase0/PHASE-ROADMAP.md 的 Phase 9 节（MCP/REST/CLI 对外能力）与 2.0 计划 §11、SESSION-HANDOFF §十（correlation id 对外、MCP 与 Tool Center 同源验收）。写「实施 Phase 9」填充：规划员 → 每批新实施员（MCP server、REST 对外收口、CLI 面向外部用户，correlation/trace id 对外透出与 Phase 8 工作流运行衔接）→ 五道门禁 → 独立验收（MCP 客户端实测、REST 端到端、CLI 冒烟）→ 入库 RELEASE_PHASE9；结尾留 Phase 10 尾洞。`,
-      ].join("\n"),
+      ].join("\n"), async () => {
+      report({ phase: TRACKED[4], status: "进行中", note: `Phase 8 已收口（commit ${commit8.hash}）且 CI 全绿，Phase 9 MCP/REST/CLI 对外能力启动` }, "phases");
+
+      phase("规划 Phase 9 批次");
+      const plan9 = await agent("Phase 9 规划员").ask<PhasePlan>(`${DISCIPLINE}
+
+        你是 Phase 9 规划员。读 docs/phase0/PHASE-ROADMAP.md 的 Phase 9 节（MCP/REST/CLI 对外能力）、2.0 计划（docs/RIP-2.0-PLATFORM-AND-TOOLING-PLAN.md）§11 与 §14 Phase 9、docs/SESSION-HANDOFF.md §十（correlation id 对外透出、MCP 与 Tool Center 同源验收）、git log --oneline -10（Phase 8 刚收口 commit ${commit8.hash}：workflow-engine 与画布在库）。产出 Phase 9 批次清单。硬性要求：
+        1. 三面同源，禁止重建接口体系：a) MCP server 面向外部客户端暴露平台能力（知识检索/工具派发/运行查询等，范围按 2.0 计划 §11），与 Tool Center 同源（同一能力清单同一 Schema，MCP 工具面不得出现 Tool Center 没有的能力）；b) REST 对外收口基于 apps/server/rp_server.py 既有 API 面做对外契约化（鉴权沿用 selftest_auth 口径，trace 六 ID 与 correlation id 在响应与文档中透出），不另起第二套接口风格；c) CLI 面向外部用户（rp-* 命令族补齐对外子命令与帮助面，复用既有 bin）。
+        2. 对外安全边界：对外接口只暴露只读或白名单能力，漏洞细节与 RTIS 生产数据面不进对外接口（仓库红线）；鉴权、限频、超时必须有。
+        3. 批次基于现状续作：trace 六 ID（P7-5）、agent-engine 闭环（P7）、workflow-engine 与画布（P8）、research-engine 契约（P7-6）全部在库；迁移只新增编号文件（下一可用编号从 migrations/ 实际清单确认，018 已占用）。
+        4. acceptance 对应 2.0 计划 §14 Phase 9 验收加 §十追加项，逐条可核验；每批自验 check 写明命令与预期输出。
+        5. 若涉及 Tool Center 页改动（MCP 状态展示等），该批必须含浏览器实测；浏览器二进制按纪律第 7 条探测。
+        返回 PhasePlan（batches 2 到 4 项）。`);
+
+      const results9: BatchResult[] = [];
+      phase("逐批实施 Phase 9");
+      for (let i9 = 0; i9 < plan9.batches.length; i9++) {
+        const b9 = plan9.batches[i9];
+        const prev9 = results9.slice(-1)[0];
+        const r9 = await agent().ask<BatchResult>(`${DISCIPLINE}
+
+        你是 Phase 9 实施员（全新上下文，每批独立以控成本）。执行批次 ${b9.id}（第 ${i9 + 1}/${plan9.batches.length} 批）：${b9.goal}
+        关键路径：${b9.paths.join("、")}
+        本批自验：${b9.check}
+        ${prev9 ? `上一批交接（done 与 caveats）：${JSON.stringify({ done: prev9.done, caveats: prev9.caveats })}` : `这是 Phase 9 首批。基线：Phase 8 已收口（commit ${commit8.hash}）且 CI 全绿：workflow-engine（DSL/六类节点/016 到 018 迁移/checkpoint/控制面）与画布五区实页在库，trace 六 ID 贯穿三栈（v_trace_chain、/api/traces、TracePage），research-engine 七能力契约在库，rp_server API 面含 selftest_auth 11 项口径；迁移下一可用编号从 migrations/ 实际清单确认。`}
+        复用优先：MCP/REST/CLI 三面共用同一 Application Services 与 Schema；通用逻辑用成熟库或仓库既有实现；迁移只新增编号文件在测试副本验证；web 面不动既有页面行为。完成后返回 BatchResult：files、check、caveats。`);
+        results9.push(r9);
+        report({ batch: r9.batch, done: r9.done, caveats: r9.caveats.join("；") });
+      }
+
+      phase("跑 Phase 9 门禁");
+      let green9 = false;
+      let fail9 = "";
+      for (let round9 = 1; round9 <= 3; round9++) {
+        const t9g = await world.run("bash", ["-lc", "cargo test --offline --workspace"], { timeoutMs: 900000, output: { tail: 8192 } });
+        const c9g = await world.run("bash", ["-lc", "cargo clippy --offline --workspace --all-targets -- -D warnings"], { timeoutMs: 900000, output: { tail: 8192 } });
+        const u9g = await world.run("bash", ["-lc", "python3 -m unittest discover -s workers/python/tests"], { timeoutMs: 300000, output: { tail: 4096 } });
+        const fb9g = await world.run("bash", ["-lc", "cd web && npm run build"], { timeoutMs: 600000, output: { tail: 8192 } });
+        const ft9g = await world.run("bash", ["-lc", "cd web && npm run test"], { timeoutMs: 600000, output: { tail: 8192 } });
+        if (t9g.exitCode === 0 && c9g.exitCode === 0 && u9g.exitCode === 0 && fb9g.exitCode === 0 && ft9g.exitCode === 0) {
+          green9 = true;
+          fail9 = "";
+          log(`Phase 9 五道门禁全绿（第 ${round9} 轮）`);
+          break;
+        }
+        fail9 = [
+          t9g.exitCode !== 0 ? `cargo test exit=${t9g.exitCode}\n${t9g.stdout.slice(-1000)}` : "",
+          c9g.exitCode !== 0 ? `clippy exit=${c9g.exitCode}\n${c9g.stdout.slice(-1000)}` : "",
+          u9g.exitCode !== 0 ? `unittest exit=${u9g.exitCode}\n${u9g.stderr.slice(-1000)}` : "",
+          fb9g.exitCode !== 0 ? `npm build exit=${fb9g.exitCode}\n${fb9g.stdout.slice(-1000)}` : "",
+          ft9g.exitCode !== 0 ? `npm test exit=${ft9g.exitCode}\n${ft9g.stdout.slice(-1000)}` : "",
+        ].filter((s) => s !== "").join("\n----\n");
+        await agent().ask<string>(`${DISCIPLINE}
+
+        你是 Phase 9 门禁修复员（全新上下文，看工作树与失败输出定位修复，只修失败不推翻既有实现）。第 ${round9} 轮失败：\n${fail9}`);
+      }
+
+      phase("Phase 9 独立验收");
+      const acc9 = await agent("Phase 9 验收员", `${DISCIPLINE}
+
+        你是 Phase 9 独立验收员，立场是挑毛病而不是放行。读实现找证据并实测：MCP 面用真实客户端实测（inspector 或等价 stdio 客户端脚本，逐工具调用并核对与 Tool Center 能力清单同源）；REST 用端到端请求实测（含鉴权拒绝路径与 trace 字段透出）；CLI 逐子命令冒烟；若涉及 Tool Center 页改动，浏览器实测（加载 browser-use:control-browser 技能，截图落 docs/phase9/browser-e2e/01/，浏览器二进制按纪律第 7 条探测：本机已知 Playwright 用户缓存 Chrome for Testing 151 于 /home/emo/.distrobox/ubuntu-home/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome，设 PW_CHROMIUM 指向即可）；脚本已跑五道门禁。`).ask<PhaseAcceptance>(`逐条核验：
+        ${plan9.acceptance.map((a) => "- " + a).join("\n")}
+        批次摘要：${JSON.stringify(results9.map((r) => ({ batch: r.batch, done: r.done, caveats: r.caveats })))}
+        另必核验 Phase 8 未回归：1) workflow 端到端（画布保存/运行/暂停/恢复）；2) trace 六 ID 关联查询（/api/traces 双向）；3) Agent Studio 与五区壳层不回归；4) selftest_auth 11 项：bash apps/server/selftest_auth.sh。
+        返回 PhaseAcceptance。`);
+      for (let round9 = 1; round9 <= 2 && !acc9.acceptable; round9++) {
+        await agent().ask<string>(`${DISCIPLINE}
+
+        你是 Phase 9 修复员。按验收意见修复（第 ${round9} 轮）：${JSON.stringify(acc9.fixes)}`);
+        const reacc9 = await agent().ask<PhaseAcceptance>(`${DISCIPLINE}
+
+        你是 Phase 9 复审员，复核上轮 fixes 并复测问题点（含浏览器与 MCP 客户端复测），返回 PhaseAcceptance。上轮结论：${JSON.stringify(acc9.items.filter((x) => !x.pass))}`);
+        acc9.items = reacc9.items;
+        acc9.acceptable = reacc9.acceptable;
+        acc9.fixes = reacc9.fixes;
+      }
+
+      phase("Phase 9 入库");
+      const ok9 = acc9.acceptable && green9;
+      const commit9 = await agent("Phase 9 入库员", `${DISCIPLINE}
+
+        你是入库员：只做 add/commit/push，禁止 reset/clean/checkout/rebase/force push，commit 消息中文无长横线。`).ask<CommitResult>(`入库 Phase 9 整段：1) git status 核对范围与暂存卫生（无 node_modules、dist、*.db）。2) 按 DOC-STANDARD 写 docs/releases/RELEASE_<date +%F>_PHASE9.md（总账：批次汇总、五道门禁数字、MCP/REST/CLI 三面同源说明、鉴权与限频边界、浏览器与客户端实测证据路径引用、已知取舍、回滚方式），docs/README.md 登记 Phase 9 行。3) docs/SESSION-HANDOFF.md 第三节新增 Phase 9 完成行（含 push 短哈希回填注记）。4) git add -A，commit（中文：RIP 2.0 Phase 9 MCP REST CLI 对外能力），push origin main（push 失败重试 2 到 3 次，仍失败如实报错原文不伪造）。返回 CommitResult。`);
+      report({ phase: TRACKED[4], status: ok9 && commit9.pushed ? "完成" : "受阻", note: `commit ${commit9.hash}，验收${ok9 ? "通过" : "有遗留"}，门禁${green9 ? "全绿" : "未全绿"}，push ${commit9.pushed ? "成功" : "待核"}` }, "phases");
+      log(`Phase 9 ${ok9 && commit9.pushed ? "完成" : "受阻"}：commit ${commit9.hash}`);
+
+      return await hole<FinalReport>(
+        "Phase 10 起逐阶段实施",
+        [
+          `接手核对：${verified.ok ? "通过" : "有偏差：" + JSON.stringify(verified.gaps)}`,
+          `Phase 7 结果：完成，commit 102cab5，push 成功；验收全部通过`,
+          `Phase 8 结果：完成，commit ${commit8.hash}，push 成功；验收全部通过；CI 修复批次 452fa38/0ddb397/da9e0c1/d04eca2 后全绿`,
+          `Phase 9 结果：${ok9 && commit9.pushed ? "完成" : "受阻"}，commit ${commit9.hash}，push ${commit9.pushed ? "成功" : commit9.note}`,
+          `Phase 9 验收：${acc9.acceptable ? "全部通过" : JSON.stringify(acc9.items.filter((x) => !x.pass))}`,
+          `批次摘要：${results9.map((r) => `${r.batch}:${r.done}${r.caveats.length > 0 ? "（caveats：" + r.caveats.join("；") + "）" : ""}`).join("；")}`,
+          `继续方式：读 docs/phase0/PHASE-ROADMAP.md 的 Phase 10 节（生态与发布）与 2.0 计划 §12、SESSION-HANDOFF §十（backup/restore、FTS 重建校验、保留归档、许可证逐包清单、axe 对比度、视觉基线）与 autoresearch 性能基准要求。写「实施 Phase 10」填充：规划员 → 每批新实施员（备份恢复实现、FTS 重建校验、许可证逐包清单、axe 对比度修正、视觉基线建立、autoresearch 性能基准）→ 五道门禁 → 独立验收（备份恢复实演、基线校验，浏览器实测）→ 入库 RELEASE_PHASE10；结尾留收尾闭环尾洞（SESSION-HANDOFF §十二与 §十四：ChatGPT 全面审阅、GitHub 知识库与武器库补齐、实战校验三面）。`,
+        ].join("\n"),
+      );
+    },
     );
   },
   );

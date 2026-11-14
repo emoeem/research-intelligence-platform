@@ -1,0 +1,21 @@
+[package]
+name = "mcp-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Phase 9 P9-1 平台 MCP server（bin rp-mcp，stdio NDJSON JSON-RPC 2.0，MCP 2024-11-05 子集）：握手鉴权（RP_MCP_TOKEN 环境变量，禁止匿名）+ tools/list 分页目录 + rip.get_tool_schema 按需 Schema 三交互；目录与 Schema 与 Tool Center 同源（同一 tool 表读面，aux 增量合并同 rp_server.py handle_tools 口径），rip.* 命名空间，初始化只暴露目录与分页发现不暴露工具完整说明（计划 §11:658）；形态参考 integrations/rtis/rtis_mcp.mjs 但代码独立，零新增外部依赖（serde/serde_json/database 均为 workspace 既有，vendor 无 rmcp/tokio）"
+
+[dependencies]
+# 依赖面（复用优先纪律）：serde/serde_json 走 workspace 既有条目；数据库读面
+# 复用 database::Pool（rusqlite bundled 随链，只读打开 SQLITE_OPEN_READ_ONLY），
+# 不直接依赖 rusqlite（先例：各 engine 只依赖 database，rusqlite 经其重导出）。
+# 协议层零新增 crate：JSON-RPC 2.0 与 MCP 2024-11-05 子集为薄协议层，手写
+# 派发（rmcp/tokio 不在 vendor，引入即破坏 --offline 构建红线）。
+serde = { workspace = true }
+serde_json = { workspace = true }
+database = { workspace = true }
+
+[[bin]]
+name = "rp-mcp"
+path = "src/bin/rp-mcp.rs"

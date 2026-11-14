@@ -16,6 +16,7 @@ members = [
     "crates/agent-engine",
     "crates/research-engine",
     "crates/workflow-engine",
+    "crates/mcp-server",
     "tests",
 ]
 
