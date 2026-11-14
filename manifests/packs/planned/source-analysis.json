@@ -2,26 +2,27 @@
   "schema_version": "1",
   "pack_id": "source-analysis",
   "name": "Source Analysis Pack",
-  "status": "planned",
-  "roadmap_ref": "ROADMAP §4.3 行 P3-5",
+  "status": "delivered",
+  "roadmap_ref": "ROADMAP §4.3 行 P3-5；收尾武器库批（SESSION-HANDOFF §十四.2 首批安全工具 T0/T1 先行）",
   "capabilities": [
-    "Git 仓库元数据",
-    "代码搜索",
-    "依赖清单提取",
-    "静态检查"
+    "代码搜索（rip.src.code-search，T1）",
+    "依赖清单提取（rip.src.deps-manifest，T1）",
+    "静态检查（rip.src.static-check，T1）",
+    "Git 仓库元数据（未交付，随批次收窄范围保留 planned 口径）"
   ],
   "trust_ruling": {
     "level": "self-owned",
-    "rationale": "候选实现为自研薄包装（基础镜像自带 git 能力，来源可信），依赖最轻、可走宿主过渡通道；但按计划 §14:784 原文「不追求工具数量，优先保证安装、运行、结果 Schema、错误处理和证据归档可靠」，范围裁定收窄为 planned（PHASE3-DESIGN §2.3 表）"
+    "rationale": "自研薄包装（src_tools.py 纯标准库，json/re/glob/tomllib），来源可信；落地走 podman_host 容器面（rip-tool-source 镜像族，digest 钉死台账），network.mode=none 纯本地只读分析"
   },
   "exit_conditions": [
     "Phase 3 两包端到端验收通过（P3-6 收口）",
-    "下一批次预算裁定纳入（数量让位于可靠的批次排期）"
+    "下一批次预算裁定纳入（数量让位于可靠的批次排期）",
+    "交付验收：三 Manifest rp-tool validate 全过 + /api/tools 露出 + 容器端到端（src_analysis_e2e.rs，V-9 digest 守卫）+ 宿主纯函数单测（test_src_tools.py 21 用例），2026-11-14 收尾武器库批全过"
   ],
   "not_runnable": {
-    "no_manifest": true,
-    "no_registry_entry": true,
-    "no_containerfile": true
+    "no_manifest": false,
+    "no_registry_entry": false,
+    "no_containerfile": false
   },
-  "notes": "三包 planned 之首：依赖最轻，解锁排序第一"
+  "notes": "三包 planned 之首已转正：依赖最轻先行；Git 仓库元数据能力因收尾范围裁定（数量让位于可靠）未纳入首批，后续按 ADDING-A-TOOL 路径扩展。镜像 digest sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29（containerfiles/README.md 台账）"
 }

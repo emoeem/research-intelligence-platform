@@ -1,0 +1,178 @@
+{
+  "schema_version": "1",
+  "kind": "tool",
+  "family": "source_code",
+  "runtime": {
+    "type": "podman_host",
+    "image": "localhost/rip-tool-source:latest@sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29",
+    "readonly_rootfs": true,
+    "mounts": [
+      {
+        "role": "input",
+        "path": "/task/in",
+        "mode": "ro"
+      },
+      {
+        "role": "output",
+        "path": "/task/out",
+        "mode": "rw"
+      }
+    ],
+    "entrypoint": [
+      "python3",
+      "/app/src_tools.py",
+      "deps"
+    ]
+  },
+  "resources": {
+    "cpu": "2",
+    "memory": "2Gi",
+    "pid_limit": 256,
+    "disk_mb": 256,
+    "timeout_seconds": 120,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T1",
+  "health": {
+    "probe": {
+      "type": "exec",
+      "command": [
+        "python3",
+        "-c",
+        "import json; print(json.dumps({'ok': True}))"
+      ],
+      "timeout_ms": 5000,
+      "interval_seconds": 600,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_repo": "containerfiles/rip-tool-source（本仓库，自研纯标准库入口）",
+    "license": "repo-internal",
+    "dependencies": [],
+    "image_digest": "sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29",
+    "known_limits": [
+      "2000 条目截断护栏；pyproject/Cargo 的 extras/feature 约束按原样字符串保留不展开"
+    ],
+    "tested": "收尾武器库批实测（容器内三 op 冒烟 + crates/tool-engine/tests/src_analysis_e2e.rs ensure_image digest 守卫 V-9 + workers/python/tests/test_src_tools.py 宿主纯函数单测）"
+  },
+  "context": {
+    "summary": "Source Analysis：依赖清单提取",
+    "tags": [
+      "source_code",
+      "podman_host",
+      "closure-arsenal"
+    ]
+  },
+  "id": "rip.src.deps-manifest",
+  "name": "RIP Source Deps Manifest",
+  "version": "0.1.0",
+  "description": "Source Analysis Pack（pack_id source-analysis 冻结存根落地）：依赖清单提取，package.json / requirements*.txt / pyproject.toml / Cargo.toml 归一化为 name/constraint/kind/ecosystem 清单；纯标准库解析（json + tomllib），network.mode=none 只读不装包不联网",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "/task/in 之下的清单文件路径"
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "npm",
+          "pip-requirements",
+          "pip-pyproject",
+          "cargo"
+        ],
+        "default": "auto",
+        "description": "清单格式（缺省按文件名识别）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "file",
+      "format",
+      "ecosystem",
+      "count",
+      "deps"
+    ],
+    "properties": {
+      "file": {
+        "type": "string"
+      },
+      "format": {
+        "type": "string"
+      },
+      "ecosystem": {
+        "type": "string"
+      },
+      "count": {
+        "type": "integer"
+      },
+      "deps": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "constraint": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "source_line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "notes": {
+        "type": "array"
+      },
+      "output_file": {
+        "type": "string"
+      },
+      "tool": {
+        "type": "string"
+      },
+      "elapsed_ms": {
+        "type": "integer"
+      },
+      "uid": {
+        "type": "integer"
+      }
+    }
+  },
+  "idempotent": true,
+  "examples": [
+    {
+      "input": {
+        "path": "/task/in/package.json"
+      },
+      "output_hint": {
+        "ecosystem": "npm",
+        "count": 3,
+        "format": "npm"
+      }
+    }
+  ]
+}

@@ -1,22 +1,36 @@
 # RIP：Research Intelligence Platform
 
 把 ERI/RTIS 工具链（资源入库、仓库元数据、检索 Resolver、知识库 gate）重建为可商业化平台的
-工程线。当前状态：**M0-M8 全部里程碑交付，M8 已切换生效**（RTIS 生产 Resolve 路径默认走
-本平台统一库），Web 工作台以 systemd 用户服务常驻本机。
+工程线。当前状态：**RIP 2.0 十个阶段（Phase 0 到 10）全部交付收口**（工具契约与容器执行面 /
+Tool Packs / Context Broker / Web 工作台 / 插件系统 / Agent Engine / Workflow Studio /
+MCP-REST-CLI 对外能力 / rmcp 官方 SDK 迁移 / 生态与发布合规），M8 切换生效在前（RTIS 生产
+Resolve 路径默认走本平台统一库），Web 工作台以 systemd 用户服务常驻本机。阶段级记录见
+[`docs/README.md`](docs/README.md)。
 
-维护者文档：[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)（跨会话唯一状态源）与
-[`docs/M8_READINESS.md`](docs/M8_READINESS.md)（切换检查单与已知限制）。
+维护者文档：[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)（跨会话唯一状态源）、
+[`docs/README.md`](docs/README.md)（阶段记录与设计稿索引）、部署与运维四文档
+[`docs/guides/`](docs/guides/)（INSTALL / BACKUP-RESTORE / MIGRATION / UPGRADE）、
+[`docs/M8_READINESS.md`](docs/M8_READINESS.md)（M8 切换时点历史检查单）。
 
 ## 架构
 
 ```text
 legacy/                    ERI P0-P2 与 architecture-2.0 报告（rsync 归档，db/cache/tarball 不入库）
-migrations/                Schema V1-V4 + ETL（dryrun/evidence/tasks/m6）+ verify.py 对账
+migrations/                Schema V1（001 到 019 迁移链）+ ETL（dryrun/evidence/tasks/m6）+ verify.py 对账
 migrations/platform.db     生产化统一库（不入库；重建 = ETL 全量批 + verify 100%）
-crates/                    Rust workspace：domain / database / audit-engine / resource-engine
-                           / search-engine / quality-engine（vendored 离线构建）
-workers/python/            三 worker（parsing / embedding / evaluation）+ 契约与功能测试
-apps/server/               M7 只读 Web 工作台（stdlib http.server + Token 鉴权 + systemd 用户服务）
+crates/                    Rust workspace：domain / database（备份/保留归档）/ audit-engine /
+                           resource-engine / search-engine / quality-engine / tool-registry /
+                           tool-engine（podman_host 执行面）/ runtime-gateway / context-broker /
+                           plugin-registry / plugin-runtime / workflow-engine / agent-engine /
+                           research-engine / mcp-server（rmcp）/ rp-mcp-parity（vendored 离线构建）
+workers/python/            worker 与契约/功能测试（parsing / embedding / evaluation / catalog /
+                           extension-audit 等安全工具 worker）
+apps/server/               Web 工作台（stdlib http.server + Bearer Token 鉴权 + systemd 用户服务）
+                           + 各阶段 selftest 脚本
+web/                       React 19 工作台（Vite，五区壳层 + 十一工作区 + Workflow Studio 画布）
+containerfiles/            工具镜像族（base / webresearch / coreutils / source，digest 台账）
+manifests/                 Tool Manifest 与插件 Manifest / 发布目录（catalog.json）
+schemas/                   Tool Contract / Plugin / Workflow / Research 契约 Schema
 integrations/rtis/         生产 rtis.py 的接入层与备份（RTIS_RESOLVER_MODE=rp|legacy|off）
 ```
 

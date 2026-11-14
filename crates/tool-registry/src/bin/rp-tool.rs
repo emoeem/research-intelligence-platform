@@ -65,7 +65,8 @@ fn parse_manifest(path: &str) -> Value {
     let text = std::fs::read_to_string(path)
         .unwrap_or_else(|e| die_json("manifest_read_failed", &format!("read {path:?}: {e}")));
     if text.trim_start().starts_with('{') {
-        serde_json::from_str(&text)
+        // strict JSON（收尾批）：重复键拒绝，与 YAML 通道（serde_yaml_ng 原生拒绝）对齐。
+        tool_registry::strict_json::from_str(&text)
             .unwrap_or_else(|e| die_json("json_syntax", &format!("parse: {e}")))
     } else {
         serde_yaml_ng::from_str(&text)

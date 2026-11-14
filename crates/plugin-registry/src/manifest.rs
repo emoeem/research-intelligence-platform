@@ -7,7 +7,9 @@
 //! - 未知字段拒绝：由 v1.json 顶层与每个对象层的 `additionalProperties: false`
 //!   表达，校验在 [`crate::validate::rule2`]（复用 tool-registry 的
 //!   [`tool_registry::jsonschema_lite`]，jsonschema draft 2020-12）；
-//! - YAML duplicate key 拒绝：serde_yaml_ng 反序列化到 Value 时对重复键
+//! - duplicate key 拒绝（JSON 与 YAML 双通道同口径）：JSON 通道走
+//!   [`tool_registry::strict_json`]（收尾批修复，原 last-wins 覆盖语义
+//!   退役），YAML 通道由 serde_yaml_ng 反序列化到 Value 时对重复键
 //!   报错（fail-closed，单测锁定该行为）；
 //! - 非 JSON object 顶层（数组、标量）拒绝。
 //!
@@ -79,16 +81,17 @@ impl std::error::Error for ParseError {}
 
 /// 解析一份 Manifest 文本（JSON 或 YAML 自动探测）为 `serde_json::Value`。
 ///
-/// strict 边界（如实声明）：JSON 通道的重复键沿用 serde_json 默认覆盖语义
-/// （不拒绝），strict 未知字段拒绝统一在 schema 校验层执行；YAML 通道的
+/// strict 边界：JSON 通道与 YAML 通道对齐拒绝重复键（`tool_registry::
+/// strict_json`，收尾批修复原「JSON 通道沿用 last-wins 覆盖语义」缺口，
+/// 单测锁定）；strict 未知字段拒绝统一在 schema 校验层执行；YAML 通道的
 /// 重复键由 serde_yaml_ng 拒绝（单测锁定），非字符串键由
 /// [`ensure_yaml_string_keys`] 显式拒绝（实测 serde_yaml_ng 会把数字键
 /// 字符串化，必须前置拦截，单测锁定）。
 pub fn parse_document(doc: &str) -> Result<Value, ParseError> {
     let trimmed = doc.trim_start();
     if trimmed.starts_with('{') {
-        let value: Value =
-            serde_json::from_str(doc).map_err(|e| ParseError::new("json_syntax", e.to_string()))?;
+        let value = tool_registry::strict_json::from_str(doc)
+            .map_err(|e| ParseError::new("json_syntax", e.to_string()))?;
         ensure_object(&value)?;
         Ok(value)
     } else {
@@ -164,6 +167,24 @@ mod tests {
         let yaml = "id: \"a.b\"\nid: \"c.d\"\n";
         let err = parse_document(yaml).unwrap_err();
         assert_eq!(err.code, "yaml_syntax", "dup key must fail closed: {err}");
+    }
+
+    #[test]
+    fn json_duplicate_key_rejected() {
+        // 收尾批 strict JSON 对齐：JSON 通道与 YAML 通道同口径 fail-closed。
+        let json = r#"{"id": "a.b", "id": "c.d"}"#;
+        let err = parse_document(json).unwrap_err();
+        assert_eq!(err.code, "json_syntax", "dup key must fail closed: {err}");
+        assert!(
+            err.message.contains("duplicate key: id"),
+            "message must name the duplicate: {err}"
+        );
+
+        // 嵌套层级同样拒绝（network 块形态，egress 配置所在层）。
+        let nested = r#"{"id": "a.b", "net": {"mode": "none", "mode": "egress"}}"#;
+        let err = parse_document(nested).unwrap_err();
+        assert_eq!(err.code, "json_syntax");
+        assert!(err.message.contains("duplicate key: mode"), "{err}");
     }
 
     #[test]

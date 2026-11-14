@@ -18,6 +18,7 @@ pub mod catalog;
 pub mod error;
 pub mod hash;
 pub mod jsonschema_lite;
+pub mod strict_json;
 pub mod store;
 pub mod validate;
 

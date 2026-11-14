@@ -69,7 +69,7 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 | 4 | ~~Phase 9 MCP/REST/CLI~~ | ✅ 完成（95f4e5e，2026-11-14） |
 | 5 | ~~rmcp 迁移阻断性整改批~~ | ✅ 完成（8adbf1c，2026-11-14：rmcp 3.10.0 + P0/P1 修复 + 增量 vendor + 真实客户端 e2e 留证；干净态全量离线验收由 Phase 10 收口的 fresh clone 演练承载，644 passed exit 0） |
 | 6 | ~~Phase 10 生态与发布~~ | ✅ 完成（2026-11-14 阶段收口，RELEASE_2026-11-14_PHASE10.md：P10-1 到 P10-4 四批 + cargo-deny 许可证门 + axe 阻断化 + 视觉基线 47 张 + 四 guides + fresh clone 演练 §17 五场景；门禁复测 644 passed / clippy 零告警 / unittest 211 / web 120 + 视觉门 71 / selftest 四脚本全过，生产库五库指纹零写一致） |
-| 7 | 项目完成自查与收尾（修订版闭环） | 2.0 计划 §17 全绿自查修复循环 + GitHub 知识库与武器库补齐；ChatGPT 步骤与实战校验三面已按用户裁决删除暂缓 |
+| 7 | ~~项目完成自查与收尾（修订版闭环）~~ | ✅ 完成（2026-11-14 收尾批次：知识库 catalog.json 入库 + 武器库 source-analysis pack 转正三工具 + §17 十四条判据全绿自查 PLAN-17-SELFCHECK.md + 修复循环两项（strict JSON 双通道 + README/M8_READINESS 统一）；ChatGPT 步骤与实战校验三面已按用户裁决删除暂缓，实战校验待用户启动） |
 
 ## 四、贯穿纪律（用户硬性要求，违反即返工）
 
@@ -97,6 +97,8 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 - **成本教训**：常驻实施员上下文滚动极贵（Phase 6 单代理 3.4 亿）；用「每批新实施员 + 上一批交接摘要」模式。
 - **验收立场**：验收员挑毛病不放行；fuzzy 通过视为未通过；未验证的如实标注。
 
-## 七、已知遗留（清账候选，非阻塞）
+## 七、已知遗留（清账候选，非阻塞；2026-11-14 收尾闭环后状态）
 
-rtis.py 自测 4 失败（T2/T4/T11/T13，非平台引入）；M8_READINESS 已知限制（evidence 抽样 4/26、research_task 核心字段映射）；license 轴数据源未接；egress_proxy JSON 通道重复键未拒绝（YAML 通道已拒绝）；视觉回归 Playwright 基线未建；README 与 M8_READINESS 文档状态冲突（收尾审阅时统一）。
+rtis.py 自测 10 过 7 败（2026-11-14 复测现值，原台账 4 败 T2/T4/T11/T13 口径有漂移，RTIS 侧非平台引入，留 RTIS 侧清账批次）；license/maintenance 轴数据源未接（RTIS 知识轴，同属 RTIS 侧）；M8_READINESS 已知限制 1/2（evidence 抽样 4/26、research_task 核心字段映射，环境面：26 活动源库本机缺失）；CI 无浏览器面（视觉门本地执行，config 注释口径）；服务端插件来源拉取完整链路需真实上游可达（P10-2 已知限制）。
+
+~~已清账（2026-11-14 收尾批）：~~ egress_proxy JSON 通道重复键未拒绝（strict_json 模块修复，双通道对齐 fail-closed）；视觉回归 Playwright 基线未建（P10-4 47 张落盘）；README 与 M8_READINESS 文档状态冲突（README 升 2.0 口径 + M8_READINESS 历史快照注记）。逐条对账见 docs/phase10/PLAN-17-SELFCHECK.md。

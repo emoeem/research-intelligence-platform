@@ -9,7 +9,7 @@
 | `rip-tool-base/` | `localhost/rip-tool-base:smoke` | podman_host 通道冒烟载具（rip.smoke.native，utility 族） | P2-5 起在用 |
 | `rip-tool-webresearch/` | `localhost/rip-tool-webresearch:latest` | Web Research Pack（计划 §14:774，首工具 rip.http.inspect，纯标准库 http_inspector.py） | P3-1 建成（2026-11-10） |
 | `rip-tool-coreutils/` | `localhost/rip-tool-coreutils:latest` | Core Utilities Pack（计划 §14:774，五工具共用入口 core_tools.py：file_meta/hash/compress/convert/validate，argv op 分派，纯标准库） | P3-1 建成；P3-4 起五 Manifest 登记 |
-| `rip-tool-source/` | （planned） | Source Analysis Pack | planned（PHASE3-DESIGN §2.3 范围裁定，不建镜像） |
+| `rip-tool-source/` | `localhost/rip-tool-source:latest` | Source Analysis Pack（收尾武器库批交付，pack_id source-analysis 冻结存根落地，三工具共用入口 src_tools.py：deps/static-check/search，argv op 分派，纯标准库） | 2026-11-14 建成（收尾武器库批，三 Manifest 登记） |
 | `rip-tool-document/` | （planned） | Document Pack | planned（PHASE3-DESIGN §2.3 范围裁定，不建镜像） |
 
 拆分原则（计划 §5.3：不为全部工具造一个巨型容器）：按 Tool Pack 拆族，异构依赖（Python/Node/Java/Go 各版本）留在各族镜像内；每族一目录，含 `Containerfile`、工具本体脚本、`tool-manifest.yaml` 与 `tool-manifest.json` 双份（json 供测试与 Registry 加载，yaml 为人读口径，内容一致）。
@@ -39,6 +39,7 @@
 | `localhost/rip-tool-base:smoke` | `sha256:1dbc67084d5c1a1f6c31720752e64730da3524a83b5ba3efba5dadb9589cbe60` | 2026-11-11 重建（P2-5 首建；2026-11-10 夜间外部清理致三族镜像丢失，按 §31 行流程重取同步，原值 84877bf6 见 git 历史） | P2-5 / P5-10 重建 |
 | `localhost/rip-tool-webresearch:latest` | `sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58` | 2026-11-11 重建（同上事件；原值 bf910119 见 git 历史） | P3-1 / P5-10 重建 |
 | `localhost/rip-tool-coreutils:latest` | `sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf` | 2026-11-11 重建（同上事件；原值 c90631b9 见 git 历史） | P3-1 / P5-10 重建 |
+| `localhost/rip-tool-source:latest` | `sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29` | 2026-11-14 建成（基础镜像 digest 同 coreutils 行，受控拉取后离线构建；distrobox 侧经 distrobox-host-exec shim 调宿主 podman 6.2.0 构建） | 收尾武器库批 |
 
 构建口径（P3-1 实测）：两族镜像内零包安装（工具本体 Python 纯标准库，基础镜像自带能力），构建全程离线（基础镜像 digest 已在本地 containers-storage）；构建期宿主 `pacman -Q` 基线 2415 行无变化。工具本体功能在容器内验证（hash 与宿主 sha256sum 对账一致、gzip 回读一致、json 转 csv、filemeta、YAML 显式不支持负向、路径穿越拒绝负向、GET example.com 200 且 body sha256 宿主对账一致、无网与非 GET 拒绝负向）。
 

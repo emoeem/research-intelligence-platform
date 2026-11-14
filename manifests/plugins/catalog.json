@@ -1,0 +1,53 @@
+{
+  "schema_version": "1",
+  "generated_at_unix": 1794652237,
+  "default_trust": "official",
+  "entries": [
+    {
+      "plugin_id": "knowledge.awesome-hacking",
+      "version": "0.1.0",
+      "name": "Awesome Hacking 目录",
+      "kind": "knowledge",
+      "description": "黑客与渗透测试 awesome 列表聚合目录：只登记分类、名称、描述与原始链接条目元数据",
+      "license": "CC0-1.0",
+      "source_type": "git",
+      "source_ref": "https://github.com/Hack-with-Github/Awesome-Hacking",
+      "source_default_trust": "community",
+      "trust_level": "official",
+      "install_confirmation": "single",
+      "auto_update_prompt": true,
+      "manifest_path": "manifests/plugins/knowledge.awesome-hacking.json"
+    },
+    {
+      "plugin_id": "knowledge.secskills",
+      "version": "0.1.0",
+      "name": "SecSkills 目录",
+      "kind": "knowledge",
+      "description": "渗透测试、代码审计、CTF、逆向等安全方向 Agent/Skills/MCP 目录：登记条目元数据与 Skill 候选",
+      "license": "Apache-2.0",
+      "source_type": "git",
+      "source_ref": "https://github.com/DaoYiSec/SecSkills",
+      "source_default_trust": "community",
+      "trust_level": "community",
+      "install_confirmation": "confirm",
+      "auto_update_prompt": false,
+      "manifest_path": "manifests/plugins/knowledge.secskills.json"
+    },
+    {
+      "plugin_id": "knowledge.tongui-course-notes",
+      "version": "0.1.0",
+      "name": "tongui 安全课程目录",
+      "kind": "knowledge",
+      "description": "渗透测试全套 74 篇 13 章课程与精选站点 31 篇：只登记章节/标题/URL/路径元数据，正文不批量持久化",
+      "license": "UNLICENSED",
+      "source_type": "git",
+      "source_ref": "https://github.com/tongui66/Cyber-Security-Course-Notes",
+      "source_default_trust": "community",
+      "trust_level": "official",
+      "install_confirmation": "single",
+      "auto_update_prompt": true,
+      "manifest_path": "manifests/plugins/knowledge.tongui-course-notes.json"
+    }
+  ],
+  "content_sha256": "b4f870f8d0b23b22931314a10dcdfb31d8561db046e3231645ae23692f41ef30"
+}

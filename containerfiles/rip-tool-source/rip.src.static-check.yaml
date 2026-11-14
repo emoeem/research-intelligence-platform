@@ -1,0 +1,132 @@
+# ============================================================================
+# rip.src.static-check：Source Analysis Pack Manifest（收尾武器库批交付物）
+# ============================================================================
+# 三 Manifest 共用 source 镜像与 src_tools.py 入口（argv op 分派：
+# entrypoint 第三位 = static-check）；json 孪生 rip.src.static-check.json（Registry
+# 加载用），两者内容一致；image digest 为本机实建镜像真实值（podman inspect
+# 实测 2026-11-14，containerfiles/README.md digest 台账同步）。
+# ============================================================================
+"schema_version": "1"
+"kind": "tool"
+"family": "source_code"
+"runtime":
+  "type": "podman_host"
+  "image": "localhost/rip-tool-source:latest@sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29"
+  "readonly_rootfs": true
+  "mounts":
+    - "role": "input"
+      "path": "/task/in"
+      "mode": "ro"
+    - "role": "output"
+      "path": "/task/out"
+      "mode": "rw"
+  "entrypoint":
+    - "python3"
+    - "/app/src_tools.py"
+    - "static-check"
+"resources":
+  "cpu": "2"
+  "memory": "2Gi"
+  "pid_limit": 256
+  "disk_mb": 256
+  "timeout_seconds": 120
+  "max_output_bytes": 1048576
+"network":
+  "mode": "none"
+"secrets": []
+"permission_level": "T1"
+"health":
+  "probe":
+    "type": "exec"
+    "command":
+      - "python3"
+      - "-c"
+      - "import json; print(json.dumps({'ok': True}))"
+    "timeout_ms": 5000
+    "interval_seconds": 600
+    "degraded_after": 1
+    "broken_after": 3
+  "on_run_recover": true
+"provenance":
+  "origin": "rip-native"
+  "source_repo": "containerfiles/rip-tool-source（本仓库，自研纯标准库入口）"
+  "license": "repo-internal"
+  "dependencies": []
+  "image_digest": "sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29"
+  "known_limits":
+    - "规则集为形态匹配（正则），不做语义分析：SEC 系列命中须人工复核，误报按 knowledge 面回填"
+    - "扫描文件族白名单（代码与文本后缀 + .env/.npmrc 前缀点文件），其余跳过"
+  "tested": "收尾武器库批实测（容器内三 op 冒烟 + crates/tool-engine/tests/src_analysis_e2e.rs ensure_image digest 守卫 V-9 + workers/python/tests/test_src_tools.py 宿主纯函数单测）"
+"context":
+  "summary": "Source Analysis：静态检查"
+  "tags":
+    - "source_code"
+    - "podman_host"
+    - "closure-arsenal"
+"id": "rip.src.static-check"
+"name": "RIP Source Static Check"
+"version": "0.1.0"
+"description": "Source Analysis Pack：静态检查（安全与代码卫生规则集），秘钥形态 （AWS/GitHub token/PEM 私钥块/硬编码凭据赋值）、高危调用（eval/exec/os.system/shell=True/pickle.loads/无 Loader yaml.load）、TODO/FIXME 密度；逐条 rule_id/severity/line/excerpt，500 条截断护栏；纯标准库，network.mode=none 只读扫描"
+"input_schema":
+  "type": "object"
+  "required":
+    - "path"
+  "additionalProperties": false
+  "properties":
+    "path":
+      "type": "string"
+      "description": "/task/in 之下的文件或目录"
+"output_schema":
+  "type": "object"
+  "required":
+    - "target"
+    - "files_scanned"
+    - "count"
+    - "findings"
+    - "summary"
+  "properties":
+    "target":
+      "type": "string"
+    "files_scanned":
+      "type": "integer"
+    "lines_todo":
+      "type": "integer"
+    "count":
+      "type": "integer"
+    "findings":
+      "type": "array"
+      "items":
+        "type": "object"
+        "properties":
+          "rule_id":
+            "type": "string"
+          "severity":
+            "type": "string"
+          "line":
+            "type": "integer"
+          "excerpt":
+            "type": "string"
+          "file":
+            "type": "string"
+    "summary":
+      "type": "object"
+    "truncated":
+      "type": "boolean"
+    "output_file":
+      "type": "string"
+    "tool":
+      "type": "string"
+    "elapsed_ms":
+      "type": "integer"
+    "uid":
+      "type": "integer"
+"idempotent": true
+"examples":
+  - "input":
+      "path": "/task/in/src"
+    "output_hint":
+      "count": 2
+      "summary":
+        "high": 1
+        "medium": 1
+      "files_scanned": 4

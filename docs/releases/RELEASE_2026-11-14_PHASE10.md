@@ -90,3 +90,38 @@ Phase 10 无迁移、无 schema 变更、生产 platform*.db 零触碰：整阶�
 ## 六、队列收口
 
 Phase 10 收口后，HANDOVER-RIP2-CONTINUATION.md 第三节队列 1 到 6 项全部完成，剩第 7 项「项目完成自查与收尾（修订版闭环）」：2.0 计划 §17 全绿自查修复循环 + GitHub 知识库与武器库补齐（ChatGPT 步骤与实战校验三面按 2026-11-14 用户裁决删除暂缓，恢复时启用）。
+
+## 七、收尾批次（队列第 7 项交付，2026-11-14 同日入库）
+
+### 知识库补齐（GitHub 面）
+
+三源插件 Manifest（json+yaml 双份，入库于 SK-2）之外补齐 P10-2 目录发布形态的发布产物：`manifests/plugins/catalog.json`（catalog-publish 生成，trust-default official + secskills 降档 community，3 entries 含 content_sha256 完整性），catalog-verify sha 一致 exit 0；课程原文与 *.db 不入库红线不变。
+
+### 武器库补齐（首批安全工具，source-analysis pack 转正）
+
+`containerfiles/rip-tool-source/`（pack_id 与 manifests/packs/planned/source-analysis.json 冻结存根同源，自研薄包装 self-owned 裁决落地）：
+
+- 三工具（T1，podman_host，network.mode=none，纯标准库 src_tools.py argv op 分派，D-TC-03 帧协议）：rip.src.deps-manifest（四格式依赖清单归一化）、rip.src.static-check（秘钥形态/高危调用/TODO 密度规则集）、rip.src.code-search（目录限定 regex 检索）。
+- 镜像族建成（python:3.12-slim@sha256:4840d514 受控拉取后离线构建），产物 digest sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29 三处同步（两 manifest 通道 + src_analysis_e2e.rs 常量）并登记 containerfiles/README.md 台账；distrobox 侧经 distrobox-host-exec shim 调宿主 podman 6.2.0 构建（本机口径注记）。
+- 实测：容器内三 op 冒烟全过（npm 清单归一 3 条、AWS key/eval 命中、regex 行号对账）；rp-tool validate 三份全过 + dev 副本注册 + /api/tools 露出（三工具 VALIDATED/ACTIVE）；Rust 端到端 crates/tool-engine/tests/src_analysis_e2e.rs 3 passed（podman shim 在位时真实容器全链 5.7s，CI 无镜像环境按 V-9 digest 守卫跳过，registry 负例常跑）；宿主纯函数单测 workers/python/tests/test_src_tools.py 21 用例全过；存根转正（status delivered + 交付验收记录）。
+
+### §17 全绿自查与遗留清账
+
+docs/phase10/PLAN-17-SELFCHECK.md：14 条判据逐条实证对账全绿（判据 5 VM 面为 ADR §3.1 冻结挂起口径，非缺口）；修复循环两项入库：
+
+1. **strict JSON 重复键拒绝**（HANDOVER §七遗留清账）：tool_registry::strict_json 新模块（零新增依赖），tool manifest（rp-tool parse_manifest）与 plugin manifest（plugin-registry parse_document）两 JSON 通道接线，与 YAML 通道对齐 fail-closed；tool-registry 5 用例 + plugin-registry json_duplicate_key_rejected（含嵌套 network 块形态）单测锁定；存量全量 manifest 回归零拒绝（26 份工具 Manifest + 三插件）。
+2. **README 与 M8_READINESS 状态统一**：README 升 2.0 现状口径（Phase 0 到 10 + 架构图补全），M8_READINESS 加历史快照注记（限制 4/5 已关闭留痕，1/2/3 如实存留）。
+
+遗留台账更新：rtis.py 自测复测现值 10 过 7 败（原 4 败口径漂移，RTIS 侧非平台引入）；视觉基线遗留项勾销（P10-4 已建）。已知遗留逐项登记于 HANDOVER §七与 PLAN-17-SELFCHECK.md。
+
+### 收尾批次门禁（入库当日复测）
+
+| 门 | 结果 |
+| --- | --- |
+| 点名门 | cargo test --offline -p tool-registry -p plugin-registry 全绿（strict_json 5 用例 + json dup key 拒绝用例在列） |
+| 点名门 | cargo test --offline -p tool-engine --test src_analysis_e2e 3 passed（V-9 digest 守卫，podman shim 在位时真实容器全链） |
+| 点名门 | python3 -m unittest workers.python.tests.test_src_tools 21 用例 OK |
+| manifest 回归 | rp-tool validate 全量 + rp-plugin manifest-inspect 三插件全过（strict JSON 零误拒） |
+| 全量门 | 静场复跑全绿（记录见下） |
+
+复测纪律记录（如实）：首轮全量复测与编译并发时出现三处并发负载表现，其中两处为 flake（vitest 5 败与视觉门 1 张基线快照，静场复跑核验），一处为**守卫真实拦截**：rtis.py 自测运行触发 resolver 审计追加（integrations/rtis/adapter_audit.jsonl 6 行），协调方原拟随批入库，被 tool-engine first_batch_b5 守卫（integrations/rtis/ 跟踪文件零改动红线）拒绝；处置 = 还原该文件（运行时审计痕迹不进跟踪面），守卫复位。教训入册：RTIS 侧运行（含自测）会写跟踪态审计文件，跑后必须核对 git status 并还原，B5 守卫是最后防线且有效。
