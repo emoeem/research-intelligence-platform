@@ -4,12 +4,19 @@
 >
 > | 项 | 值 |
 > |---|---|
-> | 状态 | 已评审定稿，待 2.0 收口后生效 |
+> | 状态 | 已评审定稿；2.0 已收口（2744ada），Phase 0 已产出（见修订记录） |
 > | 修订日期 | 2026-11-14 |
 > | 取代对象 | 原 RIP 3.0 计划书全文、首轮架构评审意见全文 |
-> | 生效条件 | RIP 2.0 完成收口（见第零部分） |
+> | 生效条件 | RIP 2.0 完成收口（见第零部分）**（已满足，2026-11-14）** |
 > | 实施预算 | 暂按 3 到 4 个周末窗口规划，以 Phase 0 实际审计结果重排 |
 > | 工程根 | `research-platform` 仓库（独立 git 仓库，origin `github.com/emoeem/research-intelligence-platform`） |
+
+## 修订记录（R2 定稿后的用户裁决，正文中冲突处以本记录为准）
+
+1. **数据库策略（2026-11-14 用户裁决，修订 §6.3 与 §10.1 的「第一阶段继续 SQLite」口径）**：情报核（Document/Chunk/Vector/KnowledgeCard/Relation/Finding/Report/治理面）采纳 PostgreSQL 17 + pgvector + pg_jieba + pg_search，Phase 1 起新增式落地（refinery 迁移链），新增域永不落 SQLite；运营核暂留 SQLite（绞杀者路线）。全文见 decisions/ADR-0001；实施细节 12-STORAGE-AND-MIGRATION.md。原文「第一阶段继续 SQLite + FTS5」与「未来迁移 PostgreSQL 的路径必须明确」由本条取代（迁移路径已决策并立即执行）。
+2. **许可证口径（2026-11-14 用户裁决）**：许可证不做淘汰门槛，能力优先（许可仅记录）。§4.3/§4.4 中 PyMuPDF（AGPL）与 BM25 面 ParadeDB pg_search（AGPL）按能力转正选型；台账见 decisions/ADR-0002。
+3. **Phase 0 已产出（2026-11-14）**：00-ARCHITECTURE-AUDIT.md（A-G 登记表 + 三关键问题实证：向量检索未接入 / RTIS 五面映射完整度 / source_sync 泛化差距；迁移编号修正为下一可用 020）+ 四冻结物（03/04/12/13）+ ADR-0001/0002。窗口重排建议 5 窗（见 00-审计第六节），待用户确认。
+
 
 ---
 
