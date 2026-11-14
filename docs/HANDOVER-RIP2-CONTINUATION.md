@@ -25,20 +25,24 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 | Phase 5 | Web Workbench 五页面 + ⌘K 接真实 API、react-query 数据层、浏览器实测 | 6217ca8 |
 | Phase 6 | Plugin Registry/Runtime/009 迁移/rip-data 布局/五类来源/Catalog/Plugin Center 页/ADDING-A-TOOL 指南与脚手架 | ace3c53 |
 
-进行中（原会话活体工作流 dwfrun-5f804a20，若已停则由接手方继续）：
+进行中（2026-11-14 快照，以 git log 与 docs/README.md 为准）：
 
-- **SK 扩展（安全知识源接入）**：SK-1 通用摄取接线实施中；SK-2 三源插件（Awesome-Hacking/SecSkills/tongui 课程，规格见 docs/RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md，固定 Commit 在其 §3）；SK-3 抽取与静态审查工具。规格与验收清单 = 该计划 §8/§10，RTIS 15,155 条对账零回归是硬红线。
-- **Phase 7（Agent Engine + WebUI 壳层升级）**：首批 = VS Code 式五区壳层 + workspaces 数据模型（Workspace/Project/Agent/Workflow 概念分离）；后续含 trace 关联（七类 ID 贯穿）、研究能力契约化（七能力 Schema+mock+测试）、Agent Studio 页。
+- **已完成并入库**：Phase 7 Agent Engine（`102cab5`，五门禁 510 passed）、Phase 8 Workflow Studio（`8f0446b`，cargo 582 + vitest 111 + 视觉门 59 + 画布浏览器实测 11 截图）、Phase 9 MCP/REST/CLI（`95f4e5e`，cargo 608 + parity 载具常驻 CI + MCP 目录与 Tool Center 同源）。各阶段 RELEASE 与分批记录见 docs/releases/。
+- **CI**：仓库史上首次全绿（#53 起）；七层守卫修复（digest 钉死镜像 / 本机运行时库 / 兄弟外仓类的集成测试按 V-9 在 CI 跳过、受控环境实跑）；rp-mcp-parity 双通道一致性 job 常驻。
+- **在途**：rmcp 迁移阻断性整改批（外部审计 docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md 定案：MCP 手写协议层不可长期保留，P0 tools/list 缺必需 inputSchema 被测试固化、P1 initialize 版本回显无协商；整改 = 换官方 rmcp SDK + 增量 vendor + conformance 测试 + 真实客户端端到端，十项任务见审计 §5）。在途期间工作树有未提交改动属正常，接手先 WIP 备份。
+- **待跑**：Phase 10 生态与发布（backup/restore 实演、FTS 重建校验、视觉基线、autoresearch 性能基准；许可证清单经用户裁决删除）→ 项目完成自查与收尾（修订版闭环，见第五节）。
 
 ## 二、新会话 30 秒接手清单
 
 1. 用 ZCode 打开项目 `/home/emo/code/pensting/research-platform`（本文件在仓库内，AGENTS.md 是代理入口）。
 2. 按序读：`docs/SESSION-HANDOFF.md`（十四节，授权与全部用户硬性要求）→ `docs/phase0/PHASE-ROADMAP.md`（冻结批次与验收命令）→ `git log --oneline -15`。
 3. 核对工作树：`git status -sb`。若有未提交改动 = 原工作流在跑批次时的半成品，先 `git add -A && git commit -m "WIP 备份：接手前快照" && git push origin main`（SSH 失败重试 2 到 3 次，间歇断连是已知特性）。
-4. 选择接手方式（三选一）：
-   - **a. 原会话仍在跑**：什么都不做，等它推进；新项目只做观察（git log 与 docs/releases/ 是真相源）。
-   - **b. 原会话已死，重建工作流**：用 CreateWorkflow 以 `path: docs/handoff/workflow-script-RIP2-2026-11-12-RESUME.dwf.ts` 提交（2026-11-13 起该脚本为跨机免编辑版：SK 段与 Phase 7 批次 1 到 4 已改核对性说明，P7-5 规格按被停运行规划员输出钉死且迁移编号已修正为 015，只规划 P7-6/P7-7；直接提交即可，无需再改）。到达尾洞（Phase 8/9/10）时按洞内 prompt 指引写填充。
-   - **c. 纯手动推进**：每个批次的规格、路径、自验命令都在 PHASE-ROADMAP 与 docs/phaseN/PHASEN-PLAN.md 里，按队列逐批实施，每批过五道门禁 + 独立验收 + RELEASE 入库。
+4. 选择接手方式（按当前状态三选一，判断依据 = git log 与 docs/README.md 的阶段完成行）：
+   - **a. 原会话仍在跑（同一台机器）**：什么都不做，等它推进；git log 与 docs/releases/ 是真相源。
+   - **b. 2.0 已全部收口**（git log 可见 RELEASE_PHASE10 与收尾完成行）：项目已完成，无需重建工作流；新机器只承接后续事项（rip3 计划 docs/rip3/ 的执行、用户启动的实战校验等）。
+   - **c. rmcp/Phase 10 在途且原会话已死（跨机场景）**：journal 不跨机，重建工作流：用 CreateWorkflow 以 `path: docs/handoff/workflow-script-RIP2-2026-11-12-RESUME.dwf.ts` 提交。注意：该文件是活体脚本，已含 Phase 8/9/10 与 rmcp 前置批的填充体（尾洞均已填充拼接），重建会从头走核对段；每批实施员 ask 自带「接手已交付现状勿推倒重来」指引，实施员读树后核对续作，不会重做已完成交付；到达已填充的尾洞时直接按脚本内填充体继续，只有新的未填充尾洞才需要写填充。
+   - **d. 纯手动推进**：每批规格、路径、自验命令在 PHASE-ROADMAP 与 docs/phaseN/PHASEN-PLAN.md；rmcp 迁移按 docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md §5 十项任务执行。
+5. 推进纪律：阶段验收不过不进下一阶段；push 后以 GitHub CI 全绿为硬门槛；连续两次同一方法无新信息就换方法。
 5. 推进纪律：阶段验收不过不进下一阶段；连续两次同一方法无新信息就换方法。
 
 > 接手记录（2026-11-12 03:2x）：原运行 dwfrun-5f804a20 于 03:17 因 owning session closed 中断（spent 452M tokens），已按 b 案由新会话重建：重建脚本为 docs/handoff/workflow-script-RIP2-2026-11-12-RESUME.dwf.ts（Phase 5/6 已完成段改为只读核对，SK-1 半成品 WIP 备份 fec5a3f 已标注进规划与实施 ask，门禁命令按运行 cwd 即仓库根修正，仓库 core.sshCommand 已指向宿主密钥 /home/emo/.ssh/id_ed25519）。后续接手方优先用 RESUME 版脚本，原快照仅作历史参照。
@@ -48,17 +52,20 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 > 接手记录（2026-11-13 迁机跨机续作）：工作全部在 origin/main（截至该条记录最新 9639689，其后新增 78eea0b 与 WIP 收口提交，见下条），journal 不跨机（ResumeWorkflowRun 只在本机有效，原运行在新机器不可达），新机器直接走 b 案重建。RESUME 脚本已改写为跨机免编辑版（SK 与 P7-1 到 P7-4 为核对性说明、P7-5 钉死含迁移编号 015 修正、浏览器二进制口径机器无关化），新机器无需再改脚本。新机器开工三步：1) 配好 GitHub SSH 密钥后 git clone git@github.com:emoeem/research-intelligence-platform.git；2) 用 ZCode 打开 clone 出的仓库根目录（工作目录必须是仓库根）；3) 第一句话输入「读 docs/HANDOVER-RIP2-CONTINUATION.md 并按第二节执行」，核对员会先做环境自检（cargo/python3/node 版本、vendor 离线构建、web npm ci、push dry-run），缺什么如实报在 VerifyReport gaps 里。
 >
 > 接手记录（2026-11-13 WIP 收口）：停运行遗留的 P7-5 trace 关联半成品已按 §二.3 纪律 WIP 备份入库推送（40ced58，71 文件 3993 插入：agent-engine trace.rs 733 行、migrations/015_trace_correlation.sql、agent-engine 与 tool-engine 两侧 trace_correlation_p7_5 测试、TracePage.tsx、trace-smoke 测试、selftest_phase7_trace.sh）。新机器 clone 即含此半成品：RESUME 脚本钉死规格中标注（新）的路径已有对应文件在树，P7-5 批次在其上续作补齐并通过规格 check 即可，勿推倒重来。本机推送坑位（仅本机适用，新机器无关）：ZCode shell 的 HOME 指向 distrobox 家目录，known_hosts 按默认路径找不到，仓库本地 core.sshCommand 已补 UserKnownHostsFile=/home/emo/.ssh/known_hosts（仓库本地 user 身份 emoeem / 3353745917@qq.com 已按历史回填）；push 间歇 Connection closed 重试即通，与 §六 记载一致（本次第 1 次失败第 2 次成功）。
+>
+> 接手记录（2026-11-14 Phase 9 收口 + rmcp 迁移在途 + 用户三裁决）：编排运行 dwfrun-c1c996f2-0a44-4aa6-b84e-289155fbad1a（本机活体，journal 不跨机）已完成 Phase 7（102cab5）、Phase 8（8f0446b）、Phase 9（95f4e5e）三阶段收口入库与 CI 修复链（5acca49/2fc63b9/452fa38/0ddb397/da9e0c1/d04eca2，七层 V-9 守卫后仓库史上首次 CI 全绿）；随后按外部审计（docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md，用户定案「按照这个方案」）填充执行 rmcp 迁移前置批（在途）与 Phase 10、项目完成自查收尾（填充体已在脚本内）。用户三项裁决已生效并写入 AGENTS.md 与 SESSION-HANDOFF：1) 收尾闭环删除 ChatGPT 全面审阅步骤（暂缓）；2) 实战校验三面暂缓（项目完成并由用户启动后才做）；3) 成熟库优先硬约束并入 AGENTS.md（vendor 不在不是拒绝理由，手写须例外 ADR），许可证双面清单删除，平台不内置渗透测试授权要求（项目定位是工具，法律顾虑以使用免责声明处理，一切由使用者自行承担，免责声明落点由用户定稿）。跨机续作要点：仓库本地 .git/config（core.sshCommand 与 user 身份）不随 clone 走，新机器必须自配 SSH 密钥与 git identity；rip3 计划书修订版 R2 已入库 docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（含 2026-11-14 修订：RTIS 唯一事实源、成熟库硬约束、无授权内置）；CI 在 GitHub 上自动跑，push 后以全绿为阶段硬门槛。
 
 ## 三、剩余任务队列（完成即按序执行）
 
 | 序 | 任务 | 验收基准 |
 |---|---|---|
-| 1 | SK-1/2/3 安全知识源扩展收尾 | 计划 §10 十五条清单 + RTIS 对账 + 浏览器实测三源展示 |
-| 2 | Phase 7 Agent Engine + 壳层升级 | 2.0 计划 §14 Phase 7 + SESSION-HANDOFF §十（trace/契约）+ §十一（五区布局） |
-| 3 | Phase 8 Workflow Studio | ROADMAP Phase 8 + §十（持久化/checkpoint/恢复，参考 LangGraph/Temporal 设计不替换 Rust 自研）+ 画布浏览器实测 |
-| 4 | Phase 9 MCP/REST/CLI | ROADMAP Phase 9 + §十（correlation id 对外、MCP 与 Tool Center 同源） |
-| 5 | Phase 10 生态与发布 | ROADMAP Phase 10 + §十（backup/restore 实现、FTS 重建校验、保留归档、许可证逐包清单、axe 对比度、视觉基线）+ autoresearch 性能基准 |
-| 6 | 收尾审阅与实战校验闭环 | SESSION-HANDOFF §十二 + §十四（见第五节） |
+| 1 | ~~SK-1/2/3 安全知识源扩展收尾~~ | ✅ 完成（2bf8e9c，2026-11-13） |
+| 2 | ~~Phase 7 Agent Engine + 壳层升级~~ | ✅ 完成（102cab5，2026-11-13） |
+| 3 | ~~Phase 8 Workflow Studio~~ | ✅ 完成（8f0446b，2026-11-14） |
+| 4 | ~~Phase 9 MCP/REST/CLI~~ | ✅ 完成（95f4e5e，2026-11-14） |
+| 5 | rmcp 迁移阻断性整改批 | 审计 §5 十项任务（docs/phase9/MCP_MATURE_LIBRARY_AUDIT_2026-11-14.md）：协议层换官方 rmcp、P0/P1 修复、增量 vendor、真实客户端端到端、离线验收 |
+| 6 | Phase 10 生态与发布 | ROADMAP Phase 10 + §十（backup/restore 实演、FTS 重建校验、保留归档、axe 对比度、视觉基线）+ autoresearch 性能基准；成熟库七小节强制 |
+| 7 | 项目完成自查与收尾（修订版闭环） | 2.0 计划 §17 全绿自查修复循环 + GitHub 知识库与武器库补齐；ChatGPT 步骤与实战校验三面已按用户裁决删除暂缓 |
 
 ## 四、贯穿纪律（用户硬性要求，违反即返工）
 
@@ -75,7 +82,7 @@ Research Intelligence Platform（RIP）：研究智能平台，Rust Core（领�
 
 1. **ChatGPT 全面审阅（2026-11-14 用户指示：本步骤删除暂缓，恢复时启用）**：原流程 browser-use 打开 chatgpt.com（复用用户已登录会话），fill 提问后必须点「发送」按钮（Enter 无效），轮询「停止」按钮消失即完成，对话 region innerText 回收全文；给它仓库地址加 ROADMAP 与 releases 清单；会话「仓库快速审阅」可续问。**当前闭环改为**：2.0 计划 §17 全绿自查修复循环 + GitHub 知识库与武器库补齐 + 实战校验三面，全程无外部 AI 询问环节。
 2. **GitHub 知识库与武器库补齐**：三源插件 Manifest/catalog 元数据/checksums 入库（课程原文不批量镜像、*.db 不入库）；Tool Pack Containerfile/Manifest 与首批安全工具（静态分析类先行）。
-3. **实战校验三面**（每面跑 RIP 端到端：建任务 → Context 检索 → Tool 派发 → Evidence → 报告）：本地 podman 靶场（vulhub/DVWA 类）；在线授权靶场；公益 SRC（补天等授权项目，低并发、间隔不小于 1s、只打授权范围，漏洞细节只提交平台不进公开仓库）。
+3. **实战校验三面（2026-11-14 用户指示：暂缓，项目完成并由用户启动后才执行）**（每面跑 RIP 端到端：建任务 → Context 检索 → Tool 派发 → Evidence → 报告）：本地 podman 靶场（vulhub/DVWA 类）；在线靶场；SRC 项目（低并发、间隔不小于 1s，漏洞细节只提交平台不进公开仓库）。
 4. 每轮后回第 1 步。
 
 ## 六、运行时环境事实
