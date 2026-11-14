@@ -74,8 +74,25 @@ fn adapter_for(manifest: &Value, cache_dir: &Path) -> PythonWorkerAdapter {
     })
 }
 
+/// B5 两件是本机 RTIS sidecar 的只读集成面：rt.py 依赖 kit 目录下的
+/// knowledge.db（gitignore 运行时数据），eri_adapter 依赖 kit data/ 与
+/// migrations/platform.db（同为 gitignore 运行时数据）。CI 与新机器上
+/// 这些运行时数据不在，按 V-9 跳过；受控环境（本地验收）实跑。
+fn rtis_runtime_ready() -> bool {
+    let kit = repo_root().join("integrations/rtis");
+    kit.join("knowledge.db").exists()
+        && kit.join("data").exists()
+        && repo_root().join("migrations/platform.db").exists()
+}
+
 #[test]
 fn b5_rtis_and_eri_readonly_dispatch_end_to_end() {
+    if !rtis_runtime_ready() {
+        eprintln!(
+            "SKIP: RTIS sidecar 运行时数据不在本地（integrations/rtis/knowledge.db、integrations/rtis/data、migrations/platform.db 均为 gitignore 运行时数据），B5 只读集成面无法实测（V-9，受控环境端到端）"
+        );
+        return;
+    }
     reset_dev_copy();
     let pool = Pool::open(PoolConfig {
         path: DbPath::File(repo_root().join("migrations/dev-b5.db")),
