@@ -1,0 +1,41 @@
+{
+  "results": [
+    {
+      "name": "列表就绪（真 PG 数据经 vite proxy）",
+      "ok": true,
+      "detail": "rows=2"
+    },
+    {
+      "name": "上传流完成（真 rp-doc 子进程 + PG 落库）",
+      "ok": true,
+      "detail": "doc-18e7f60a5b8d021c0000 已入库（对象新建；sha256 3938adae3f98f39c…）"
+    },
+    {
+      "name": "新文档经 refetch 在列",
+      "ok": true,
+      "detail": "before=2 after=3"
+    },
+    {
+      "name": "版本历史面板（含状态词）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "无文件提交前端拦截",
+      "ok": true,
+      "detail": "请选择文件"
+    },
+    {
+      "name": "零 pageerror",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "零 console.error（鉴权/资源类）",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": []
+}

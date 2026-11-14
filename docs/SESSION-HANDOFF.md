@@ -52,6 +52,7 @@
 
 ## 四、Flutterfox/Voicefox（第二项目，Phase 0-8 完成，v0.9.0 已发布）
 
+- **RIP3 启动与 Phase 1 完成（2026-11-14 到 11-15）**：R2 生效条件满足后用户三项裁决（PG 绞杀者 ADR-0001 / 成熟库优先 / 许可证只记录能力优先）；Phase 0 审计冻结批（afe6f5b：00-ARCHITECTURE-AUDIT + 四冻结物 + ADR-0001/0002 + R2 修订记录，用户评审通过）→ Phase 1 文档域与存储（c4c76a9 + 41bf3359 CI success + 15ff4063 + 本收口提交）：rip-pg17 镜像族（三扩展 + jiebacfg 分词）、intel-db crate（refinery PG-0001/0002 + Document 域存取 + LocalFs CAS + rp-doc CLI）、REST 通道（/api/documents import/list/detail）、/documents 文档中心页（vitest 124）、备份双轨演练（pg_dump 四表对账 + rp-admin 16/16）、浏览器实测 7/7 三截图入库。CI #63 failure（vendor 嵌套 .gitignore 挡 add）修复留档 P1-2 报告 E2 节。阶段总账 docs/releases/RELEASE_2026-11-15_RIP3-PHASE1.md；Phase 2（rip-parser 容器族）待开批。
 - 计划书：/home/emo/Downloads/flutterfox-ui-redesign-plan-v2.md；工程：/home/emo/code/voicefox-gui（main，远程 flutterfox/main，最新 a0cfbf4）。
 - **Phase 0-8 全部完成并推送**：Phase 7（c2c72fa）MobileShell/平板三态/手势全屏播放，批次 0 补齐桌面冻结门禁截图（桌面逐像素 RMSE=0 零回归）；Phase 8（525f3d2）Rust 转发型 PlayerBackend + FRB 反向通道 + jniLibs + just_audio/audio_service。主会话验收：analyze 0 issue、Dart 189 + Rust 813 测试全过。报告：docs/PHASE7-REPORT.md、docs/PHASE8-REPORT.md。
 - **Release v0.9.0 已发布**（github.com/emoeem/flutterfox/releases/tag/v0.9.0）：Flutter 四平台产物（Linux/Android 全链路验证 + Windows/macOS CI 实跑通过）+ TUI 五平台资产同挂一个 Release。CI 全绿（fmt/clippy 零警告门禁修复 7e33e74 + flutter test 门禁增补）；release-flutter 管线落地（a0cfbf4）。踩坑记录：.cargo/config.toml 本机硬编码 NDK 路径已去本地化（本机配置外置 ~/.cargo）、Flutter 3.47 移除 --no-codesign、runner 镜像变量不进 env 上下文。
