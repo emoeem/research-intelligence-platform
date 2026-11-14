@@ -195,6 +195,24 @@ fn gateway_dispatch_full_chain_get_with_body_artifact() {
         eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
         return;
     }
+    // 派发链使用 tool-manifest 里 digest 钉死的验收镜像（镜像属运行时数据，
+    // ADR §3.2）：podman 在但镜像不在本地镜像库时（CI、新机器）按 V-9 跳过；
+    // 受控环境（本地验收）实跑。
+    let pinned_image = registered_manifest()["runtime"]["image"]
+        .as_str()
+        .expect("runtime.image")
+        .to_string();
+    let image_ready = Command::new("podman")
+        .args(["image", "exists", &pinned_image])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !image_ready {
+        eprintln!(
+            "SKIP: 验收镜像 {pinned_image} 不在本地镜像库，digest 钉死无法现建命中（V-9，受控环境端到端）"
+        );
+        return;
+    }
     let (pool, engine, ws_root, manifest) = fresh_dev_env();
 
     // 主判据：GET https://example.com/ 经 Gateway::dispatch 全链跑通。
