@@ -205,7 +205,7 @@ selftest 全集。D4 阈值实测数据点：同义改写对 0.8358（语义面�
 |---|---|---|---|
 | P4-3 | e8682ba4 | 43729534846 | failure（vendor/tokenizers 18 文件被根 .gitignore models/ 规则误伤未入库，CI #63 同族实录） |
 | P4-3 CI 修复 | da46e7e7 | 43729823719 | success 4 job 全绿（.gitignore 锚定 /models/ + 补 add 18 文件） |
-| P4-3 docs 回填 | （本提交） | （HEAD run） | （回填） |
+| P4-3 docs 回填 | c7043a4e | 43730193861 | success（E2/第十节回填，P4-3 收口） |
 | P4-3 前置 | 6a3ad9a9 | 43724657601 | success 3m18s（WIP 快照） |
 
 P4-3 交付摘要：rerank 全链收口（rerank_search unimplemented! → hybrid+正文
