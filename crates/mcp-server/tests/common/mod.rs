@@ -67,7 +67,7 @@ impl McpProc {
     pub fn send_raw(&mut self, line: &str) {
         let stdin = self.stdin.as_mut().expect("stdin closed");
         if writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_err() {
-            return;
+            // 破裂即返回（函数体末尾，无后续步骤）。
         }
     }
 
