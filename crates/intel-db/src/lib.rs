@@ -18,6 +18,7 @@
 //! 事务 + checksum（12-STORAGE 第三节纪律）。
 
 pub mod card_repo;
+pub mod gov_worker;
 pub mod commit;
 pub mod document_repo;
 pub mod ir;

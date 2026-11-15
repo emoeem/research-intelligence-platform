@@ -11,7 +11,9 @@
 | `rip-tool-coreutils/` | `localhost/rip-tool-coreutils:latest` | Core Utilities Pack（计划 §14:774，五工具共用入口 core_tools.py：file_meta/hash/compress/convert/validate，argv op 分派，纯标准库） | P3-1 建成；P3-4 起五 Manifest 登记 |
 | `rip-tool-source/` | `localhost/rip-tool-source:latest` | Source Analysis Pack（收尾武器库批交付，pack_id source-analysis 冻结存根落地，三工具共用入口 src_tools.py：deps/static-check/search，argv op 分派，纯标准库） | 2026-11-14 建成（收尾武器库批，三 Manifest 登记） |
 | `rip-tool-document/` | （planned） | Document Pack | planned（PHASE3-DESIGN §2.3 范围裁定，不建镜像） |
+| `rip-gov/` | `localhost/rip-gov:latest` | 知识治理 worker 族（RIP3 P3-2，D3 近似重复候选：datasketch MinHash+LSH，纯本地计算） | RIP3 P3-2 建成（2026-11-15） |
 | `rip-parser/` | `localhost/rip-parser:latest` | Document Intelligence 解析族（RIP3 P2-1，ADR-0003：一镜多 op，detect/parse/ocr 三 Manifest，Docling/PyMuPDF/Tesseract 模型烘焙，IR v1 信封） | RIP3 P2-1 建成（2026-11-15） |
+| `localhost/rip-gov:latest` | `sha256:cb043e459ff051ce26e0eb3e3754b1c5445ac8f2cf54ba106b8a24df2f521d81` | 2026-11-15 建成（RIP3 P3-2 治理族：基座 python:3.12-slim@sha256:4840d514… 同各族 + datasketch==2.0.0（numpy/scipy 传递，镜像 ~250MB 级）+ 自研 gov_tools.py minhash op（char-bigram ∪ 词元 shingling，条目 5000/单条 64KiB 帽，只产候选不判定合并）；构建期受控拉取 pypi 实测，运行期 network=none；容器冒烟同文对 jaccard=1.0 召回、异题对不误报） | RIP3 P3-2 |
 
 拆分原则（计划 §5.3：不为全部工具造一个巨型容器）：按 Tool Pack 拆族，异构依赖（Python/Node/Java/Go 各版本）留在各族镜像内；每族一目录，含 `Containerfile`、工具本体脚本、`tool-manifest.yaml` 与 `tool-manifest.json` 双份（json 供测试与 Registry 加载，yaml 为人读口径，内容一致）。
 

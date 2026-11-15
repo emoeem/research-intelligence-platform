@@ -1,0 +1,139 @@
+# ============================================================================
+# rip.gov.minhash：rip-gov 治理容器族 Manifest（RIP3 P3-2 批次交付物）
+# ============================================================================
+# 与 json 孪生（Registry 加载用 json，本 yaml 为人读口径，内容一致）；
+# image digest 为本机实建镜像真实值（podman inspect 实测，
+# containerfiles/README.md digest 台账同步）。family = document（13 族词表）。
+# ============================================================================
+schema_version: '1'
+kind: tool
+family: document
+runtime:
+  type: podman_host
+  image: localhost/rip-gov:latest@sha256:cb043e459ff051ce26e0eb3e3754b1c5445ac8f2cf54ba106b8a24df2f521d81
+  readonly_rootfs: true
+  mounts:
+  - role: input
+    path: /task/in
+    mode: ro
+  - role: output
+    path: /task/out
+    mode: rw
+  entrypoint:
+  - python3
+  - /app/gov_tools.py
+  - minhash
+resources:
+  cpu: '2'
+  memory: 2Gi
+  pid_limit: 256
+  disk_mb: 1024
+  timeout_seconds: 600
+  max_output_bytes: 33554432
+network:
+  mode: none
+secrets: []
+permission_level: T1
+health:
+  probe:
+    type: exec
+    command:
+    - python3
+    - -c
+    - 'import json; print(json.dumps({''ok'': True}))'
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: rip-native
+  source_repo: containerfiles/rip-gov（本仓库，自研入口 + datasketch 烘焙）
+  license: repo-internal
+  dependencies:
+  - datasketch==2.0.0 (MIT)
+  - numpy/scipy 传递解析
+  image_digest: sha256:cb043e459ff051ce26e0eb3e3754b1c5445ac8f2cf54ba106b8a24df2f521d81
+  known_limits:
+  - minhash op 只产近似重复候选对（jaccard 估计），合并判定走审核（R2 5.2 硬性）
+  - 条目数帽 5000、单条文本帽 64KiB；shingling = 词元 ∪ char-bigram（中英混排）
+  tested: P3-2 批次容器冒烟（近似对召回 + 幂等 + 帧协议）
+context:
+  summary: 知识治理近似重复候选（RIP3 P3-2 D3）
+  tags:
+  - governance
+  - podman_host
+  - rip3-p3-2
+id: rip.gov.minhash
+name: RIP Gov MinHash
+version: 0.1.0
+description: datasketch MinHash+LSH 批量近似重复候选发现（D3）：char-bigram ∪ 词元 shingling，LSH 候选对 + jaccard 估计，network=none
+  纯本地计算
+input_schema:
+  type: object
+  required:
+  - items
+  additionalProperties: false
+  properties:
+    items:
+      type: array
+      items:
+        type: object
+        required:
+        - id
+        - text
+        properties:
+          id:
+            type: string
+          text:
+            type: string
+    num_perm:
+      type: integer
+      minimum: 16
+      maximum: 512
+      default: 128
+    threshold:
+      type: number
+      minimum: 0.1
+      maximum: 0.95
+      default: 0.5
+output_schema:
+  type: object
+  required:
+  - pairs
+  - items
+  - engine
+  properties:
+    pairs:
+      type: array
+      items:
+        type: object
+        required:
+        - a
+        - b
+        - jaccard_est
+        properties:
+          a:
+            type: string
+          b:
+            type: string
+          jaccard_est:
+            type: number
+    items:
+      type: integer
+    num_perm:
+      type: integer
+    threshold:
+      type: number
+    engine:
+      type: string
+idempotent: true
+examples:
+- input:
+    items:
+    - id: kc-a
+      text: same body text one
+    - id: kc-b
+      text: same body text one
+  output_hint:
+    items: 2

@@ -1,0 +1,17 @@
+# ============================================================================
+# rip-gov：知识治理 worker 容器族（RIP3 P3-2，ADR-0001/ADR-0002 台账：datasketch 2.0）
+# ----------------------------------------------------------------------------
+# 构建上下文 = 仓库根：
+#   podman build -t localhost/rip-gov:latest -f containerfiles/rip-gov/Containerfile .
+# 构建期受控拉取（pypi 官源 200 实测）；运行期零网络（network=none manifest 强制）。
+# 产物 digest 登记三处同步：manifest yaml/json + containerfiles/README.md 台账。
+# ============================================================================
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+RUN pip install --no-cache-dir datasketch==2.0.0
+
+COPY containerfiles/rip-gov/gov_tools.py /app/gov_tools.py
+
+RUN python -c "from datasketch import MinHash, MinHashLSH; from importlib.metadata import version; print('datasketch', version('datasketch'), 'ok')"

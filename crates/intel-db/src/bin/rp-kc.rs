@@ -30,6 +30,8 @@ subcommands:\n\
          [--reason R] [--reviewer X]    审核决定（低质量地板 + 硬标记阻断，日志留痕）\n\
   score --card KC                       计算并回填质量分（六权重 R2 5.3 缺省）\n\
   dedup-scan [--workspace W]            D2 去重扫描（SAME_CONTENT 候选边，不自动合并）\n\
+  minhash-scan [--workspace W] [--threshold 0.5] [--num-perm 128]\n\
+         [--run-db P] [--manifest-dir D]  D3 近似重复扫描（rip.gov.minhash 容器，NEAR_DUPLICATE 候选边）\n\
 \n\
 env: RP_PG_DSN（缺省 postgres://postgres:postgres@127.0.0.1:5432/postgres）\n\
 help: rp-kc --help（stdout, exit 0）"
@@ -224,6 +226,32 @@ fn main() {
                 let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let created = card_repo::dedup_scan_same_content(&pool, &workspace)?;
                 Ok(serde_json::json!({ "workspace": workspace, "same_content_relations_created": created }))
+            }
+            "minhash-scan" => {
+                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let threshold = opt_flag(&args, "threshold")
+                    .map(|s| s.parse::<f64>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("threshold parse: {e}")))?
+                    .unwrap_or(0.5);
+                let num_perm = opt_flag(&args, "num-perm")
+                    .map(|s| s.parse::<u32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("num-perm parse: {e}")))?
+                    .unwrap_or(128);
+                let mut cfg = intel_db::gov_worker::GovWorkerConfig::default();
+                if let Some(p) = opt_flag(&args, "run-db") {
+                    cfg.run_db = PathBuf::from(p);
+                }
+                if let Some(p) = opt_flag(&args, "manifest-dir") {
+                    cfg.manifest_dir = PathBuf::from(p);
+                }
+                cfg.run_db = std::path::absolute(&cfg.run_db)?;
+                cfg.workspace_root = std::path::absolute(&cfg.workspace_root)?;
+                cfg.sqlite_migrations_dir = std::path::absolute(&cfg.sqlite_migrations_dir)?;
+                cfg.manifest_dir = std::path::absolute(&cfg.manifest_dir)?;
+                let outcome = intel_db::gov_worker::minhash_scan(&pool, &workspace, threshold, num_perm, &cfg)?;
+                serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             _ => usage(),
         }
