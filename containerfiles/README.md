@@ -11,6 +11,7 @@
 | `rip-tool-coreutils/` | `localhost/rip-tool-coreutils:latest` | Core Utilities Pack（计划 §14:774，五工具共用入口 core_tools.py：file_meta/hash/compress/convert/validate，argv op 分派，纯标准库） | P3-1 建成；P3-4 起五 Manifest 登记 |
 | `rip-tool-source/` | `localhost/rip-tool-source:latest` | Source Analysis Pack（收尾武器库批交付，pack_id source-analysis 冻结存根落地，三工具共用入口 src_tools.py：deps/static-check/search，argv op 分派，纯标准库） | 2026-11-14 建成（收尾武器库批，三 Manifest 登记） |
 | `rip-tool-document/` | （planned） | Document Pack | planned（PHASE3-DESIGN §2.3 范围裁定，不建镜像） |
+| `rip-parser/` | `localhost/rip-parser:latest` | Document Intelligence 解析族（RIP3 P2-1，ADR-0003：一镜多 op，detect/parse/ocr 三 Manifest，Docling/PyMuPDF/Tesseract 模型烘焙，IR v1 信封） | RIP3 P2-1 建成（2026-11-15） |
 
 拆分原则（计划 §5.3：不为全部工具造一个巨型容器）：按 Tool Pack 拆族，异构依赖（Python/Node/Java/Go 各版本）留在各族镜像内；每族一目录，含 `Containerfile`、工具本体脚本、`tool-manifest.yaml` 与 `tool-manifest.json` 双份（json 供测试与 Registry 加载，yaml 为人读口径，内容一致）。
 
@@ -40,6 +41,7 @@
 | `localhost/rip-tool-webresearch:latest` | `sha256:085b4ef304e990be18d8f6aa917ec0c04c33223486d2f971544493176e288c58` | 2026-11-11 重建（同上事件；原值 bf910119 见 git 历史） | P3-1 / P5-10 重建 |
 | `localhost/rip-tool-coreutils:latest` | `sha256:49436f71b66974631ffc4ea7ac805c95bfa07d4d5fb00423c3d5c7ea9b18acaf` | 2026-11-11 重建（同上事件；原值 c90631b9 见 git 历史） | P3-1 / P5-10 重建 |
 | `localhost/rip-tool-source:latest` | `sha256:8251ba32e6ae4d107190f2b2279ae3774facdc8e074ae000266be3aa1fd0ea29` | 2026-11-14 建成（基础镜像 digest 同 coreutils 行，受控拉取后离线构建；distrobox 侧经 distrobox-host-exec shim 调宿主 podman 6.2.0 构建） | 收尾武器库批 |
+| `localhost/rip-parser:latest` | `sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a` | 2026-11-15 建成（RIP3 P2-1 解析族：基座 python:3.12-slim@sha256:4840d514… 同各族 + torch 2.6.0+cpu/torchvision 0.21.0+cpu 钉版（torchvision 无上界约束曾连带 torch 升到 pypi 全量轮 2.15.0，首次构建实录）+ docling==2.150.1/pymupdf==1.28.2/jsonschema==4.26.0 + tesseract 5.5.0 eng/chi_sim + docling 模型 docling-tools models download 烘焙 /opt/docling-artifacts（2.150 起命令形变更实录）；构建期受控拉取 pypi/pytorch-cpu/debian/hf-mirror 全 200 实测，运行期 network=none；全格式冒烟 pdf/docx/pptx/xlsx/html/epub/md/txt/ocr/zip 正负例过，镜像 3.42 GB） | RIP3 P2-1 |
 | `localhost/rip-pg17:latest` | `sha256:229189e4c66a2eb8ddd1fcf4bc08ee4726cacd8aee7445ec3c6f1499a357ef45` | 2026-11-14 建成（RIP3 情报核 PG 17.11：基座 paradedb/paradedb:pg17@sha256:7cb29053… 受控拉取 + pg_jieba 多阶段构建（third_party/ 内置源码含 cppjieba 子模块，零构建期网络），vector/pg_search/pg_jieba 三扩展实测在位，jiebacfg 中文分词实测正确） | RIP3 P1-1 |
 
 构建口径（P3-1 实测）：两族镜像内零包安装（工具本体 Python 纯标准库，基础镜像自带能力），构建全程离线（基础镜像 digest 已在本地 containers-storage）；构建期宿主 `pacman -Q` 基线 2415 行无变化。工具本体功能在容器内验证（hash 与宿主 sha256sum 对账一致、gzip 回读一致、json 转 csv、filemeta、YAML 显式不支持负向、路径穿越拒绝负向、GET example.com 200 且 body sha256 宿主对账一致、无网与非 GET 拒绝负向）。

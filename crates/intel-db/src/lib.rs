@@ -1,18 +1,27 @@
-//! intel-db：RIP3 情报核 PostgreSQL 存取面（ADR-0001 绞杀者路线，P1-1/P1-2）。
+//! intel-db：RIP3 情报核 PostgreSQL 存取面（ADR-0001 绞杀者路线，P1-1/P1-2；
+//! P2-1 起承载 Document Intelligence 解析面）。
 //!
 //! 职责：PG 连接池（同步 r2d2）、refinery 迁移执行（migrations_pg/ 每文件
 //! 事务）、Document 域存取（document_repo，03-DOMAIN-MODEL 落库面）、
-//! Object Storage Adapter 本地实现（object_store，S3 预留接口）。
-//! 红线：本 crate 不触碰 SQLite 侧（运营核），不做 RTIS 直写（RTIS 接口经
-//! rt.py CLI 既有适配，R2 3.4）。
+//! Object Storage Adapter 本地实现（object_store，S3 预留接口）、
+//! Document IR 校验（ir，04 号冻结物实施）、Parser Registry + Provider
+//! （parser，ADR-0003 裁决 2/3，经既有 tool-engine/Gateway 面派发）、
+//! 解析结果提交服务（commit，ADR-0003 裁决 4）。
+//! 红线：不做 RTIS 直写（RTIS 接口经 rt.py CLI 既有适配，R2 3.4）。
+//! SQLite 边界（ADR-0003 修订）：仅 parser Provider 打开专用 ops 运行库
+//! （tool_run/registry 状态面，RIP_DATA_DIR 口径，显式 enable_wal）；
+//! 生产 platform*.db 不经本 crate 任何路径。
 //!
 //! 运行配置：RP_PG_DSN（缺省 postgres://postgres:postgres@127.0.0.1:5432/postgres，
 //! 指向 localhost/rip-pg17 容器服务，digest 见 containerfiles/README.md 台账）。
 //! 迁移：migrations_pg/V0001 扩展装载 + V0002 起 Document 域，refinery 每文件
 //! 事务 + checksum（12-STORAGE 第三节纪律）。
 
+pub mod commit;
 pub mod document_repo;
+pub mod ir;
 pub mod object_store;
+pub mod parser;
 
 use r2d2::Pool;
 use r2d2_postgres::{postgres::NoTls, PostgresConnectionManager};

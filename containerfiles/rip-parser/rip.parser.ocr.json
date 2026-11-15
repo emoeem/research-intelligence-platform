@@ -1,0 +1,171 @@
+{
+  "schema_version": "1",
+  "kind": "tool",
+  "family": "document",
+  "runtime": {
+    "type": "podman_host",
+    "image": "localhost/rip-parser:latest@sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a",
+    "readonly_rootfs": true,
+    "mounts": [
+      {
+        "role": "input",
+        "path": "/task/in",
+        "mode": "ro"
+      },
+      {
+        "role": "output",
+        "path": "/task/out",
+        "mode": "rw"
+      }
+    ],
+    "entrypoint": [
+      "python3",
+      "/app/parser_tools.py",
+      "ocr"
+    ]
+  },
+  "resources": {
+    "cpu": "2",
+    "memory": "4Gi",
+    "pid_limit": 256,
+    "disk_mb": 2048,
+    "timeout_seconds": 600,
+    "max_output_bytes": 33554432
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T1",
+  "health": {
+    "probe": {
+      "type": "exec",
+      "command": [
+        "python3",
+        "-c",
+        "import json; print(json.dumps({'ok': True}))"
+      ],
+      "timeout_ms": 5000,
+      "interval_seconds": 600,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_repo": "containerfiles/rip-parser（本仓库，自研入口 + Docling/PyMuPDF/Tesseract 烘焙）",
+    "license": "repo-internal",
+    "dependencies": [
+      "docling==2.150.1 (MIT)",
+      "pymupdf==1.28.2 (AGPL, 记录不淘汰)",
+      "tesseract-ocr 5.5.0 (Apache-2.0)"
+    ],
+    "image_digest": "sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a",
+    "known_limits": [
+      "Tesseract 兜底 OCR（R2 4.3：Docling 先行，本 op 为兜底面）；TSV 输出带 bbox 与词级置信度（extraction_confidence = conf/100）",
+      "tessdata eng + chi_sim 构建期烘焙（TESSDATA_PREFIX 固定路径）"
+    ],
+    "tested": "P2-1 批次容器冒烟（sample.png 实测文本命中 + 置信度产出）"
+  },
+  "context": {
+    "summary": "Document Intelligence OCR 兜底（RIP3 P2-1）",
+    "tags": [
+      "parser",
+      "podman_host",
+      "rip3-p2-1"
+    ]
+  },
+  "id": "rip.parser.ocr",
+  "name": "RIP Parser OCR",
+  "version": "0.1.2",
+  "description": "解析容器族 OCR 兜底 op：Tesseract（eng+chi_sim 烘焙）TSV 输出转 Document IR v1 文本块（bbox + 置信度），network=none",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "/task/in 之下的输入文件路径"
+      },
+      "language": {
+        "type": "string",
+        "description": "tessdata 语言组合（缺省 eng+chi_sim）",
+        "default": "eng+chi_sim"
+      },
+      "psm": {
+        "type": "integer",
+        "description": "tesseract --psm 页面分割模式（可选透传）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "ir",
+      "format",
+      "parser",
+      "parser_version",
+      "blocks",
+      "overall",
+      "ir_sha256"
+    ],
+    "properties": {
+      "ir": {
+        "type": "object",
+        "description": "Document IR v1 实例"
+      },
+      "format": {
+        "type": "string"
+      },
+      "parser": {
+        "type": "string"
+      },
+      "parser_version": {
+        "type": "string"
+      },
+      "blocks": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "assets": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "overall": {
+        "type": "string",
+        "enum": [
+          "good",
+          "degraded",
+          "poor"
+        ]
+      },
+      "flags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "ir_sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  },
+  "idempotent": true,
+  "examples": [
+    {
+      "input": {
+        "path": "/task/in/sample.png"
+      },
+      "output_hint": {
+        "format": "image",
+        "parser": "tesseract",
+        "overall": "degraded"
+      }
+    }
+  ]
+}

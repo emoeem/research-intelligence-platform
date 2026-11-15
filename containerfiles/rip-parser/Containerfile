@@ -1,0 +1,53 @@
+# ============================================================================
+# rip-parser：文档解析容器族（RIP3 P2-1，ADR-0003 裁决 1）
+# ----------------------------------------------------------------------------
+# 构建上下文 = 仓库根（schemas/document-ir/ir-v1.schema.json 单一来源直拷入镜像，
+# 容器内 jsonschema 自检与 Rust 侧 validate_instance 双通道同源）：
+#   podman build -t localhost/rip-parser:latest \
+#     -f containerfiles/rip-parser/Containerfile .
+# 构建期受控拉取：pypi 官源 + pytorch CPU 源 + debian apt + hf-mirror（200 实测）；
+# 运行期零网络（manifest network.mode=none + 模型/tessdata 全部烘焙）。
+# 产物 digest 登记三处同步：manifest yaml/json + containerfiles/README.md 台账。
+# ============================================================================
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DOCLING_ARTIFACTS_PATH=/opt/docling-artifacts \
+    HF_ENDPOINT=https://hf-mirror.com \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+
+# Tesseract 兜底 OCR（R2 4.3：Docling 先行、Tesseract 兜底）+ eng/chi_sim 语料。
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-chi-sim \
+      libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# torch 家族 CPU 轮在 requirements 内钉死（--extra-index-url 首行；torchvision
+# 无上界约束曾把 torch 升到 pypi 全量轮，首次构建实录）。
+COPY containerfiles/rip-parser/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Docling 模型构建期烘焙（hf-mirror 受控拉取；默认模型集 = layout/tableformer/
+# picture_classifier/rapidocr，覆盖 standard PDF 管线；2.150 起命令形为
+# docling-tools models download，-o 指定烘焙路径）。
+RUN set -eux; \
+    mkdir -p /opt/docling-artifacts; \
+    docling-tools models download -o /opt/docling-artifacts; \
+    test -n "$(ls -A /opt/docling-artifacts)"
+
+# 构建期自检：引擎可导入、模型在位、tesseract 与双语料在位。
+RUN python -c "from docling.document_converter import DocumentConverter; \
+               from docling.datamodel.pipeline_options import PdfPipelineOptions; \
+               print('docling import ok')" \
+ && tesseract --version \
+ && tesseract --list-langs 2>&1 | grep -E '^(eng|chi_sim)$'
+
+COPY containerfiles/rip-parser/parser_tools.py /app/parser_tools.py
+COPY schemas/document-ir/ir-v1.schema.json /app/schemas/ir-v1.schema.json
+
+WORKDIR /task
+RUN python -c "import json; json.load(open('/app/schemas/ir-v1.schema.json')); print('ir schema ok')"

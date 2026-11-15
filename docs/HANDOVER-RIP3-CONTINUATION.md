@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-15，Phase 1 已收口，Phase 2 待开批） |
+| 状态 | 生效中（2026-11-15，Phase 1 已收口，Phase 2 开批：P2-1 批次已交付待收口） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
@@ -23,7 +23,7 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 | --- | --- | --- |
 | Phase 0 架构审计与四冻结 | 完成（afe6f5b，用户评审「通过」） | 00-ARCHITECTURE-AUDIT.md（A-G 八字段登记表 + 三关键问题实证）；四冻结物 03/04/12/13；ADR-0001/0002；R2 修订记录段 |
 | Phase 1 文档域与存储 | 完成（c4c76a9 + 41bf3359 + aabc3894，CI 全绿） | rip-pg17 镜像族 + crates/intel-db + migrations_pg PG-0001/0002 + rp-doc CLI + REST 通道 + /documents 页 + 备份双轨演练；RELEASE_2026-11-15_RIP3-PHASE1.md |
-| Phase 2 文档智能 | 待开批 | 批次划分见第六节队列表（R2 第十四部分为判据源） |
+| Phase 2 文档智能 | 进行中（P2-1 已交付） | 批次报告 docs/rip3/batches/P2-1-BATCH-REPORT.md（容器族 0.1.2 + Registry/Provider + 九态 workflow 定义 + IR 落库 + 质量面；门禁全绿；P2-2 收口批待开，遗留见批次报告 G 节） |
 
 用户三项已生效裁决（执行代理不得重开）：
 

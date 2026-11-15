@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 domain = { workspace = true }
+database = { workspace = true }
 postgres = { workspace = true }
 r2d2 = { workspace = true }
 r2d2_postgres = { workspace = true }
@@ -15,4 +16,10 @@ refinery = { workspace = true }
 pgvector = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
 sha2 = "0.10"
+# P2-1 解析面（ADR-0003 裁决 3）：容器派发复用既有 tool-engine/Gateway 面；
+# IR 校验复用 tool_registry::jsonschema_lite（Tool Contract 同校验器）。
+tool-engine = { workspace = true }
+tool-registry = { workspace = true }
+runtime-gateway = { workspace = true }

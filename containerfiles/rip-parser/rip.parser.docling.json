@@ -1,0 +1,182 @@
+{
+  "schema_version": "1",
+  "kind": "tool",
+  "family": "document",
+  "runtime": {
+    "type": "podman_host",
+    "image": "localhost/rip-parser:latest@sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a",
+    "readonly_rootfs": true,
+    "mounts": [
+      {
+        "role": "input",
+        "path": "/task/in",
+        "mode": "ro"
+      },
+      {
+        "role": "output",
+        "path": "/task/out",
+        "mode": "rw"
+      }
+    ],
+    "entrypoint": [
+      "python3",
+      "/app/parser_tools.py",
+      "parse"
+    ]
+  },
+  "resources": {
+    "cpu": "2",
+    "memory": "4Gi",
+    "pid_limit": 256,
+    "disk_mb": 2048,
+    "timeout_seconds": 600,
+    "max_output_bytes": 33554432
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T1",
+  "health": {
+    "probe": {
+      "type": "exec",
+      "command": [
+        "python3",
+        "-c",
+        "import json; print(json.dumps({'ok': True}))"
+      ],
+      "timeout_ms": 5000,
+      "interval_seconds": 600,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_repo": "containerfiles/rip-parser（本仓库，自研入口 + Docling/PyMuPDF/Tesseract 烘焙）",
+    "license": "repo-internal",
+    "dependencies": [
+      "docling==2.150.1 (MIT)",
+      "pymupdf==1.28.2 (AGPL, 记录不淘汰)",
+      "tesseract-ocr 5.5.0 (Apache-2.0)"
+    ],
+    "image_digest": "sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a",
+    "known_limits": [
+      "单工具多引擎：pdf/docx/pptx/xlsx/html/image 走 Docling（模型烘焙 /opt/docling-artifacts），epub 走 PyMuPDF，markdown/txt/code 走 native_markdown；实际引擎如实记录 IR parser_metadata.parser",
+      "zip 不在 parse 面（走 detect 成员清单，平台侧逐成员编排，R2 4.2）",
+      "IR v1 信封（schemas/document-ir/ir-v1.schema.json 随镜像烘焙，容器内 jsonschema 自检后发帧）",
+      "页眉/页脚/页码去噪（D2 面，丢弃计数进 extraction_quality.self_check.detail）",
+      "POSSIBLE_PROMPT_INJECTION 形态检测（13 号冻结物第三节）；命中不阻断，交平台侧 REVIEW_PENDING"
+    ],
+    "tested": "P2-1 批次容器冒烟（pdf/docx/pptx/xlsx/html/epub/md/txt 八格式 + 注入样本标记实测）"
+  },
+  "context": {
+    "summary": "Document Intelligence 多格式解析（RIP3 P2-1）",
+    "tags": [
+      "parser",
+      "podman_host",
+      "rip3-p2-1"
+    ]
+  },
+  "id": "rip.parser.docling",
+  "name": "RIP Parser Document",
+  "version": "0.1.2",
+  "description": "解析容器族 parse op：按格式路由引擎并统一输出 Document IR v1（章节树/父子块/页码 bbox source_mapping/资产清单/质量自检五检项 + 风险标记），模型与 tessdata 构建期烘焙，运行期 network=none",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "/task/in 之下的输入文件路径"
+      },
+      "format": {
+        "type": "string",
+        "description": "文本族格式细化提示（仅 txt/markdown/code/html/json 间收敛生效；二进制格式以魔法数为准）",
+        "enum": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image",
+          "epub",
+          "markdown",
+          "txt",
+          "code"
+        ]
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "ir",
+      "format",
+      "parser",
+      "parser_version",
+      "blocks",
+      "overall",
+      "ir_sha256"
+    ],
+    "properties": {
+      "ir": {
+        "type": "object",
+        "description": "Document IR v1 实例（schemas/document-ir/ir-v1.schema.json）"
+      },
+      "format": {
+        "type": "string"
+      },
+      "parser": {
+        "type": "string"
+      },
+      "parser_version": {
+        "type": "string"
+      },
+      "blocks": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "assets": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "overall": {
+        "type": "string",
+        "enum": [
+          "good",
+          "degraded",
+          "poor"
+        ]
+      },
+      "flags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "ir_sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  },
+  "idempotent": true,
+  "examples": [
+    {
+      "input": {
+        "path": "/task/in/sample.md"
+      },
+      "output_hint": {
+        "format": "markdown",
+        "parser": "native_markdown",
+        "blocks": 9,
+        "overall": "good"
+      }
+    }
+  ]
+}

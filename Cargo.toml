@@ -55,7 +55,7 @@ tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-t
 
 # RIP3 情报核 PG 依赖（ADR-0001，P1-1）：同步栈（现有 crates 无 tokio，13 号
 # 文档与 12-STORAGE 定稿口径）。选型与版本记录 docs/rip3/decisions/ADR-0002。
-postgres = "0.19"
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
 r2d2 = "0.8"
 r2d2_postgres = "0.18"
 # refinery：PG 迁移执行（同步、每文件事务、checksum），migrations_pg/ 目录。

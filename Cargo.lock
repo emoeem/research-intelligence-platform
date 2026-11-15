@@ -767,15 +767,20 @@ dependencies = [
 name = "intel-db"
 version = "0.2.0"
 dependencies = [
+ "database",
  "domain",
  "pgvector",
  "postgres",
  "r2d2",
  "r2d2_postgres",
  "refinery",
+ "runtime-gateway",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "sha2 0.10.9",
+ "tool-engine",
+ "tool-registry",
 ]
 
 [[package]]
@@ -1241,6 +1246,8 @@ dependencies = [
  "bytes",
  "fallible-iterator 0.2.0",
  "postgres-protocol",
+ "serde_core",
+ "serde_json",
 ]
 
 [[package]]

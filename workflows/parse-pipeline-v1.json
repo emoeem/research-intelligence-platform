@@ -1,0 +1,136 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-parse-pipeline-v1",
+  "version": 1,
+  "name": "RIP3 解析管线（九态）",
+  "description": "R2 4.6 解析任务生命周期 = workflow 定义（P2-1 交付，九态映射见 docs/rip3/batches/P2-1-TASK.md 第一节 3 项）。状态落点：DISCOVERED = 导入完成触发 run；VALIDATING = detect 节点（rip.parser.detect 魔法数 + ZIP 安全判定）；QUEUED = run created 后执行前（FamilyLimiter 并发帽在派发层）；PARSING/NORMALIZING/EXTRACTING = parse 节点（rip.parser.docling 多引擎，IR 内规范化与结构抽取合并承载）；QUALITY_CHECK = condition 节点（overall=poor 或 POSSIBLE_PROMPT_INJECTION 命中判 REVIEW_PENDING 分支）；REVIEW_PENDING = human 节点（018 awaiting_approval 继承，批准参数回填后放行）；APPROVED = end。失败态 FAILED/CANCELLED/QUARANTINED 走 run 终态与 quarantine 分支 end。checkpoint/断点恢复/重试继承 workflow-engine 既有面，不新建队列系统（ADR-0003 裁决 4：PG 落库由驱动侧提交服务在 run 终态后执行）。输入约定：container_path = /task/in/<name>；input_host_files（名字 -> 宿主绝对路径）由 podman_host 驱动预置到任务工作区（工具 input_schema 零污染）。",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "container_path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "container_path": {
+        "type": "string",
+        "description": "容器内输入路径（/task/in/<名字>）"
+      },
+      "input_host_files": {
+        "type": "object",
+        "description": "预置文件清单（名字 -> 宿主绝对路径），podman_host 驱动复制进任务工作区 in 目录",
+        "additionalProperties": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start"
+      },
+      {
+        "id": "validating",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.parser.detect",
+          "input": {
+            "path": "$/container_path"
+          }
+        }
+      },
+      {
+        "id": "parsing",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.parser.docling",
+          "input": {
+            "path": "$/container_path"
+          }
+        }
+      },
+      {
+        "id": "quality_gate",
+        "type": "condition",
+        "params": {
+          "expression": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "overall"
+                ],
+                "properties": {
+                  "overall": {
+                    "const": "poor"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "flags"
+                ],
+                "properties": {
+                  "flags": {
+                    "contains": {
+                      "const": "POSSIBLE_PROMPT_INJECTION"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "review",
+        "type": "human",
+        "params": {
+          "prompt": "解析质量门命中（poor 或 POSSIBLE_PROMPT_INJECTION）：确认放行或转隔离",
+          "key": "review_decision"
+        }
+      },
+      {
+        "id": "approved_end",
+        "type": "end"
+      },
+      {
+        "id": "quarantined_end",
+        "type": "end"
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "to": "validating"
+      },
+      {
+        "from": "validating",
+        "to": "parsing"
+      },
+      {
+        "from": "parsing",
+        "to": "quality_gate"
+      },
+      {
+        "from": "quality_gate",
+        "to": "review",
+        "kind": "branch",
+        "when": true
+      },
+      {
+        "from": "quality_gate",
+        "to": "approved_end",
+        "kind": "branch",
+        "when": false
+      },
+      {
+        "from": "review",
+        "to": "quarantined_end"
+      }
+    ]
+  }
+}

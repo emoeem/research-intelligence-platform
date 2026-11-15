@@ -50,6 +50,9 @@ use database::{migrate, DbPath, Pool, PoolConfig};
 use tool_engine::adapter::python_worker::{
     execute_via_engine, AdapterCall, PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };
+use tool_engine::adapter::{
+    execute_container_via_engine, ContainerCall, PodmanHostAdapter, PodmanHostConfig,
+};
 use workflow_engine::dsl::parse_definition;
 use workflow_engine::exec::{
     node_agent, RunOutcome, ToolRunDriver, WorkflowExecutor, DEFAULT_NODE_TIMEOUT_MS,
@@ -521,6 +524,8 @@ fn parse_run_flags(args: &[String]) -> RunFlags {
             PathBuf::from("manifests/tools"),
             PathBuf::from("containerfiles/rip-tool-webresearch"),
             PathBuf::from("containerfiles/rip-tool-coreutils"),
+            // RIP3 P2-1：解析族（rip.parser.* podman_host 工具）。
+            PathBuf::from("containerfiles/rip-parser"),
         ],
         node: None,
         run_id: None,
@@ -574,8 +579,11 @@ fn parse_run_flags(args: &[String]) -> RunFlags {
 }
 
 /// Tool 节点真实运行面：按 tool_run 行回查 tool_id，逐工具从 Manifest
-/// runtime 块解析 python_worker 适配器（rp-agent resolve_python_worker
-/// 同款口径：argv 固定清单不经 shell，repo:// 前缀落仓库根）。
+/// runtime 块按类型分派（rp-agent resolve_python_worker 同款口径：argv
+/// 固定清单不经 shell，repo:// 前缀落仓库根；RIP3 P2-1 起承载
+/// podman_host：容器族工具经 PodmanHostAdapter 既有隔离面派发，network
+/// 词表 none 之外拒绝；workflow run input 的 input_host_files 键预置
+/// 容器输入文件，工具 input_schema 零污染）。
 struct PythonWorkerToolDriver {
     pool: Pool,
     manifest_dirs: Vec<PathBuf>,
@@ -598,18 +606,178 @@ impl ToolRunDriver for PythonWorkerToolDriver {
                 .map_err(database::DbError::Sqlite)
             })
             .map_err(|e| tool_engine::EngineError::Storage(format!("tool_run lookup failed: {e}")))?;
-        let adapter = resolve_python_worker(&self.manifest_dirs, &tool_id)
+        let manifest = find_manifest_value(&self.manifest_dirs, &tool_id)
             .map_err(tool_engine::EngineError::Storage)?;
-        execute_via_engine(AdapterCall {
+        let rtype = manifest["runtime"]["type"].as_str().unwrap_or("");
+        match rtype {
+            "python_worker" => {
+                let adapter = resolve_python_worker_value(&manifest, &tool_id)
+                    .map_err(tool_engine::EngineError::Storage)?;
+                execute_via_engine(AdapterCall {
+                    engine,
+                    run_id,
+                    adapter: &adapter,
+                    cancel_after: None,
+                })
+                .map_err(|failure| {
+                    tool_engine::EngineError::Storage(format!(
+                        "python_worker dispatch failed: {failure}"
+                    ))
+                })
+            }
+            "podman_host" => self.drive_podman_host(engine, run_id, &tool_id, &manifest),
+            other => Err(tool_engine::EngineError::Storage(format!(
+                "tool {tool_id} runtime type {other:?} is not dispatchable from workflow nodes"
+            ))),
+        }
+    }
+}
+
+impl PythonWorkerToolDriver {
+    /// podman_host 分派（RIP3 P2-1）：ws 预置 run input 的
+    /// input_host_files（名字 -> 宿主路径，WorkflowStore 查 run 行），
+    /// 然后 execute_container_via_engine 全链（submit 已在受理面完成）。
+    fn drive_podman_host(
+        &self,
+        engine: &tool_engine::Engine,
+        run_id: &str,
+        tool_id: &str,
+        manifest: &serde_json::Value,
+    ) -> Result<tool_engine::DriveOutcome, tool_engine::EngineError> {
+        let image = manifest["runtime"]["image"]
+            .as_str()
+            .ok_or_else(|| {
+                tool_engine::EngineError::Storage(format!("manifest {tool_id} runtime.image missing"))
+            })?
+            .to_string();
+        let entrypoint: Vec<String> = manifest["runtime"]["entrypoint"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if entrypoint.is_empty() {
+            return Err(tool_engine::EngineError::Storage(format!(
+                "manifest {tool_id} runtime.entrypoint empty"
+            )));
+        }
+        let family = manifest["family"].as_str().unwrap_or("parser").to_string();
+        let network_mode = manifest["network"]["mode"].as_str().unwrap_or("none");
+        let network = match network_mode {
+            "none" => tool_engine::adapter::NetworkPlan::None,
+            other => {
+                return Err(tool_engine::EngineError::Storage(format!(
+                    "manifest {tool_id} network.mode {other:?} 不可从 workflow 节点派发（none 之外拒绝）"
+                )))
+            }
+        };
+        // 资源帽随 manifest（P2-1 解析族 memory 4Gi；缺省 2GiB 基线）。
+        let memory_bytes = manifest["resources"]["memory"]
+            .as_str()
+            .and_then(parse_size_to_bytes)
+            .unwrap_or(2 * 1024 * 1024 * 1024);
+        let adapter = PodmanHostAdapter::new(PodmanHostConfig {
+            memory_bytes,
+            ..PodmanHostConfig::default()
+        });
+        // run 级输入文件预置（workflow run input.input_host_files）。
+        if let Ok(input) = self.pool.with_conn(|c| {
+            c.query_row(
+                "SELECT input_json FROM workflow_run WHERE run_id = (SELECT trace_id FROM tool_run WHERE run_id = ?1)",
+                [run_id],
+                |r| r.get::<_, String>(0),
+            )
+            .map_err(database::DbError::Sqlite)
+        }) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&input) {
+                if let Some(files) = value.get("input_host_files").and_then(|v| v.as_object()) {
+                    let probe = adapter
+                        .prepare_workspace(run_id, &serde_json::Value::Null)
+                        .map_err(|e| {
+                            tool_engine::EngineError::Storage(format!("workspace prepare: {e}"))
+                        })?;
+                    for (name, host) in files {
+                        if let Some(host) = host.as_str() {
+                            let dst = probe.in_dir.join(name);
+                            std::fs::copy(host, &dst).map_err(|e| {
+                                tool_engine::EngineError::Storage(format!(
+                                    "input_host_files copy {host:?} -> {dst:?}: {e}"
+                                ))
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+        execute_container_via_engine(ContainerCall {
             engine,
             run_id,
             adapter: &adapter,
-            cancel_after: None,
+            image: &image,
+            entrypoint: &entrypoint,
+            family: &family,
+            network,
         })
         .map_err(|failure| {
-            tool_engine::EngineError::Storage(format!("python_worker dispatch failed: {failure}"))
+            tool_engine::EngineError::Storage(format!("podman_host dispatch failed: {failure}"))
         })
     }
+}
+
+/// 简单尺寸词解析（"4Gi"/"512Mi"/"2G"/字节数；manifest resources.memory 用）。
+fn parse_size_to_bytes(raw: &str) -> Option<u64> {
+    let raw = raw.trim().to_ascii_uppercase();
+    let (num, mult) = if let Some(n) = raw.strip_suffix("GI") {
+        (n, 1024u64 * 1024 * 1024)
+    } else if let Some(n) = raw.strip_suffix("G") {
+        (n, 1024u64 * 1024 * 1024)
+    } else if let Some(n) = raw.strip_suffix("MI") {
+        (n, 1024u64 * 1024)
+    } else if let Some(n) = raw.strip_suffix("M") {
+        (n, 1024u64 * 1024)
+    } else if let Some(n) = raw.strip_suffix("KI") {
+        (n, 1024)
+    } else if let Some(n) = raw.strip_suffix("K") {
+        (n, 1024)
+    } else {
+        (raw.as_str(), 1)
+    };
+    num.trim().parse::<u64>().ok().map(|n| n * mult)
+}
+
+/// 共享 manifest 查找（按 tool_id 精确匹配，返回 manifest Value）。
+fn find_manifest_value(
+    manifest_dirs: &[PathBuf],
+    tool_id: &str,
+) -> Result<serde_json::Value, String> {
+    for dir in manifest_dirs {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut paths: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|x| x == "json").unwrap_or(false))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            if value.get("id").and_then(|v| v.as_str()) == Some(tool_id) {
+                return Ok(value);
+            }
+        }
+    }
+    Err(format!(
+        "manifest for {tool_id} not found in {manifest_dirs:?}（--manifest-dirs 可覆盖）"
+    ))
 }
 
 /// Agent 节点真实运行面（P8-3）：Phase 7 agent-engine AgentLoop 真实闭环。
@@ -802,68 +970,51 @@ fn resolve_python_worker(
     manifest_dirs: &[PathBuf],
     tool_id: &str,
 ) -> Result<PythonWorkerAdapter, String> {
-    for dir in manifest_dirs {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let mut paths: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().map(|x| x == "json").unwrap_or(false))
-            .collect();
-        paths.sort();
-        for path in paths {
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-                continue;
-            };
-            if value.get("id").and_then(|v| v.as_str()) != Some(tool_id) {
-                continue;
-            }
-            let runtime = value
-                .get("runtime")
-                .ok_or_else(|| format!("manifest {tool_id} has no runtime block"))?;
-            let rtype = runtime.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            if rtype != "python_worker" {
-                return Err(format!(
-                    "tool {tool_id} runtime type {rtype:?} is not python_worker; \
-                     rp-workflow CLI 基线仅承载 python_worker（P8-2）"
-                ));
-            }
-            let worker_name = runtime
-                .get("worker_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("rip-cli-worker")
-                .to_string();
-            let command: Vec<String> = runtime
-                .get("command")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if command.is_empty() {
-                return Err(format!("manifest {tool_id} runtime.command is empty"));
-            }
-            let working_dir = std::env::current_dir().ok();
-            return Ok(PythonWorkerAdapter::new(PythonWorkerConfig {
-                worker_name,
-                command,
-                working_dir,
-                restart: RestartPolicy::Pooled,
-                extra_env: Vec::new(),
-                handshake_timeout: std::time::Duration::from_secs(10),
-            }));
-        }
+    let manifest = find_manifest_value(manifest_dirs, tool_id)?;
+    resolve_python_worker_value(&manifest, tool_id)
+}
+
+/// 从 manifest Value 构建 python_worker 适配器（P8-2 基线逻辑，值版抽出）。
+fn resolve_python_worker_value(
+    manifest: &serde_json::Value,
+    tool_id: &str,
+) -> Result<PythonWorkerAdapter, String> {
+    let runtime = manifest
+        .get("runtime")
+        .ok_or_else(|| format!("manifest {tool_id} has no runtime block"))?;
+    let rtype = runtime.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    if rtype != "python_worker" {
+        return Err(format!(
+            "tool {tool_id} runtime type {rtype:?} is not python_worker; \
+             rp-workflow CLI 基线仅承载 python_worker（P8-2）"
+        ));
     }
-    Err(format!(
-        "manifest for {tool_id} not found in {manifest_dirs:?}（--manifest-dirs 可覆盖）"
-    ))
+    let worker_name = runtime
+        .get("worker_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("rip-cli-worker")
+        .to_string();
+    let command: Vec<String> = runtime
+        .get("command")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if command.is_empty() {
+        return Err(format!("manifest {tool_id} runtime.command is empty"));
+    }
+    let working_dir = std::env::current_dir().ok();
+    Ok(PythonWorkerAdapter::new(PythonWorkerConfig {
+        worker_name,
+        command,
+        working_dir,
+        restart: RestartPolicy::Pooled,
+        extra_env: Vec::new(),
+        handshake_timeout: std::time::Duration::from_secs(10),
+    }))
 }
 
 /// Knowledge 节点检索面：rp-agent build_broker_link 同款装配（rulepack +

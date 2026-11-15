@@ -1,0 +1,123 @@
+# ============================================================================
+# rip.parser.detect：rip-parser 容器族 Manifest（RIP3 P2-1 批次交付物）
+# ============================================================================
+# 与 json 孪生（Registry 加载用 json，本 yaml 为人读口径，内容一致）；
+# image digest 为本机实建镜像真实值（podman inspect 实测，
+# containerfiles/README.md digest 台账同步）。family = document（13 族词表）。
+# ============================================================================
+schema_version: '1'
+kind: tool
+family: document
+runtime:
+  type: podman_host
+  image: localhost/rip-parser:latest@sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a
+  readonly_rootfs: true
+  mounts:
+  - role: input
+    path: /task/in
+    mode: ro
+  - role: output
+    path: /task/out
+    mode: rw
+  entrypoint:
+  - python3
+  - /app/parser_tools.py
+  - detect
+resources:
+  cpu: '2'
+  memory: 4Gi
+  pid_limit: 256
+  disk_mb: 2048
+  timeout_seconds: 600
+  max_output_bytes: 33554432
+network:
+  mode: none
+secrets: []
+permission_level: T1
+health:
+  probe:
+    type: exec
+    command:
+    - python3
+    - -c
+    - 'import json; print(json.dumps({''ok'': True}))'
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: rip-native
+  source_repo: containerfiles/rip-parser（本仓库，自研入口 + Docling/PyMuPDF/Tesseract 烘焙）
+  license: repo-internal
+  dependencies:
+  - docling==2.150.1 (MIT)
+  - pymupdf==1.28.2 (AGPL, 记录不淘汰)
+  - tesseract-ocr 5.5.0 (Apache-2.0)
+  image_digest: sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a
+  known_limits:
+  - detect 为魔法数 + 扩展名双证据判定；zip 成员清单含 13-SECURITY 第二节安全判定（穿越/炸弹/尺寸/条目数），不做解压
+  - zip 爆炸判定阈值：条目数 10000 / 单条 512MiB / 总量 2GiB / 压缩比 100
+  tested: P2-1 批次容器冒烟（sample.md/sample.zip/evil.zip 实测；zip 穿越与炸弹负例拒绝）
+context:
+  summary: Document Intelligence 格式检测（RIP3 P2-1）
+  tags:
+  - parser
+  - podman_host
+  - rip3-p2-1
+id: rip.parser.detect
+name: RIP Parser Detect
+version: 0.1.2
+description: 解析容器族格式检测 op：魔法数判定（不信扩展名）+ sha256 + OOXML/EPUB 细分 + ZIP 成员清单与安全判定（13-SECURITY 第二节阈值），模型栈零加载
+input_schema:
+  type: object
+  required:
+  - path
+  additionalProperties: false
+  properties:
+    path:
+      type: string
+      description: /task/in 之下的输入文件路径
+output_schema:
+  type: object
+  required:
+  - format
+  - mime_type
+  - size_bytes
+  - sha256
+  - document_type
+  properties:
+    format:
+      type: string
+    mime_type:
+      type: string
+    size_bytes:
+      type: integer
+      minimum: 0
+    sha256:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+    document_type:
+      type: string
+    extension_hint:
+      type:
+      - string
+      - 'null'
+    entry_count:
+      type: integer
+      minimum: 0
+    total_uncompressed:
+      type: integer
+      minimum: 0
+    members:
+      type: array
+    zip_verdict:
+      type: object
+idempotent: true
+examples:
+- input:
+    path: /task/in/sample.pdf
+  output_hint:
+    format: pdf
+    mime_type: application/pdf
+    document_type: pdf

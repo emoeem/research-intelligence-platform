@@ -1,0 +1,12 @@
+# rip-parser 镜像内 Python 依赖（RIP3 P2-1，构建期受控拉取，运行期 network=none）。
+# 选型台账：ADR-0002（Docling MIT / PyMuPDF AGPL 记录不淘汰）。
+# torch 家族钉 CPU 轮成对版本（torchvision 无上界约束会把 torch 升到 pypi
+# 全量轮，2.15.0 首次构建实录；--extra-index-url 限定 CPU 源后 +cpu 本地版本
+# 号才能解析）。pandas/transformers/docling-ibm-models 等随 docling[standard]
+# 传递解析。
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+docling==2.150.1
+pymupdf==1.28.2
+jsonschema==4.26.0

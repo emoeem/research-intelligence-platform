@@ -1,0 +1,400 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/document-ir/ir-v1.schema.json",
+  "title": "RIP Document IR v1",
+  "description": "04-DOCUMENT-IR-SCHEMA.md 冻结物实施（P2-1 逐字落盘）。所有解析器统一输出本信封；fail-closed：全层 additionalProperties:false、未知 block_type 拒绝、conditional required 用 if/then 表达、环由平台侧树校验兜底（schema 无法表达环）。旧版本 IR 以 schema_version 路由到对应读取器（演进规则见 04 号文档第四节）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_metadata",
+    "parser_metadata",
+    "structure",
+    "blocks",
+    "assets",
+    "references",
+    "extraction_quality",
+    "source_mapping"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "字符串常量版本号；读取器按版本路由（v1 唯一实现）。",
+      "type": "string",
+      "const": "1"
+    },
+    "document_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "title",
+        "document_type",
+        "original_filename",
+        "mime_type",
+        "content_sha256"
+      ],
+      "properties": {
+        "document_id": {
+          "description": "回填引用（解析时占位 doc-pending，入库时校验存在）。",
+          "type": "string",
+          "pattern": "^(doc-[A-Za-z0-9._-]{1,120}|doc-pending)$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "document_type": {
+          "enum": [
+            "book",
+            "pdf",
+            "docx",
+            "pptx",
+            "xlsx",
+            "html",
+            "markdown",
+            "code",
+            "image",
+            "dataset",
+            "other"
+          ]
+        },
+        "original_filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "mime_type": {
+          "description": "魔法数检测值（不信扩展名，13-SECURITY 第二节）。",
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "type": ["string", "null"]
+        },
+        "content_sha256": {
+          "description": "原始文件内容哈希（CAS 寻址键，必填）。",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "parser_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parser", "parser_version"],
+      "properties": {
+        "parser": {
+          "enum": ["docling", "pymupdf", "tesseract", "native_markdown", "manual"]
+        },
+        "parser_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "options": {
+          "description": "解析参数（键不约束，值须 JSON 可序列化）。",
+          "type": "object"
+        },
+        "pipeline": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "device": {
+          "type": "string"
+        }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root"],
+      "properties": {
+        "root": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["block_id", "children"],
+          "properties": {
+            "block_id": { "type": "string" },
+            "children": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/block" }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "kind", "content_sha256", "storage_uri", "source_block_id", "mime_type"],
+        "properties": {
+          "asset_id": { "type": "string", "pattern": "^as-[A-Za-z0-9._-]{1,120}$" },
+          "kind": { "enum": ["image", "table", "chart"] },
+          "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "storage_uri": {
+            "description": "提取物本体进 CAS；解析侧声明预期键，提交服务校验内容哈希一致后锚定。",
+            "type": "string",
+            "pattern": "^cas://[0-9a-f]{64}$"
+          },
+          "source_block_id": { "type": "string" },
+          "mime_type": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref_id", "raw"],
+        "properties": {
+          "ref_id": { "type": "string", "pattern": "^ref-[A-Za-z0-9._-]{1,120}$" },
+          "raw": { "type": "string" },
+          "resolved": { "type": "object" }
+        }
+      }
+    },
+    "extraction_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["self_check", "overall", "flags"],
+      "properties": {
+        "self_check": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["check", "passed", "detail"],
+            "properties": {
+              "check": {
+                "enum": [
+                  "toc_present",
+                  "page_coverage",
+                  "empty_ratio",
+                  "font_glyphs",
+                  "table_integrity"
+                ]
+              },
+              "passed": { "type": "boolean" },
+              "detail": { "type": "string" }
+            }
+          }
+        },
+        "overall": { "enum": ["good", "degraded", "poor"] },
+        "flags": {
+          "description": "对齐 R2 5.3 七类风险标记词表；解析侧只产出其判定面子集。",
+          "type": "array",
+          "items": {
+            "enum": [
+              "UNTRUSTED_SOURCE",
+              "LICENSE_UNKNOWN",
+              "POSSIBLE_PROMPT_INJECTION",
+              "OUTDATED",
+              "CONTRADICTED",
+              "LOW_EXTRACTION_CONFIDENCE",
+              "UNVERIFIED_CLAIM"
+            ]
+          }
+        }
+      }
+    },
+    "source_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_to_source"],
+      "properties": {
+        "block_to_source": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["block_id"],
+            "properties": {
+              "block_id": { "type": "string" },
+              "page": { "type": "integer", "minimum": 1 },
+              "char_offset": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": { "type": "integer", "minimum": 0 }
+              },
+              "bbox": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block_id",
+        "block_type",
+        "order_index",
+        "content",
+        "extraction_method"
+      ],
+      "properties": {
+        "block_id": {
+          "description": "IR 内唯一（blk- 前缀），入库时映射为 PG document_blocks.block_id。",
+          "type": "string",
+          "pattern": "^blk-[A-Za-z0-9._-]{1,120}$"
+        },
+        "parent_id": {
+          "description": "可空；构成树（父章节），禁止压平。",
+          "type": ["string", "null"]
+        },
+        "block_type": {
+          "enum": [
+            "document_title",
+            "heading",
+            "paragraph",
+            "list",
+            "table",
+            "code",
+            "image",
+            "figure",
+            "formula",
+            "quote",
+            "reference",
+            "page",
+            "chapter",
+            "section"
+          ]
+        },
+        "order_index": {
+          "description": "兄弟序（同父内 0 起递增）。",
+          "type": "integer",
+          "minimum": 0
+        },
+        "heading_level": {
+          "description": "block_type=heading 时必填（1-6），否则禁出现。",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "content": {
+          "description": "规范化文本（非空）；table/code/image 用子对象/引用承载本体。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4194304
+        },
+        "table": {
+          "description": "block_type=table 时必填。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rows"],
+          "properties": {
+            "rows": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "array",
+                "items": { "type": ["string", "number", "null"] }
+              }
+            },
+            "header": {
+              "type": "array",
+              "items": { "type": ["string", "number", "null"] }
+            },
+            "caption": { "type": ["string", "null"] }
+          }
+        },
+        "code": {
+          "description": "block_type=code 时必填。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source"],
+          "properties": {
+            "language": { "type": ["string", "null"] },
+            "source": { "type": "string", "minLength": 1 }
+          }
+        },
+        "image_ref": {
+          "description": "block_type=image|figure 时必填（assets.asset_id 引用）。",
+          "type": "string",
+          "pattern": "^as-[A-Za-z0-9._-]{1,120}$"
+        },
+        "page": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "location": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "char_offset": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "type": "integer", "minimum": 0 }
+            },
+            "bbox": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": { "type": "number" }
+            }
+          }
+        },
+        "extraction_method": {
+          "enum": ["docling", "pymupdf", "tesseract", "native_markdown", "manual"]
+        },
+        "extraction_confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "block_type": { "const": "heading" } } },
+          "then": { "required": ["heading_level"] }
+        },
+        {
+          "if": {
+            "properties": { "block_type": { "not": { "const": "heading" } } },
+            "required": ["block_type"]
+          },
+          "then": { "not": { "required": ["heading_level"] } }
+        },
+        {
+          "if": { "properties": { "block_type": { "const": "table" } } },
+          "then": { "required": ["table"] }
+        },
+        {
+          "if": { "properties": { "block_type": { "const": "code" } } },
+          "then": { "required": ["code"] }
+        },
+        {
+          "if": {
+            "properties": { "block_type": { "enum": ["image", "figure"] } }
+          },
+          "then": { "required": ["image_ref"] }
+        }
+      ]
+    }
+  }
+}
