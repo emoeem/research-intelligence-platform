@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-15，Phase 3 已收口，Phase 4 待开批） |
+| 状态 | 生效中（2026-11-15，Phase 4 进行中：P4-1/P4-2 已收口，P4-3 reranker/tokenizers/缓存待开批） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
@@ -145,22 +145,68 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 6. M8_READINESS 限制 1/2（evidence 抽样 4/26、research_task 核心字段映射，环境面）。
 7. 服务端插件来源拉取完整 confirm 后受理链路需真实上游可达（P10-2 已声明）。
 
-## 七、Phase 2 开批速查（下一批即用）
+## 七、Phase 4 P4-3 开批速查（下一批即用）
 
-- 任务书落 docs/rip3/batches/P2-1-TASK.md；范围 = R2 第四部分 + 四冻结物实施化：
-  1. containerfiles/rip-parser/（FROM python:3.12-slim 同基座 digest + Docling 2.x +
-     PyMuPDF + Tesseract，模型与 tessdata 构建期烘焙，digest 台账三处同步）；
-  2. Parser Registry + Provider 接口（R2 10.3：DocumentParser/OCRProvider trait）；
-  3. 解析管线 = workflow 定义（DISCOVERED 到 APPROVED 九态映射 Tool/Knowledge/
-     Condition/Parallel/Human 节点，checkpoint 续跑；长解析分片 Parallel 扇出）；
-  4. Document IR v1 落库（04 号冻结物 Schema 实施为
-     schemas/document-ir/ir-v1.schema.json + 双通道校验 + blocks 落 PG）；
-  5. 解析质量检查（extraction_quality 自检面 + LOW_EXTRACTION_CONFIDENCE 标记）。
-- 验收命令骨架：cargo test --offline -p intel-db --test parser_pipeline（PG 在位实跑/
-  V-9 跳过）+ 容器内各格式解析冒烟 + selftest_phase2_parser.sh + 五道门禁。
-- 依赖引入：Docling/PyMuPDF 进容器镜像（宿主机零安装）；refinery/pgvector 已在位。
+- 任务书落 docs/rip3/batches/P4-3-TASK.md；范围 = R2 第六部分 6.2/6.6 + 第十四
+  部分 Phase 4 行剩余项：
+  1. reranker worker（bge-reranker ONNX）：containerfiles/rip-rerank/ 沿 rip-embed
+     模式（模型构建期烘焙 /opt/models + 嵌入 worker 真实后端类零复制导入 +
+     D-TC-03 帧 stdout 守卫 + 无回退面）；**坑位**：BAAI 官方 bge-reranker 无
+     ONNX 导出，需 optimum 导出（`optimum-cli export onnx --model BAAI/bge-
+     reranker-base --task text-classification`）或社区 ONNX 权重，先探 HF 面
+     可达性与许可证再钉版；manifest 输入 {"query","texts":[{id,text}]} 输出
+     scores；Rust 面 rerank_search（intel-db search.rs 加 rerank 后排序，与
+     hybrid 串联或独立模式）。
+  2. tokenizers 接入替换 est_tokens（R2 6.6 Tokenizer Adapter）：context-broker
+     estimate.rs 加 tokenizers crate（HF Rust 版，vendor 增量）加载
+     models/bge-small-zh-v1.5/tokenizer.json（EMBEDDING_TOKENIZER_DIR env 优先，
+     缺席回落 est_tokens 保守口径——库 crate 不强制运行时文件）；calibration
+     抽样断言偏差 < 5%（R2 6.6）。
+  3. 缓存升级：查询向量缓存（embed_worker 查询向量按 query hash 幂等，复用
+     context-broker cache.rs:117-207 内容寻址骨架）+ 检索结果缓存（Query Cache
+     R2 6.6，失效触发器沿 cache.rs:17-28 七类既有面）。
+  4. P4-4 预告：Benchmark（RTIS 语料播种 rt.py 只读面 → 播种脚本 → Recall@K/
+     MRR/NDCG 计算器 → docs/rip3/batches/P4-4-BENCHMARK.md）+ JSONB 过滤正式
+     集成测试 + sqlite-filters CLI 解析展开。
+- 验收骨架：cargo test --offline -p intel-db -p context-broker + rerank 容器冒烟
+  + rerank 前后排序对比断言 + selftest_phase4_search.sh（沿 phase3 脚本骨架）
+  + 五道门禁 + push CI。
+- 本会话坑位实录（P2-2 至 P4-2，逐条带修法，详见各批次报告 G 节与第九节）：
+  torchvision 无上界连带 torch 升全量轮（CPU 源钉版）；serde Option 往返 null
+  （skip_serializing_if）；PG INTEGER 列 i32 / LIMIT 参数 Int8 需 i64；refinery
+  checksum 纪律（迁移修正须重置 dev 库）；clippy 常量断言 → const {}；mcp-server
+  负载 flake（send_raw 管道破裂竞态已加固，加固勿引 needless return）；CTE/未
+  类型化参数推断 text（::vector/::jsonb 显式 cast）；容器内模块相对布局
+  parents[2]；CLI 布尔旗标三现（force/dry-run/include-unapproved 均须注册
+  BOOL_FLAGS）；CLI 启动迁移引导；search-engine 关键词拆分（空白/逗号多词）；
+  CI 收口纪律（本地必须全量 clippy -D warnings 后推，三次 CI 红全是漏跑）；
+  gh run rerun 权限缺失 → 同树 docs commit 触发重跑。
 
 ## 八、完成后闭环（Phase 8 之后）
 
 R2 §17 最终验收 + 实战校验三面（用户门控，暂缓中）+ 版本命名决策 D8（2.x Phase 11+
 或 3.0，按兼容性评估）。每轮循环到 §17 全绿为止；ChatGPT 步骤维持删除暂缓。
+
+## 九、2026-11-15 手动会话实录（Phase 2 收口 至 P4-2，d 案全程）
+
+| 批次 | 提交 | CI run | 结果 |
+|---|---|---|---|
+| P2-2 收口批 | 0179f2bc | 43709329153 | success 2m51s（Phase 2 收口） |
+| P2-2 CI 回填 | 71c1f9a5 | 43709613596 | success 2m49s |
+| P3-1 | e4dd5fe6 + 02e2e9f8 + 91232650 | 43713355070 | success 3m16s（红二连：unused import + const 断言，实录） |
+| P3-2 | 2d46766c + 2d36b575 | 43714615323 | success 2m49s（mcp-server 负载 flake，同树重跑） |
+| P3-3 | 97168499 | 43715885192 | success 3m0s |
+| P3-4 + Phase 3 收口 | 83da42f3 | 43716976430 | success 3m19s |
+| P4-1 | 29585fe7 + c412be88 + 7486797e + 19645d02 | 43719162660 | success 2m52s（CI 红三连实录：重复 cfg + mcp flake 加固 + needless return） |
+| P4-2 | ee9ee79c | 43720100522 | success 3m12s |
+| 收官工作流 | daaa56fe | 43710907819 | success 2m47s（先于上述批次入库） |
+
+本会话交付摘要：Phase 2/3 全收口 + Phase 4 双批；三容器族（rip-parser 0.1.2 /
+rip-gov 0.1.0 / rip-embed 0.1.0）+ migrations_pg V0003-V0006 + rp-kc/rp-doc
+parse/parse-status/approve/batch-review/search + rp-search-unified + 审核工作流
+wf-review-card-v1 两分支 + 解析管线 wf-parse-pipeline-v1 两分支 + selftest
+phase2 22/22 / phase3 19/19 + 统一检索三模式 + 跨库归并双通道；收官自动化
+工作流 .zcode/workflows/rip3-finish.dwf.ts（有动态工作流工具面的会话启动）。
+门禁全程：workspace 707 passed / clippy 零告警 / unittest 232 / web 124 /
+selftest 全集。D4 阈值实测数据点：同义改写对 0.8358（语义面独立召回，D3 零
+召回）、无关句 0.325、阈值区间 0.83-0.92 随 P4-4 校准。
