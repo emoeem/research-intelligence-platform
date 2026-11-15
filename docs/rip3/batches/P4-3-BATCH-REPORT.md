@@ -89,7 +89,13 @@ vendor/（增量 39 crate + 目录重排）。
 
 ## E2 CI 结论
 
-（push 后回填）
+| 提交 | run | 结论 |
+|---|---|---|
+| e8682ba4（P4-3 主批） | 43729534846 | failure（Rust workspace + rp-mcp-parity exit 101：vendor/tokenizers 18 源文件被根 .gitignore `models/` 规则误伤未入库，CI checkout 缺文件 cargo 校验炸——CI #63 同族） |
+| da46e7e7（CI 修复） | 43729823719 | **success**（四 job 全绿：Rust workspace / Web 工作台 / Python worker / 协议一致性；修法 = `.gitignore` 规则锚定 `/models/` + 补 add 18 文件，checksum/磁盘/git 三方零缺失复核） |
+
+push 口径：HEAD CI 全绿硬门槛由 da46e7e7 满足；docs 回填 commit 后同树 CI 复跑以
+最终 HEAD run 为准（本节提交时回填）。
 
 ## G 遗留问题
 
