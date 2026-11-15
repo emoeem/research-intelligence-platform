@@ -33,6 +33,7 @@ pub mod policy;
 pub mod score;
 pub mod source;
 pub mod sources;
+pub mod tokenizer;
 
 pub use assemble::{
     AssembleRequest, AssembledContext, AuditInfo, Broker, BudgetReport, CatalogCounts, Citation,
@@ -49,7 +50,8 @@ pub use domain::context::{
     TargetSlot, ToolFamily,
 };
 pub use error::ContextBrokerError;
-pub use estimate::{count_chars, est_tokens, CharCounts};
+pub use estimate::{count_chars, est_tokens, est_tokens_formula, CharCounts};
+pub use tokenizer::{available as tokenizer_available, count_tokens as tokenizer_count, TokenizerAdapter};
 pub use intent::{
     classify, detect_slots, emit_intent_event, ClassifyResult, FamilyRule, IntentConfig,
     KnowledgeIntentRule, AMBIGUOUS_CONFIDENCE_THRESHOLD, INTENT_ACTION,

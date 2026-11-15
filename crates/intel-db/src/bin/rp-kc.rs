@@ -38,7 +38,7 @@ subcommands:\n\
     D4 卡片语义向量补齐（rip.embed.text 容器 bge 本地推理，512 维幂等 upsert）\n\
   semantic-scan [--workspace W] [--threshold 0.92] [--top-k 10]\n\
          [--run-db P] [--manifest-dir D]  D4 语义候选（pgvector 余弦近邻，NEAR_DUPLICATE 候选边禁自动合并）\n\
-  search --query Q [--mode bm25|vector|hybrid] [--limit N] [--type T]\n\
+  search --query Q [--mode bm25|vector|hybrid|rerank] [--limit N] [--type T]\n\
          [--workspace W] [--mmr-lambda f] [--include-unapproved] [--run-db P] [--manifest-dir D]\n\
     统一检索入口（P4-1：BM25 pg_search + 向量 pgvector + RRF/MMR 融合；\n\
     权限前置谓词 SQL 内，缺省仅 APPROVED + 硬标记排除）\n\
@@ -390,8 +390,25 @@ fn main() {
                         )?;
                         serde_json::to_value(hits).map_err(|e| IntelError::Invalid(e.to_string()))
                     }
+                    "rerank" => {
+                        // rerank 全链（P4-3）：hybrid 检索 + 正文批量读取 +
+                        // rip.rerank.text 容器 pairwise 排序（R2 6.2 Reranking）。
+                        let cfg = embed_cfg_from(&args)?;
+                        let mut rcfg = intel_db::search::RerankWorkerConfig::default();
+                        if let Some(p) = opt_flag(&args, "rerank-manifest-dir") {
+                            rcfg.manifest_dir = PathBuf::from(p);
+                        }
+                        rcfg.manifest_dir = std::path::absolute(&rcfg.manifest_dir)?;
+                        rcfg.run_db = std::path::absolute(&rcfg.run_db)?;
+                        rcfg.workspace_root = std::path::absolute(&rcfg.workspace_root)?;
+                        rcfg.sqlite_migrations_dir = std::path::absolute(&rcfg.sqlite_migrations_dir)?;
+                        let hits = intel_db::search::rerank_search(
+                            &pool, &cfg, &rcfg, &filters, &query, limit,
+                        )?;
+                        serde_json::to_value(hits).map_err(|e| IntelError::Invalid(e.to_string()))
+                    }
                     other => Err(IntelError::Invalid(format!(
-                        "unknown mode {other:?} (bm25/vector/hybrid)"
+                        "unknown mode {other:?} (bm25/vector/hybrid/rerank)"
                     ))),
                 }
             }

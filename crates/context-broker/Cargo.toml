@@ -26,5 +26,9 @@ search-engine = { workspace = true }
 audit-engine = { workspace = true }
 # P4-4（M4.3）：manifest 三表落库（ManifestStore）与 artifact 只读源。
 database = { workspace = true }
+# P4-3（R2 6.6 Tokenizer Adapter）：HF tokenizers Rust 版加载 bge tokenizer.json
+# 真实计数，替换 est_tokens 近似口径；default-features=false 关 http/progressbar，
+# 正则后端选 fancy-regex（纯 Rust 零 C 依赖，onig 需编译 C 库不用）。
+tokenizers = { version = "0.21.4", default-features = false, features = ["fancy-regex"] }
 
 [dev-dependencies]

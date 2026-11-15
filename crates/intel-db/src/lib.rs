@@ -21,6 +21,7 @@ pub mod card_repo;
 pub mod gov_worker;
 pub mod embed_worker;
 pub mod search;
+pub mod search_cache;
 pub mod commit;
 pub mod document_repo;
 pub mod ir;

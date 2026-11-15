@@ -49,7 +49,7 @@ impl SearchFilters {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchHit {
     pub knowledge_id: String,
     pub title: String,
@@ -138,6 +138,8 @@ fn embed_provider(config: &EmbedWorkerConfig) -> EmbedWorkerProvider {
 }
 
 /// 语义向量检索（pgvector 余弦距离 top-K；查询向量经 rip.embed.text 本地推理）。
+/// 查询向量缓存（P4-3 R2 6.6）：key = sha256(模型指纹 ‖ query)，命中跳过容器
+/// 派发（秒级推理 → 磁盘读）；缓存失败静默降级直查（不阻断检索）。
 pub fn vector_search(
     pool: &PgPool,
     config: &EmbedWorkerConfig,
@@ -145,16 +147,35 @@ pub fn vector_search(
     query: &str,
     limit: u32,
 ) -> IntelResult<Vec<SearchHit>> {
-    let data = embed_provider(config)
-        .dispatch(json!({ "texts": [query] }))
-        .map_err(IntelError::from)?;
-    let vec_vals: Vec<f32> = data["vectors"][0]
-        .as_array()
-        .ok_or_else(|| IntelError::Invalid("query embedding missing".to_string()))?
-        .iter()
-        .map(|x| x.as_f64().unwrap_or(0.0) as f32)
-        .collect();
-    let query_vector = pgvector::Vector::from(vec_vals);
+    let model_fp = config.manifest_dir.display().to_string();
+    let cache = crate::search_cache::SearchCache::open_default().ok().map(|c| {
+        let k = crate::search_cache::cache_key("query-vector", "query", &model_fp, query, "embed-query-v1");
+        (c, k)
+    });
+    let query_vector: pgvector::Vector = match cache
+        .as_ref()
+        .and_then(|(c, k)| c.get(k, &model_fp, "embed-query-v1", crate::search_cache::TTL_QUERY_VECTOR))
+        .and_then(|payload| serde_json::from_str::<Vec<f32>>(&payload).ok())
+    {
+        Some(vec_vals) => pgvector::Vector::from(vec_vals),
+        None => {
+            let data = embed_provider(config)
+                .dispatch(json!({ "texts": [query] }))
+                .map_err(IntelError::from)?;
+            let vec_vals: Vec<f32> = data["vectors"][0]
+                .as_array()
+                .ok_or_else(|| IntelError::Invalid("query embedding missing".to_string()))?
+                .iter()
+                .map(|x| x.as_f64().unwrap_or(0.0) as f32)
+                .collect();
+            if let Some((c, k)) = cache.as_ref() {
+                if let Ok(payload) = serde_json::to_string(&vec_vals) {
+                    let _ = c.put(k, &model_fp, "embed-query-v1", &payload);
+                }
+            }
+            pgvector::Vector::from(vec_vals)
+        }
+    };
     let has_type = filters.knowledge_type.is_some();
     let where_sql = filters_where(filters, 2, if has_type { Some(4) } else { None });
     let sql = format!(
@@ -261,6 +282,10 @@ pub fn mmr_diversify(hits: &[SearchHit], lambda: f32, limit: u32) -> Vec<SearchH
 }
 
 /// 混合检索入口（BM25 + 向量 → RRF → MMR；R2 6.2 流程面）。
+/// 检索结果缓存（P4-3 R2 6.6 Query Cache）：key = sha256(mode ‖ filters ‖
+/// query ‖ limit)，fingerprint = 索引 schema 版本 + workspace 治理态
+/// （APPROVED 卡数 + max(updated_at)：review 跃迁/建卡即失效）；缓存失败
+/// 静默降级直查。
 pub fn hybrid_search(
     pool: &PgPool,
     embed_config: &EmbedWorkerConfig,
@@ -269,10 +294,55 @@ pub fn hybrid_search(
     limit: u32,
     mmr_lambda: f32,
 ) -> IntelResult<Vec<SearchHit>> {
+    let cache = crate::search_cache::SearchCache::open_default().ok();
+    let gov_fp = governance_fingerprint(pool, &filters.workspace_id).unwrap_or_default();
+    let fp = format!(
+        "pg-search-v6\u{1f}{gov_fp}\u{1f}approved={}\u{1f}type={:?}\u{1f}json={}",
+        filters.approved_only,
+        filters.knowledge_type.map(|k| k.as_str()),
+        serde_json::to_string(&filters.json_contains).unwrap_or_default(),
+    );
+    let params = format!("{}|{limit}|{mmr_lambda}", serde_json::to_string(&filters.json_contains).unwrap_or_default());
+    let cache = cache.map(|c| {
+        let k = crate::search_cache::cache_key("retrieval", "hybrid", SEARCH_CACHE_VERSION, &params, &fp);
+        (c, k)
+    });
+    if let Some((c, k)) = cache.as_ref() {
+        if let Some(payload) = c.get(k, SEARCH_CACHE_VERSION, &fp, crate::search_cache::TTL_RETRIEVAL) {
+            if let Ok(hits) = serde_json::from_str::<Vec<SearchHit>>(&payload) {
+                return Ok(hits);
+            }
+        }
+    }
     let bm25_hits = bm25_search(pool, filters, query, limit)?;
     let vector_hits = vector_search(pool, embed_config, filters, query, limit)?;
     let fused = rrf_fuse(&[bm25_hits, vector_hits], limit * 3);
-    Ok(mmr_diversify(&fused, mmr_lambda, limit))
+    let out = mmr_diversify(&fused, mmr_lambda, limit);
+    if let Some((c, k)) = cache.as_ref() {
+        if let Ok(payload) = serde_json::to_string(&out) {
+            let _ = c.put(k, SEARCH_CACHE_VERSION, &fp, &payload);
+        }
+    }
+    Ok(out)
+}
+
+/// 检索结果缓存条目版本（结构变化即整体失效）。
+const SEARCH_CACHE_VERSION: &str = "search-v1";
+
+/// workspace 治理态指纹（APPROVED 卡数 + max(updated_at)：审核跃迁/新建卡
+/// 即缓存失效；查询失败 None = 调用方禁用缓存面）。
+fn governance_fingerprint(pool: &PgPool, workspace_id: &str) -> Option<String> {
+    let mut conn = pool.get().ok()?;
+    let row = conn
+        .query_opt(
+            "SELECT COUNT(*), COALESCE(MAX(updated_at)::text, '') FROM knowledge_cards
+             WHERE workspace_id = $1",
+            &[&workspace_id],
+        )
+        .ok()??;
+    let count: i64 = row.get(0);
+    let max_updated: String = row.get(1);
+    Some(format!("{count}:{max_updated}"))
 }
 
 #[cfg(test)]
@@ -322,6 +392,9 @@ mod tests {
 
 /// 重排序容器 id（containerfiles/rip-rerank/rip.rerank.text.json）。
 pub const TOOL_RERANK: &str = "rip.rerank.text";
+/// rerank 单条正文字节帽（= 容器 rerank_tools.MAX_TEXT_BYTES，调用侧对齐截断，
+/// UTF-8 边界安全：截断点回退到字符边界，不产生半个码点）。
+pub const RERANK_TEXT_CAP_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct RerankWorkerConfig {
@@ -517,9 +590,10 @@ impl RerankWorkerProvider {
     }
 }
 
-/// 对检索结果重排序（pairwise query-text 推理；64 条/批容器帽——调用面 limit
-/// ≤ 64 即单批；返回按相关分降序，rerank 分随 hit.score 替换、source 标注
-/// "rerank"）。
+/// rerank 全链（R2 6.2 流程位置：RRF/MMR 之后）：hybrid 检索 top-N（N ≤ 64
+/// 容器帽）→ 批量读正文（单条 SQL，IN 一次性取回）→ rerank_hits 容器排序。
+/// source 标注 "rerank"；limit > 64 时检索/读正文仍按 limit，容器单批帽
+/// 内截前 64 条重排（其余保持原序续后——排序面不改检索集）。
 pub fn rerank_search(
     pool: &PgPool,
     embed_config: &EmbedWorkerConfig,
@@ -528,20 +602,42 @@ pub fn rerank_search(
     query: &str,
     limit: u32,
 ) -> IntelResult<Vec<SearchHit>> {
-    let _ = pool;
-    let _ = embed_config;
-    let _ = filters;
-    // 检索集由调用面先取（本面只排序：输入 hits 携带正文由调用侧读取）。
-    // 设计取舍见 P4-3 报告 B 节：rerank 输入 = hybrid 产出 top-N（N ≤ 64），
-    // 正文读取复用 document_blocks 面在调用侧完成。
-    let _ = rerank_config;
-    let _ = query;
-    let _ = limit;
-    unimplemented!("rerank_search 通过 rerank_hits 入口承载（见下方 rerank_hits）");
+    // 检索集 = hybrid 产出（RRF + MMR，双通道并归后多样化）。
+    let candidates = hybrid_search(pool, embed_config, filters, query, limit, DEFAULT_MMR_LAMBDA)?;
+    if candidates.is_empty() {
+        return Ok(candidates);
+    }
+    // 正文批量读取（单条 SQL IN；approved-only 等前置已在检索 SQL 内，
+    // 此处只补正文；读不到正文回落 title——rerank_hits 同口径）。
+    let ids: Vec<String> = candidates.iter().map(|h| h.knowledge_id.clone()).collect();
+    let mut conn = pool.get()?;
+    let rows = conn.query(
+        "SELECT knowledge_id, content FROM knowledge_cards WHERE knowledge_id = ANY($1)",
+        &[&ids],
+    )?;
+    drop(conn);
+    let mut bodies: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for r in rows {
+        bodies.insert(r.get::<_, String>(0), r.get::<_, String>(1));
+    }
+    rerank_hits(rerank_config, query, &candidates, &bodies)
+}
+
+/// UTF-8 边界安全截断（按字节帽；截断点回退到最近字符边界）。
+fn truncate_utf8(s: &str, cap: usize) -> &str {
+    if s.len() <= cap {
+        return s;
+    }
+    let mut end = cap;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 /// rerank 核心（调用面先取检索集 + 正文，本函数容器派发排序）：
-/// hits 按容器 scores 降序重排，score 字段替换为 rerank 相关分。
+/// hits 按容器 scores 降序重排，score 字段替换为 rerank 相关分；正文按
+/// [`RERANK_TEXT_CAP_BYTES`] UTF-8 安全截断（容器 8KiB 帽对齐）。
 pub fn rerank_hits(
     rerank_config: &RerankWorkerConfig,
     query: &str,
@@ -553,6 +649,7 @@ pub fn rerank_hits(
         .iter()
         .map(|h| {
             let body = bodies.get(&h.knowledge_id).cloned().unwrap_or_else(|| h.title.clone());
+            let body = truncate_utf8(&body, RERANK_TEXT_CAP_BYTES);
             json!({ "id": h.knowledge_id, "text": body })
         })
         .collect();

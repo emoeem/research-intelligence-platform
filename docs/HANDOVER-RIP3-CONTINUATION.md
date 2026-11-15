@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-15，Phase 4 进行中：P4-1/P4-2 已收口，P4-3 reranker/tokenizers/缓存待开批） |
+| 状态 | 生效中（2026-11-15，Phase 4 进行中：P4-1/P4-2/P4-3 已收口，P4-4 Benchmark 待开批） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
@@ -145,42 +145,30 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 6. M8_READINESS 限制 1/2（evidence 抽样 4/26、research_task 核心字段映射，环境面）。
 7. 服务端插件来源拉取完整 confirm 后受理链路需真实上游可达（P10-2 已声明）。
 
-## 七、Phase 4 P4-3 开批速查（下一批即用）
+## 七、Phase 4 P4-4 开批速查（下一批即用，Phase 4 收口批）
 
-- 任务书落 docs/rip3/batches/P4-3-TASK.md；范围 = R2 第六部分 6.2/6.6 + 第十四
-  部分 Phase 4 行剩余项：
-  1. reranker worker（bge-reranker ONNX）：containerfiles/rip-rerank/ 沿 rip-embed
-     模式（模型构建期烘焙 /opt/models + 嵌入 worker 真实后端类零复制导入 +
-     D-TC-03 帧 stdout 守卫 + 无回退面）；**坑位**：BAAI 官方 bge-reranker 无
-     ONNX 导出，需 optimum 导出（`optimum-cli export onnx --model BAAI/bge-
-     reranker-base --task text-classification`）或社区 ONNX 权重，先探 HF 面
-     可达性与许可证再钉版；manifest 输入 {"query","texts":[{id,text}]} 输出
-     scores；Rust 面 rerank_search（intel-db search.rs 加 rerank 后排序，与
-     hybrid 串联或独立模式）。
-  2. tokenizers 接入替换 est_tokens（R2 6.6 Tokenizer Adapter）：context-broker
-     estimate.rs 加 tokenizers crate（HF Rust 版，vendor 增量）加载
-     models/bge-small-zh-v1.5/tokenizer.json（EMBEDDING_TOKENIZER_DIR env 优先，
-     缺席回落 est_tokens 保守口径——库 crate 不强制运行时文件）；calibration
-     抽样断言偏差 < 5%（R2 6.6）。
-  3. 缓存升级：查询向量缓存（embed_worker 查询向量按 query hash 幂等，复用
-     context-broker cache.rs:117-207 内容寻址骨架）+ 检索结果缓存（Query Cache
-     R2 6.6，失效触发器沿 cache.rs:17-28 七类既有面）。
-  4. P4-4 预告：Benchmark（RTIS 语料播种 rt.py 只读面 → 播种脚本 → Recall@K/
-     MRR/NDCG 计算器 → docs/rip3/batches/P4-4-BENCHMARK.md）+ JSONB 过滤正式
-     集成测试 + sqlite-filters CLI 解析展开。
-- 验收骨架：cargo test --offline -p intel-db -p context-broker + rerank 容器冒烟
-  + rerank 前后排序对比断言 + selftest_phase4_search.sh（沿 phase3 脚本骨架）
-  + 五道门禁 + push CI。
-- 本会话坑位实录（P2-2 至 P4-2，逐条带修法，详见各批次报告 G 节与第九节）：
-  torchvision 无上界连带 torch 升全量轮（CPU 源钉版）；serde Option 往返 null
-  （skip_serializing_if）；PG INTEGER 列 i32 / LIMIT 参数 Int8 需 i64；refinery
-  checksum 纪律（迁移修正须重置 dev 库）；clippy 常量断言 → const {}；mcp-server
-  负载 flake（send_raw 管道破裂竞态已加固，加固勿引 needless return）；CTE/未
-  类型化参数推断 text（::vector/::jsonb 显式 cast）；容器内模块相对布局
-  parents[2]；CLI 布尔旗标三现（force/dry-run/include-unapproved 均须注册
-  BOOL_FLAGS）；CLI 启动迁移引导；search-engine 关键词拆分（空白/逗号多词）；
-  CI 收口纪律（本地必须全量 clippy -D warnings 后推，三次 CI 红全是漏跑）；
-  gh run rerun 权限缺失 → 同树 docs commit 触发重跑。
+- 任务书落 docs/rip3/batches/P4-4-TASK.md；范围 = R2 6.8 检索质量评估 +
+  第十四部分 Phase 4 行剩余项：
+  1. Benchmark 语料播种：RTIS 真实语料（rt.py 只读面：真实查询/POC 条目/
+     研究案例）→ 播种脚本（经 rp-kc create 入隔离 PG workspace，禁直写生产
+     库——RTIS 红线）+ 固定合成集辅之；覆盖 6.8 六查询形态（精确关键词/
+     语义/多语言/书籍章节/漏洞案例/版本差异）。
+  2. Recall@K / Precision@K / MRR / NDCG 计算器（纯函数 + 单测钉值）；
+     Latency 与 Token Cost 记录口径沿 6.7（audit-engine correlation 关联）。
+  3. 播种语料跑通四模式基准（bm25/vector/hybrid/rerank 前后对比——P4-3
+     rerank 面 0.0328→0.9993 分离度直接进基准矩阵）+ JSONB 过滤正式集成
+     测试（P4-2 临时面转正）+ sqlite-filters CLI 解析展开（P4-2 结构体已备）。
+  4. 基准报告 docs/rip3/batches/P4-4-BENCHMARK.md + Phase 4 阶段收口
+     （RELEASE 登记 + 队列表勾销 + RTIS 对账零回归）。
+- 验收骨架：cargo test --offline -p intel-db -p unified-search + Benchmark
+  实跑数据入库 + selftest_phase4_search.sh 复跑 + 五道门禁 + push CI。
+- P4-3 坑位实录（本批，详见 P4-3-BATCH-REPORT）：
+  vendor 增量走 cargo vendor 全量重写最稳（手工对齐多版本目录重排易漏；
+  重排后 lock 对齐零漂移）；tokenizers default-features=false 后必须显式选
+  正则后端（fancy-regex 纯 Rust；onig 需 C 库）；搜索集成测试共享 workspace
+  会互相污染（各测试专属 workspace + 跑前清场 wipe_workspace）；审核双闸
+  测试面批准前必须先 score_card；cargo test 无 DSN 静默 SKIP（0.00s 即守卫
+  触发，别当全绿）。
 
 ## 八、完成后闭环（Phase 8 之后）
 
@@ -210,3 +198,21 @@ phase2 22/22 / phase3 19/19 + 统一检索三模式 + 跨库归并双通道；�
 门禁全程：workspace 707 passed / clippy 零告警 / unittest 232 / web 124 /
 selftest 全集。D4 阈值实测数据点：同义改写对 0.8358（语义面独立召回，D3 零
 召回）、无关句 0.325、阈值区间 0.83-0.92 随 P4-4 校准。
+
+## 十、2026-11-15 手动会话实录（P4-3，d 案全程，WIP 快照接手）
+
+| 批次 | 提交 | CI run | 结果 |
+|---|---|---|---|
+| P4-3 | （本批） | （E2 回填） | （回填） |
+| P4-3 前置 | 6a3ad9a9 | — | WIP 快照（rip-rerank 容器族 + rerank 面半成品） |
+
+P4-3 交付摘要：rerank 全链收口（rerank_search unimplemented! → hybrid+正文
+ANY 批读+容器排序；rerank_hits 8KiB UTF-8 安全截断；rp-kc --mode rerank）+
+tokenizers 接入（context-broker tokenizer.rs；EMBEDDING_TOKENIZER_DIR 优先，
+缺省仓库模型，双缺席回落；est_tokens 单点切换；vendor 增量 tokenizers
+0.21.4+fancy-regex 闭包 39 crate）+ 缓存升级（intel-db search_cache.rs 同构
+cache.rs:117-207；query-vector + retrieval 双缓存；治理态指纹失效）+
+selftest_phase4_search.sh。实测：rerank 容器分离 0.99969/0.68741 vs 3.7e-05；
+CLI 前后对比 hybrid 0.0328/0.0323/0.0159 → rerank 0.9993/0.5041/0.0；缓存
+命中 1.493s→0.237s；calibration 2/2（公式偏差<5% 达标）。集成 2/2 / context-
+broker 66/0 / intel-db lib 28/0。

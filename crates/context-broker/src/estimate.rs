@@ -68,7 +68,21 @@ pub fn count_chars(text: &str) -> CharCounts {
 }
 
 /// 估算文本 token 数（设计稿 §5.2 公式，向上取整；空文本为 0）。
+///
+/// P4-3 起（R2 6.6 Tokenizer Adapter）：`EMBEDDING_TOKENIZER_DIR`（或缺省仓库
+/// models/bge-small-zh-v1.5）tokenizer.json 在位时走 HF tokenizers 真实计数
+///（见 crate::tokenizer），公式仅作回落保守口径——库 crate 不强制运行时文件，
+/// 全部调用点行为一致性由本函数单点承载（不逐点改写）。
 pub fn est_tokens(text: &str) -> u64 {
+    if let Some(n) = crate::tokenizer::count_tokens(text) {
+        return n;
+    }
+    est_tokens_formula(text)
+}
+
+/// 保守公式本体（adapter 缺席口径；calibration 抽样对照面，校准只修常数
+/// 不改结构，ROADMAP §5.5）。
+pub fn est_tokens_formula(text: &str) -> u64 {
     let counts = count_chars(text);
     let raw = counts.ascii as f64 / 4.0 + counts.cjk as f64 * 1.0 + counts.other as f64 / 2.0;
     raw.ceil() as u64

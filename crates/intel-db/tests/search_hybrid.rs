@@ -25,6 +25,12 @@ fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManage
 }
 
 fn card(title: &str, content: &str, flags: Vec<RiskFlag>) -> CardInput {
+    card_ws(title, content, flags, "ws-p4")
+}
+
+/// 测试卡工厂（workspace 可指定：rerank 面隔离 ws-p4-rerank，库复用下
+/// 两测试互不污染）。
+fn card_ws(title: &str, content: &str, flags: Vec<RiskFlag>, workspace: &str) -> CardInput {
     CardInput {
         knowledge_type: KnowledgeType::VulnPrinciple,
         title: title.to_string(),
@@ -37,7 +43,20 @@ fn card(title: &str, content: &str, flags: Vec<RiskFlag>) -> CardInput {
         source_trust: SourceTrust::ExternalImport,
         ai_derived: false,
         quality_flags: flags,
-        workspace_id: "ws-p4".to_string(),
+        workspace_id: workspace.to_string(),
+    }
+}
+
+/// 测试 workspace 清场（无 CASCADE，按依赖序删；可重跑幂等基线）。
+fn wipe_workspace(pool: &r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>, ws: &str) {
+    let mut conn = pool.get().unwrap();
+    for sql in [
+        "DELETE FROM knowledge_review_log WHERE knowledge_id IN (SELECT knowledge_id FROM knowledge_cards WHERE workspace_id = $1)",
+        "DELETE FROM knowledge_relations WHERE src_id IN (SELECT knowledge_id FROM knowledge_cards WHERE workspace_id = $1) OR dst_id IN (SELECT knowledge_id FROM knowledge_cards WHERE workspace_id = $1)",
+        "DELETE FROM knowledge_card_vectors WHERE card_id IN (SELECT knowledge_id FROM knowledge_cards WHERE workspace_id = $1)",
+        "DELETE FROM knowledge_cards WHERE workspace_id = $1",
+    ] {
+        conn.execute(sql, &[&ws]).unwrap();
     }
 }
 
@@ -47,6 +66,7 @@ fn unified_search_bm25_vector_hybrid_with_prefilters() {
     let mut conn = pool.get().unwrap();
     run_migrations(&mut conn).unwrap();
     drop(conn);
+    wipe_workspace(&pool, "ws-p4");
 
     let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: serde_json::Value = serde_json::from_str(
@@ -135,4 +155,106 @@ fn unified_search_bm25_vector_hybrid_with_prefilters() {
     type_filters.knowledge_type = Some(KnowledgeType::DetectionMethod);
     let typed = search::bm25_search(&pool, &type_filters, "SQL 注入", 10).unwrap();
     assert!(typed.iter().all(|h| h.knowledge_type == "detection_method"), "类型过滤 SQL 内生效");
+}
+
+/// P4-3：rerank 全链（hybrid 检索 + 正文批量读取 + rip.rerank.text 容器
+/// pairwise 排序）。判据：rerank 前后排序对比 + source 标注 rerank +
+/// rerank 分降序 + 相关主题卡排到最前（容器分数量级分离，冒烟 0.52/0.33
+/// vs 无关 3.7e-05）。
+#[test]
+fn rerank_search_reorders_hybrid_candidates() {
+    let Some(pool) = skip_unless_pg() else { return };
+    let mut conn = pool.get().unwrap();
+    run_migrations(&mut conn).unwrap();
+    drop(conn);
+    wipe_workspace(&pool, "ws-p4-rerank");
+
+    let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // 验收镜像双守卫：embed + rerank 任一缺席即跳过（V-9 受控环境端到端）。
+    let embed_manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_root.join("containerfiles/rip-embed/rip.embed.text.json"))
+            .expect("embed manifest"),
+    )
+    .unwrap();
+    let rerank_manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_root.join("containerfiles/rip-rerank/rip.rerank.text.json"))
+            .expect("rerank manifest"),
+    )
+    .unwrap();
+    for manifest in [&embed_manifest, &rerank_manifest] {
+        let image = manifest["runtime"]["image"].as_str().unwrap().to_string();
+        let exists = std::process::Command::new("podman")
+            .args(["image", "exists", &image])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !exists {
+            eprintln!("SKIP: 验收镜像 {image} 不在本地镜像库（V-9，受控环境端到端）");
+            return;
+        }
+    }
+
+    // 语料：相关主题卡（SQL 注入防御）+ 无关主题卡（生活内容），全批准。
+    let relevant = card_repo::create_card(
+        &pool,
+        &card_ws("rerank-SQL 注入防御", "防御 SQL 注入的核心手段是参数化查询与预编译语句，辅以最小权限数据库账号。", vec![], "ws-p4-rerank"),
+    )
+    .unwrap();
+    let relevant2 = card_repo::create_card(
+        &pool,
+        &card_ws("rerank-注入检测面", "SQL 注入检测常用错误回显分析与时间盲注探测，配合日志回溯定位注入点。", vec![], "ws-p4-rerank"),
+    )
+    .unwrap();
+    let unrelated = card_repo::create_card(
+        &pool,
+        &card_ws("rerank-散步心得", "傍晚沿河堤散步半小时有助于放松，注意补充水分。", vec![], "ws-p4-rerank"),
+    )
+    .unwrap();
+    for cid in [&relevant, &relevant2, &unrelated] {
+        // 审核双闸：批准前先计分（LOW_QUALITY_FLOOR 地板，P3-1 口径）。
+        card_repo::score_card(&pool, cid, &domain::kcard::QualityWeights::default()).unwrap();
+        card_repo::decide(&pool, cid, ReviewStatus::Approved, "初审", "p4-rerank-test").unwrap();
+    }
+    let cfg = EmbedWorkerConfig {
+        run_db: repo_root.join("rip-data/parse/test-ops.db"),
+        sqlite_migrations_dir: repo_root.join("migrations"),
+        manifest_dir: repo_root.join("containerfiles/rip-embed"),
+        workspace_root: repo_root.join("rip-data/parse/test-ws"),
+        ..Default::default()
+    };
+    let embedded = intel_db::embed_worker::embed_cards(&pool, "ws-p4-rerank", &cfg).unwrap();
+    assert!(embedded.embedded >= 3, "rerank 测试三卡补向量");
+
+    // rerank 前：hybrid 检索（RRF 融合排序，词面/语义无关卡可能混入前列）。
+    let filters = SearchFilters::new("ws-p4-rerank");
+    let before = search::hybrid_search(&pool, &cfg, &filters, "SQL 注入怎么防御", 3, 0.7).unwrap();
+    assert!(before.len() >= 2, "hybrid 候选 ≥2 才有排序对比意义");
+
+    let rcfg = search::RerankWorkerConfig {
+        run_db: repo_root.join("rip-data/parse/test-ops.db"),
+        sqlite_migrations_dir: repo_root.join("migrations"),
+        manifest_dir: repo_root.join("containerfiles/rip-rerank"),
+        workspace_root: repo_root.join("rip-data/parse/test-ws"),
+        ..Default::default()
+    };
+    let after = search::rerank_search(&pool, &cfg, &rcfg, &filters, "SQL 注入怎么防御", 3).unwrap();
+
+    // 断言 1：source 标注 rerank。
+    assert!(after.iter().all(|h| h.source == "rerank"), "rerank 面来源标注");
+    // 断言 2：rerank 分降序。
+    for w in after.windows(2) {
+        assert!(w[0].score >= w[1].score, "rerank 分降序");
+    }
+    // 断言 3：相关主题卡排最前（容器四数量级分离实证）。
+    let top_ids: Vec<&str> = after.iter().map(|h| h.knowledge_id.as_str()).collect();
+    assert!(
+        top_ids[0] == relevant.as_str() || top_ids[0] == relevant2.as_str(),
+        "相关主题卡必须排最前（rerank 前后排序对比：hybrid 序 {:?} → rerank 序 {:?}）",
+        before.iter().map(|h| h.knowledge_id.as_str()).collect::<Vec<_>>(),
+        top_ids
+    );
+    // 断言 4：无关卡不出现在首位（若在场必须沉底）。
+    if let Some(pos) = top_ids.iter().position(|id| *id == unrelated.as_str()) {
+        assert!(pos > 0, "无关卡不得排首位");
+    }
 }
