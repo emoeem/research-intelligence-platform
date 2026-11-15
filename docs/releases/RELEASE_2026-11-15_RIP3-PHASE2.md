@@ -71,7 +71,7 @@
 | selftest | selftest_phase2_parser.sh 22/22 + selftest_phase1_pg.sh（P1 面，回归）+ selftest_phase10_release.sh 29/29 + selftest_auth.sh 11/11 |
 | 生产库红线 | platform*.db 指纹一致 + journal_mode=delete 断言（selftest 内） |
 | 集成测试 | RP_TEST_PG_DSN=… parser_pipeline 5/5（真容器 + 真 PG 实跑；CI 侧 V-9 跳过口径） |
-| CI | P2-1 批 run 43708220905 success 2m44s（四 job：Rust workspace 2m41s / parity 1m32s / python workers 23s / web 39s）；本收口提交 CI 结论随 push 回填 |
+| CI | P2-1 批 run 43708220905 success 2m44s + P2-2 收口提交 0179f2bc run 43709329153 success（四 job 全绿：Rust workspace 2m48s / parity 1m3s / python workers 23s / web 38s） |
 
 ## 四、已知取舍
 

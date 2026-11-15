@@ -50,8 +50,9 @@ P2-2-BATCH-REPORT.md；docs/releases/RELEASE_2026-11-15_RIP3-PHASE2.md。
 
 ## E2 CI 结论
 
-入库 push 后 GitHub CI 全绿为硬门槛（本批 commit 与四 job 结论见阶段总账
-RELEASE 登记；push 与 watch 同 P2-1 口径 gh CLI）。
+收口提交 0179f2bc，push 后 GitHub CI run 43709329153 **success**（四 job
+全绿）：Rust workspace ✓ 2m48s / 协议一致性载具 ✓ 1m3s / Python worker ✓ 23s /
+Web 工作台 ✓ 38s。intel-db 集成测试 CI 侧 V-9 跳过口径同 P2-1。
 
 ## F 性能结果
 
