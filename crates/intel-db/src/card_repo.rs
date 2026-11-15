@@ -620,7 +620,9 @@ mod tests {
 
     #[test]
     fn score_floor_gate_values() {
-        assert!(LOW_QUALITY_FLOOR > 0.0 && LOW_QUALITY_FLOOR < 1.0);
+        // LOW_QUALITY_FLOOR 常量 (0,1) 开区间为编译期事实（const assert 口径，
+        // clippy assertions_on_constants -D warnings）。
+        const { assert!(LOW_QUALITY_FLOOR > 0.0 && LOW_QUALITY_FLOOR < 1.0) }
         let w = QualityWeights::default();
         let weak = QualityInputs {
             source_reliability: 0.3,
