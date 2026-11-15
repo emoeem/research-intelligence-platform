@@ -10,6 +10,7 @@
 //! exit: ok=0，运行失败=1，用法错误=2（rp-* 家族惯例）。
 
 use intel_db::commit;
+use intel_db::ir::DocumentIr;
 use intel_db::document_repo::{self, ImportInput};
 use intel_db::object_store::LocalFsStore;
 use intel_db::parser::{DocumentParser, ParserProviderConfig, PodmanParserProvider};
@@ -33,9 +34,10 @@ subcommands:\n\
   soft-delete --document D        软删文档（可恢复）\n\
   list [--workspace W] [--all]    文档列表（权限前置谓词示例面）\n\
   show --document D               版本历史（含 SUPERSEDED）\n\
-  parse --document D [--revision R] [--ocr] [--force] [--run-db P] [--manifest-dir D] [--timeout S]\n\
+  parse --document D [--revision R] [--ocr] [--force] [--from-run WF_RUN] [--run-db P] [--manifest-dir D] [--timeout S]\n\
     解析管线驱动：detect 路由 -> rip-parser 容器 parse/ocr -> IR 校验 -> blocks/assets\n\
-    落库 + parse_state 回填（quality/风险标记判 REVIEW_PENDING）；已提交版本幂等跳过，--force 重解析\n\
+    落库 + parse_state 回填（quality/风险标记判 REVIEW_PENDING）；已提交版本幂等跳过，--force 重解析；\n\
+  --from-run WF_RUN               run 产物接续：rp-workflow run 的解析产物直接落库（不经容器）\n\
   parse-status --document D [--revision R]   解析状态视图（九态/质量/计数）\n\
   approve --revision R            人工审核通过（REVIEW_PENDING -> APPROVED）\n\
   health                          健康面（版本/扩展/迁移/行数）\n\
@@ -237,6 +239,13 @@ fn parse_command(
     let input_path = input_dir.join(&original_filename);
     std::fs::write(&input_path, &bytes)?;
 
+    // run 产物接续（ADR-0003 裁决 4 的取回通道）：--from-run <workflow_run_id>
+    // 直接读 ops 库 workflow_run_node.output_json 的 IR（rp-workflow run 产出）
+    // + 工作区 out 资产，落库不经容器（run 已完成解析）。
+    if let Some(wf_run) = args.flags.get("from-run") {
+        return parse_from_run(pool, store, &document, &revision, wf_run, &cfg);
+    }
+
     let provider = PodmanParserProvider::new(cfg);
     let outcome = if args.flags.contains_key("ocr") {
         let ocr: &dyn intel_db::parser::OCRProvider = &provider;
@@ -286,6 +295,113 @@ fn parse_command(
         "ir_content_hash": commit_outcome.ir_content_hash,
         "replayed": commit_outcome.replayed,
         "staging_dir": outcome.staging_dir.to_string_lossy(),
+    }))
+}
+
+/// run 产物接续提交（P2-2）：workflow run 终态后从 ops 库取回 IR 与工作区
+/// 资产，提交服务落库。取回通道 = workflow_run_node.output_json（parsing
+/// 节点，tool 信封 result 数据含 IR）与 tool_run（trace_id 为 workflow
+/// run_id、tool_id 为 rip.parser.docling、status 为 SUCCEEDED）的工作区
+/// out 目录（哈希即身份）。
+fn parse_from_run(
+    pool: &intel_db::PgPool,
+    store: &LocalFsStore,
+    document: &domain::DocumentId,
+    revision: &domain::DocumentRevisionId,
+    wf_run: &str,
+    cfg: &ParserProviderConfig,
+) -> IntelResult<serde_json::Value> {
+    let ops = database::Pool::open(database::PoolConfig {
+        path: database::DbPath::File(cfg.run_db.clone()),
+        readonly: false,
+        max_connections: 4,
+        busy_timeout: std::time::Duration::from_secs(5),
+    })
+    .map_err(|e| IntelError::Invalid(format!("ops db open: {e}")))?;
+    let node_row: Option<String> = ops
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT output_json FROM workflow_run_node
+                 WHERE run_id = ?1 AND node_id = 'parsing' AND state = 'succeeded'",
+                [wf_run],
+                |r| r.get(0),
+            )
+            .map_err(database::DbError::Sqlite)
+        })
+        .ok();
+    let node_row = node_row.ok_or_else(|| IntelError::Invalid(format!(
+        "workflow run {wf_run} has no succeeded parsing node (in this ops db: {:?})",
+        cfg.run_db
+    )))?;
+    let data: serde_json::Value = serde_json::from_str(&node_row)
+        .map_err(|e| IntelError::Invalid(format!("node output parse: {e}")))?;
+    let raw_ir = data
+        .get("ir")
+        .cloned()
+        .ok_or_else(|| IntelError::Invalid("parsing node output missing ir".to_string()))?;
+    let ir: DocumentIr = serde_json::from_value(raw_ir.clone())
+        .map_err(|e| IntelError::Invalid(format!("ir deserialize: {e}")))?;
+
+    // 解析工具 run 的工作区（资产文件面；驱动不清理，哈希即身份）。
+    let tool_run: Option<String> = ops
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT run_id FROM tool_run
+                 WHERE trace_id = ?1 AND tool_id = 'rip.parser.docling' AND status = 'SUCCEEDED'
+                 ORDER BY finished_at DESC LIMIT 1",
+                [wf_run],
+                |r| r.get(0),
+            )
+            .map_err(database::DbError::Sqlite)
+        })
+        .ok();
+    let mut asset_files: HashMap<String, PathBuf> = HashMap::new();
+    let mut ws_out_note = None;
+    if let Some(tool_run_id) = &tool_run {
+        let ws_out = cfg.workspace_root.join(tool_run_id).join("out");
+        let assets_dir = ws_out.join("assets");
+        if assets_dir.exists() {
+            for entry in std::fs::read_dir(&assets_dir)? {
+                let path = entry?.path();
+                if path.is_file() {
+                    let content = std::fs::read(&path)?;
+                    let hash = document_repo::content_sha256_hex(&content);
+                    asset_files.entry(hash).or_insert(path);
+                }
+            }
+        }
+        ws_out_note = Some(ws_out.to_string_lossy().to_string());
+    }
+    let mut by_asset: HashMap<String, PathBuf> = HashMap::new();
+    for asset in &ir.assets {
+        if let Some(path) = asset_files.get(&asset.content_sha256) {
+            by_asset.insert(asset.asset_id.clone(), path.clone());
+        }
+    }
+    let missing = ir.assets.len() - by_asset.len();
+    if missing > 0 {
+        return Err(IntelError::Invalid(format!(
+            "run asset files missing for {missing} asset(s) (workspace out dir gone or hash mismatch)"
+        )));
+    }
+    let committed =
+        commit::commit_parse_result(pool, store, document, revision, &ir, &by_asset)?;
+    Ok(serde_json::json!({
+        "document_id": document.as_str(),
+        "revision_id": revision.as_str(),
+        "from_run": wf_run,
+        "tool_run_id": tool_run,
+        "format": data.get("format").cloned().unwrap_or(serde_json::json!("unknown")),
+        "parser": ir.parser_metadata.parser,
+        "parser_version": ir.parser_metadata.parser_version,
+        "blocks": ir.blocks.len(),
+        "assets": ir.assets.len(),
+        "overall": ir.extraction_quality.overall,
+        "flags": ir.extraction_quality.flags,
+        "parse_state": committed.parse_state,
+        "ir_content_hash": committed.ir_content_hash,
+        "replayed": committed.replayed,
+        "ws_out": ws_out_note,
     }))
 }
 
