@@ -113,9 +113,12 @@ vendor：零增量（249 目录不变）。
 
 ## E2 CI 结论
 
-本批工作树未 push（R2 §17.5 双轨制：手动会话 commit/push 需用户明确要求）；
-CI 结论待用户指示入库后回填（预期：intel-db 集成测试 CI 侧按 V-9 跳过
-DSN/镜像缺席口径，纯逻辑面常跑；CI 无 PG service 遗留口径同 P1）。
+入库提交 4139ed58，push 后 GitHub CI run 43708220905 **success（2m44s）**，
+四 job 全绿（用户明确授权入库，2026-11-15）：
+Rust workspace（测试与 clippy 零警告）✓ 2m41s / 协议一致性载具（REST vs MCP
+双通道）✓ 1m32s / Python worker 测试 ✓ 23s / Web 工作台（构建与 vitest）✓ 39s。
+intel-db 集成测试 CI 侧按 V-9 跳过（DSN/镜像缺席口径，本地实跑为准）；
+CI 无 PG service 遗留口径同 P1。
 
 ## G 遗留问题
 
