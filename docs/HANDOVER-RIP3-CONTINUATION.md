@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-15，Phase 2 已收口，Phase 3 待开批） |
+| 状态 | 生效中（2026-11-15，Phase 3 已收口，Phase 4 待开批） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
@@ -25,6 +25,7 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 | Phase 0 架构审计与四冻结 | 完成（afe6f5b，用户评审「通过」） | 00-ARCHITECTURE-AUDIT.md（A-G 八字段登记表 + 三关键问题实证）；四冻结物 03/04/12/13；ADR-0001/0002；R2 修订记录段 |
 | Phase 1 文档域与存储 | 完成（c4c76a9 + 41bf3359 + aabc3894，CI 全绿） | rip-pg17 镜像族 + crates/intel-db + migrations_pg PG-0001/0002 + rp-doc CLI + REST 通道 + /documents 页 + 备份双轨演练；RELEASE_2026-11-15_RIP3-PHASE1.md |
 | Phase 2 文档智能 | 完成（4139ed58 + P2-2 收口批，CI 全绿） | 批次报告 docs/rip3/batches/P2-1-BATCH-REPORT.md 与 P2-2-BATCH-REPORT.md；阶段总账 docs/releases/RELEASE_2026-11-15_RIP3-PHASE2.md；实施面 docs/rip3/05-DOCUMENT-INTELLIGENCE.md；遗留见批次报告 G 节（Parallel 分片调度随 Phase 8 / 解析状态卡随页面族批 / docling 误判观察面） |
+| Phase 3 知识治理 | 完成（P3-1 到 P3-4 四批，CI 全绿） | 阶段总账 docs/releases/RELEASE_2026-11-15_RIP3-PHASE3.md；批次报告 docs/rip3/batches/P3-1 到 P3-4；D1-D5 五级去重 + Relations 十型 + 质量分六权重 + 审核工作流（018 Human 复用）+ 批量审核面；rp-kc CLI；容器族 +rip-gov/+rip-embed；遗留见批次报告 G 节（D4 阈值校准随 Phase 4 / evidence_level 导入侧接线随 Phase 4/7） |
 
 用户三项已生效裁决（执行代理不得重开）：
 

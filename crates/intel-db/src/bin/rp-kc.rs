@@ -30,6 +30,8 @@ subcommands:\n\
          [--reason R] [--reviewer X]    审核决定（低质量地板 + 硬标记阻断，日志留痕）\n\
   score --card KC                       计算并回填质量分（六权重 R2 5.3 缺省）\n\
   dedup-scan [--workspace W]            D2 去重扫描（SAME_CONTENT 候选边，不自动合并）\n\
+  batch-review --decision D [--status S] [--min-score f] [--workspace W]\n\
+         [--reason R] [--reviewer X] [--dry-run]  批量审核（硬标记与地板双闸逐卡生效，dry-run 预览）\n\
   minhash-scan [--workspace W] [--threshold 0.5] [--num-perm 128]\n\
          [--run-db P] [--manifest-dir D]  D3 近似重复扫描（rip.gov.minhash 容器，NEAR_DUPLICATE 候选边）\n\
   embed-cards [--workspace W] [--run-db P] [--manifest-dir D]\n\
@@ -54,7 +56,7 @@ struct Args {
 }
 
 fn parse_args(iter: impl Iterator<Item = String>) -> Args {
-    const BOOL_FLAGS: [&str; 2] = ["verified", "ai-derived"];
+    const BOOL_FLAGS: [&str; 3] = ["verified", "ai-derived", "dry-run"];
     let mut flags = std::collections::HashMap::new();
     let mut subs = Vec::new();
     let mut i = iter.peekable();
@@ -239,6 +241,87 @@ fn main() {
                 let card = KnowledgeCardId::try_new(require_flag(&args, "card"))?;
                 let score = card_repo::score_card(&pool, &card, &QualityWeights::default())?;
                 Ok(serde_json::json!({ "knowledge_id": card.as_str(), "quality_score": score }))
+            }
+            "batch-review" => {
+                // 批量审核面（R2 5.4 批量审核；低质量双闸在 decide 内逐卡生效）。
+                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let status = ReviewStatus::parse(
+                    opt_flag(&args, "status").unwrap_or_else(|| "CANDIDATE".to_string()).as_str(),
+                )
+                .map_err(IntelError::from)?;
+                let min_score = opt_flag(&args, "min-score")
+                    .map(|s| s.parse::<f32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("min-score parse: {e}")))?;
+                let to = match require_flag(&args, "decision").to_lowercase().as_str() {
+                    "approve" => ReviewStatus::Approved,
+                    "quarantine" => ReviewStatus::Quarantined,
+                    "reject" => ReviewStatus::Rejected,
+                    other => {
+                        return Err(IntelError::Invalid(format!(
+                            "unknown decision {other:?} (approve/quarantine/reject)"
+                        )))
+                    }
+                };
+                let reason = opt_flag(&args, "reason").unwrap_or_else(|| "batch-review".to_string());
+                let reviewer = opt_flag(&args, "reviewer").unwrap_or_else(|| "batch".to_string());
+                let dry_run = args.flags.contains_key("dry-run");
+                let mut conn = pool.get()?;
+                let rows = conn.query(
+                    "SELECT knowledge_id, title, quality_score, quality_flags FROM knowledge_cards
+                     WHERE workspace_id = $1 AND review_status = $2
+                     ORDER BY quality_score DESC NULLS LAST",
+                    &[&workspace, &status.as_str()],
+                )?;
+                drop(conn);
+                let mut applied: Vec<String> = Vec::new();
+                let mut skipped: Vec<serde_json::Value> = Vec::new();
+                for r in &rows {
+                    let id: String = r.get(0);
+                    let title: String = r.get(1);
+                    let score: Option<f32> = r.get(2);
+                    let flags: Vec<String> = r.get(3);
+                    let card = KnowledgeCardId::try_new(id.clone())?;
+                    // 硬标记与地板双闸预检（approve 面；与 decide 内闸一致）。
+                    let hard_hit = flags.iter().any(|f| {
+                        RiskFlag::parse(f).map(|rf| rf.is_hard_block()).unwrap_or(false)
+                    });
+                    // 地板：--min-score 覆盖（approve 面），缺省 = LOW_QUALITY_FLOOR。
+                    let floor = match (to, min_score) {
+                        (ReviewStatus::Approved, Some(custom)) => custom,
+                        (ReviewStatus::Approved, None) => card_repo::LOW_QUALITY_FLOOR,
+                        _ => f32::MIN,
+                    };
+                    let score_low = matches!(
+                        (to, score),
+                        (ReviewStatus::Approved, Some(s)) if s < floor
+                    );
+                    if to == ReviewStatus::Approved && (hard_hit || score_low) {
+                        skipped.push(serde_json::json!({
+                            "knowledge_id": id, "title": title,
+                            "reason": if hard_hit { "hard risk flag" } else { "below floor" },
+                        }));
+                        continue;
+                    }
+                    if dry_run {
+                        applied.push(id);
+                        continue;
+                    }
+                    match card_repo::decide(&pool, &card, to, &reason, &reviewer) {
+                        Ok(()) => applied.push(id),
+                        Err(e) => skipped.push(serde_json::json!({
+                            "knowledge_id": id, "title": title, "reason": e.to_string(),
+                        })),
+                    }
+                }
+                Ok(serde_json::json!({
+                    "workspace": workspace,
+                    "from_status": status.as_str(),
+                    "decision": to.as_str(),
+                    "dry_run": dry_run,
+                    "applied": applied,
+                    "skipped": skipped,
+                }))
             }
             "dedup-scan" => {
                 let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());

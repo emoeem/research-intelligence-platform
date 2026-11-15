@@ -1,0 +1,52 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-review-card-v1",
+  "version": 1,
+  "name": "RIP3 知识卡片治理审核（Human 复用 018）",
+  "description": "R2 5.4 审核工作流（P3-4）：知识卡片审核门 = workflow 定义（复用 018 控制面与 Human 节点，checkpoint/断点恢复继承，不新建队列系统）。分流：硬性风险标记（POSSIBLE_PROMPT_INJECTION，13 号冻结物第三节）命中 → 直接隔离分支 end（QUARANTINED，无需人工放行）；否则 → human 审核节点（018 awaiting_approval，批准参数 = {decision, reason}）→ approve 分支 end（PG 写面由 rp-kc review 在 run 终态后执行，ADR-0003 裁决 4 同款提交模式；审核日志由 rp-kc 落 knowledge_review_log）。输入约定：card_id/title/flags/hard_block 由治理扫描面或人工触发时携带。",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "required": ["card_id"],
+    "additionalProperties": false,
+    "properties": {
+      "card_id": { "type": "string", "description": "待审核卡片 ID（kc-…）" },
+      "title": { "type": "string" },
+      "flags": { "type": "array", "items": { "type": "string" } },
+      "hard_block": { "type": "boolean", "description": "硬性风险标记命中（POSSIBLE_PROMPT_INJECTION）" },
+      "quality_score": { "type": ["number", "null"] }
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      {
+        "id": "hard_gate",
+        "type": "condition",
+        "params": {
+          "expression": {
+            "type": "object",
+            "required": ["hard_block"],
+            "properties": { "hard_block": { "const": true } }
+          }
+        }
+      },
+      {
+        "id": "human_review",
+        "type": "human",
+        "params": {
+          "prompt": "知识卡片审核：确认批准 / 隔离 / 拒绝（批准参数 = {\"decision\": \"approve|quarantine|reject\", \"reason\": \"…\", \"reviewer\": \"…\"}）",
+          "key": "review_decision"
+        }
+      },
+      { "id": "auto_quarantine_end", "type": "end" },
+      { "id": "human_decided_end", "type": "end" }
+    ],
+    "edges": [
+      { "from": "start", "to": "hard_gate" },
+      { "from": "hard_gate", "to": "auto_quarantine_end", "kind": "branch", "when": true },
+      { "from": "hard_gate", "to": "human_review", "kind": "branch", "when": false },
+      { "from": "human_review", "to": "human_decided_end" }
+    ]
+  }
+}
