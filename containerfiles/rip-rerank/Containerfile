@@ -1,0 +1,27 @@
+# ============================================================================
+# rip-rerank：重排序 worker 容器族（RIP3 P4-3，R2 6.2 Reranking 面，D7 本地推理）
+# ----------------------------------------------------------------------------
+# 构建上下文 = 仓库根（models/bge-reranker-base-onnx/ 为 gitignore 运行时数据，
+# 受控环境构建期烘焙；镜像属运行时数据 ADR §3.2）：
+#   podman build -t localhost/rip-rerank:latest -f containerfiles/rip-rerank/Containerfile .
+# 模型源：Xenova/bge-reranker-base ONNX 导出（BAAI 官方无 ONNX，社区导出面，
+# hf-mirror 受控拉取 308 跟随实录）；运行期零网络（network=none manifest 强制）。
+# ============================================================================
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+RUN pip install --no-cache-dir \
+      onnxruntime==1.32.0 \
+      tokenizers==0.23.3 \
+      numpy==2.5.4
+
+# 模型与 tokenizer 构建期烘焙。
+COPY models/bge-reranker-base-onnx/ /opt/models/bge-reranker-base-onnx/
+
+# tokenizer 复用 M8 面（tokenizers lib 直用，无需 embedding_worker 依赖）。
+COPY containerfiles/rip-rerank/rerank_tools.py /app/rerank_tools.py
+
+RUN test -f /opt/models/bge-reranker-base-onnx/model.onnx \
+ && test -f /opt/models/bge-reranker-base-onnx/tokenizer.json \
+ && python -c "print('rip-rerank files ok')"

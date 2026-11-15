@@ -1,0 +1,129 @@
+# ============================================================================
+# rip.rerank.text：rip-rerank 重排序容器族 Manifest（RIP3 P4-3 批次交付物）
+# ============================================================================
+# 与 json 孪生（Registry 加载用 json，本 yaml 为人读口径，内容一致）；
+# image digest 为本机实建镜像真实值（podman inspect 实测，
+# containerfiles/README.md digest 台账同步）。family = document（13 族词表）。
+# ============================================================================
+schema_version: '1'
+kind: tool
+family: document
+runtime:
+  type: podman_host
+  image: localhost/rip-rerank:latest@sha256:768d3d128fada158f05f4da53929a79f5b97d705c4eaeae4132f6521abdb879c
+  readonly_rootfs: true
+  mounts:
+  - role: input
+    path: /task/in
+    mode: ro
+  - role: output
+    path: /task/out
+    mode: rw
+  entrypoint:
+  - python3
+  - /app/rerank_tools.py
+  - rerank
+resources:
+  cpu: '2'
+  memory: 2Gi
+  pid_limit: 256
+  disk_mb: 2048
+  timeout_seconds: 600
+  max_output_bytes: 33554432
+network:
+  mode: none
+secrets: []
+permission_level: T1
+health:
+  probe:
+    type: exec
+    command:
+    - python3
+    - -c
+    - 'import json; print(json.dumps({''ok'': True}))'
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: rip-native
+  source_repo: containerfiles/rip-rerank（本仓库，自研入口 + Xenova ONNX 导出烘焙）
+  license: repo-internal
+  dependencies:
+  - onnxruntime==1.32.0 (MIT)
+  - tokenizers==0.23.3 (Apache-2.0)
+  - numpy==2.5.4 (BSD-3)
+  - bge-reranker-base 模型（MIT，BAAI；ONNX 导出 Xenova 社区面）
+  image_digest: sha256:768d3d128fada158f05f4da53929a79f5b97d705c4eaeae4132f6521abdb879c
+  known_limits:
+  - pairwise 逐对推理（64 条/批帽、单条 8KiB 帽）；logit sigmoid 归一 0-1
+  - XLM-RoBERTa 无 token_type_ids：只喂模型声明输入（declared 过滤）
+  - 无回退面：模型缺失即 -32006 显式报错
+  - 排序面不改检索集（R2 6.2 流程位置：RRF 之后）
+  tested: P4-3 批次容器冒烟（相关对 0.52/0.33 vs 无关 3.7e-05 量级分离实测）
+context:
+  summary: 混合检索重排序（RIP3 P4-3）
+  tags:
+  - search
+  - podman_host
+  - rip3-p4-3
+id: rip.rerank.text
+name: RIP Rerank Text
+version: 0.1.0
+description: bge-reranker ONNX pairwise 重排序（R2 6.2 Reranking 面）：query-text 对逐条推理 sigmoid 归一，按相关分降序，network=none
+  本地推理
+input_schema:
+  type: object
+  required:
+  - query
+  - texts
+  additionalProperties: false
+  properties:
+    query:
+      type: string
+    texts:
+      type: array
+      maxItems: 64
+      items:
+        type: object
+        required:
+        - id
+        - text
+        properties:
+          id:
+            type: string
+          text:
+            type: string
+output_schema:
+  type: object
+  required:
+  - scores
+  - model
+  - count
+  properties:
+    scores:
+      type: array
+      items:
+        type: object
+        required:
+        - id
+        - score
+        properties:
+          id:
+            type: string
+          score:
+            type: number
+    model:
+      type: string
+    count:
+      type: integer
+idempotent: true
+examples:
+- input:
+    query: sql injection defense
+    texts:
+    - id: a
+      text: prepared statements prevent injection
+  output_hint:
+    count: 1

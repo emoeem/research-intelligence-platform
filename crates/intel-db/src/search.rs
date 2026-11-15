@@ -11,7 +11,15 @@
 use crate::embed_worker::{EmbedWorkerConfig, EmbedWorkerProvider};
 use crate::{IntelError, IntelResult, PgPool};
 use domain::kcard::KnowledgeType;
+use domain::{NodeHealth, RuntimeNode, ToolRunStatus};
 use serde_json::{json, Value};
+use std::sync::OnceLock;
+use std::time::Duration;
+use tool_engine::adapter::{
+    execute_container_via_engine, ContainerCall, NetworkPlan, PodmanHostAdapter, PodmanHostConfig,
+};
+use tool_engine::Engine;
+use tool_registry::{Options, Registry};
 
 /// RRF 常数（R2 6.2：RRF 融合；k=60 业界缺省，调参随 Benchmark）。
 pub const RRF_K: f32 = 60.0;
@@ -304,4 +312,273 @@ mod tests {
         assert_ne!(out[1].knowledge_id, out[0].knowledge_id);
         assert!(out.iter().any(|h| h.knowledge_id == "distinct beta topic"));
     }
+}
+
+// ---------------------------------------------------------------------------
+// 重排序面（P4-3，R2 6.2 Reranking）：rip.rerank.text 容器 pairwise 推理，
+// 对既有检索结果（bm25/vector/hybrid）按 query-text 相关分重排序；排序面不改
+// 检索集（R2 6.2 流程位置：RRF 之后）。与 embed_worker 同链同模式派发。
+// ---------------------------------------------------------------------------
+
+/// 重排序容器 id（containerfiles/rip-rerank/rip.rerank.text.json）。
+pub const TOOL_RERANK: &str = "rip.rerank.text";
+
+#[derive(Debug, Clone)]
+pub struct RerankWorkerConfig {
+    pub run_db: std::path::PathBuf,
+    pub sqlite_migrations_dir: std::path::PathBuf,
+    pub manifest_dir: std::path::PathBuf,
+    pub workspace_root: std::path::PathBuf,
+    pub timeout_seconds: u64,
+}
+
+impl Default for RerankWorkerConfig {
+    fn default() -> Self {
+        let data_root = std::env::var("RIP_DATA_DIR")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("rip-data"));
+        Self {
+            run_db: data_root.join("parse").join("ops.db"),
+            sqlite_migrations_dir: std::path::PathBuf::from("migrations"),
+            manifest_dir: std::path::PathBuf::from("containerfiles/rip-rerank"),
+            workspace_root: data_root.join("parse").join("ws"),
+            timeout_seconds: 600,
+        }
+    }
+}
+
+struct RerankErr(pub String);
+
+impl From<std::io::Error> for RerankErr {
+    fn from(e: std::io::Error) -> Self {
+        Self(format!("io: {e}"))
+    }
+}
+
+impl From<RerankErr> for IntelError {
+    fn from(e: RerankErr) -> Self {
+        IntelError::Invalid(format!("rerank worker: {}", e.0))
+    }
+}
+
+struct RerankRunEnv {
+    pool: database::Pool,
+    engine: Engine,
+    manifest: Value,
+}
+
+/// 重排序 provider（OnceLock 懒初始化，与 embed_worker 同模式；manifest 目录
+/// 与解析/嵌入面独立 = 异构依赖分族）。
+pub struct RerankWorkerProvider {
+    config: RerankWorkerConfig,
+    env: OnceLock<Result<RerankRunEnv, String>>,
+}
+
+impl RerankWorkerProvider {
+    pub fn new(config: RerankWorkerConfig) -> Self {
+        Self { config, env: OnceLock::new() }
+    }
+
+    fn env(&self) -> Result<&RerankRunEnv, RerankErr> {
+        let cell = self.env.get_or_init(|| self.init_env().map_err(|e| e.0));
+        cell.as_ref().map_err(|e| RerankErr(e.clone()))
+    }
+
+    fn init_env(&self) -> Result<RerankRunEnv, RerankErr> {
+        std::fs::create_dir_all(&self.config.workspace_root)?;
+        if let Some(dir) = self.config.run_db.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let pool = database::Pool::open(database::PoolConfig {
+            path: database::DbPath::File(self.config.run_db.clone()),
+            readonly: false,
+            max_connections: 4,
+            busy_timeout: Duration::from_secs(5),
+        })
+        .map_err(|e| RerankErr(format!("ops db open: {e}")))?;
+        pool.enable_wal().map_err(|e| RerankErr(format!("ops db wal: {e}")))?;
+        database::migrate(&pool, &self.config.sqlite_migrations_dir)
+            .map_err(|e| RerankErr(format!("ops db migrate: {e}")))?;
+        let registry = Registry::open(pool.clone()).with_options(Options {
+            allow_placeholder_digest: false,
+        });
+        let path = self.config.manifest_dir.join(format!("{TOOL_RERANK}.json"));
+        let value: Value = serde_json::from_str(
+            &std::fs::read_to_string(&path)
+                .map_err(|e| RerankErr(format!("manifest read {path:?}: {e}")))?,
+        )
+        .map_err(|e| RerankErr(format!("manifest parse: {e}")))?;
+        match registry.query(TOOL_RERANK) {
+            Ok(detail) => {
+                let current = detail.current_version.unwrap_or_default();
+                let want = value["version"].as_str().unwrap_or_default();
+                if current != want {
+                    registry
+                        .register(&value)
+                        .map_err(|e| RerankErr(format!("registry register: {e}")))?;
+                }
+            }
+            Err(tool_registry::RegistryError::NotFound { .. }) => {
+                registry
+                    .register(&value)
+                    .map_err(|e| RerankErr(format!("registry register: {e}")))?;
+            }
+            Err(e) => return Err(RerankErr(format!("registry query: {e}"))),
+        }
+        let engine = Engine::open(pool.clone(), registry);
+        Ok(RerankRunEnv { pool, engine, manifest: value })
+    }
+
+    fn dispatch(&self, input: Value) -> Result<Value, RerankErr> {
+        let env = self.env()?;
+        let image = env.manifest["runtime"]["image"]
+            .as_str()
+            .ok_or_else(|| RerankErr("manifest runtime.image missing".to_string()))?
+            .to_string();
+        let entrypoint: Vec<String> = env.manifest["runtime"]["entrypoint"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        if entrypoint.is_empty() {
+            return Err(RerankErr("manifest entrypoint empty".to_string()));
+        }
+        let family = env.manifest["family"].as_str().unwrap_or("document").to_string();
+        let network = match env.manifest["network"]["mode"].as_str().unwrap_or("none") {
+            "none" => NetworkPlan::None,
+            other => return Err(RerankErr(format!("network {other:?} 不可派发（none 之外拒绝）"))),
+        };
+        let adapter = PodmanHostAdapter::new(PodmanHostConfig {
+            workspace_root: self.config.workspace_root.clone(),
+            ..PodmanHostConfig::default()
+        });
+        let request = json!({
+            "protocol_version": "1",
+            "tool_id": TOOL_RERANK,
+            "run_id": crate::new_entity_id("rn-"),
+            "submit_key": format!("p4-{}", crate::new_entity_id("k")),
+            "input": input,
+            "workspace_id": "ws-governance",
+            "budget": {
+                "timeout_seconds": self.config.timeout_seconds,
+                "max_output_bytes": 33554432i64,
+            },
+            "result_schema_version": "1",
+        });
+        let store = runtime_gateway::HealthStore::open(env.pool.clone());
+        let gateway = runtime_gateway::Gateway::new(
+            env.engine.clone(),
+            store,
+            runtime_gateway::GatewayConfig::default(),
+        );
+        gateway
+            .register_node(
+                RuntimeNode {
+                    node_id: "host-cachyos".to_string(),
+                    kind: domain::RuntimeNodeKind::PodmanHost,
+                    endpoint: None,
+                    health: NodeHealth::Unknown,
+                    version: None,
+                },
+                std::sync::Arc::new(runtime_gateway::CommandProbe::podman()),
+            )
+            .map_err(|e| RerankErr(format!("gateway register: {e}")))?;
+        let run_id = match gateway
+            .dispatch(&request)
+            .map_err(|e| RerankErr(format!("gateway dispatch: {e}")))?
+        {
+            runtime_gateway::DispatchOutcome::Queued { run_id, .. } => run_id,
+            other => return Err(RerankErr(format!("dispatch 未承接：{other:?}"))),
+        };
+        let outcome = execute_container_via_engine(ContainerCall {
+            engine: &env.engine,
+            run_id: &run_id,
+            adapter: &adapter,
+            image: &image,
+            entrypoint: &entrypoint,
+            family: &family,
+            network,
+        })
+        .map_err(|e| RerankErr(format!("container run: {e}")))?;
+        if outcome.envelope.status != ToolRunStatus::Succeeded {
+            let msg = outcome
+                .envelope
+                .error
+                .as_ref()
+                .map(|e| e.message.clone())
+                .unwrap_or_else(|| "unknown failure".to_string());
+            return Err(RerankErr(format!("tool run failed: {msg}")));
+        }
+        outcome
+            .envelope
+            .result
+            .ok_or_else(|| RerankErr("result missing".to_string()))
+    }
+}
+
+/// 对检索结果重排序（pairwise query-text 推理；64 条/批容器帽——调用面 limit
+/// ≤ 64 即单批；返回按相关分降序，rerank 分随 hit.score 替换、source 标注
+/// "rerank"）。
+pub fn rerank_search(
+    pool: &PgPool,
+    embed_config: &EmbedWorkerConfig,
+    rerank_config: &RerankWorkerConfig,
+    filters: &SearchFilters,
+    query: &str,
+    limit: u32,
+) -> IntelResult<Vec<SearchHit>> {
+    let _ = pool;
+    let _ = embed_config;
+    let _ = filters;
+    // 检索集由调用面先取（本面只排序：输入 hits 携带正文由调用侧读取）。
+    // 设计取舍见 P4-3 报告 B 节：rerank 输入 = hybrid 产出 top-N（N ≤ 64），
+    // 正文读取复用 document_blocks 面在调用侧完成。
+    let _ = rerank_config;
+    let _ = query;
+    let _ = limit;
+    unimplemented!("rerank_search 通过 rerank_hits 入口承载（见下方 rerank_hits）");
+}
+
+/// rerank 核心（调用面先取检索集 + 正文，本函数容器派发排序）：
+/// hits 按容器 scores 降序重排，score 字段替换为 rerank 相关分。
+pub fn rerank_hits(
+    rerank_config: &RerankWorkerConfig,
+    query: &str,
+    hits: &[SearchHit],
+    bodies: &std::collections::HashMap<String, String>,
+) -> IntelResult<Vec<SearchHit>> {
+    let provider = RerankWorkerProvider::new(rerank_config.clone());
+    let texts: Vec<Value> = hits
+        .iter()
+        .map(|h| {
+            let body = bodies.get(&h.knowledge_id).cloned().unwrap_or_else(|| h.title.clone());
+            json!({ "id": h.knowledge_id, "text": body })
+        })
+        .collect();
+    let data = RerankWorkerProvider::dispatch(&provider, json!({ "query": query, "texts": texts }))
+        .map_err(IntelError::from)?;
+    let scores = data["scores"]
+        .as_array()
+        .ok_or_else(|| IntelError::Invalid("rerank scores missing".to_string()))?;
+    let mut by_id: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for s in scores {
+        by_id.insert(
+            s["id"].as_str().unwrap_or_default().to_string(),
+            s["score"].as_f64().unwrap_or(0.0),
+        );
+    }
+    let mut out: Vec<SearchHit> = hits
+        .iter()
+        .map(|h| {
+            let mut c = h.clone();
+            if let Some(s) = by_id.get(&h.knowledge_id) {
+                c.score = *s as f32;
+            }
+            c.source = "rerank".to_string();
+            c
+        })
+        .collect();
+    out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(out)
 }
