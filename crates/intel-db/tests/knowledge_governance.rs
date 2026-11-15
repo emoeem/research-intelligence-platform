@@ -14,8 +14,8 @@ use intel_db::card_repo::{self, CardInput};
 use intel_db::ir::DocumentIr; // 保持 ir 模块被引用（编译面）
 use intel_db::{open_pool, run_migrations, PgConfig};
 use domain::kcard::{
-    KnowledgeCardId, KnowledgeType, QualityWeights, RelationType, ReviewStatus, RiskFlag,
-    SourceTrust, VerificationStatus,
+    KnowledgeType, QualityWeights, RelationType, ReviewStatus, RiskFlag, SourceTrust,
+    VerificationStatus,
 };
 
 #[allow(dead_code)]
