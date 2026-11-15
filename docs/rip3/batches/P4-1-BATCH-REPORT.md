@@ -64,7 +64,12 @@ Recall@K 属 P4-4 Benchmark 面。
 
 ## E2 CI 结论
 
-push 后 GitHub CI 全绿为硬门槛（随 push 回填，同前批口径）。
+push 后 CI run 43717958891 首跑 failure（search_hybrid 测试重复 cfg 遮蔽
+unused variable——本地收口漏跑全量 clippy，修复批 43718355732 二跑再红：
+mcp-server run_tool_without_token 负载 flake 二连现，与 P3-2 同例）。根因加固
+（换方法不再重跑赌运气）：send_raw stdin 管道破裂竞态合法化——fail-closed
+子进程先于父进程写入退出属正常时序，写失败静默返回，退出码断言由 wait_exit
+承载；本地五连跑 7/7 全过。本批同树重跑随加固批。
 
 ## G 遗留问题
 

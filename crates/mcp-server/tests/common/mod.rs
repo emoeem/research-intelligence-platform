@@ -61,10 +61,14 @@ impl McpProc {
     }
 
     /// 裸写一行（不读响应；通知 / 坏行 / 需要手工配对时用）。
+    /// 子进程先退出（fail-closed 即时 exit 2，负载下先于父进程写入）时
+    /// stdin 管道破裂属合法竞态：写失败静默返回，退出码断言仍由 wait_exit
+    /// 承载（P3-2/P4-1 CI 负载 flake 二连实录后加固，本地静场 7/7 全过）。
     pub fn send_raw(&mut self, line: &str) {
         let stdin = self.stdin.as_mut().expect("stdin closed");
-        writeln!(stdin, "{line}").expect("write stdin line");
-        stdin.flush().expect("flush stdin");
+        if writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_err() {
+            return;
+        }
     }
 
     /// 发请求并读回匹配 id 的响应（带外响应行落 sideband）。
