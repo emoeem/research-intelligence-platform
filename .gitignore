@@ -14,7 +14,7 @@ migrations/platform.db-*
 migrations/platform-search.db
 migrations/platform-governance.db
 workers/python/.venv/
-models/
+/models/
 
 # Phase 1 临时校验 venv（jsonschema 库级校验用，ROADMAP 2.4 第 1 条，项目目录内非宿主机安装）
 .venv-check/
