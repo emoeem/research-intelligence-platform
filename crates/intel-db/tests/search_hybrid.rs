@@ -91,14 +91,6 @@ fn unified_search_bm25_vector_hybrid_with_prefilters() {
     card_repo::score_card(&pool, &approved, &domain::kcard::QualityWeights::default()).unwrap();
     card_repo::decide(&pool, &approved, ReviewStatus::Approved, "初审", "p4-test").unwrap();
     // 向量补齐（全部四卡；检索面 SQL 前置过滤）。
-    let cfg = EmbedWorkerConfig {
-        run_db: repo_root.join("rip-data/parse/test-ops.db"),
-        sqlite_migrations_dir: repo_root.join("migrations"),
-        manifest_dir: repo_root.join("containerfiles/rip-embed"),
-        workspace_root: repo_root.join("rip-data/parse/test-ws"),
-        ..Default::default()
-    };
-
     // 向量补齐（四卡全 embed；检索面 SQL 前置过滤负责 approved/硬标记排除）。
     let cfg = EmbedWorkerConfig {
         run_db: repo_root.join("rip-data/parse/test-ops.db"),
