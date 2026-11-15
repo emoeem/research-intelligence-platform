@@ -38,6 +38,10 @@ subcommands:\n\
     D4 卡片语义向量补齐（rip.embed.text 容器 bge 本地推理，512 维幂等 upsert）\n\
   semantic-scan [--workspace W] [--threshold 0.92] [--top-k 10]\n\
          [--run-db P] [--manifest-dir D]  D4 语义候选（pgvector 余弦近邻，NEAR_DUPLICATE 候选边禁自动合并）\n\
+  search --query Q [--mode bm25|vector|hybrid] [--limit N] [--type T]\n\
+         [--workspace W] [--mmr-lambda f] [--include-unapproved] [--run-db P] [--manifest-dir D]\n\
+    统一检索入口（P4-1：BM25 pg_search + 向量 pgvector + RRF/MMR 融合；\n\
+    权限前置谓词 SQL 内，缺省仅 APPROVED + 硬标记排除）\n\
 \n\
 env: RP_PG_DSN（缺省 postgres://postgres:postgres@127.0.0.1:5432/postgres）\n\
 help: rp-kc --help（stdout, exit 0）"
@@ -90,6 +94,22 @@ fn die_json(code: &str, message: &str) -> ! {
         eprintln!("DEBUG chain: {message}");
     }
     std::process::exit(1);
+}
+
+/// 检索面嵌入容器配置（--run-db/--manifest-dir 绝对化，与治理扫描面同口径）。
+fn embed_cfg_from(args: &Args) -> IntelResult<intel_db::embed_worker::EmbedWorkerConfig> {
+    let mut cfg = intel_db::embed_worker::EmbedWorkerConfig::default();
+    if let Some(p) = opt_flag(args, "run-db") {
+        cfg.run_db = PathBuf::from(p);
+    }
+    if let Some(p) = opt_flag(args, "manifest-dir") {
+        cfg.manifest_dir = PathBuf::from(p);
+    }
+    cfg.run_db = std::path::absolute(&cfg.run_db)?;
+    cfg.workspace_root = std::path::absolute(&cfg.workspace_root)?;
+    cfg.sqlite_migrations_dir = std::path::absolute(&cfg.sqlite_migrations_dir)?;
+    cfg.manifest_dir = std::path::absolute(&cfg.manifest_dir)?;
+    Ok(cfg)
 }
 
 fn main() {
@@ -327,6 +347,53 @@ fn main() {
                 let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let created = card_repo::dedup_scan_same_content(&pool, &workspace)?;
                 Ok(serde_json::json!({ "workspace": workspace, "same_content_relations_created": created }))
+            }
+            "search" => {
+                // 统一检索入口（R2 6.1：唯一检索面；R2 6.4 结构化过滤 + 13 号
+                // 冻结物第五节权限前置谓词在 SQL 内）。
+                let query = require_flag(&args, "query");
+                let mode = opt_flag(&args, "mode").unwrap_or_else(|| "hybrid".to_string());
+                let limit = opt_flag(&args, "limit")
+                    .map(|s| s.parse::<u32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("limit parse: {e}")))?
+                    .unwrap_or(10);
+                let lambda = opt_flag(&args, "mmr-lambda")
+                    .map(|s| s.parse::<f32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("mmr-lambda parse: {e}")))?
+                    .unwrap_or(intel_db::search::DEFAULT_MMR_LAMBDA);
+                let mut filters = intel_db::search::SearchFilters::new(
+                    &opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string()),
+                );
+                if let Some(t) = opt_flag(&args, "type") {
+                    filters.knowledge_type =
+                        Some(KnowledgeType::parse(&t).map_err(IntelError::from)?);
+                }
+                if args.flags.contains_key("include-unapproved") {
+                    filters.approved_only = false;
+                }
+                match mode.as_str() {
+                    "bm25" => {
+                        let hits = intel_db::search::bm25_search(&pool, &filters, &query, limit)?;
+                        serde_json::to_value(hits).map_err(|e| IntelError::Invalid(e.to_string()))
+                    }
+                    "vector" => {
+                        let cfg = embed_cfg_from(&args)?;
+                        let hits = intel_db::search::vector_search(&pool, &cfg, &filters, &query, limit)?;
+                        serde_json::to_value(hits).map_err(|e| IntelError::Invalid(e.to_string()))
+                    }
+                    "hybrid" => {
+                        let cfg = embed_cfg_from(&args)?;
+                        let hits = intel_db::search::hybrid_search(
+                            &pool, &cfg, &filters, &query, limit, lambda,
+                        )?;
+                        serde_json::to_value(hits).map_err(|e| IntelError::Invalid(e.to_string()))
+                    }
+                    other => Err(IntelError::Invalid(format!(
+                        "unknown mode {other:?} (bm25/vector/hybrid)"
+                    ))),
+                }
             }
             "embed-cards" => {
                 let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());

@@ -74,7 +74,7 @@ impl Default for EmbedWorkerConfig {
     }
 }
 
-struct ParserErr(pub String);
+pub(crate) struct ParserErr(pub String);
 
 impl From<std::io::Error> for ParserErr {
     fn from(e: std::io::Error) -> Self {
@@ -154,7 +154,7 @@ impl EmbedWorkerProvider {
         Ok(RunEnv { pool, engine, manifest: value })
     }
 
-    fn dispatch(&self, input: Value) -> Result<Value, ParserErr> {
+    pub(crate) fn dispatch(&self, input: Value) -> Result<Value, ParserErr> {
         let env = self.env()?;
         let image = env.manifest["runtime"]["image"]
             .as_str()
