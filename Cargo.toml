@@ -6,6 +6,7 @@ members = [
     "crates/audit-engine",
     "crates/resource-engine",
     "crates/search-engine",
+    "crates/unified-search",
     "crates/quality-engine",
     "crates/tool-registry",
     "crates/tool-engine",
@@ -69,6 +70,8 @@ database = { path = "crates/database" }
 audit-engine = { path = "crates/audit-engine" }
 resource-engine = { path = "crates/resource-engine" }
 search-engine = { path = "crates/search-engine" }
+intel-db = { path = "crates/intel-db" }
+unified-search = { path = "crates/unified-search" }
 quality-engine = { path = "crates/quality-engine" }
 tool-registry = { path = "crates/tool-registry" }
 tool-engine = { path = "crates/tool-engine" }

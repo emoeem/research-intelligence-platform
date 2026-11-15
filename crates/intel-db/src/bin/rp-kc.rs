@@ -60,7 +60,7 @@ struct Args {
 }
 
 fn parse_args(iter: impl Iterator<Item = String>) -> Args {
-    const BOOL_FLAGS: [&str; 3] = ["verified", "ai-derived", "dry-run"];
+    const BOOL_FLAGS: [&str; 4] = ["verified", "ai-derived", "dry-run", "include-unapproved"];
     let mut flags = std::collections::HashMap::new();
     let mut subs = Vec::new();
     let mut i = iter.peekable();

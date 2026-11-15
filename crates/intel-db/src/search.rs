@@ -11,7 +11,7 @@
 use crate::embed_worker::{EmbedWorkerConfig, EmbedWorkerProvider};
 use crate::{IntelError, IntelResult, PgPool};
 use domain::kcard::KnowledgeType;
-use serde_json::json;
+use serde_json::{json, Value};
 
 /// RRF 常数（R2 6.2：RRF 融合；k=60 业界缺省，调参随 Benchmark）。
 pub const RRF_K: f32 = 60.0;
@@ -21,10 +21,13 @@ pub const DEFAULT_MMR_LAMBDA: f32 = 0.7;
 #[derive(Debug, Clone)]
 pub struct SearchFilters {
     pub workspace_id: String,
-    /// 知识类型过滤（R2 6.4 结构化过滤子集：类型面；JSONB/时间面随批扩展）。
+    /// 知识类型过滤（R2 6.4 结构化过滤子集：类型面）。
     pub knowledge_type: Option<KnowledgeType>,
     /// 仅 APPROVED（缺省 true = 未经批准默认不进检索，R2 5.4）。
     pub approved_only: bool,
+    /// JSONB 包含过滤（R2 6.4 结构化面：structured_content @> $json，
+    /// P4-2 扩展；键值对单层包含语义）。
+    pub json_contains: Option<Value>,
 }
 
 impl SearchFilters {
@@ -33,6 +36,7 @@ impl SearchFilters {
             workspace_id: workspace_id.to_string(),
             knowledge_type: None,
             approved_only: true,
+            json_contains: None,
         }
     }
 }
@@ -60,6 +64,12 @@ fn filters_where(filters: &SearchFilters, ws_param: usize, type_param: Option<us
     if let (_, Some(idx)) = (filters.knowledge_type, type_param) {
         conds.push(format!("c.knowledge_type = ${}", idx));
     }
+    // JSONB 包含过滤（P4-2：structured_content @> 占位符序号 = type 后一位，
+    // 由调用面按 has_type/json 在场动态分配——占位符计数在调用面维护）。
+    if filters.json_contains.is_some() {
+        // 显式 ::jsonb cast（PG 未类型化参数推断失败坑位，::vector 同源实录）。
+        conds.push("c.structured_content @> $JSON::jsonb".to_string());
+    }
     conds.join(" AND ")
 }
 
@@ -71,21 +81,37 @@ pub fn bm25_search(
     query: &str,
     limit: u32,
 ) -> IntelResult<Vec<SearchHit>> {
-    // 动态占位符：类型过滤在场才绑第 4 参（缺省三参与 SQL 数一致，坑位实录）。
+    // 动态占位符组装：workspace=1，query=2，limit=3，type/json 按在场续号
+    // （参数数与占位符数必须一致的坑位实录，P4-1）。
     let has_type = filters.knowledge_type.is_some();
-    let where_sql = filters_where(filters, 1, if has_type { Some(4) } else { None });
+    let has_json = filters.json_contains.is_some();
+    // 占位符按 SQL 出现顺序编号：$1 ws，$2 query，$3 type(可选)，$4 json(可选)，
+    // 末位 limit（坑位实录：未引用占位符会被 PG 拒推断，必须四态精确匹配）。
+    let type_idx = if has_type { Some(3) } else { None };
+    let json_idx = if has_json { Some(if has_type { 4 } else { 3 }) } else { None };
+    let lim_idx = 3 + (has_type as usize) + (has_json as usize);
+    let where_sql = filters_where(filters, 1, type_idx).replace("$JSON", &format!("${}", json_idx.unwrap_or(0)));
     let sql = format!(
         "SELECT c.knowledge_id, c.title, c.knowledge_type, paradedb.score(c.knowledge_id) AS score
          FROM knowledge_cards c
          WHERE {where_sql} AND (c.title @@@ $2 OR c.content @@@ $2)
-         ORDER BY score DESC LIMIT $3"
+         ORDER BY score DESC LIMIT ${lim_idx}"
     );
     let ktype = filters.knowledge_type.map(|k| k.as_str().to_string());
     let mut conn = pool.get()?;
-    let rows = if has_type {
-        conn.query(&sql, &[&filters.workspace_id, &query, &(limit as i64), &ktype])?
-    } else {
-        conn.query(&sql, &[&filters.workspace_id, &query, &(limit as i64)])?
+    let rows = match (has_type, has_json) {
+        (true, true) => {
+            conn.query(&sql, &[&filters.workspace_id, &query, &ktype, &filters.json_contains, &(limit as i64)])?
+        }
+        (true, false) => {
+            conn.query(&sql, &[&filters.workspace_id, &query, &ktype, &(limit as i64)])?
+        }
+        (false, true) => {
+            conn.query(&sql, &[&filters.workspace_id, &query, &filters.json_contains, &(limit as i64)])?
+        }
+        (false, false) => {
+            conn.query(&sql, &[&filters.workspace_id, &query, &(limit as i64)])?
+        }
     };
     Ok(rows
         .iter()

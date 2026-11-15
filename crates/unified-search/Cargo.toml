@@ -1,0 +1,20 @@
+[package]
+name = "unified-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+description = "RIP3 统一检索归并面（P4-2）：SQLite 运营核知识面 + PG 情报核面跨库 RRF 归并（薄 crate，不持有存储实现）"
+
+[dependencies]
+domain = { workspace = true }
+intel-db = { workspace = true }
+search-engine = { workspace = true }
+database = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "rp-search-unified"
+path = "src/bin/rp-search-unified.rs"

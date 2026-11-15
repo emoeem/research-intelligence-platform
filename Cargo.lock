@@ -2202,6 +2202,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993ad287eb20e8ba755312801cfe1413e0f25d604075863acaddca10b04c1833"
 
 [[package]]
+name = "unified-search"
+version = "0.2.0"
+dependencies = [
+ "database",
+ "domain",
+ "intel-db",
+ "search-engine",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
