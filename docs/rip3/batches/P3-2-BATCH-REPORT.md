@@ -59,7 +59,11 @@ crates/intel-db/tests/gov_dedup.rs。
 
 ## E2 CI 结论
 
-push 后 GitHub CI 全绿为硬门槛（随 push 回填，同 P2/P3-1 口径）。
+push 后 CI run 43714172411 首跑 failure：mcp-server run_tool_without_token_
+fails_closed_before_serving 一例红（与 P3-2 改动面零交集）。本地静场串行复跑
+7/7 全过（0.23s）——负载 flake（交接文档第五节既有口径：并发负载时序敏感断
+言）。gh run rerun 因 integration token 权限缺失不可用（如实登记），按仓先例
+以本 flake 记录提交触发同树重跑。
 
 ## G 遗留问题
 
