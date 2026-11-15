@@ -63,7 +63,7 @@ echo "$JIEBA" | grep -q "'架构'" && ck "jiebacfg 分词（架构/研究命中�
 
 echo "== 3. 迁移应用 + 幂等"
 MIG1=$("$BIN" health 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['migration_version'])")
-ck "迁移链版本 = 4" "4" "$MIG1"  # 阶段头随迁移链推进（V0004 随 RIP3 P3-1 合入）
+ck "迁移链版本 = 5" "5" "$MIG1"  # 阶段头随迁移链推进（V0005 随 RIP3 P3-3 合入）
 MIG2=$("$BIN" health 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['migration_version'])")
 ck "迁移幂等（二跑同版本）" "$MIG1" "$MIG2"
 

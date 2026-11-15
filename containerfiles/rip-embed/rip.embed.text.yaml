@@ -1,0 +1,113 @@
+# ============================================================================
+# rip.embed.text：rip-embed 嵌入容器族 Manifest（RIP3 P3-3 批次交付物）
+# ============================================================================
+# 与 json 孪生（Registry 加载用 json，本 yaml 为人读口径，内容一致）；
+# image digest 为本机实建镜像真实值（podman inspect 实测，
+# containerfiles/README.md digest 台账同步）。family = document（13 族词表）。
+# ============================================================================
+schema_version: '1'
+kind: tool
+family: document
+runtime:
+  type: podman_host
+  image: localhost/rip-embed:latest@sha256:013dc02b3e01afb997c16bb2b36fe966ffd74e5360a8407fa8179bb73e7428c8
+  readonly_rootfs: true
+  mounts:
+  - role: input
+    path: /task/in
+    mode: ro
+  - role: output
+    path: /task/out
+    mode: rw
+  entrypoint:
+  - python3
+  - /app/embed_tools.py
+  - embed
+resources:
+  cpu: '2'
+  memory: 2Gi
+  pid_limit: 256
+  disk_mb: 1024
+  timeout_seconds: 600
+  max_output_bytes: 33554432
+network:
+  mode: none
+secrets: []
+permission_level: T1
+health:
+  probe:
+    type: exec
+    command:
+    - python3
+    - -c
+    - 'import json; print(json.dumps({''ok'': True}))'
+    timeout_ms: 5000
+    interval_seconds: 600
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: rip-native
+  source_repo: containerfiles/rip-embed（本仓库，M8 embedding_worker 真实后端类复用 + bge 模型烘焙）
+  license: repo-internal
+  dependencies:
+  - onnxruntime==1.32.0 (MIT)
+  - tokenizers==0.23.3 (Apache-2.0)
+  - numpy==2.5.4 (BSD-3)
+  - bge-small-zh-v1.5 模型（MIT，BAAI）
+  image_digest: sha256:013dc02b3e01afb997c16bb2b36fe966ffd74e5360a8407fa8179bb73e7428c8
+  known_limits:
+  - 无回退面：模型缺失即 -32006 显式报错（治理语义向量不静默降 hash）
+  - 64 条/批、单条 64KiB 帽；512 维 L2 归一化；容器内保持 workers/python/ 相对布局（模块级 _REPO_ROOT parents[2] 依赖）
+  tested: P3-3 批次构建期 dim/L2 自检 + 容器冒烟语义向量产出
+context:
+  summary: 知识卡片语义嵌入（RIP3 P3-3 D4）
+  tags:
+  - governance
+  - podman_host
+  - rip3-p3-3
+id: rip.embed.text
+name: RIP Embed Text
+version: 0.1.0
+description: bge-small-zh-v1.5 ONNX 批量语义向量（D7 本地推理，模型构建期烘焙）：64 条/批，512 维 L2 归一化，network=none
+input_schema:
+  type: object
+  required:
+  - texts
+  additionalProperties: false
+  properties:
+    texts:
+      type: array
+      items:
+        type: string
+      maxItems: 64
+output_schema:
+  type: object
+  required:
+  - vectors
+  - dim
+  - model
+  - backend
+  properties:
+    vectors:
+      type: array
+      items:
+        type: array
+        items:
+          type: number
+    dim:
+      type: integer
+    model:
+      type: string
+    backend:
+      type: string
+    onnxruntime:
+      type: string
+idempotent: true
+examples:
+- input:
+    texts:
+    - 语义嵌入自检文本
+  output_hint:
+    dim: 512
+    model: bge-small-zh-v1.5

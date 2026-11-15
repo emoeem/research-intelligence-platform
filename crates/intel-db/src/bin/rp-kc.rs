@@ -10,7 +10,7 @@ use domain::kcard::{
     RiskFlag, SourceTrust, VerificationStatus,
 };
 use intel_db::card_repo::{self, CardInput};
-use intel_db::{open_pool, IntelError, IntelResult, PgConfig};
+use intel_db::{open_pool, run_migrations, IntelError, IntelResult, PgConfig};
 use std::path::PathBuf;
 
 fn usage() -> ! {
@@ -32,6 +32,10 @@ subcommands:\n\
   dedup-scan [--workspace W]            D2 去重扫描（SAME_CONTENT 候选边，不自动合并）\n\
   minhash-scan [--workspace W] [--threshold 0.5] [--num-perm 128]\n\
          [--run-db P] [--manifest-dir D]  D3 近似重复扫描（rip.gov.minhash 容器，NEAR_DUPLICATE 候选边）\n\
+  embed-cards [--workspace W] [--run-db P] [--manifest-dir D]\n\
+    D4 卡片语义向量补齐（rip.embed.text 容器 bge 本地推理，512 维幂等 upsert）\n\
+  semantic-scan [--workspace W] [--threshold 0.92] [--top-k 10]\n\
+         [--run-db P] [--manifest-dir D]  D4 语义候选（pgvector 余弦近邻，NEAR_DUPLICATE 候选边禁自动合并）\n\
 \n\
 env: RP_PG_DSN（缺省 postgres://postgres:postgres@127.0.0.1:5432/postgres）\n\
 help: rp-kc --help（stdout, exit 0）"
@@ -79,6 +83,10 @@ fn opt_flag(args: &Args, name: &str) -> Option<String> {
 
 fn die_json(code: &str, message: &str) -> ! {
     println!("{{\"error\":{{\"code\":{code:?},\"message\":{message:?}}}}}");
+    // RP_DEBUG=1 时透出错误源链（postgres 参数序列化面的根因定位）。
+    if std::env::var("RP_DEBUG").as_deref() == Ok("1") {
+        eprintln!("DEBUG chain: {message}");
+    }
     std::process::exit(1);
 }
 
@@ -94,6 +102,16 @@ fn main() {
         Ok(p) => p,
         Err(e) => die_json("pg_unavailable", &e.to_string()),
     };
+    {
+        // 迁移引导（refinery 幂等；V0004/V0005 治理表面随启动就绪）。
+        let mut conn = match pool.get() {
+            Ok(c) => c,
+            Err(e) => die_json("pg_unavailable", &e.to_string()),
+        };
+        if let Err(e) = run_migrations(&mut conn) {
+            die_json("runtime_failed", &e.to_string());
+        }
+    }
 
     let result: IntelResult<serde_json::Value> = (|| {
         match sub.as_str() {
@@ -227,6 +245,49 @@ fn main() {
                 let created = card_repo::dedup_scan_same_content(&pool, &workspace)?;
                 Ok(serde_json::json!({ "workspace": workspace, "same_content_relations_created": created }))
             }
+            "embed-cards" => {
+                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let mut cfg = intel_db::embed_worker::EmbedWorkerConfig::default();
+                if let Some(p) = opt_flag(&args, "run-db") {
+                    cfg.run_db = PathBuf::from(p);
+                }
+                if let Some(p) = opt_flag(&args, "manifest-dir") {
+                    cfg.manifest_dir = PathBuf::from(p);
+                }
+                cfg.run_db = std::path::absolute(&cfg.run_db)?;
+                cfg.workspace_root = std::path::absolute(&cfg.workspace_root)?;
+                cfg.sqlite_migrations_dir = std::path::absolute(&cfg.sqlite_migrations_dir)?;
+                cfg.manifest_dir = std::path::absolute(&cfg.manifest_dir)?;
+                let outcome = intel_db::embed_worker::embed_cards(&pool, &workspace, &cfg)?;
+                serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
+            }
+            "semantic-scan" => {
+                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let threshold = opt_flag(&args, "threshold")
+                    .map(|s| s.parse::<f32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("threshold parse: {e}")))?
+                    .unwrap_or(intel_db::embed_worker::DEFAULT_SEMANTIC_THRESHOLD);
+                let top_k = opt_flag(&args, "top-k")
+                    .map(|s| s.parse::<u32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("top-k parse: {e}")))?
+                    .unwrap_or(10);
+                let mut cfg = intel_db::embed_worker::EmbedWorkerConfig::default();
+                if let Some(p) = opt_flag(&args, "run-db") {
+                    cfg.run_db = PathBuf::from(p);
+                }
+                if let Some(p) = opt_flag(&args, "manifest-dir") {
+                    cfg.manifest_dir = PathBuf::from(p);
+                }
+                cfg.run_db = std::path::absolute(&cfg.run_db)?;
+                cfg.workspace_root = std::path::absolute(&cfg.workspace_root)?;
+                cfg.sqlite_migrations_dir = std::path::absolute(&cfg.sqlite_migrations_dir)?;
+                cfg.manifest_dir = std::path::absolute(&cfg.manifest_dir)?;
+                let outcome =
+                    intel_db::embed_worker::semantic_scan(&pool, &workspace, threshold, top_k, &cfg)?;
+                serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
+            }
             "minhash-scan" => {
                 let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let threshold = opt_flag(&args, "threshold")
@@ -260,6 +321,11 @@ fn main() {
     match result {
         Ok(value) => println!("{}", serde_json::to_string(&value).unwrap_or_default()),
         Err(IntelError::Invalid(m)) => die_json("invalid", &m),
-        Err(e) => die_json("runtime_failed", &e.to_string()),
+        Err(e) => {
+            if std::env::var("RP_DEBUG").as_deref() == Ok("1") {
+                eprintln!("DEBUG error debug: {e:#?}");
+            }
+            die_json("runtime_failed", &e.to_string())
+        }
     }
 }

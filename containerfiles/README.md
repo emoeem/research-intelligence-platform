@@ -12,6 +12,8 @@
 | `rip-tool-source/` | `localhost/rip-tool-source:latest` | Source Analysis Pack（收尾武器库批交付，pack_id source-analysis 冻结存根落地，三工具共用入口 src_tools.py：deps/static-check/search，argv op 分派，纯标准库） | 2026-11-14 建成（收尾武器库批，三 Manifest 登记） |
 | `rip-tool-document/` | （planned） | Document Pack | planned（PHASE3-DESIGN §2.3 范围裁定，不建镜像） |
 | `rip-gov/` | `localhost/rip-gov:latest` | 知识治理 worker 族（RIP3 P3-2，D3 近似重复候选：datasketch MinHash+LSH，纯本地计算） | RIP3 P3-2 建成（2026-11-15） |
+| `localhost/rip-embed:latest` | `sha256:013dc02b3e01afb997c16bb2b36fe966ffd74e5360a8407fa8179bb73e7428c8` | 2026-11-15 建成（RIP3 P3-3 嵌入族：基座 python:3.12-slim@sha256:4840d514… 同各族 + onnxruntime==1.32.0/tokenizers==0.23.3/numpy==2.5.4 钉版 + bge-small-zh-v1.5 模型构建期烘焙 /opt/models（gitignore 运行时数据受控环境构建，镜像属运行时数据 ADR §3.2）+ M8 embedding_worker 真实后端类零复制导入（容器内保持 workers/python/ 相对布局实录：模块级 _REPO_ROOT parents[2] 依赖）+ 无回退面（模型缺失即显式报错，治理向量不静默降 hash）+ 构建期 dim 512/L2 自检；容器冒烟无关句 cosine 0.325 判别正常） | RIP3 P3-3 |
+| `rip-embed/` | `localhost/rip-embed:latest` | 语义嵌入 worker 族（RIP3 P3-3，D4：bge-small-zh-v1.5 ONNX 本地推理，模型构建期烘焙） | RIP3 P3-3 建成（2026-11-15） |
 | `rip-parser/` | `localhost/rip-parser:latest` | Document Intelligence 解析族（RIP3 P2-1，ADR-0003：一镜多 op，detect/parse/ocr 三 Manifest，Docling/PyMuPDF/Tesseract 模型烘焙，IR v1 信封） | RIP3 P2-1 建成（2026-11-15） |
 | `localhost/rip-gov:latest` | `sha256:cb043e459ff051ce26e0eb3e3754b1c5445ac8f2cf54ba106b8a24df2f521d81` | 2026-11-15 建成（RIP3 P3-2 治理族：基座 python:3.12-slim@sha256:4840d514… 同各族 + datasketch==2.0.0（numpy/scipy 传递，镜像 ~250MB 级）+ 自研 gov_tools.py minhash op（char-bigram ∪ 词元 shingling，条目 5000/单条 64KiB 帽，只产候选不判定合并）；构建期受控拉取 pypi 实测，运行期 network=none；容器冒烟同文对 jaccard=1.0 召回、异题对不误报） | RIP3 P3-2 |
 

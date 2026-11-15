@@ -1,0 +1,38 @@
+# ============================================================================
+# rip-embed：语义嵌入 worker 容器族（RIP3 P3-3，D4 语义候选面，D7 本地推理）
+# ----------------------------------------------------------------------------
+# 构建上下文 = 仓库根（models/bge-small-zh-v1.5/ 为 gitignore 运行时数据，
+# 受控环境构建期烘焙；镜像属运行时数据 ADR §3.2，digest 钉死台账）：
+#   podman build -t localhost/rip-embed:latest -f containerfiles/rip-embed/Containerfile .
+# 构建期受控拉取（pypi 官源 200 实测）；运行期零网络（network=none manifest
+# 强制）。模型代码复用 workers/python/embedding_worker.py（M8 交付面）零复制。
+# ============================================================================
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    EMBEDDING_MODEL_DIR=/opt/models/bge-small-zh-v1.5
+
+RUN pip install --no-cache-dir \
+      onnxruntime==1.32.0 \
+      tokenizers==0.23.3 \
+      numpy==2.5.4
+
+# 模型代码复用（M8 真实后端类零复制导入）：保持 workers/python/ 相对布局
+# （模块级 _REPO_ROOT = parents[2] 依赖此深度，/app 即仓库根位）。
+COPY workers/python/embedding_worker.py /app/workers/python/embedding_worker.py
+COPY workers/python/runtime/worker_runtime.py /app/workers/python/runtime/worker_runtime.py
+
+# 模型构建期烘焙（gitignore 运行时数据；受控环境构建）。
+COPY models/bge-small-zh-v1.5/ /opt/models/bge-small-zh-v1.5/
+
+COPY containerfiles/rip-embed/embed_tools.py /app/embed_tools.py
+
+RUN test -f /opt/models/bge-small-zh-v1.5/model.onnx \
+ && test -f /opt/models/bge-small-zh-v1.5/tokenizer.json \
+ && python -c "import sys; sys.path.insert(0,'/app/workers/python'); \
+      from embedding_worker import _get_or_load_onnx_model, default_model_dir; \
+      m = _get_or_load_onnx_model(default_model_dir()); \
+      v = m.embed(['语义向量自检']); \
+      assert len(v[0]) == m.dim and abs(sum(x*x for x in v[0]) - 1.0) < 1e-3, 'dim/l2 自检'; \
+      print('rip-embed self-check ok: dim', m.dim)"
