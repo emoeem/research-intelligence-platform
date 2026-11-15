@@ -242,6 +242,61 @@ pub enum DomainError {
         /// 被拒绝的原始值。
         value: String,
     },
+
+    /// KnowledgeCard 的 card id 非法（P3-1，03-DOMAIN-MODEL 1.5：非空且不超过 128 字符）。
+    InvalidKnowledgeCardId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// KnowledgeRelation 的 relation id 非法（同上口径，03-DOMAIN-MODEL 1.6）。
+    InvalidKnowledgeRelationId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
+    /// 知识类型词出现未知变体（03-DOMAIN-MODEL 1.5 八值词表之外）。
+    InvalidKnowledgeType(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 审核状态词出现未知变体（R2 5.4 七值词表之外）。
+    InvalidReviewStatus(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 验证状态词出现未知变体（UNVERIFIED/VERIFIED 之外）。
+    InvalidVerificationStatus(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 知识关系类型词出现未知变体（R2 3.1 十值词表之外）。
+    InvalidRelationType(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 风险标记词出现未知变体（R2 5.3 七值词表之外）。
+    InvalidRiskFlag(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 证据等级词出现未知变体（K0-K4 之外）。
+    InvalidEvidenceLevel(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 来源信任词出现未知变体（13 号冻结物第三节四值词表之外）。
+    InvalidSourceTrust(
+        /// 被拒绝的原始值。
+        String,
+    ),
+    /// 质量分权重配置非法（六权重和必须为 1）。
+    InvalidQualityWeights(
+        /// 拒绝原因。
+        String,
+    ),
 }
 
 impl fmt::Display for DomainError {
@@ -384,6 +439,36 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidDocumentVisibility { value } => {
                 write!(f, "unknown document visibility: {value:?}")
+            }
+            DomainError::InvalidKnowledgeCardId { value, reason } => {
+                write!(f, "invalid knowledge card id {value:?}: {reason}")
+            }
+            DomainError::InvalidKnowledgeRelationId { value, reason } => {
+                write!(f, "invalid knowledge relation id {value:?}: {reason}")
+            }
+            DomainError::InvalidKnowledgeType(v) => {
+                write!(f, "unknown knowledge type: {v:?}")
+            }
+            DomainError::InvalidReviewStatus(v) => {
+                write!(f, "unknown review status: {v:?}")
+            }
+            DomainError::InvalidVerificationStatus(v) => {
+                write!(f, "unknown verification status: {v:?}")
+            }
+            DomainError::InvalidRelationType(v) => {
+                write!(f, "unknown relation type: {v:?}")
+            }
+            DomainError::InvalidRiskFlag(v) => {
+                write!(f, "unknown risk flag: {v:?}")
+            }
+            DomainError::InvalidEvidenceLevel(v) => {
+                write!(f, "unknown evidence level: {v:?}")
+            }
+            DomainError::InvalidSourceTrust(v) => {
+                write!(f, "unknown source trust: {v:?}")
+            }
+            DomainError::InvalidQualityWeights(reason) => {
+                write!(f, "invalid quality weights: {reason}")
             }
         }
     }

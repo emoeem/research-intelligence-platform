@@ -23,3 +23,7 @@ sha2 = "0.10"
 tool-engine = { workspace = true }
 tool-registry = { workspace = true }
 runtime-gateway = { workspace = true }
+
+[[bin]]
+name = "rp-kc"
+path = "src/bin/rp-kc.rs"

@@ -360,7 +360,8 @@ pub fn list_documents(
 }
 
 // created_at 为 TIMESTAMPTZ：postgres crate 返回 SystemTime；转 RFC3339（UTC）。
-fn timestamp_to_string(value: std::time::SystemTime) -> String {
+// P3-1 起供 card_repo 复用（pub(crate)）。
+pub(crate) fn timestamp_to_string(value: std::time::SystemTime) -> String {
     let secs = value
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

@@ -28,6 +28,7 @@
 
 pub mod agent;
 pub mod audit;
+pub mod kcard;
 pub mod context;
 pub mod document;
 pub mod error;
