@@ -11,6 +11,7 @@
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
 | 相关 | docs/rip3/00-ARCHITECTURE-AUDIT.md（文档序首篇）；docs/releases/RELEASE_2026-11-15_RIP3-PHASE1.md |
+| 自动化收官 | `.zcode/workflows/rip3-finish.dwf.ts`（动态工作流保存式脚本：Phase 3→8 + §17/D8 收官自查逐阶段编排，批次自动入库 + 编排面五道门禁复测 + HEAD CI 确认 + 受阻处置站）；启动 = 在有动态工作流工具面的会话（仓库根）`CreateWorkflow saved: { name: "rip3-finish" }` 或以 path 直提该文件；编译诊断按 §13 改文件后 path 重提 |
 
 ## 一、项目现状（30 秒版）
 
