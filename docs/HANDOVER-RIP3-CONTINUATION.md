@@ -223,7 +223,7 @@ broker 66/0 / intel-db lib 28/0。
 
 | 批次 | 提交 | CI run | 结果 |
 |---|---|---|---|
-| P4-4 | （本批） | （E2 回填） | （回填） |
+| P4-4 | 4e41c53e | 43904610803 | success（Phase 4 收口，HEAD CI 全绿） |
 
 P4-4 交付摘要：语料播种（RTIS verified 133 元数据面脱敏 + 合成 8 = ws-bench
 141 卡全 APPROVED + 向量齐；POC 正文零复制）+ qrel 显式 10 查询（六形态）+
