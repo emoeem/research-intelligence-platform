@@ -8,9 +8,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| HEAD | 2fdfef6c（P5-5 Provider Adapter 批，已 push 至 origin/main） |
+| HEAD | 20f18d76（交接专档 + 半成品 WIP 入库，已 push 至 origin/main；P5-5 批 = 2fdfef6c） |
 | HEAD CI | run 43930302701（停止时点 in_progress，接手先核对结论；红则先修复） |
-| 工作树 | **有未提交半成品**（5 文件 252 行，见第三节） |
+| 工作树 | 干净（P5-6/P5-7 交叠半成品已随 20f18d76 WIP 入库，见第三节） |
 | Phase 5 进度 | P5-0 至 P5-5 六批已收口入库；P5-6/P5-7 半成品在途；P5-8/P5-9/RELEASE 未开 |
 | 收官编排 | rip3-finish.dwf.ts 语义手动驱动中（Agent 子代理逐批实施 + 编排面门禁复测）；子代理被用户手动停止，接手会话按第六节方式续 |
 
@@ -27,12 +27,16 @@
 
 批次报告全目录：docs/rip3/batches/P5-0 至 P5-5 六份。
 
-## 三、工作树半成品盘点（未提交，5 文件 252 行）
+## 三、P5-6/P5-7 交叠半成品盘点（已随 20f18d76 入库，WIP 备份先例）
+
+> 注：交接专档提交（20f18d76）按 WIP 备份惯例把半成品一并入库；接手即在其
+> 基础上收口，无工作树残留。质量核：clippy -p verification-engine 全 targets
+> 零告警 + cargo test -p verification-engine 38 passed 0 failed。
 
 | 文件 | 改动 | 状态 |
 | --- | --- | --- |
-| crates/verification-engine/src/evaluator.rs | **新文件**：结果归一化五态判定（ProviderOutcome → NormalizedResult；五态纪律硬约束逐条落为规则：干净无命中=NOT_REPRODUCED、命中=INCONCLUSIVE 待复核、失败/超时=INCONCLUSIVE+error_category、不可用/取消=NOT_TESTED、FALSE_POSITIVE 只能显式判定） | 编译过；单测与契约测试（result-normalized.v1）未写 |
-| crates/verification-engine/src/bin/rp-verify.rs | +228 行（evaluate 子命令面等） | 编译过；未实跑 |
+| crates/verification-engine/src/evaluator.rs | **新文件（244 行）**：结果归一化五态判定（ProviderOutcome → NormalizedResult；五态纪律硬约束逐条落为规则：干净无命中=NOT_REPRODUCED、命中=INCONCLUSIVE 待复核、失败/超时=INCONCLUSIVE+error_category、不可用/取消=NOT_TESTED、FALSE_POSITIVE 只能显式判定） | 编译过 + clippy 零告警 + 38 测试全过（含 evaluator 面）；result-normalized.v1 契约测试与批次报告未写 |
+| crates/verification-engine/src/bin/rp-verify.rs | +228 行（evaluate 子命令面等） | 编译过 + 38 测试全过；全链实跑未做 |
 | crates/verification-engine/src/lib.rs | 注册 evaluator 模块与导出 | 随上 |
 | crates/verification-engine/src/provider.rs | +19 行（归一化对接小改） | 随上 |
 | crates/verification-engine/{Cargo.toml,tests/provider.rs} | 小改 | 随上 |
@@ -94,15 +98,15 @@ Phase 5 之后：Phase 6 报告智能 → Phase 7 知识回流 → Phase 8 规�
   文件第三、四、五节 + 主 HANDOVER 第四五节纪律，从 P5-6 半成品续作；
 - **手动 d 案**：按第四节批次顺序逐批推进，每批 §17.6 A-H 报告 + commit +
   push + CI watch 至绿；
-- 接手第一步：`git status -sb` 核对半成品仍在（若已被处置按第三节注记重
-  估）→ `gh run view 43930302701` 核对 HEAD CI 结论（红先修复）→ 读
-  P5-4/P5-5 两份批次报告的 G 节遗留 → 开 P5-6。
+- 接手第一步：`git status -sb` 核对工作树干净 → `gh run view <20f18d76 的
+  run id>` 核对 CI 结论（红先修复）→ 读 P5-4/P5-5 两份批次报告的 G 节遗留 →
+  开 P5-6/P5-7 收口（半成品已入库，直接在其上补契约测试与批次报告）。
 
 ## 七、编排面账目（本工作流运行实录）
 
 | 事项 | 结果 |
 | --- | --- |
 | 环境预检 | 过（git 干净 / podman 6.2.0 / rip-pg17 就绪） |
-| Phase 5 实施子代理 | P5-0 至 P5-5 六批交付后被用户手动停止（停止时点 HEAD 2fdfef6c，工作树留 P5-6/P5-7 半成品） |
+| Phase 5 实施子代理 | P5-0 至 P5-5 六批交付后被用户手动停止（P5-6/P5-7 交叠半成品随后以 WIP 备份入库 = 20f18d76） |
 | 编排面门禁复测 | Phase 5 未到收口点，未触发；子代理批内自测口径 = workspace 136 套件 0 FAILED + clippy 零告警（P5-5 提交信息实录） |
 | 待续 | P5-6 起剩余批次（第四节）+ Phase 6/7/8 + 收官自查 |
