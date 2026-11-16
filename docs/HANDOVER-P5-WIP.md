@@ -1,112 +1,156 @@
-# HANDOVER：Phase 5 断点续作专档（2026-11-17，实施工程师子代理中止时点）
+# HANDOVER：Phase 5 断点续作专档（2026-11-17，P5-8 收尾断点）
 
 > 主交接入口仍是 docs/HANDOVER-RIP3-CONTINUATION.md（唯一入口原则不变）；
 > 本文件聚焦 Phase 5 中断点的精确现场：哪些已收口、半成品是什么、剩余批次
-> 怎么接。接手会话读完主 HANDOVER 第一、四、五、七节后读本文件即可续作。
+> 怎么接。接手会话读完主 HANDOVER 第四、五节（贯穿纪律与环境事实）后读本
+> 文件即可续作。本档取代前版断点（P5-6/P5-7 已收口入库）。
 
 ## 一、状态快照
 
 | 项 | 值 |
 | --- | --- |
-| HEAD | 20f18d76（交接专档 + 半成品 WIP 入库，已 push 至 origin/main；P5-5 批 = 2fdfef6c） |
-| HEAD CI | run 43930302701（停止时点 in_progress，接手先核对结论；红则先修复） |
-| 工作树 | 干净（P5-6/P5-7 交叠半成品已随 20f18d76 WIP 入库，见第三节） |
-| Phase 5 进度 | P5-0 至 P5-5 六批已收口入库；P5-6/P5-7 半成品在途；P5-8/P5-9/RELEASE 未开 |
-| 收官编排 | rip3-finish.dwf.ts 语义手动驱动中（Agent 子代理逐批实施 + 编排面门禁复测）；子代理被用户手动停止，接手会话按第六节方式续 |
+| HEAD | 4b949614（P5-8 半成品 WIP 备份入库，已 push 至 origin/main） |
+| HEAD CI | docs+Rust 面 push 后未核对（前序 HEAD b1460702 run 43943622788 success；WIP 含 Rust 代码改动，接手先核 CI 结论，红先修复） |
+| 工作树 | 干净（P5-8 半成品已随 4b949614 WIP 入库，见第三节） |
+| Phase 5 进度 | P5-0 至 P5-7 七批已收口入库；P5-8 代码面完成待收尾；P5-9/RELEASE 未开 |
+| 收官编排 | 手动 d 案逐批推进（每批 §17.6 A-H 报告 + commit + push + CI watch 至绿） |
 
-## 二、Phase 5 已收口批次账目（提交链按时间序）
+## 二、Phase 5 已收口批次账目（提交链按时间序，P5-5 起补全）
 
-| 批次 | 提交 | 报告 | 交付要点 |
+| 批次 | 提交 | 报告 | CI |
 | --- | --- | --- | --- |
-| P5-0 只读审计 | 60fd4cd5 | P5-0-BATCH-REPORT.md | 页面复用矩阵 + 后端能力复用矩阵 + 差距清单 G1-G10 + B3 存储判定冻结（编排执行态落 SQLite 020+ 运营面，PG 链本阶段零新表） |
-| P5-1 Web 骨架 | 66662bc1 | P5-1-BATCH-REPORT.md | ResearchPage 占位退役（四 tab：总览/任务/资产/知识上下文）+ data.tsx 表格基元 + 视觉门基线四张 + rip3_p5_browser_e2e.mjs 11 断言 + vitest 124 + playwright 71 含 axe AA |
-| P5-2 验证契约 | 293fe4f8 | （P5-2 报告随链） | SQLite 020 迁移三表（research_plan/plan_item/plan_event）+ domain::verification 五态词表 + 契约 Schema 四份 v1 + verification-engine crate（store/ResultGuard 五态守卫/fingerprint 六段）/rp-verify 九子命令 + rp_server 三只读端点 |
-| CI 修复 + P5-3 代码 | ab5907e5 | P5-3-BATCH-REPORT.md（62d2d1fc 批补） | 020 链尾演进八处测试钉值更新 + matcher.rs 双渠道知识匹配（pg-intel 走 rp-kc hybrid 禁绕行 + rtis-poc 走 rt.py 元数据面）+ 结构化适用性判定逐条可解释 |
-| P5-4 Planner | 62d2d1fc | P5-4-BATCH-REPORT.md | draft_from_match（排除转 skipped 带原因）+ 预算后端封顶（cap15→10+5 实拍）+ 六段指纹缓存（POC 版本/params 变化失效实测）+ rp-verify plan-build |
-| P5-5 Provider Adapter | 2fdfef6c | P5-5-BATCH-REPORT.md | RtisPocProvider（rt.py poc get/use sanctioned，RTIS 零 diff）+ NucleiProvider（tool_engine → podman_host 容器派发端到端 SUCCEEDED）+ rip-nuclei 镜像族（nuclei@sha256:582d5546 v3.11.1，digest sha256:19ecdd80 三处同步）+ rip.security.nuclei Manifest 九条校验 + podman_host POLICY→POLICY_DENIED 词表修复 |
+| P5-0 至 P5-5 | 60fd4cd5/66662bc1/293fe4f8/ab5907e5/62d2d1fc/2fdfef6c | 六份批次报告 | 43931997748 success（b1460702 之前的绿基线） |
+| P5-6 执行调度与 Activity | c49e89c9 | P5-6-BATCH-REPORT.md | 43939188733 success |
+| P5-7 归一化收口/Evidence/RTIS 闭环 | bf55c9b3 + 修正 dbb582d1 + 报告 b1460702 | P5-7-BATCH-REPORT.md | bf55c9b3 run 43942245579 **红**（钉值漏改三处）→ 修正批后 b1460702 run 43943622788 success |
 
-批次报告全目录：docs/rip3/batches/P5-0 至 P5-5 六份。
+### P5-6 交付要点（详情看报告）
 
-## 三、P5-6/P5-7 交叠半成品盘点（已随 20f18d76 入库，WIP 备份先例）
+- result-normalized.v1 第五份契约 Schema + evaluator 契约测试正负例矩阵 +
+  rp-verify checked_normalized_doc 落库前快失败；
+- scheduler.rs 调度决策面：pending_items 幂等恢复（服务重启/暂停恢复不重复
+  派发）+ runtime_budget_ok 运行期预算复核（P5-4 G 遗留落地）+
+  budget_exhausted_result 超项 NOT_TESTED+budget_exhausted 留痕；
+- plan-pause/plan-resume 子命令（跨进程经 SQLite 状态行项间检查位真实传播；
+  paused 是 020 词表既有预留首次消费，迁移链零推进）；
+- rp_server POST /api/research/plans/&lt;id&gt;/{pause,resume,cancel}（写面形状三，
+  rp-verify 子进程零直连 SQL 写 + 鉴权强制）；
+- Web 面：ResearchPlansPage 验证计划页（/research/plans 第五 tab）+
+  ActivityPlansLive 运行中计划 5s 轮询接 Activity 任务队列页签（G10 收口）；
+- 实拍：全链 execute-plan 到 NOT_REPRODUCED（退出码 0 不等于 CONFIRMED）+
+  预算复核 cap15 到 10 放行/10 超项留痕 + 幂等恢复 resumed_skipped=1 + 取消
+  stopped_by=cancelled + 控制端点冒烟（200/502/405）。
 
-> 注：交接专档提交（20f18d76）按 WIP 备份惯例把半成品一并入库；接手即在其
-> 基础上收口，无工作树残留。质量核：clippy -p verification-engine 全 targets
-> 零告警 + cargo test -p verification-engine 38 passed 0 failed。
+### P5-7 交付要点（详情看报告）
+
+- 021 迁移 research_evidence（Evidence Artifact 采集与 SHA256，payload
+  append-only 不可变；evidence_type 词表三值）+ 迁移链钉值九文件同步 021；
+- store Evidence 面（record_evidence 词表/形状守卫 + SHA256 +
+  evidence_collected 事件 020 预留面启用 + find_evidence_by_hash 重复识别
+  + list_evidence）+ 2 集成测试；
+- Trace 六 ID 贯通：execute_nuclei 改 submit_correlated + DispatchOptions
+  打包 + execute-plan 一次动作一 trace 锚（tr-exec-*）贯通 set_result/
+  dispatched 事件/证据双帧；
+- RTIS Finding 闭环：record_verification（rt.py poc update --verified
+  sanctioned 写路径）+ finding-link 子命令（非 CONFIRMED 拒绝/无
+  rtis_poc_id 拒绝两守卫）+ evidence-list 检索子命令；
+- 实拍：evidence 双帧落档（hash+trace+run 三面贯通）+ finding-link 双负例
+  + 五态守卫负例（error_category 在场写 NOT_REPRODUCED 被 ResultGuard 拒）。
+
+## 三、P5-8 半成品盘点（已随 4b949614 WIP 入库）
+
+> 质量核：verification-engine 42 lib + 2 provider + 6 store 全过；clippy 全
+> targets 零告警；domain 73 过；database/agent-engine/plugin-runtime/
+> workflow-engine 钉值面 41 套件全绿。
 
 | 文件 | 改动 | 状态 |
 | --- | --- | --- |
-| crates/verification-engine/src/evaluator.rs | **新文件（244 行）**：结果归一化五态判定（ProviderOutcome → NormalizedResult；五态纪律硬约束逐条落为规则：干净无命中=NOT_REPRODUCED、命中=INCONCLUSIVE 待复核、失败/超时=INCONCLUSIVE+error_category、不可用/取消=NOT_TESTED、FALSE_POSITIVE 只能显式判定） | 编译过 + clippy 零告警 + 38 测试全过（含 evaluator 面）；result-normalized.v1 契约测试与批次报告未写 |
-| crates/verification-engine/src/bin/rp-verify.rs | +228 行（evaluate 子命令面等） | 编译过 + 38 测试全过；全链实跑未做 |
-| crates/verification-engine/src/lib.rs | 注册 evaluator 模块与导出 | 随上 |
-| crates/verification-engine/src/provider.rs | +19 行（归一化对接小改） | 随上 |
-| crates/verification-engine/{Cargo.toml,tests/provider.rs} | 小改 | 随上 |
+| migrations/022_coverage_matrix.sql | 新文件：research_plan_item.dimension 七维 CHECK 列（**ALTER 单行**）+ research_hypothesis 表（§5.10 必含字段全落 + round/status）+ schema_version 22 + user_version 双写 | 编译过 + 41 套件钉值全绿 |
+| 九个钉值测试文件 | 021→022 全同步（含逐枚清单与 uv/uv1 变体） | 全绿 |
+| crates/domain/src/verification.rs | CoverageDimension 七维词表（as_str/parse/ALL + 单测） | 73 过 |
+| crates/verification-engine/src/store.rs | dimension 接入（NewItem/PlanItemRecord serde skip/add_item 词表守卫/get_item 尾列 22）+ hypothesis CRUD（add_hypothesis 四重守卫 + set_hypothesis_status validated 终局 + list/get） | 编译过 |
+| crates/verification-engine/src/coverage.rs | **新文件**：coverage_matrix 七维五态分计数 + 盲区判定（uncovered/unjudged）+ generate_blind_spot_hypotheses 假设草稿（来源依据/负向对照/停止条件内置）+ 3 单测 | 全过 |
+| crates/verification-engine/src/fingerprint.rs | dedup_fingerprint_v2 八段键（画像版本+知识审核状态补段 = P5-4 G 遗留落地；v1/v2 值域独立跨版本失效安全侧）+ 2 单测 | 全过 |
+| crates/verification-engine/src/planner.rs | PlanBudget.max_rounds（serde default 3）+ planner item dimension 缺省 assets | 过 |
+| crates/verification-engine/src/bin/rp-verify.rs | coverage-show/hypothesis-add/hypothesis-list/hypothesis-status 四子命令 + fingerprint v2 参数 + item-add --dimension + usage | 编译过 |
+| crates/verification-engine/{provider.rs,scheduler.rs,tests/provider.rs,tests/store.rs} | PlanItemRecord 初始化器补 dimension 字段 | 过 |
 
-语义注记：这批半成品实际横跨 P5-6（执行调度）与 P5-7（结果归一化）的交叠
-面——evaluator 是 P5-7 的核心判定层提前落地。接手时按「P5-6 执行调度收口
-+ P5-7 归一化收口」合并或分批均可，以批次报告口径自洽为准。
+### 已实拍 PASS
 
-## 四、剩余批次（Phase 5 收口前）
+- coverage-show：七维矩阵 + 盲区可见（assets 有项、其余六维 uncovered）；
+- 指纹 v2 补段失效：profile v1/v2 与 knowledge approved/recalled 三键互异。
 
-1. **P5-6 执行调度与 Activity**（补充计划 §7）：Workflow Engine 派发、
-   Task/Run/Trace 语义复用、暂停/恢复/取消真实传播、并发/预算/超时限制、
-   Activity 面板实时呈现；验收 = 前后端任务状态一致、刷新不丢任务、取消
-   真实生效、服务重启不重复派发、部分失败不丢 Evidence。
-2. **P5-7 结果归一化、Evidence 与 RTIS 闭环**：evaluator 收口（半成品基础上
-   补单测 + result-normalized.v1 契约测试）、Evidence Artifact 采集与
-   SHA256、Trace 六 ID、RTIS Finding 读取/引用/既有接口写入、重复 Finding
-   识别、五态守卫负例实拍。
-3. **P5-8 Coverage Matrix 与自适应研究**：七维覆盖矩阵（Assets/API/
-   Identity/Input/Business Flows/File Processing/Data Flows）、假设生成
-   （来源依据/负向对照/停止条件，无证据不生成 Finding）、预算与最大轮次；
-   planner 遗留的两段指纹键（画像版本 + 知识审核状态）在本批补段。
-4. **P5-9 Workflow 模板与画布集成**：渗透/SRC 十三步模板（沿 018 控制面与
-   现有 DSL/XYFlow 画布）、节点 Schema 表单、端到端真实浏览器验收截图
-   （browser-e2e 目录，模板 web/scripts/rip3_p5_browser_e2e.mjs）。
-5. **Phase 5 收口**：docs/releases/RELEASE_2026-11-17_RIP3-PHASE5.md（验收
-   对账逐条带证据）+ HANDOVER 队列勾销。
+### 未完成（接手即做，按序）
 
-Phase 5 之后：Phase 6 报告智能 → Phase 7 知识回流 → Phase 8 规模测试 →
-收官自查（R2 §17 + D8 评估，docs/HANDOVER-RIP3-CONTINUATION.md 队列），按
-既定编排模式继续。
+1. **hypothesis 实拍链重跑**：上轮 not_found 是环境未挂（RP_DB_PATH 未随
+   命令携带，落到内存空库），非代码缺陷。每条命令带
+   `export RP_DB_PATH=/tmp/p5-8-e2e/verify.db` 重跑：hypothesis-add 正例
+   （plan vp-20261116-200640-186-006a 已在库）到负例两（空 source / round
+   超 max_rounds=2）到 hypothesis-status validated 推进 + validated 终局
+   负例。
+2. **hypothesis 集成测试**（tests/store.rs 惯例 2 条：生命周期/守卫负例，
+   store() fixture + NewHypothesis）。
+3. **P5-8-BATCH-REPORT.md**（A-H 格式；E 节贴实际输出；教训实录三条：
+   链尾钉值三形状定位法 / sub() 整文件跳过陷阱 / ALTER 单行纪律）。
+4. **commit（中文长描述）+ push + CI watch 至绿**。
 
-## 五、接手前必读与环境事实
+## 四、剩余批次（P5-8 收尾之后）
 
-主 HANDOVER 第四节（贯穿纪律）与第五节（环境事实）全量适用，本阶段新增：
+1. **P5-9 Workflow 模板、画布集成和阶段验收**（补充计划 §7 + §6）：
+   通用渗透十三步模板 + SRC 十三步模板（沿 018 控制面与既有 DSL/XYFlow
+   画布，workflows/ 目录 JSON 定义惯例）；节点 Schema 表单；画布保存和
+   版本；运行轨迹/日志/Evidence；暂停/恢复/失败重试；端到端真实浏览器
+   测试（web/scripts/rip3_p5_browser_e2e.mjs 断言模板扩展 + 截图入库）。
+   完成标准：从 Project 创建 ResearchTask → 检索知识生成计划 → 本地靶场
+   验证 → Evidence → Finding 走 RTIS 接口 → Coverage 实际变化 → Workflow
+   可恢复且不重复运行已完成节点。
+   完成标准里「本地靶场验证」即 P5-7 报告 G1 遗留的 finding-link 正例
+   RTIS 写面实拍位（本地靶场真实 CONFIRMED 才回填 rt.py poc update）。
+2. **Phase 5 收口**：docs/releases/RELEASE_2026-11-17_RIP3-PHASE5.md
+   （验收对账逐条带证据）+ 全量门禁统一复测（cargo test --offline
+   --workspace / clippy --all-targets -D warnings / python3 -m unittest
+   discover -s workers/python/tests / web build+test / apps/server/
+   selftest_phase*.sh + auth）+ HANDOVER 队列勾销（主 HANDOVER 第三节
+   Phase 5 行 + 状态表）。
 
-- **verification-engine crate 已存在**（crates/verification-engine：matcher/
-  planner/provider/store/contract/fingerprint/evaluator 七模块 + rp-verify
-  CLI + 三表 store），续作禁止重建同语义模块；
-- **020 迁移链头**：SQLite 020 = 研究编排域三表（research_plan/plan_item/
-  plan_event）；链尾推进须同步八处测试钉值（ab5907e5 实录清单）；
-- **rip-nuclei 镜像族**在位（nuclei v3.11.1 digest sha256:19ecdd80，模板锚
-  默认目录不联网装；.nuclei-ignore 空表必须就位坑位见 P5-5 报告）；
-- **检索面缓存**：intel-db search_cache（SEARCH_CACHE_VERSION v3），改缓存
-  键结构必须递增版本；MMR 只能做在 0-1 相关分上（rerank 后）；
-- **测试栈**：rp_server 7801（库 cp 副本 rip-data/dev/）+ vite 5173，
-  token 走 localStorage rip_auth_token（真值 .rp-workbench-token）；
-- **UI 截图脚本**：web/scripts/p5_current_ui_shots.mjs（现状）与
-  rip3_p5_browser_e2e.mjs（断言模板）；
-- **RTIS 接口实测口径**：rt.py poc search --q <英文> --json（中文零命中，
-  组件名用英文）；poc get/use 为 sanctioned 写路径（RTIS 自有审计，非直写）；
-- **五态纪律**（补充计划 §5.7，evaluator.rs 已落为规则）：工具退出码 0 ≠
-  CONFIRMED；执行失败/超时 ≠ NOT_REPRODUCED；未测试不得统计为通过；
-  FALSE_POSITIVE 只能显式判定。
+## 五、本阶段新增环境事实与坑位实录（接手必读）
+
+主 HANDOVER 第五节全量适用，Phase 5 实施新增：
+
+- **迁移链头 022**（SQLite：research_evidence 021 + coverage/hypothesis
+  022）；**链尾钉值多形状定位法**（P5-7 CI 红 43942245579 教训）：演进
+  链尾先按五个形状全量定位九文件再改：`vec!\[1, 2`、`vec!\[13, 14`、
+  `(2X, "_`（链尾名）、`uv1?`、`001\.\.`/`013\.\.`/`010\.\.` 区间与枚数；
+- **批量替换脚本陷阱**：整文件 sub() 遇一处 MISS 会跳过整个文件写入，
+  已匹配的对也不落盘；每对独立判定独立写；
+- **ALTER 必须单行书写**（migrate.rs 执行器行守卫会把多行 ALTER 切断，
+  重放场景炸 CHECK 语法错误，022 本批实录）；
+- **RP_DB_PATH 必须随每条 CLI 命令**（Bash 工具环境不跨调用持久；漏带
+  即落内存空库，症状 = not_found 但代码无缺陷）；
+- **DispatchOptions**（provider.rs）：execute_nuclei 的 task_id/trace_id/
+  network/template_path 打包面（clippy 八参数阈值豁免先例 allow 三处在
+  agent-engine）；execute_nuclei 已走 submit_correlated（trace_id 落列）；
+- **checked_normalized_doc**（rp-verify）：归一化文档落库/发事件前契约
+  校验点（result-normalized.v1，违规 exit 1）；
+- **podman shim**：/tmp/podman-shim 会被清，重建：
+  `mkdir -p /tmp/podman-shim && printf '#!/bin/sh\nexec distrobox-host-exec podman "$@"\n' > /tmp/podman-shim/podman && chmod +x /tmp/podman-shim/podman && export PATH="/tmp/podman-shim:$PATH"`；
+- **nuclei 模板 fixture**：/tmp/p5-7-e2e/template.yaml（never-match 干净
+  面）；实拍库 /tmp/p5-7-e2e/verify2.db（P5-6 场景 4 计划）与
+  /tmp/p5-8-e2e/verify.db（P5-8 场景 plan vp-20261116-200640-186-006a）；
+- **Web 契约测试钉值**：web/tests/workspaces.test.ts 路由数 16（P5-6 加
+  /research/plans 后；P5-9 若再加 tab 记得同步）；
+- **rp_server 控制端点**：/api/research/plans/&lt;id&gt;/{pause,resume,cancel}
+  （形状三，len(parts)==5）；测试服务 7801 + token 走
+  .rp-workbench-token（curl 前 `tr -d '\r\n '`）。
 
 ## 六、接手方式
 
-- **续用编排模式**（推荐，前六批即此模式）：派实施工程师子代理，注入本
-  文件第三、四、五节 + 主 HANDOVER 第四五节纪律，从 P5-6 半成品续作；
-- **手动 d 案**：按第四节批次顺序逐批推进，每批 §17.6 A-H 报告 + commit +
-  push + CI watch 至绿；
-- 接手第一步：`git status -sb` 核对工作树干净 → `gh run view <20f18d76 的
-  run id>` 核对 CI 结论（红先修复）→ 读 P5-4/P5-5 两份批次报告的 G 节遗留 →
-  开 P5-6/P5-7 收口（半成品已入库，直接在其上补契约测试与批次报告）。
-
-## 七、编排面账目（本工作流运行实录）
-
-| 事项 | 结果 |
-| --- | --- |
-| 环境预检 | 过（git 干净 / podman 6.2.0 / rip-pg17 就绪） |
-| Phase 5 实施子代理 | P5-0 至 P5-5 六批交付后被用户手动停止（P5-6/P5-7 交叠半成品随后以 WIP 备份入库 = 20f18d76） |
-| 编排面门禁复测 | Phase 5 未到收口点，未触发；子代理批内自测口径 = workspace 136 套件 0 FAILED + clippy 零告警（P5-5 提交信息实录） |
-| 待续 | P5-6 起剩余批次（第四节）+ Phase 6/7/8 + 收官自查 |
+- 接手第一步：`git status -sb` 核对干净 → `gh run view` 核对 4b949614
+  的 CI 结论（红先修复）→ 按第三节「未完成」清单顺序收口 P5-8
+  （实拍链 → 集成测试 → 批次报告 → commit/push/CI）；
+- P5-8 收口后按第四节顺序推进 P5-9 → Phase 5 RELEASE；
+- 每批纪律不变：R2 §17.6 A-H 报告落 docs/rip3/batches/ + commit（中文长
+  描述）+ push（SSH 断连重试 2-3 次）+ CI 红不进下一批 + 批内定向测试；
+- 硬红线不变：RTIS 只走 rt.py CLI 零直写、POC 正文零复制、新增域永不落
+  PG 链（SQLite 运营面 022+ 沿 P5-0-B3 判定）、五态纪律、授权审批不内置、
+  宿主机零系统级安装、生产 migrations/platform*.db 零触碰、不 reset/
+  clean/checkout 改写历史。

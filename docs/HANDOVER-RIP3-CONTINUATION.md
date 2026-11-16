@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-17，**Phase 5 进行中**：P5-0 至 P5-5 已收口（HEAD 2fdfef6c），P5-6/P5-7 半成品在工作树——断点现场专档 docs/HANDOVER-P5-WIP.md（本文件第七节为其速查索引）；Phase 4 收口账目见 RELEASE_2026-11-17_RIP3-PHASE4.md） |
+| 状态 | 生效中（2026-11-17，**Phase 5 进行中**：P5-0 至 P5-7 已收口（P5-6 c49e89c9 / P5-7 bf55c9b3+dbb582d1+b1460702，CI 绿），P5-8 半成品已 WIP 入库（HEAD 4b949614：022 迁移/coverage.rs/指纹 v2/四子命令，代码面完成待实拍收尾），断点现场专档 docs/HANDOVER-P5-WIP.md；Phase 4 收口账目见 RELEASE_2026-11-17_RIP3-PHASE4.md） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
