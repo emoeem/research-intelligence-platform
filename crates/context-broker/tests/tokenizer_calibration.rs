@@ -54,3 +54,24 @@ fn formula_deviation_within_five_percent() {
         );
     }
 }
+
+/// no_truncation 防御（P4-4 收口后假设 H6）：tokenizer.json 若自带截断配置，
+/// encode 会在帽处截断导致长文本计数被低估；adapter 显式 no_truncation 后
+/// 超过任何模型输入帽的文本计数仍为全量（>512 token 判据）。
+#[test]
+fn long_text_count_not_truncated_by_model_cap() {
+    let dsn_dir = std::env::var("EMBEDDING_TOKENIZER_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("models/bge-small-zh-v1.5"));
+    if !dsn_dir.join("tokenizer.json").is_file() {
+        eprintln!("SKIP: tokenizer.json 不在位（{dsn_dir:?}），无计数面");
+        return;
+    }
+    // 1000 个互异英文词 ≈ >1000 token（远超常见 512 输入帽）。
+    let text: String = (0..1000).map(|i| format!("word{i} ")).collect();
+    let count = context_broker::tokenizer_count(&text).expect("adapter 在场计数必有");
+    assert!(count > 512, "长文本计数被模型输入帽截断：count={count}（no_truncation 未生效）");
+    // 公式对照（1000 ASCII 词 ≈ 5000+ 字符 / 4 ≈ 1250 token 上量级一致）。
+    let formula = est_tokens_formula(&text);
+    assert!(count > 900, "计数与语料规模不符：count={count} formula={formula}");
+}

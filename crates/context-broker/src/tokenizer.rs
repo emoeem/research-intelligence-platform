@@ -29,13 +29,17 @@ pub struct TokenizerAdapter {
 
 impl TokenizerAdapter {
     /// 从目录装载（目录内须有 tokenizer.json）。
+    /// 显式 no_truncation：计数器语义要求全量 token 数——tokenizer.json 若
+    /// 自带截断配置（如换用 reranker tokenizer），encode 会在模型输入帽处
+    /// 截断导致长文本计数被低估（预算语义错误）。
     pub fn from_dir(dir: &std::path::Path) -> Result<Self, String> {
         let path = dir.join("tokenizer.json");
         if !path.is_file() {
             return Err(format!("tokenizer.json missing: {}", path.display()));
         }
-        let tokenizer = tokenizers::Tokenizer::from_file(&path)
+        let mut tokenizer = tokenizers::Tokenizer::from_file(&path)
             .map_err(|e| format!("tokenizer load {}: {e}", path.display()))?;
+        tokenizer.with_truncation(None);
         Ok(Self { tokenizer, source: path })
     }
 
