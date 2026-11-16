@@ -55,7 +55,10 @@ fn usage_text() -> &'static str {
      \x20 fingerprint --target h --endpoint e --poc p --provider pv [--params '<json>'] [--authctx <fp>]\n\
      \x20 match --target '<t>' [--components 'a,b'] [--profile '<json>'] [--limit N]\n\
      \x20   双渠道匹配：pg-intel（rp-kc hybrid 统一检索）+ rtis-poc（rt.py poc 元数据面），\n\
-     \x20   命中与排除原因逐条可解释；--components 中文零命中（RTIS 英文优先）\n\
+     \x20   命中与排除原因逐条可解释；--components 中文零命中（RTIS 英文优先）\n\\
+     \x20 plan-build --task <id> --title '<t>' --target '<t>' [--components 'a,b']\n\
+     \x20   [--profile '<json>'] [--max-requests N] [--timeout-s N] [--params '<json>']\n\
+     \x20   match → planner（预算封顶/缓存决策/排序）→ 落库，输出 plan_id + 预览摘要\n\
      \n\
      env: RP_DB_PATH（dev 库副本路径；缺省内存库）\n\
      exit: 0 成功 / 1 守卫或 DB 拒绝 / 2 用法违规\n\
@@ -366,6 +369,76 @@ fn run() -> i32 {
             );
             emit(&serde_json::to_value(&result).unwrap_or_default());
             0
+        }
+        "plan-build" => {
+            use verification_engine::matcher::{
+                run_match, KnowledgeChannel, MatchQuery, RtisPocChannel, UnifiedSearchChannel,
+            };
+            use verification_engine::planner::{draft_from_match, persist_draft, PlanBudget};
+            let target = match args.required("target") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let task = args.get("task").map(str::to_owned);
+            let title = args.get("title").map(str::to_owned);
+            let components: Vec<String> = args
+                .get("components")
+                .map(|c| {
+                    c.split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let profile_versions: std::collections::HashMap<String, String> = args
+                .get("profile")
+                .and_then(|p| serde_json::from_str(p).ok())
+                .unwrap_or_default();
+            let params_json = args.get("params").unwrap_or("{}").to_owned();
+            let budget = PlanBudget {
+                max_requests: args.get("max-requests").and_then(|v| v.parse().ok()).unwrap_or(30),
+                timeout_s: args.get("timeout-s").and_then(|v| v.parse().ok()).unwrap_or(60),
+                concurrency: 1,
+            };
+            let limit: usize = args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(10);
+            let root = repo_root();
+            let rtis = RtisPocChannel::from_repo_root(&root);
+            let unified = UnifiedSearchChannel {
+                rp_kc: root.join("target/debug/rp-kc"),
+            };
+            let query = MatchQuery {
+                target_ref: target.clone(),
+                components,
+                profile_versions,
+                limit,
+            };
+            let matched = run_match(
+                &[
+                    &unified as &dyn KnowledgeChannel,
+                    &rtis as &dyn KnowledgeChannel,
+                ],
+                &query,
+                limit,
+            );
+            let draft = draft_from_match(&matched, &budget, &store, |h| {
+                if h.channel == "rtis-poc" {
+                    format!("rtis-poc:{}", h.ref_id)
+                } else {
+                    format!("knowledge:{}", h.ref_id)
+                }
+            }, &params_json, "-");
+            match persist_draft(&store, &draft, task.as_deref(), "default", title.as_deref()) {
+                Ok(plan_id) => {
+                    emit(&serde_json::json!({
+                        "plan_id": plan_id,
+                        "preview": draft,
+                        "match_channels": matched.channels,
+                    }));
+                    0
+                }
+                Err(e) => emit_error("plan_build", &e.to_string()),
+            }
         }
         "fingerprint" => {
             let (target, endpoint, poc, provider) = match (

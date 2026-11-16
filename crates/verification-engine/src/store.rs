@@ -113,8 +113,9 @@ pub struct StoreEvent {
     pub created_at: String,
 }
 
-/// 计划项新增入参（去重指纹与预算由 Planner/调用方给出）。
-#[derive(Debug, Clone)]
+/// 计划项新增入参（去重指纹与预算由 Planner/调用方给出；Serialize 供
+/// planner 预览出站）。
+#[derive(Debug, Clone, Serialize)]
 pub struct NewItem {
     pub knowledge_ref: Option<String>,
     pub rtis_poc_id: Option<i64>,
