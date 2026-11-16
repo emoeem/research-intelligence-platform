@@ -39,7 +39,9 @@ impl TokenizerAdapter {
         }
         let mut tokenizer = tokenizers::Tokenizer::from_file(&path)
             .map_err(|e| format!("tokenizer load {}: {e}", path.display()))?;
-        tokenizer.with_truncation(None);
+        tokenizer
+            .with_truncation(None)
+            .map_err(|e| format!("tokenizer truncation reset failed: {e}"))?;
         Ok(Self { tokenizer, source: path })
     }
 
