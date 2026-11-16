@@ -458,6 +458,28 @@ impl PodmanHostAdapter {
             drop(stdin);
         }
 
+        // stdout/stderr 并发读（P4-4 死锁修复实录）：两管道均 piped，若等
+        // 退出后才读，大输出（如 64 卡批嵌入结果 ~260KB > 64KB 管道缓冲）
+        // 会让容器侧 print 阻塞 → 进程永不退出 → 本侧 try_wait 死锁（先
+        // 等退出再读的经典管道死锁）。spawn 后立即起读线程排空管道，退出
+        // 后 join 取全量。
+        let mut stdout_pipe = child.stdout.take();
+        let stdout_reader = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(s) = stdout_pipe.as_mut() {
+                let _ = s.read_to_string(&mut buf);
+            }
+            buf
+        });
+        let mut stderr_pipe = child.stderr.take();
+        let stderr_reader = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(s) = stderr_pipe.as_mut() {
+                let _ = s.read_to_string(&mut buf);
+            }
+            buf
+        });
+
         let deadline = Instant::now() + timeout;
         let status = loop {
             match child.try_wait() {
@@ -489,15 +511,9 @@ impl PodmanHostAdapter {
             }
         };
 
-        // 终局读取（容器已退出，管道读尽）。
-        let mut stdout = String::new();
-        if let Some(mut s) = child.stdout.take() {
-            let _ = s.read_to_string(&mut stdout);
-        }
-        let mut stderr = String::new();
-        if let Some(mut s) = child.stderr.take() {
-            let _ = s.read_to_string(&mut stderr);
-        }
+        // 终局读取（读线程已排空管道，join 取全量；进程被杀时读侧见 EOF）。
+        let stdout = stdout_reader.join().unwrap_or_default();
+        let stderr = stderr_reader.join().unwrap_or_default();
 
         match status {
             Ok(exit) if exit.success() => {

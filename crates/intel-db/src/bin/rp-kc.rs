@@ -42,6 +42,10 @@ subcommands:\n\
          [--workspace W] [--mmr-lambda f] [--include-unapproved] [--run-db P] [--manifest-dir D]\n\
     统一检索入口（P4-1：BM25 pg_search + 向量 pgvector + RRF/MMR 融合；\n\
     权限前置谓词 SQL 内，缺省仅 APPROVED + 硬标记排除）\n\
+  bench --qrel-file F [--k N] [--workspace W] [--run-db P]\n\
+         [--manifest-dir D] [--rerank-manifest-dir D]\n\
+    P4-4 检索基准（R2 6.8：qrel JSON 逐查询 × 四模式，Recall@K/Precision@K/\n\
+    MRR/NDCG@K + latency，行级 JSON 输出）\n\
 \n\
 env: RP_PG_DSN（缺省 postgres://postgres:postgres@127.0.0.1:5432/postgres）\n\
 help: rp-kc --help（stdout, exit 0）"
@@ -411,6 +415,48 @@ fn main() {
                         "unknown mode {other:?} (bm25/vector/hybrid/rerank)"
                     ))),
                 }
+            }
+            "bench" => {
+                // P4-4 检索基准（R2 6.8）：qrel 文件逐查询 × 四模式，指标行
+                // JSON 输出（聚合口径由报告面计算——各查询 qrel 分母不同）。
+                let qrel_path = require_flag(&args, "qrel-file");
+                let k = opt_flag(&args, "k")
+                    .map(|s| s.parse::<u32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("k parse: {e}")))?
+                    .unwrap_or(10);
+                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let qrels: Vec<serde_json::Value> = serde_json::from_str(
+                    &std::fs::read_to_string(&qrel_path)
+                        .map_err(|e| IntelError::Invalid(format!("qrel read {qrel_path}: {e}")))?,
+                )
+                .map_err(|e| IntelError::Invalid(format!("qrel parse: {e}")))?;
+                let mut queries = Vec::new();
+                for q in &qrels {
+                    let text = q["query"]
+                        .as_str()
+                        .ok_or_else(|| IntelError::Invalid("qrel query missing".to_string()))?
+                        .to_string();
+                    let relevant: std::collections::HashSet<String> = q["relevant"]
+                        .as_array()
+                        .ok_or_else(|| IntelError::Invalid("qrel relevant missing".to_string()))?
+                        .iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect();
+                    queries.push(intel_db::bench::BenchQuery { query: text, relevant });
+                }
+                let filters = intel_db::search::SearchFilters::new(&workspace);
+                let cfg = embed_cfg_from(&args)?;
+                let mut rcfg = intel_db::search::RerankWorkerConfig::default();
+                if let Some(p) = opt_flag(&args, "rerank-manifest-dir") {
+                    rcfg.manifest_dir = PathBuf::from(p);
+                }
+                rcfg.manifest_dir = std::path::absolute(&rcfg.manifest_dir)?;
+                rcfg.run_db = std::path::absolute(&rcfg.run_db)?;
+                rcfg.workspace_root = std::path::absolute(&rcfg.workspace_root)?;
+                rcfg.sqlite_migrations_dir = std::path::absolute(&rcfg.sqlite_migrations_dir)?;
+                let rows = intel_db::bench::run_benchmark(&pool, &cfg, &rcfg, &filters, &queries, k)?;
+                serde_json::to_value(rows).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             "embed-cards" => {
                 let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());

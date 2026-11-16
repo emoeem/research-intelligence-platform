@@ -281,7 +281,11 @@ pub fn mmr_diversify(hits: &[SearchHit], lambda: f32, limit: u32) -> Vec<SearchH
     selected.into_iter().map(|i| hits[i].clone()).collect()
 }
 
-/// 混合检索入口（BM25 + 向量 → RRF → MMR；R2 6.2 流程面）。
+/// 混合检索入口（BM25 + 向量 → RRF；R2 6.2 流程面）。
+/// P4-4 修正：MMR 从本面移除——R2 6.2 流程 MMR 位于 Reranking 之后，输入
+/// 应为 0-1 相关分；RRF 分（~1/(k+rank) 量级）直接做 MMR 时多样性项
+///（title Jaccard 0-1）压倒相关性项，基准实测 hybrid Recall@10 从 0.54
+/// 掉到 0.04（BENCHMARK 实录）。MMR 现于 rerank_search 的 rerank 分之后。
 /// 检索结果缓存（P4-3 R2 6.6 Query Cache）：key = sha256(mode ‖ filters ‖
 /// query ‖ limit)，fingerprint = 索引 schema 版本 + workspace 治理态
 /// （APPROVED 卡数 + max(updated_at)：review 跃迁/建卡即失效）；缓存失败
@@ -302,7 +306,9 @@ pub fn hybrid_search(
         filters.knowledge_type.map(|k| k.as_str()),
         serde_json::to_string(&filters.json_contains).unwrap_or_default(),
     );
-    let params = format!("{}|{limit}|{mmr_lambda}", serde_json::to_string(&filters.json_contains).unwrap_or_default());
+    // 缓存键必须含 query（P4-4 基准实录：漏 query 时 10 查询共用一键，
+    // 后续查询全部命中首查询缓存，hybrid Recall@10 从 0.54 掉到 0.04）。
+    let params = format!("{query}|{limit}|{mmr_lambda}|{}", serde_json::to_string(&filters.json_contains).unwrap_or_default());
     let cache = cache.map(|c| {
         let k = crate::search_cache::cache_key("retrieval", "hybrid", SEARCH_CACHE_VERSION, &params, &fp);
         (c, k)
@@ -316,18 +322,18 @@ pub fn hybrid_search(
     }
     let bm25_hits = bm25_search(pool, filters, query, limit)?;
     let vector_hits = vector_search(pool, embed_config, filters, query, limit)?;
-    let fused = rrf_fuse(&[bm25_hits, vector_hits], limit * 3);
-    let out = mmr_diversify(&fused, mmr_lambda, limit);
+    let fused = rrf_fuse(&[bm25_hits, vector_hits], limit);
     if let Some((c, k)) = cache.as_ref() {
-        if let Ok(payload) = serde_json::to_string(&out) {
+        if let Ok(payload) = serde_json::to_string(&fused) {
             let _ = c.put(k, SEARCH_CACHE_VERSION, &fp, &payload);
         }
     }
-    Ok(out)
+    Ok(fused)
 }
 
-/// 检索结果缓存条目版本（结构变化即整体失效）。
-const SEARCH_CACHE_VERSION: &str = "search-v1";
+/// 检索结果缓存条目版本（结构/语义变化即整体失效；v3 = 键补 query +
+/// MMR 移出 hybrid）。
+const SEARCH_CACHE_VERSION: &str = "search-v3";
 
 /// workspace 治理态指纹（APPROVED 卡数 + max(updated_at)：审核跃迁/新建卡
 /// 即缓存失效；查询失败 None = 调用方禁用缓存面）。
@@ -621,6 +627,7 @@ pub fn rerank_search(
         bodies.insert(r.get::<_, String>(0), r.get::<_, String>(1));
     }
     rerank_hits(rerank_config, query, &candidates, &bodies)
+        .map(|ranked| mmr_diversify(&ranked, DEFAULT_MMR_LAMBDA, limit))
 }
 
 /// UTF-8 边界安全截断（按字节帽；截断点回退到最近字符边界）。

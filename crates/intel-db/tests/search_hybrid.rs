@@ -258,3 +258,37 @@ fn rerank_search_reorders_hybrid_candidates() {
         assert!(pos > 0, "无关卡不得排首位");
     }
 }
+
+/// P4-4：JSONB 包含过滤正式集成测试（P4-2 临时面转正，R2 6.4 结构化面）。
+/// 判据：structured_content @> 过滤命中唯一卡；未含该键值卡被排除；
+/// 无过滤时两卡都在场。
+#[test]
+fn jsonb_contains_filter_applies_in_sql() {
+    let Some(pool) = skip_unless_pg() else { return };
+    let mut conn = pool.get().unwrap();
+    run_migrations(&mut conn).unwrap();
+    drop(conn);
+    wipe_workspace(&pool, "ws-p4-jsonb");
+
+    let mut tagged = card_ws("jsonb-标记卡", "JSONB 过滤测试标记卡内容，SQL 注入检测面。", vec![], "ws-p4-jsonb");
+    tagged.structured_content = Some(serde_json::json!({ "env": "lab", "tier": 2 }));
+    let tagged_id = card_repo::create_card(&pool, &tagged).unwrap();
+    let untagged = card_ws("jsonb-无标记卡", "JSONB 过滤测试无标记卡内容，SQL 注入检测面。", vec![], "ws-p4-jsonb");
+    let untagged_id = card_repo::create_card(&pool, &untagged).unwrap();
+    for cid in [&tagged_id, &untagged_id] {
+        card_repo::score_card(&pool, cid, &domain::kcard::QualityWeights::default()).unwrap();
+        card_repo::decide(&pool, cid, ReviewStatus::Approved, "初审", "p4-jsonb-test").unwrap();
+    }
+
+    let mut filters = SearchFilters::new("ws-p4-jsonb");
+    filters.json_contains = Some(serde_json::json!({ "env": "lab" }));
+    let hits = search::bm25_search(&pool, &filters, "SQL 注入", 10).unwrap();
+    assert_eq!(hits.len(), 1, "JSONB 过滤命中唯一标记卡");
+    assert_eq!(hits[0].knowledge_id, tagged_id.as_str());
+
+    // 无过滤对照：两卡都在场（过滤确实在 SQL 内生效，非语料巧合）。
+    let plain = SearchFilters::new("ws-p4-jsonb");
+    let all = search::bm25_search(&pool, &plain, "SQL 注入", 10).unwrap();
+    assert!(all.iter().any(|h| h.knowledge_id == tagged_id.as_str()));
+    assert!(all.iter().any(|h| h.knowledge_id == untagged_id.as_str()));
+}

@@ -96,7 +96,9 @@ fn main() {
         .map(|t| domain::kcard::KnowledgeType::parse(&t))
         .transpose()
         .expect("type parse");
-    let sqlite_filters = search_engine::model::SearchFilters::default();
+    // sqlite-filters 解析（P4-2 结构体已备，P4-4 CLI 面展开）：
+    // "grade=A,license=UNKNOWN" k=v 等值对 → SearchFilters 四维。
+    let sqlite_filters = parse_sqlite_filters(opt("sqlite-filters").as_deref());
 
     let input = UnifiedSearch {
         pg_pool: &pg_pool,
@@ -127,4 +129,33 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// "k=v[,k=v]" 等值对解析（P4-4 CLI 面）：k ∈ {grade, license,
+/// maintenance, resource-type}；未知键与空值显式报错退出（fail-closed，
+/// 防静默吞过滤条件）。
+fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilters {
+    let mut f = search_engine::model::SearchFilters::default();
+    let Some(raw) = raw else { return f };
+    for pair in raw.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let (k, v) = pair.split_once('=').unwrap_or_else(|| {
+            eprintln!("sqlite-filters 段缺少 '='：{pair:?}（期望 k=v）");
+            std::process::exit(2);
+        });
+        match k.trim() {
+            "grade" => f.grade = Some(v.trim().to_string()),
+            "license" => f.license_status = Some(v.trim().to_string()),
+            "maintenance" => f.maintenance_status = Some(v.trim().to_string()),
+            "resource-type" => f.resource_type = Some(v.trim().to_string()),
+            other => {
+                eprintln!("sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type）");
+                std::process::exit(2);
+            }
+        }
+    }
+    f
 }

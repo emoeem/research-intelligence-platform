@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-15，Phase 4 进行中：P4-1/P4-2/P4-3 已收口，P4-4 Benchmark 待开批） |
+| 状态 | 生效中（2026-11-17，Phase 4 收口：P4-1 至 P4-4 四批全绿 + RELEASE_2026-11-17_RIP3-PHASE4.md；下一阶段 Phase 5 P5-0 只读审计开批） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
@@ -145,30 +145,30 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 6. M8_READINESS 限制 1/2（evidence 抽样 4/26、research_task 核心字段映射，环境面）。
 7. 服务端插件来源拉取完整 confirm 后受理链路需真实上游可达（P10-2 已声明）。
 
-## 七、Phase 4 P4-4 开批速查（下一批即用，Phase 4 收口批）
+## 七、Phase 5 开批速查（P5-0 只读审计先于一切实现批次）
 
-- 任务书落 docs/rip3/batches/P4-4-TASK.md；范围 = R2 6.8 检索质量评估 +
-  第十四部分 Phase 4 行剩余项：
-  1. Benchmark 语料播种：RTIS 真实语料（rt.py 只读面：真实查询/POC 条目/
-     研究案例）→ 播种脚本（经 rp-kc create 入隔离 PG workspace，禁直写生产
-     库——RTIS 红线）+ 固定合成集辅之；覆盖 6.8 六查询形态（精确关键词/
-     语义/多语言/书籍章节/漏洞案例/版本差异）。
-  2. Recall@K / Precision@K / MRR / NDCG 计算器（纯函数 + 单测钉值）；
-     Latency 与 Token Cost 记录口径沿 6.7（audit-engine correlation 关联）。
-  3. 播种语料跑通四模式基准（bm25/vector/hybrid/rerank 前后对比——P4-3
-     rerank 面 0.0328→0.9993 分离度直接进基准矩阵）+ JSONB 过滤正式集成
-     测试（P4-2 临时面转正）+ sqlite-filters CLI 解析展开（P4-2 结构体已备）。
-  4. 基准报告 docs/rip3/batches/P4-4-BENCHMARK.md + Phase 4 阶段收口
-     （RELEASE 登记 + 队列表勾销 + RTIS 对账零回归）。
-- 验收骨架：cargo test --offline -p intel-db -p unified-search + Benchmark
-  实跑数据入库 + selftest_phase4_search.sh 复跑 + 五道门禁 + push CI。
-- P4-3 坑位实录（本批，详见 P4-3-BATCH-REPORT）：
-  vendor 增量走 cargo vendor 全量重写最稳（手工对齐多版本目录重排易漏；
-  重排后 lock 对齐零漂移）；tokenizers default-features=false 后必须显式选
-  正则后端（fancy-regex 纯 Rust；onig 需 C 库）；搜索集成测试共享 workspace
-  会互相污染（各测试专属 workspace + 跑前清场 wipe_workspace）；审核双闸
-  测试面批准前必须先 score_card；cargo test 无 DSN 静默 SKIP（0.00s 即守卫
-  触发，别当全绿）。
+- 补充计划 = docs/rip3/RIP3-PHASE5-WEB-WORKBENCH-AND-KNOWLEDGE-DRIVEN-
+  VERIFICATION-PLAN.md（P5-0 至 P5-9 批次表 + 硬性架构边界 + UI 参考图清单）；
+  任务书落 docs/rip3/batches/P5-0-TASK.md；范围 = P5-0 只读审计（不写业务
+  代码）：
+  1. Web 侧：ResearchPage 占位现状 / Layout-TabArea-InspectorPanel-
+     ActivityPanel-Theme-Token-API 封装审计；Projects/Runs/Tools/Knowledge/
+     Workflow 页面可复用组件矩阵。
+  2. 后端侧：ResearchTask/Finding/Evidence/Asset/Trace 领域模型现状盘点；
+     RTIS POC Search/Read/Use/Add 接口面（rt.py + MCP）；Tool Engine/
+     Runtime Gateway/Workflow Engine 执行与取消能力。
+  3. Provider 面：Nuclei/ZAP 既有 Manifest 与容器镜像状态；许可/维护/离线
+     能力记录（成熟库优先纪律）。
+  4. 产物：页面复用矩阵 + 后端能力复用矩阵 + 差距清单 + 新 DTO/Schema/
+     迁移/Provider 接口 ADR 草稿 + P5-1 设计冻结提案。
+- 参考图已落位：docs/rip3/ui-reference/yakit/{home,http-history,web-fuzzer}
+  .png（B 组）；A 组（用户当前 UI 截图两张）待用户附上落 current/。
+- P4-4 坑位实录（本批，详见 P4-4-BENCHMARK.md G 节）：tool-engine 容器
+  stdout 并发读（大输出 >64KB 管道死锁）；MMR 只能在 0-1 相关分上做（RRF
+  分上做 = 多样性压倒相关性）；检索结果缓存键必须含 query（漏了 = 多查询
+  共用一键）；RTIS poc search 中文零命中（组件名用英文，kingdee 有命中金蝶
+  没有）；batch-review approve 前必须逐卡 score（地板闸跳过面）；qrel 显式
+  声明不用检索结果自判。
 
 ## 八、完成后闭环（Phase 8 之后）
 
@@ -218,3 +218,18 @@ selftest_phase4_search.sh。实测：rerank 容器分离 0.99969/0.68741 vs 3.7e
 CLI 前后对比 hybrid 0.0328/0.0323/0.0159 → rerank 0.9993/0.5041/0.0；缓存
 命中 1.493s→0.237s；calibration 2/2（公式偏差<5% 达标）。集成 2/2 / context-
 broker 66/0 / intel-db lib 28/0。
+
+## 十一、2026-11-17 手动会话实录（P4-4，d 案全程，Phase 4 收口）
+
+| 批次 | 提交 | CI run | 结果 |
+|---|---|---|---|
+| P4-4 | （本批） | （E2 回填） | （回填） |
+
+P4-4 交付摘要：语料播种（RTIS verified 133 元数据面脱敏 + 合成 8 = ws-bench
+141 卡全 APPROVED + 向量齐；POC 正文零复制）+ qrel 显式 10 查询（六形态）+
+bench.rs 指标纯函数（单测钉值）+ rp-kc bench 子命令 + 四模式基准（hybrid
+0.5812/0.9167/0.8212 全面超单通道；rerank MRR 0.95；数据见 P4-4-BENCHMARK.md）
++ JSONB 集成测试转正 + --sqlite-filters CLI 解析（fail-closed）+ 三平台级
+bug 修复（tool-engine 管道死锁 / MMR 尺度错位 / 缓存键漏 query，详见
+P4-4-BENCHMARK.md G 节）+ RELEASE_2026-11-17_RIP3-PHASE4.md（Phase 4 收口）。
+Yakit UI 参考图落 docs/rip3/ui-reference/yakit/（Phase 5 P5-1 前置素材）。
