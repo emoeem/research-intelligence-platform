@@ -114,8 +114,13 @@ cargo clippy --offline -p verification-engine --all-targets -- -D warnings
 
 ## E2. CI 各 Job 状态和运行链接
 
-- 本批 push 后 gh run watch 至绿（红不进下一批；P5-6 批 run 43939188733
-  success 为基线）。
+- P5-7 首提 bf55c9b3：run 43942245579 **Rust workspace 红**
+  （migrations_agent_data_plane p7_1 断言 user_version 期望侧漏改）；
+  修正批 dbb582d1 补齐三处漏改钉值（链尾名 (21,_research_evidence)、
+  全量逐枚清单补回 20 枚、uv/uv1 变量名变体），受影响五 crate 全量复测
+  41 套件零 FAILED。教训实录：链尾钉值面比 ab5907e5 实录的八处形状更多
+  （逐枚清单/变量名变体），后续链尾演进先按
+  `'(1[0-9], "_'`、`'(2[0-9], "_'`、`uv1?` 三形状全量定位再改。
 
 ## F. 性能数据
 
