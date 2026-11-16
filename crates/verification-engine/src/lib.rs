@@ -26,8 +26,13 @@
 
 pub mod contract;
 pub mod fingerprint;
+pub mod matcher;
 pub mod store;
 
 pub use contract::{SCHEMA_DIR, SCHEMA_VERSION};
 pub use fingerprint::dedup_fingerprint;
+pub use matcher::{
+    run_match, KnowledgeChannel, MatchExcluded, MatchHit, MatchQuery, MatchResult, RtisPocChannel,
+    UnifiedSearchChannel,
+};
 pub use store::{PlanRecord, PlanStore, PlanStoreError, PlanSummary, ResultGuard, StoreEvent};

@@ -53,6 +53,9 @@ fn usage_text() -> &'static str {
      \x20   [--run-id <id>] [--trace-id <id>]\n\
      \x20 event-list --plan <id>\n\
      \x20 fingerprint --target h --endpoint e --poc p --provider pv [--params '<json>'] [--authctx <fp>]\n\
+     \x20 match --target '<t>' [--components 'a,b'] [--profile '<json>'] [--limit N]\n\
+     \x20   双渠道匹配：pg-intel（rp-kc hybrid 统一检索）+ rtis-poc（rt.py poc 元数据面），\n\
+     \x20   命中与排除原因逐条可解释；--components 中文零命中（RTIS 英文优先）\n\
      \n\
      env: RP_DB_PATH（dev 库副本路径；缺省内存库）\n\
      exit: 0 成功 / 1 守卫或 DB 拒绝 / 2 用法违规\n\
@@ -316,6 +319,54 @@ fn run() -> i32 {
             },
             Err(code) => code,
         },
+        "match" => {
+            use verification_engine::matcher::{
+                run_match, KnowledgeChannel, MatchQuery, RtisPocChannel, UnifiedSearchChannel,
+            };
+            let target = match args.required("target") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let components: Vec<String> = args
+                .get("components")
+                .map(|c| {
+                    c.split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let profile_versions: std::collections::HashMap<String, String> = args
+                .get("profile")
+                .and_then(|p| serde_json::from_str(p).ok())
+                .unwrap_or_default();
+            let limit: usize = args
+                .get("limit")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10);
+            let root = repo_root();
+            let rtis = RtisPocChannel::from_repo_root(&root);
+            let unified = UnifiedSearchChannel {
+                rp_kc: root.join("target/debug/rp-kc"),
+            };
+            let query = MatchQuery {
+                target_ref: target,
+                components,
+                profile_versions,
+                limit,
+            };
+            let result = run_match(
+                &[
+                    &unified as &dyn KnowledgeChannel,
+                    &rtis as &dyn KnowledgeChannel,
+                ],
+                &query,
+                limit,
+            );
+            emit(&serde_json::to_value(&result).unwrap_or_default());
+            0
+        }
         "fingerprint" => {
             let (target, endpoint, poc, provider) = match (
                 args.required("target"),

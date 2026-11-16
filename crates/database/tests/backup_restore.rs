@@ -47,8 +47,8 @@ fn build_db(path: &Path) {
     let applied = migrate(&pool, &migrations_dir()).unwrap();
     assert_eq!(
         applied.last().map(|m| m.version),
-        Some(19),
-        "真实迁移链 001..019 应全应用"
+        Some(20),
+        "真实迁移链 001..020 应全应用"
     );
     pool.with_conn(|c| {
         c.execute_batch(
