@@ -211,7 +211,26 @@ pub fn execute_nuclei(
     run_id: &str,
     task_id: Option<&str>,
     network: NetworkPlan,
+    template_path: Option<&std::path::Path>,
 ) -> Result<ProviderOutcome, (ErrorCategory, String)> {
+    // 模板落位（调用面提供的本地模板文件 → ws in/template.yaml；Adapter 的
+    // prepare_workspace 幂等，不覆盖已落位文件）。
+    if let Some(template) = template_path {
+        let ws = adapter
+            .prepare_workspace(run_id, &serde_json::json!({}))
+            .map_err(|f| (ErrorCategory::ToolUnavailable, f.message))?;
+        let target = ws.in_dir.join("template.yaml");
+        let same = std::fs::canonicalize(template)
+            .ok()
+            .zip(std::fs::canonicalize(&target).ok())
+            .map(|(a, b)| a == b)
+            .unwrap_or(false);
+        if !same {
+            std::fs::copy(template, &target).map_err(|e| {
+                (ErrorCategory::ToolUnavailable, format!("template copy failed: {e}"))
+            })?;
+        }
+    }
     let input = NucleiProvider::build_input(item, item.request_budget);
     let mut request = json!({
         "protocol_version": "1",

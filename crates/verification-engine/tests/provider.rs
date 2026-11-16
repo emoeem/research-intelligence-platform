@@ -159,6 +159,7 @@ fn nuclei_container_dispatch_end_to_end_local_target() {
     // allowlist 链路随 P5-6 本地靶场真实目标面登记）。契约面断言一致：
     // 退出码 0 + 无命中 = ProviderOutcome SUCCEEDED + matched_count=0，
     // 五态判定（退出码 0 ≠ CONFIRMED）在 P5-7 evaluator。
+    let template_src = ws.in_dir.join("template.yaml"); // 同文件自拷贝（幂等）
     let outcome = match execute_nuclei(
         &engine,
         &adapter,
@@ -166,6 +167,7 @@ fn nuclei_container_dispatch_end_to_end_local_target() {
         "rn-p55-e2e",
         None,
         tool_engine::adapter::egress_proxy::NetworkPlan::None,
+        Some(&template_src),
     ) {
         Ok(outcome) => outcome,
         Err((category, message)) => {

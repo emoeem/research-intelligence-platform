@@ -29,7 +29,15 @@ use database::{migrate, DbPath, Pool, PoolConfig};
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::Duration;
+use tool_engine::adapter::egress_proxy::NetworkPlan;
+use tool_engine::adapter::podman_host::{PodmanHostAdapter, PodmanHostConfig};
+use tool_engine::Engine;
+use tool_registry::Registry;
+use verification_engine::evaluator::{evaluate, normalized_doc, OutcomeView};
 use verification_engine::fingerprint::dedup_fingerprint;
+use verification_engine::provider::{
+    execute_nuclei, RtisPocProvider,
+};
 use verification_engine::store::{NewItem, PlanStore};
 
 fn main() {
@@ -56,6 +64,13 @@ fn usage_text() -> &'static str {
      \x20 match --target '<t>' [--components 'a,b'] [--profile '<json>'] [--limit N]\n\
      \x20   双渠道匹配：pg-intel（rp-kc hybrid 统一检索）+ rtis-poc（rt.py poc 元数据面），\n\
      \x20   命中与排除原因逐条可解释；--components 中文零命中（RTIS 英文优先）\n\\
+     \x20 execute-plan --plan <id> --template '<path>' [--ws-root <dir>] [--network none|egress]\n\
+     \x20   --template：调用面提供的本地 nuclei 模板文件（检测逻辑不自动生成）\n\
+     \x20   计划级派发：executing 状态推进 + 逐项 Provider 执行 + 五态归一化回写；\n\
+     \x20   取消传播：tool_run.cancel_requested_at（rp-tool cancel）经看门狗生效，\n\
+     \x20   计划级 plan-cancel 在项间检查位生效\n\
+     \x20 plan-cancel --plan <id>\n\
+     \x20   计划级取消（executing/paused→cancelled；终态拒绝）\n\\
      \x20 plan-build --task <id> --title '<t>' --target '<t>' [--components 'a,b']\n\
      \x20   [--profile '<json>'] [--max-requests N] [--timeout-s N] [--params '<json>']\n\
      \x20   match → planner（预算封顶/缓存决策/排序）→ 落库，输出 plan_id + 预览摘要\n\
@@ -123,6 +138,25 @@ fn open_store() -> Result<PlanStore, String> {
     let migrations_dir = repo_root().join("migrations");
     migrate(&pool, &migrations_dir).map_err(|e| e.to_string())?;
     Ok(PlanStore::new(pool))
+}
+
+fn engine_with_nuclei() -> Engine {
+    let pool = Pool::open(PoolConfig {
+        path: DbPath::Memory,
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .expect("engine memory pool");
+    migrate(&pool, &repo_root().join("migrations")).expect("migrations");
+    let registry = Registry::open(pool.clone());
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_root().join("manifests/tools/rip.security.nuclei.json"))
+            .expect("nuclei manifest"),
+    )
+    .expect("manifest json");
+    registry.register(&manifest).expect("register nuclei");
+    Engine::open(pool.clone(), registry)
 }
 
 fn repo_root() -> PathBuf {
@@ -322,6 +356,200 @@ fn run() -> i32 {
             },
             Err(code) => code,
         },
+        "execute-plan" => {
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let ws_root = args
+                .get("ws-root")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::temp_dir().join(format!("rip-verify-ws-{}", std::process::id())));
+            let template_path = args.get("template").map(PathBuf::from);
+            let network = match args.get("network").unwrap_or("egress") {
+                "none" => NetworkPlan::None,
+                _ => NetworkPlan::EgressAllowlist {
+                    ports: verification_engine::provider::NUCLEI_EGRESS_PORTS.to_vec(),
+                },
+            };
+            let plan = match store.get_plan(&plan_id) {
+                Ok(Some(p)) => p,
+                Ok(None) => return emit_error("not_found", &plan_id),
+                Err(e) => return emit_error("execute_plan", &e.to_string()),
+            };
+            if plan.status != "ready" {
+                return emit_error(
+                    "plan_not_ready",
+                    &format!("plan {} status={} (execute requires ready)", plan_id, plan.status),
+                );
+            }
+            store.set_plan_status(&plan_id, "executing").map_err(|e| emit_error("execute_plan", &e.to_string())).ok();
+            let engine = engine_with_nuclei();
+            let adapter = PodmanHostAdapter::new(PodmanHostConfig {
+                workspace_root: ws_root.clone(),
+                ..PodmanHostConfig::default()
+            });
+            let rtis = RtisPocProvider::from_repo_root(&repo_root());
+            let items = match store.list_items(&plan_id) {
+                Ok(items) => items,
+                Err(e) => return emit_error("execute_plan", &e.to_string()),
+            };
+            let mut dispatched = 0usize;
+            let mut cancelled_at = Option::<String>::None;
+            for item in &items {
+                // 计划级取消检查位（项间生效；项内经 tool_run cancel_requested_at 看门狗）
+                let current = match store.get_plan(&plan_id) {
+                    Ok(Some(p)) => p,
+                    _ => break,
+                };
+                if current.status != "executing" {
+                    cancelled_at = Some(current.status.clone());
+                    break;
+                }
+                let run_id = format!("rn-verify-{}", item.item_id.trim_start_matches("vi-").replace('-', ""));
+                let record = match item.provider_id.as_str() {
+                    "nuclei" => {
+                        let task_id = plan.task_ref.clone();
+                        let outcome = match execute_nuclei(&engine, &adapter, item, &run_id, task_id.as_deref(), network.clone(), template_path.as_deref()) {
+                            Ok(outcome) => outcome,
+                            Err((category, message)) => {
+                                // 派发拒绝也归一化（§5.9：失败/不可用分类），不静默
+                                let view = OutcomeView {
+                                    status_word: "FAILED",
+                                    result: None,
+                                    summary: &message,
+                                };
+                                let normalized = evaluate(&view);
+                                let category_word = if message.contains("image")
+                                    || message.contains("submit rejected")
+                                    || message.contains("drive failed")
+                                {
+                                    "tool_unavailable"
+                                } else {
+                                    category.as_str()
+                                };
+                                let _ = store.set_result(
+                                    &item.item_id,
+                                    &normalized.result_status,
+                                    Some(&normalized.result_reason),
+                                    Some(category_word),
+                                    None,
+                                    None,
+                                );
+                                let _ = store.record_event(
+                                    Some(&plan_id),
+                                    Some(&item.item_id),
+                                    None,
+                                    None,
+                                    "result_assigned",
+                                    Some(serde_json::json!({"dispatch": "rejected", "reason": message})),
+                                );
+                                continue;
+                            }
+                        };
+                        dispatched += 1;
+                        let view = OutcomeView {
+                            status_word: &outcome.status_word,
+                            result: outcome.result.as_ref(),
+                            summary: &outcome.summary,
+                        };
+                        let normalized = evaluate(&view);
+                        store
+                            .set_result(
+                                &item.item_id,
+                                &normalized.result_status,
+                                Some(&normalized.result_reason),
+                                normalized.error_category.as_deref(),
+                                outcome.tool_run_id.as_deref(),
+                                None,
+                            )
+                            .map_err(|e| emit_error("execute_plan", &e.to_string()))
+                            .ok();
+                        store
+                            .record_event(
+                                Some(&plan_id),
+                                Some(&item.item_id),
+                                outcome.tool_run_id.as_deref(),
+                                None,
+                                "dispatched",
+                                Some(serde_json::json!({
+                                    "provider": outcome.provider_id,
+                                    "tool_version": outcome.tool_version,
+                                    "normalized": normalized_doc(&item.item_id, &normalized),
+                                })),
+                            )
+                            .ok();
+                        serde_json::json!({
+                            "item_id": item.item_id,
+                            "status_word": outcome.status_word,
+                            "tool_run_id": outcome.tool_run_id,
+                            "normalized": normalized_doc(&item.item_id, &normalized),
+                        })
+                    }
+                    _ => {
+                        // RTIS POC 引用面：记录使用关系（sanctioned CLI 写路径）+
+                        // 结论 = 引用面登记（无探针 Provider 不冒结论）
+                        let meta = if let Some(poc) = item.rtis_poc_id {
+                            let _ = rtis.record_use(poc, plan.target_summary.as_deref().unwrap_or("rip3-p5-execute"));
+                            serde_json::json!({"rtis_poc_id": poc, "use_recorded": true})
+                        } else {
+                            serde_json::json!({"rtis_poc_id": null})
+                        };
+                        let meta_ref = &meta;
+                        store
+                            .set_result(
+                                &item.item_id,
+                                "INCONCLUSIVE",
+                                Some("RTIS POC reference recorded; probe provider required for automated conclusion"),
+                                None,
+                                None,
+                                None,
+                            )
+                            .map_err(|e| emit_error("execute_plan", &e.to_string()))
+                            .ok();
+                        store
+                            .record_event(
+                                Some(&plan_id),
+                                Some(&item.item_id),
+                                None,
+                                None,
+                                "dispatched",
+                                Some(meta_ref.clone()),
+                            )
+                            .ok();
+                        dispatched += 1;
+                        serde_json::json!({"item_id": item.item_id, "reference": meta_ref})
+                    }
+                };
+                emit(&record);
+            }
+            // 终局：若计划仍 executing（未被取消），按五态面收敛 completed
+            let final_plan = store.get_plan(&plan_id).ok().flatten();
+            if let Some(p) = final_plan {
+                if p.status == "executing" {
+                    let _ = store.set_plan_status(&plan_id, "completed");
+                }
+            }
+            emit(&serde_json::json!({
+                "plan_id": plan_id,
+                "dispatched": dispatched,
+                "stopped_by": cancelled_at,
+            }));
+            0
+        }
+        "plan-cancel" => {
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match store.set_plan_status(&plan_id, "cancelled") {
+                Ok(()) => {
+                    emit(&serde_json::json!({ "plan_id": plan_id, "status": "cancelled" }));
+                    0
+                }
+                Err(e) => emit_error("plan_cancel", &e.to_string()),
+            }
+        }
         "match" => {
             use verification_engine::matcher::{
                 run_match, KnowledgeChannel, MatchQuery, RtisPocChannel, UnifiedSearchChannel,

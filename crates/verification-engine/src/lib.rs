@@ -25,6 +25,7 @@
 //!   在场（执行失败/超时）时禁止写 NOT_REPRODUCED（store 层守卫强制）。
 
 pub mod contract;
+pub mod evaluator;
 pub mod fingerprint;
 pub mod matcher;
 pub mod planner;
@@ -38,6 +39,7 @@ pub use matcher::{
     UnifiedSearchChannel,
 };
 pub use planner::{draft_from_match, persist_draft, CacheDecision, PlanBudget, PlanDraft};
+pub use evaluator::{evaluate, normalized_doc, NormalizedResult, OutcomeView};
 pub use provider::{
     execute_nuclei, NucleiProvider, ProviderOutcome, RtisPocProvider, VerificationProvider,
 };

@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-17，Phase 4 收口：P4-1 至 P4-4 四批全绿 + RELEASE_2026-11-17_RIP3-PHASE4.md；下一阶段 Phase 5 P5-0 只读审计开批） |
+| 状态 | 生效中（2026-11-17，**Phase 5 进行中**：P5-0 至 P5-5 已收口（HEAD 2fdfef6c），P5-6/P5-7 半成品在工作树——断点现场专档 docs/HANDOVER-P5-WIP.md（本文件第七节为其速查索引）；Phase 4 收口账目见 RELEASE_2026-11-17_RIP3-PHASE4.md） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
