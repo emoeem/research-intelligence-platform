@@ -41,6 +41,7 @@ export type WorkspaceIconKey =
   | "workflow"
   | "circlePlay"
   | "serverCog"
+  | "shieldCheck"
   | "settings";
 
 /** 键全集（测试用：数据里出现的图标键必须都在其中）。 */
@@ -55,6 +56,7 @@ export const WORKSPACE_ICON_KEYS: readonly WorkspaceIconKey[] = [
   "workflow",
   "circlePlay",
   "serverCog",
+  "shieldCheck",
   "settings",
 ];
 
@@ -152,6 +154,13 @@ export const WORKSPACES: readonly Workspace[] = [
         label: "知识上下文",
         icon: "database",
         hint: "知识检索入口（Matcher 解释面随 P5-3 升级）",
+      },
+      {
+        order: 5,
+        to: "/research/plans",
+        label: "验证计划",
+        icon: "shieldCheck",
+        hint: "验证计划与五态结果（P5-6：暂停/恢复/取消控制面）",
       },
     ],
   },

@@ -67,10 +67,17 @@ fn usage_text() -> &'static str {
      \x20 execute-plan --plan <id> --template '<path>' [--ws-root <dir>] [--network none|egress]\n\
      \x20   --template：调用面提供的本地 nuclei 模板文件（检测逻辑不自动生成）\n\
      \x20   计划级派发：executing 状态推进 + 逐项 Provider 执行 + 五态归一化回写；\n\
+     \x20   幂等恢复：重跑只派发未判定项（服务重启/暂停恢复不重复派发）；\n\
+     \x20   运行期预算复核：Σ 放行 + 本项 ≤ 计划 max_requests（超项留痕\n\
+     \x20   NOT_TESTED + budget_exhausted）；\n\
      \x20   取消传播：tool_run.cancel_requested_at（rp-tool cancel）经看门狗生效，\n\
-     \x20   计划级 plan-cancel 在项间检查位生效\n\
+     \x20   计划级 plan-cancel/plan-pause 在项间检查位生效\n\
      \x20 plan-cancel --plan <id>\n\
-     \x20   计划级取消（executing/paused→cancelled；终态拒绝）\n\\
+     \x20   计划级取消（executing/paused→cancelled；终态拒绝）\n\
+     \x20 plan-pause --plan <id>\n\
+     \x20   计划级暂停（executing/ready→paused；执行进程项间检查位停）\n\
+     \x20 plan-resume --plan <id>\n\
+     \x20   计划级恢复（paused→ready；续跑 execute-plan 幂等只派未判定项）\n\\
      \x20 plan-build --task <id> --title '<t>' --target '<t>' [--components 'a,b']\n\
      \x20   [--profile '<json>'] [--max-requests N] [--timeout-s N] [--params '<json>']\n\
      \x20   match → planner（预算封顶/缓存决策/排序）→ 落库，输出 plan_id + 预览摘要\n\
@@ -178,6 +185,23 @@ fn emit(value: &serde_json::Value) {
 fn emit_error(code: &str, message: &str) -> i32 {
     emit(&serde_json::json!({ "error": { "code": code, "message": message } }));
     1
+}
+
+/// 归一化文档组装 + result-normalized.v1 契约校验（execute 落库/发事件前
+/// fail fast；契约违规 = 实现漂移，退出码 1 同守卫拒绝口径）。
+fn checked_normalized_doc(
+    item_id: &str,
+    normalized: &verification_engine::evaluator::NormalizedResult,
+) -> serde_json::Value {
+    let doc = normalized_doc(item_id, normalized);
+    if let Err(errs) = verification_engine::contract::validate_normalized_doc(&doc) {
+        emit(&serde_json::json!({ "error": {
+            "code": "normalized_contract",
+            "message": format!("result-normalized.v1 violation for {item_id}: {errs:?}"),
+        } }));
+        exit(1);
+    }
+    doc
 }
 
 fn run() -> i32 {
@@ -394,7 +418,20 @@ fn run() -> i32 {
                 Ok(items) => items,
                 Err(e) => return emit_error("execute_plan", &e.to_string()),
             };
+            // 幂等恢复（P5-6 完成标准：服务重启/暂停恢复后不重复派发）：
+            // 只派发未判定项，已判定项原样跳过（结论不重算不覆盖）。
+            let (items, resumed_skipped) =
+                verification_engine::scheduler::pending_items(items);
+            // 运行期执行侧预算复核（P5-4 G 遗留落地）：已放行项预算之和 +
+            // 本项 ≤ 计划 cap 的第二道闸（planner 生成侧封顶之外的 §5.9 面）。
+            let plan_cap = plan
+                .budget
+                .as_ref()
+                .and_then(|b| b.get("max_requests"))
+                .and_then(|v| v.as_i64());
+            let mut consumed = 0i64;
             let mut dispatched = 0usize;
+            let mut budget_skipped = 0usize;
             let mut cancelled_at = Option::<String>::None;
             for item in &items {
                 // 计划级取消检查位（项间生效；项内经 tool_run cancel_requested_at 看门狗）
@@ -406,6 +443,45 @@ fn run() -> i32 {
                     cancelled_at = Some(current.status.clone());
                     break;
                 }
+                // 运行期预算复核：超 cap 项留痕 NOT_TESTED + budget_exhausted
+                // （未执行 ≠ 任何结论；覆盖缺口带剩余量说明供补充研究消费）。
+                if let Some(cap) = plan_cap {
+                    if !verification_engine::scheduler::runtime_budget_ok(
+                        consumed,
+                        item.request_budget,
+                        Some(cap),
+                    ) {
+                        let outcome = verification_engine::scheduler::budget_exhausted_result(
+                            consumed,
+                            item.request_budget,
+                            cap,
+                        );
+                        let _ = store.set_result(
+                            &item.item_id,
+                            &outcome.result_status,
+                            Some(&outcome.result_reason),
+                            outcome.error_category.as_deref(),
+                            None,
+                            None,
+                        );
+                        let _ = store.record_event(
+                            Some(&plan_id),
+                            Some(&item.item_id),
+                            None,
+                            None,
+                            "item_skipped",
+                            Some(serde_json::json!({
+                                "reason": "runtime_budget_exhausted",
+                                "consumed": consumed,
+                                "item_budget": item.request_budget,
+                                "plan_cap": cap,
+                            })),
+                        );
+                        budget_skipped += 1;
+                        continue;
+                    }
+                }
+                consumed += item.request_budget;
                 let run_id = format!("rn-verify-{}", item.item_id.trim_start_matches("vi-").replace('-', ""));
                 let record = match item.provider_id.as_str() {
                     "nuclei" => {
@@ -475,7 +551,7 @@ fn run() -> i32 {
                                 Some(serde_json::json!({
                                     "provider": outcome.provider_id,
                                     "tool_version": outcome.tool_version,
-                                    "normalized": normalized_doc(&item.item_id, &normalized),
+                                    "normalized": checked_normalized_doc(&item.item_id, &normalized),
                                 })),
                             )
                             .ok();
@@ -483,7 +559,7 @@ fn run() -> i32 {
                             "item_id": item.item_id,
                             "status_word": outcome.status_word,
                             "tool_run_id": outcome.tool_run_id,
-                            "normalized": normalized_doc(&item.item_id, &normalized),
+                            "normalized": checked_normalized_doc(&item.item_id, &normalized),
                         })
                     }
                     _ => {
@@ -533,6 +609,8 @@ fn run() -> i32 {
             emit(&serde_json::json!({
                 "plan_id": plan_id,
                 "dispatched": dispatched,
+                "resumed_skipped": resumed_skipped,
+                "budget_skipped": budget_skipped,
                 "stopped_by": cancelled_at,
             }));
             0
@@ -548,6 +626,36 @@ fn run() -> i32 {
                     0
                 }
                 Err(e) => emit_error("plan_cancel", &e.to_string()),
+            }
+        }
+        "plan-pause" => {
+            // 计划级暂停（P5-6）：executing/ready → paused；执行中进程在
+            // 项间检查位读到非 executing 即停（跨进程经 SQLite 状态行传播）。
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match store.set_plan_status(&plan_id, "paused") {
+                Ok(()) => {
+                    emit(&serde_json::json!({ "plan_id": plan_id, "status": "paused" }));
+                    0
+                }
+                Err(e) => emit_error("plan_pause", &e.to_string()),
+            }
+        }
+        "plan-resume" => {
+            // 计划级恢复（P5-6）：paused → ready；续跑经 execute-plan 重跑
+            // （幂等恢复只派发未判定项，已完成项不重复执行）。
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match store.set_plan_status(&plan_id, "ready") {
+                Ok(()) => {
+                    emit(&serde_json::json!({ "plan_id": plan_id, "status": "ready" }));
+                    0
+                }
+                Err(e) => emit_error("plan_resume", &e.to_string()),
             }
         }
         "match" => {

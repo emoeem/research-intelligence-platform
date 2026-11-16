@@ -25,6 +25,7 @@ import {
   Radar,
   Search,
   ServerCog,
+  ShieldCheck,
   Settings,
   Sun,
   Workflow,
@@ -32,6 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { ActivityPanel, type ActivityTab } from "./ActivityPanel";
+import { ActivityPlansLive } from "./ActivityPlansLive";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { GlobalSearchPalette } from "./GlobalSearchPalette";
 import { InspectorPanel, type InspectorSection } from "./InspectorPanel";
@@ -51,6 +53,7 @@ const ICONS: Record<WorkspaceIconKey, LucideIcon> = {
   workflow: Workflow,
   circlePlay: CirclePlay,
   serverCog: ServerCog,
+  shieldCheck: ShieldCheck,
   settings: Settings,
 };
 
@@ -317,11 +320,7 @@ export function Layout() {
       {
         id: "queue",
         label: "任务队列",
-        body: (
-          <p className="activity-note">
-            任务队列视图在<Link to="/projects">项目区</Link>；活动面板的实时队列随任务批次接入。
-          </p>
-        ),
+        body: <ActivityPlansLive />,
       },
       {
         id: "runs",

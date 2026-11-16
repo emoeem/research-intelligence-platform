@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/verification/result-normalized.v1.json",
+  "title": "RIP Verification Result Normalized v1",
+  "description": "归一化研究结论契约 v1（RIP3 Phase 5 P5-7）。ProviderOutcome 经 evaluator 五态纪律判定后的结论文档（result_assigned 事件 payload 与 rp-verify 输出面承载）。五态纪律：工具退出码 0 不等于 CONFIRMED（干净无命中 = NOT_REPRODUCED，命中 = INCONCLUSIVE 待证据复核）；执行失败/超时不等于 NOT_REPRODUCED（INCONCLUSIVE + error_category 在场）；工具不可用/取消 = NOT_TESTED；FALSE_POSITIVE 不由本层自动产出（只经证据复核显式判定）。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "item_id",
+    "result_status",
+    "result_reason"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "契约版本，当前恒为 1。",
+      "type": "integer",
+      "const": 1
+    },
+    "item_id": {
+      "description": "验证项 ID（vi- 前缀，store 生成形状）。",
+      "type": "string",
+      "pattern": "^vi-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "result_status": {
+      "description": "五态研究结论词表（补充计划 §5.7；词表外拒绝）。",
+      "type": "string",
+      "enum": [
+        "CONFIRMED",
+        "NOT_REPRODUCED",
+        "NOT_TESTED",
+        "INCONCLUSIVE",
+        "FALSE_POSITIVE"
+      ]
+    },
+    "result_reason": {
+      "description": "判定依据（非空；CONFIRMED/FALSE_POSITIVE 的必填依据守卫由 store ResultGuard 承载）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "error_category": {
+      "description": "失败/超时分类词值（null = 无分类；error_category 在场时禁 NOT_REPRODUCED 由 store ResultGuard 承载）。",
+      "enum": [
+        "timeout",
+        "network",
+        "auth",
+        "tool_unavailable",
+        "assertion",
+        "budget_exhausted",
+        "unknown",
+        null
+      ]
+    }
+  }
+}

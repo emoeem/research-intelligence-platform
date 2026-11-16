@@ -2949,6 +2949,20 @@ def handle_research_item_detail(item_id: str) -> dict:
     return _rp_verify_json(["item-get", "--item", item_id])
 
 
+RESEARCH_PLAN_CONTROL_ACTIONS = ("pause", "resume", "cancel")
+
+
+def research_plan_control(action: str, plan_id: str) -> dict:
+    """POST /api/research/plans/<id>/{pause,resume,cancel}（P5-6 控制面）。
+    经 rp-verify plan-pause/plan-resume/plan-cancel 子进程（本进程零直连
+    SQL 写，同 workflow_write 纪律）；守卫拒绝（终态迁移/不存在）按 502
+    原样透出 code/message。取消/暂停真实生效：执行中进程在项间检查位读
+    plan 状态行（SQLite），暂停恢复续跑走 execute-plan 幂等面。"""
+    if not plan_id or "/" in plan_id or not plan_id.startswith("vp-"):
+        raise ApiError(400, "bad_plan_id", f"非法 plan_id：{plan_id!r}")
+    return _rp_verify_json([f"plan-{action}", "--plan", plan_id])
+
+
 def handle_documents(_conn, params) -> dict:  # noqa: ARG001
     """/api/documents：文档列表（workspace 过滤；all=1 含软删行）。
     rp-doc list 子进程（PG 情报核，权限前置谓词在 SQL 内）。"""
@@ -3283,6 +3297,15 @@ class RpHandler(BaseHTTPRequestHandler):
                                    "workflow 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
                 body = self._read_json_body()
                 self.send_json(workflow_write(parts[3], unquote(parts[2]), body))
+                return
+            # P5-6 验证计划控制面：/api/research/plans/<plan_id>/<action>。
+            if len(parts) == 5 and parts[0] == "api" and parts[1] == "research" \
+                    and parts[2] == "plans" and parts[4] in RESEARCH_PLAN_CONTROL_ACTIONS:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "验证计划控制端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                self.send_json(research_plan_control(parts[4], unquote(parts[3])))
                 return
             if not parsed.path.startswith("/api/plugins/"):
                 raise ApiError(405, "readonly", "只读工作台：该路径不提供写端点")

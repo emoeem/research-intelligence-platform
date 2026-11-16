@@ -30,6 +30,7 @@ pub mod fingerprint;
 pub mod matcher;
 pub mod planner;
 pub mod provider;
+pub mod scheduler;
 pub mod store;
 
 pub use contract::{SCHEMA_DIR, SCHEMA_VERSION};
@@ -40,6 +41,9 @@ pub use matcher::{
 };
 pub use planner::{draft_from_match, persist_draft, CacheDecision, PlanBudget, PlanDraft};
 pub use evaluator::{evaluate, normalized_doc, NormalizedResult, OutcomeView};
+pub use scheduler::{
+    budget_exhausted_result, pending_items, runtime_budget_ok, NormalizedOutcome,
+};
 pub use provider::{
     execute_nuclei, NucleiProvider, ProviderOutcome, RtisPocProvider, VerificationProvider,
 };

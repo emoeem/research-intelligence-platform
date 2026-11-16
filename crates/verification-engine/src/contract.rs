@@ -35,6 +35,10 @@ const CAPABILITY_SCHEMA: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../schemas/verification/provider-capability.v1.json"
 ));
+const RESULT_SCHEMA: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../schemas/verification/result-normalized.v1.json"
+));
 
 /// Schema 编译（进程内缓存一次；非法 Schema 是编译期开发错误，panic 快失败）。
 fn compile(schema_text: &str) -> jsonschema::Validator {
@@ -76,6 +80,12 @@ pub fn validate_capability_doc(doc: &Value) -> Result<(), Vec<String>> {
     validate_against(CAPABILITY_SCHEMA, doc)
 }
 
+/// result-normalized.v1 校验入口（P5-7 归一化输出契约测试与 rp-verify 落库
+/// 前快失败共用）。
+pub fn validate_normalized_doc(doc: &Value) -> Result<(), Vec<String>> {
+    validate_against(RESULT_SCHEMA, doc)
+}
+
 /// ID 前缀形状守卫（vp-/vi-/ve-；store 生成与外部注入共用）。
 pub fn id_prefix_matches(id: &str, prefix: &str) -> bool {
     id.starts_with(prefix) && id.len() > prefix.len()
@@ -93,6 +103,7 @@ mod tests {
             (ITEM_SCHEMA, "verification-item.v1.json"),
             (EVENT_SCHEMA, "verification-event.v1.json"),
             (CAPABILITY_SCHEMA, "provider-capability.v1.json"),
+            (RESULT_SCHEMA, "result-normalized.v1.json"),
         ] {
             let doc: Value = serde_json::from_str(text).expect("schema json");
             assert_eq!(doc["$schema"], "https://json-schema.org/draft/2020-12/schema");

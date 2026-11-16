@@ -158,6 +158,7 @@ fn truncate(value: &str, cap: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::validate_normalized_doc;
     use serde_json::json;
 
     fn view<'a>(
@@ -240,5 +241,111 @@ mod tests {
         assert_eq!(doc["schema_version"], 1);
         assert_eq!(doc["item_id"], "vi-1");
         assert_eq!(doc["result_status"], "NOT_REPRODUCED");
+    }
+
+    /// result-normalized.v1 契约正例矩阵：evaluator 全部产出形态（五态中
+    /// 自动可产出的四态 + error_category 七词值中实产的三类）过 Schema。
+    /// FALSE_POSITIVE/CONFIRMED 不在本层自动产出（纪律），其形状合法性由
+    /// Schema 词表与 store ResultGuard 承载。
+    #[test]
+    fn normalized_output_conforms_to_contract() {
+        let cases = [
+            (
+                "SUCCEEDED",
+                Some(json!({"matched_count": 0})),
+                "clean",
+                "NOT_REPRODUCED",
+            ),
+            (
+                "SUCCEEDED",
+                Some(json!({"matched_count": 3})),
+                "findings",
+                "INCONCLUSIVE",
+            ),
+            ("TIMED_OUT", None, "watchdog fired", "INCONCLUSIVE"),
+            ("CANCELLED", None, "cooperative cancel", "NOT_TESTED"),
+            (
+                "FAILED",
+                None,
+                "submit rejected: image not present",
+                "NOT_TESTED",
+            ),
+            ("FAILED", None, "connect: connection refused", "INCONCLUSIVE"),
+        ];
+        for (status_word, result, summary, expected_status) in cases {
+            let normalized = evaluate(&view(status_word, &result, summary));
+            assert_eq!(
+                normalized.result_status, expected_status,
+                "status mapping drifted for {status_word}/{summary}"
+            );
+            let doc = normalized_doc("vi-20261117-120000-001-abcd", &normalized);
+            validate_normalized_doc(&doc)
+                .unwrap_or_else(|errs| panic!("contract rejected {doc:?}: {errs:?}"));
+        }
+    }
+
+    /// result-normalized.v1 契约负例：工具词值混入五态字段、分类词表外、
+    /// 空 reason、版本漂移、ID 形状违规、多余字段一律拒绝。
+    #[test]
+    fn contract_rejects_malformed_normalized_docs() {
+        let base = json!({
+            "schema_version": 1,
+            "item_id": "vi-20261117-120000-001-abcd",
+            "result_status": "NOT_REPRODUCED",
+            "result_reason": "clean run",
+            "error_category": null,
+        });
+        assert!(validate_normalized_doc(&base).is_ok());
+        let rejects = [
+            ("工具词值混入 result_status", json!({
+                "schema_version": 1,
+                "item_id": "vi-20261117-120000-001-abcd",
+                "result_status": "SUCCEEDED",
+                "result_reason": "exit 0",
+                "error_category": null,
+            })),
+            ("error_category 词表外", json!({
+                "schema_version": 1,
+                "item_id": "vi-20261117-120000-001-abcd",
+                "result_status": "INCONCLUSIVE",
+                "result_reason": "failed",
+                "error_category": "crash",
+            })),
+            ("空 reason", json!({
+                "schema_version": 1,
+                "item_id": "vi-20261117-120000-001-abcd",
+                "result_status": "NOT_TESTED",
+                "result_reason": "",
+                "error_category": null,
+            })),
+            ("schema_version 漂移", json!({
+                "schema_version": 2,
+                "item_id": "vi-20261117-120000-001-abcd",
+                "result_status": "NOT_TESTED",
+                "result_reason": "x",
+                "error_category": null,
+            })),
+            ("item_id 形状违规", json!({
+                "schema_version": 1,
+                "item_id": "vi-1",
+                "result_status": "NOT_TESTED",
+                "result_reason": "x",
+                "error_category": null,
+            })),
+            ("多余字段", json!({
+                "schema_version": 1,
+                "item_id": "vi-20261117-120000-001-abcd",
+                "result_status": "NOT_TESTED",
+                "result_reason": "x",
+                "error_category": null,
+                "matched_count": 0,
+            })),
+        ];
+        for (label, doc) in rejects {
+            assert!(
+                validate_normalized_doc(&doc).is_err(),
+                "contract must reject: {label}"
+            );
+        }
     }
 }

@@ -164,3 +164,68 @@ export const TASK_COLUMNS: DataColumn<ResearchTaskRow>[] = [
     render: (row) => <span className="font-mono text-[11px] text-muted">{row.task_id}</span>,
   },
 ];
+
+// ---------------------------------------------------------------------------
+// 验证计划面（P5-6）：/api/research/plans（rp-verify plan-list 子进程读面）
+// 与控制端点（POST pause/resume/cancel → rp-verify 子进程）。计划状态是
+// 编排状态机词表（020 迁移 CHECK），五态 result_counts 是研究结论维度。
+// ---------------------------------------------------------------------------
+
+/** /api/research/plans 行（PlanSummary）。 */
+export interface ResearchPlanRow {
+  plan_id: string;
+  task_ref?: string | null;
+  status: string;
+  title?: string | null;
+  item_count: number;
+  /** 五态计数键值（CONFIRMED/NOT_REPRODUCED/NOT_TESTED/INCONCLUSIVE/
+   *  FALSE_POSITIVE → 计数；未判定项不在键内）。 */
+  result_counts?: Record<string, number> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResearchPlanList {
+  available?: boolean;
+  source?: string;
+  limit?: number;
+  items?: ResearchPlanRow[];
+}
+
+/** 计划状态词表（020 迁移 CHECK；与 PlanStatus domain 词表一致）。 */
+export const PLAN_STATUSES = [
+  "draft",
+  "ready",
+  "executing",
+  "paused",
+  "completed",
+  "cancelled",
+] as const;
+
+/** 计划状态 → 徽标 tone。 */
+export const PLAN_STATUS_TONES: Record<string, string> = {
+  draft: "badge-ghost",
+  ready: "badge-info",
+  executing: "badge-primary",
+  paused: "badge-warning",
+  completed: "badge-success",
+  cancelled: "badge-error",
+};
+
+/** 五态研究结论 → 徽标 tone（P5-7 词表；未知走 ghost）。 */
+export const RESULT_STATUS_TONES: Record<string, string> = {
+  CONFIRMED: "badge-error",
+  NOT_REPRODUCED: "badge-success",
+  NOT_TESTED: "badge-ghost",
+  INCONCLUSIVE: "badge-warning",
+  FALSE_POSITIVE: "badge-outline",
+};
+
+/** 五态展示序（§5.7 定义序）。 */
+export const RESULT_STATUSES = [
+  "CONFIRMED",
+  "NOT_REPRODUCED",
+  "NOT_TESTED",
+  "INCONCLUSIVE",
+  "FALSE_POSITIVE",
+] as const;

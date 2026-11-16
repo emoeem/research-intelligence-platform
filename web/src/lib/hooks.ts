@@ -32,6 +32,9 @@ export interface UseApiOptions<T> {
   /** 注入的取数器；不传则用默认 apiGet。传内联函数不会触发重取（重取只看
    *  queryKey，fetcher 不进依赖）。 */
   fetcher?: Fetcher<T>;
+  /** 轮询间隔毫秒（P5-6 Activity 面：活跃验证计划跟随后端收敛）。缺省不
+   *  轮询（P5-1 既有调用面行为不变）。 */
+  refetchIntervalMs?: number;
 }
 
 export function useApi<T>(path: string | null, options: UseApiOptions<T> = {}) {
@@ -68,6 +71,9 @@ export function useApi<T>(path: string | null, options: UseApiOptions<T> = {}) {
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    ...(options.refetchIntervalMs !== undefined
+      ? { refetchInterval: options.refetchIntervalMs }
+      : {}),
   });
 
   return {
