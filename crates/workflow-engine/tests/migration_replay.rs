@@ -136,8 +136,8 @@ fn migration_017_replay_twice_is_idempotent() {
     assert!(!second.iter().any(|m| m.version == 17), "重放不应重复应用: {second:?}");
     assert!(!second.iter().any(|m| m.version == 18), "重放不应重复应用: {second:?}");
     // RIP3 P5-2 起链尾 020_research_verification（追加结构，workflow 面零改动）。
-    assert_eq!(version_1, 20);
-    assert_eq!(version_2, 20);
+    assert_eq!(version_1, 21);
+    assert_eq!(version_2, 21);
     assert_eq!(tables_1, tables_2, "两次重放表清单一致（幂等）");
     assert!(tables_1.contains(&"workflow_definition".to_string()));
     assert!(tables_1.contains(&"workflow_run".to_string()));

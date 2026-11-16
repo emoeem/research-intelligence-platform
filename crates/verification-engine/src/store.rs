@@ -15,10 +15,12 @@ use crate::contract::{
     id_prefix_matches, validate_event_doc, validate_item_doc, validate_plan_doc, SCHEMA_VERSION,
 };
 use database::Pool;
+use database::rusqlite::OptionalExtension;
 use domain::time::now_iso;
 use domain::verification::{ErrorCategory, PlanStatus, ResultStatus};
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fmt;
 
 /// Store 层错误（字符串承载，CLI/HTTP 层映射各自错误形态）。
@@ -110,6 +112,21 @@ pub struct StoreEvent {
     pub trace_id: Option<String>,
     pub event_type: String,
     pub payload: Option<Value>,
+    pub created_at: String,
+}
+
+/// 验证证据档记录（021 research_evidence 形状；payload 为采集时点原始快照）。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct EvidenceRecord {
+    pub evidence_id: String, // re-YYYYMMDD-HHMMSS-ms-rand
+    pub item_id: String,
+    pub plan_id: String,
+    pub tool_run_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub evidence_type: String, // provider_result | normalized_result | log_excerpt
+    /// payload 紧凑序列化 SHA256（64 hex；重复观察识别键）。
+    pub content_hash: String,
+    pub payload: Value,
     pub created_at: String,
 }
 
@@ -719,6 +736,197 @@ impl PlanStore {
             events.push(event);
         }
         Ok(events)
+    }
+
+    // -----------------------------------------------------------------------
+    // 验证证据档（RIP3 P5-7，021 迁移 research_evidence）：Evidence Artifact
+    // 采集与 SHA256（§3.1 职责表：采集/哈希/Trace 关联/检索入口在 RIP3，
+    // 结论性证据状态以 RTIS 为准）。payload_json append-only 不可变（原始
+    // 证据不会被知识更新覆盖）；content_hash = payload 紧凑序列化 SHA256
+    // （重复观察识别，§5.8 第四层去重）。
+    // -----------------------------------------------------------------------
+
+    /// 证据采集（append-only）：词表守卫 + 哈希 + 落档 + evidence_collected
+    /// 事件（事件词表 020 预留面本批启用）。返回 (记录, 是否重复采集)：
+    /// 同 plan 内已有同 content_hash 的证据时跳过写入（重复观察留痕在
+    /// evidence_collected 事件的 dedup 标记上）。
+    pub fn record_evidence(
+        &self,
+        item_id: &str,
+        plan_id: &str,
+        tool_run_id: Option<&str>,
+        trace_id: Option<&str>,
+        evidence_type: &str,
+        payload: &Value,
+    ) -> Result<(EvidenceRecord, bool), PlanStoreError> {
+        const EVIDENCE_TYPES: [&str; 3] =
+            ["provider_result", "normalized_result", "log_excerpt"];
+        if !EVIDENCE_TYPES.contains(&evidence_type) {
+            return Err(PlanStoreError::GuardRejected(format!(
+                "unknown evidence type: {evidence_type}"
+            )));
+        }
+        if !id_prefix_matches(item_id, "vi-") {
+            return Err(PlanStoreError::GuardRejected("item id shape".to_owned()));
+        }
+        if !id_prefix_matches(plan_id, "vp-") {
+            return Err(PlanStoreError::GuardRejected("plan id shape".to_owned()));
+        }
+        // 紧凑序列化即规范化（serde_json Value 键序确定性），同语义载荷同哈希。
+        let payload_json = payload.to_string();
+        let mut hasher = Sha256::new();
+        hasher.update(payload_json.as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
+        let existing = self.find_evidence_by_hash(plan_id, &content_hash)?;
+        if let Some(dup) = existing {
+            // 重复观察：不重复落档（append-only 快照不可变语义），留痕事件。
+            self.record_event(
+                Some(plan_id),
+                Some(item_id),
+                tool_run_id,
+                trace_id,
+                "evidence_collected",
+                Some(json!({
+                    "dedup": true,
+                    "duplicate_of": dup.evidence_id,
+                    "content_hash": content_hash,
+                })),
+            )?;
+            return Ok((dup, true));
+        }
+        let record = EvidenceRecord {
+            evidence_id: make_id("re"),
+            item_id: item_id.to_owned(),
+            plan_id: plan_id.to_owned(),
+            tool_run_id: tool_run_id.map(str::to_owned),
+            trace_id: trace_id.map(str::to_owned),
+            evidence_type: evidence_type.to_owned(),
+            content_hash,
+            payload: payload.clone(),
+            created_at: now_iso(),
+        };
+        let payload_store = record.payload.to_string();
+        self.pool
+            .with_conn(|c| {
+                c.execute(
+                    "INSERT INTO research_evidence (evidence_id, item_id, plan_id, tool_run_id,
+                        trace_id, evidence_type, content_hash, payload_json, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    database::rusqlite::params![
+                        record.evidence_id,
+                        record.item_id,
+                        record.plan_id,
+                        record.tool_run_id,
+                        record.trace_id,
+                        record.evidence_type,
+                        record.content_hash,
+                        payload_store,
+                        record.created_at
+                    ],
+                )
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        self.record_event(
+            Some(plan_id),
+            Some(item_id),
+            tool_run_id,
+            trace_id,
+            "evidence_collected",
+            Some(json!({
+                "evidence_id": record.evidence_id,
+                "evidence_type": record.evidence_type,
+                "content_hash": record.content_hash,
+            })),
+        )?;
+        Ok((record, false))
+    }
+
+    /// 同哈希证据查找（计划维度；重复观察识别的存储面）。
+    pub fn find_evidence_by_hash(
+        &self,
+        plan_id: &str,
+        content_hash: &str,
+    ) -> Result<Option<EvidenceRecord>, PlanStoreError> {
+        let row = self.pool.with_conn(|c| {
+            c.query_row(
+                "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id, evidence_type,
+                        content_hash, payload_json, created_at
+                 FROM research_evidence
+                 WHERE plan_id = ?1 AND content_hash = ?2
+                 ORDER BY created_at LIMIT 1",
+                database::rusqlite::params![plan_id, content_hash],
+                |r| {
+                    Ok(EvidenceRecord {
+                        evidence_id: r.get(0)?,
+                        item_id: r.get(1)?,
+                        plan_id: r.get(2)?,
+                        tool_run_id: r.get(3)?,
+                        trace_id: r.get(4)?,
+                        evidence_type: r.get(5)?,
+                        content_hash: r.get(6)?,
+                        payload: serde_json::from_str(&r.get::<_, String>(7)?)
+                            .unwrap_or(Value::Null),
+                        created_at: r.get(8)?,
+                    })
+                },
+            )
+            .optional()
+        });
+        match row {
+            Ok(found) => Ok(found),
+            Err(e) => Err(PlanStoreError::Db(e.to_string())),
+        }
+    }
+
+    /// 证据列表（计划项维度，时间升序；UI 跳转面与覆盖矩阵消费）。
+    pub fn list_evidence(&self, item_id: &str) -> Result<Vec<EvidenceRecord>, PlanStoreError> {
+        if !id_prefix_matches(item_id, "vi-") {
+            return Err(PlanStoreError::GuardRejected("item id shape".to_owned()));
+        }
+        let rows = self
+            .pool
+            .with_conn(|c| {
+                let mut stmt = c
+                    .prepare(
+                        "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id,
+                                evidence_type, content_hash, payload_json, created_at
+                         FROM research_evidence
+                         WHERE item_id = ?1
+                         ORDER BY created_at ASC, evidence_id ASC",
+                    )?;
+                let collected = stmt
+                    .query_map([item_id], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, Option<String>>(3)?,
+                            r.get::<_, Option<String>>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, String>(6)?,
+                            r.get::<_, String>(7)?,
+                            r.get::<_, String>(8)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok::<Vec<_>, database::rusqlite::Error>(collected)
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        let mut records = Vec::with_capacity(rows.len());
+        for (evidence_id, item, plan, tool_run, trace, evidence_type, content_hash, payload_json, created_at) in rows {
+            records.push(EvidenceRecord {
+                evidence_id,
+                item_id: item,
+                plan_id: plan,
+                tool_run_id: tool_run,
+                trace_id: trace,
+                evidence_type,
+                content_hash,
+                payload: serde_json::from_str(&payload_json).unwrap_or(Value::Null),
+                created_at,
+            });
+        }
+        Ok(records)
     }
 
     /// 去重指纹查找（P5-4 缓存决策消费：同指纹最近一条已执行项）。

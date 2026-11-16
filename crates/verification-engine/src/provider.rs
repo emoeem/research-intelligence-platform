@@ -138,6 +138,27 @@ impl RtisPocProvider {
         self.run_json(&["poc", "use", "--id", &poc_id.to_string(), "--on", used_on, "--json"])
             .map_err(|e| (ErrorCategory::ToolUnavailable, e))
     }
+
+    /// 验证结论回填（P5-7：CONFIRMED 项经 rt.py poc update --verified --note
+    /// 回填 RTIS 既有接口；Finding 结论性证据状态以 RTIS 为准，§3.1。note
+    /// 只带平台侧判定依据摘要，POC 正文/利用细节零复制，RTIS 红线）。
+    pub fn record_verification(
+        &self,
+        poc_id: i64,
+        note: &str,
+    ) -> Result<Value, (ErrorCategory, String)> {
+        self.run_json(&[
+            "poc",
+            "update",
+            "--id",
+            &poc_id.to_string(),
+            "--verified",
+            "--note",
+            note,
+            "--json",
+        ])
+        .map_err(|e| (ErrorCategory::ToolUnavailable, e))
+    }
 }
 
 impl VerificationProvider for RtisPocProvider {
@@ -198,24 +219,35 @@ impl NucleiProvider {
     }
 }
 
-/// Nuclei 计划项端到端执行（submit → 容器派发 → ProviderOutcome）。
+/// 派发选项面（execute_nuclei 的关联与派发可选项打包，参数面收敛）。
+pub struct DispatchOptions<'a> {
+    /// research_task 关联（RTIS task_ref；进 Manifest input.task_id）。
+    pub task_id: Option<&'a str>,
+    /// Trace 六 ID 锚（有值时走 submit_correlated，015 面）。
+    pub trace_id: Option<&'a str>,
+    /// 网络计划（None = 127.0.0.1 本机面；EgressAllowlist = pasta -T 白名单）。
+    pub network: NetworkPlan,
+    /// 调用面模板锚（本地模板文件路径，不联网装模板）。
+    pub template_path: Option<&'a std::path::Path>,
+}
+
+/// Nuclei 计划项端到端执行（submit_correlated → 容器派发 → ProviderOutcome）。
 ///
 /// 调用链纪律：本函数是补充计划 §5.6.B「工具执行经 Tool Engine /
 /// Runtime Gateway」的落地面——submit 受理（D-TC-05）→ podman_host
 /// Adapter 容器执行（digest 钉死镜像 + egress 白名单）→ 信封交付。
-/// 镜像缺席/派发拒绝按分类返回，不伪装成功。
+/// options.trace_id 有值时走 submit_correlated（015 面：tool_run.trace_id
+/// 落列，六 ID 关联锚）；镜像缺席/派发拒绝按分类返回，不伪装成功。
 pub fn execute_nuclei(
     engine: &Engine,
     adapter: &PodmanHostAdapter,
     item: &PlanItemRecord,
     run_id: &str,
-    task_id: Option<&str>,
-    network: NetworkPlan,
-    template_path: Option<&std::path::Path>,
+    options: DispatchOptions<'_>,
 ) -> Result<ProviderOutcome, (ErrorCategory, String)> {
     // 模板落位（调用面提供的本地模板文件 → ws in/template.yaml；Adapter 的
     // prepare_workspace 幂等，不覆盖已落位文件）。
-    if let Some(template) = template_path {
+    if let Some(template) = options.template_path {
         let ws = adapter
             .prepare_workspace(run_id, &serde_json::json!({}))
             .map_err(|f| (ErrorCategory::ToolUnavailable, f.message))?;
@@ -245,11 +277,11 @@ pub fn execute_nuclei(
         },
         "result_schema_version": "1"
     });
-    if let Some(task) = task_id {
+    if let Some(task) = options.task_id {
         request["task_id"] = json!(task);
     }
     let submitted = engine
-        .submit(&request)
+        .submit_correlated(&request, options.trace_id)
         .map_err(|e| (ErrorCategory::ToolUnavailable, format!("submit rejected: {e}")))?;
     let call = ContainerCall {
         engine,
@@ -267,7 +299,7 @@ pub fn execute_nuclei(
             item.timeout_budget_s.clamp(1, 300).to_string(),
         ],
         family: NUCLEI_FAMILY,
-        network,
+        network: options.network,
     };
     let started = std::time::Instant::now();
     let outcome = execute_container_via_engine(call)
@@ -306,7 +338,7 @@ pub fn execute_nuclei(
         provider_version: "0.1.0".to_owned(),
         status_word,
         tool_run_id: Some(envelope.run_id.clone()),
-        trace_id: None,
+        trace_id: options.trace_id.map(str::to_owned),
         result,
         summary,
         error_category,

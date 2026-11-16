@@ -68,8 +68,8 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     let versions: Vec<i64> = discovered.iter().map(|m| m.version).collect();
     assert_eq!(
         versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-        "discover must see 001..019 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 019 = P9-3 REST 对外访问审计, 020 = RIP3 P5-2 研究编排域)"
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+        "discover must see 001..019 in order (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 019 = P9-3 REST 对外访问审计, 020 = RIP3 P5-2 研究编排域, 021 = RIP3 P5-7 验证证据档)"
     );
 
     let pool = open_memory_pool();
@@ -85,7 +85,7 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
-    assert_eq!(uv1, 20, "user_version must be 20 after first run");
+    assert_eq!(uv1, 21, "user_version must be 21 after first run");
 
     // 第二次：执行器按 user_version 全跳过，零变更。
     let second = migrate(&pool, &dir).unwrap();

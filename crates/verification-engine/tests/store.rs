@@ -186,3 +186,88 @@ fn bad_ids_rejected_as_not_found() {
         PlanStoreError::NotFound(_)
     ));
 }
+
+// ---------------------------------------------------------------------------
+// 证据档（RIP3 P5-7，021 research_evidence）：采集/SHA256/重复识别/检索
+// ---------------------------------------------------------------------------
+
+
+fn evidence_fixture() -> serde_json::Value {
+    serde_json::json!({
+        "provider": "nuclei",
+        "status_word": "SUCCEEDED",
+        "result": {"matched_count": 0, "nuclei_version": "3.11.1"},
+    })
+}
+
+#[test]
+fn evidence_record_hash_and_retrieval() {
+    let store = store();
+    let plan = store.create_plan(Some("rtis-p5-7-ev"), "default", Some("证据档"), None, None).unwrap();
+    store.set_plan_status(&plan.plan_id, "ready").unwrap();
+    let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
+
+    // 采集：SHA256 64 hex + 事件联动 evidence_collected
+    let (record, dup) = store
+        .record_evidence(
+            &item.item_id,
+            &plan.plan_id,
+            None,
+            Some("tr-exec-test-1"),
+            "provider_result",
+            &evidence_fixture(),
+        )
+        .unwrap();
+    assert!(!dup, "first capture is not a duplicate");
+    assert!(record.evidence_id.starts_with("re-"));
+    assert_eq!(record.content_hash.len(), 64);
+    assert_eq!(record.payload, evidence_fixture());
+
+    // 同语义载荷重复采集 → 跳过落档（dedup=true，返回既有记录）
+    let (dup_record, dup2) = store
+        .record_evidence(
+            &item.item_id,
+            &plan.plan_id,
+            None,
+            Some("tr-exec-test-1"),
+            "provider_result",
+            &evidence_fixture(),
+        )
+        .unwrap();
+    assert!(dup2, "same payload must dedup");
+    assert_eq!(dup_record.evidence_id, record.evidence_id);
+
+    // 检索面：一档在列
+    let listed = store.list_evidence(&item.item_id).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].trace_id.as_deref(), Some("tr-exec-test-1"));
+
+    // 事件流留痕：evidence_collected 两条（首采 + dedup 标记）
+    let events = store.list_events(&plan.plan_id).unwrap();
+    let ev_events: Vec<_> = events.iter().filter(|e| e.event_type == "evidence_collected").collect();
+    assert_eq!(ev_events.len(), 2, "capture + dedup marker events");
+}
+
+#[test]
+fn evidence_type_and_id_shape_guards() {
+    let store = store();
+    let plan = store.create_plan(Some("rtis-p5-7-ev2"), "default", Some("证据守卫"), None, None).unwrap();
+    store.set_plan_status(&plan.plan_id, "ready").unwrap();
+    let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
+
+    // evidence_type 词表外拒绝
+    let err = store
+        .record_evidence(&item.item_id, &plan.plan_id, None, None, "screenshot", &evidence_fixture())
+        .unwrap_err();
+    assert!(matches!(err, PlanStoreError::GuardRejected(_)));
+
+    // item/plan ID 形状违规拒绝
+    let err2 = store
+        .record_evidence("vi-1", &plan.plan_id, None, None, "provider_result", &evidence_fixture())
+        .unwrap_err();
+    assert!(matches!(err2, PlanStoreError::GuardRejected(_)));
+    let err3 = store
+        .record_evidence(&item.item_id, "plan-1", None, None, "provider_result", &evidence_fixture())
+        .unwrap_err();
+    assert!(matches!(err3, PlanStoreError::GuardRejected(_)));
+}

@@ -165,9 +165,13 @@ fn nuclei_container_dispatch_end_to_end_local_target() {
         &adapter,
         &item,
         "rn-p55-e2e",
-        None,
-        tool_engine::adapter::egress_proxy::NetworkPlan::None,
-        Some(&template_src),
+        verification_engine::provider::DispatchOptions {
+            task_id: None,
+            // e2e 单链不挂链锚（P5-7 六 ID 贯通在 execute-plan 面）
+            trace_id: None,
+            network: tool_engine::adapter::egress_proxy::NetworkPlan::None,
+            template_path: Some(&template_src),
+        },
     ) {
         Ok(outcome) => outcome,
         Err((category, message)) => {

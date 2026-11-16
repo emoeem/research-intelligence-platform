@@ -77,7 +77,12 @@ fn usage_text() -> &'static str {
      \x20 plan-pause --plan <id>\n\
      \x20   计划级暂停（executing/ready→paused；执行进程项间检查位停）\n\
      \x20 plan-resume --plan <id>\n\
-     \x20   计划级恢复（paused→ready；续跑 execute-plan 幂等只派未判定项）\n\\
+     \x20   计划级恢复（paused→ready；续跑 execute-plan 幂等只派未判定项）\n\
+     \x20 evidence-list --item <id>\n\
+     \x20   证据档检索（021 research_evidence；SHA256 去重 append-only 快照）\n\
+     \x20 finding-link --item <id> [--note '<t>']\n\
+     \x20   CONFIRMED 项验证结论回填 RTIS（rt.py poc update --verified；\n\
+     \x20   非 CONFIRMED 或无 rtis_poc_id 引用拒绝）\n\\
      \x20 plan-build --task <id> --title '<t>' --target '<t>' [--components 'a,b']\n\
      \x20   [--profile '<json>'] [--max-requests N] [--timeout-s N] [--params '<json>']\n\
      \x20   match → planner（预算封顶/缓存决策/排序）→ 落库，输出 plan_id + 预览摘要\n\
@@ -483,10 +488,31 @@ fn run() -> i32 {
                 }
                 consumed += item.request_budget;
                 let run_id = format!("rn-verify-{}", item.item_id.trim_start_matches("vi-").replace('-', ""));
+                // Trace 六 ID 锚（P5-7）：一次 execute 动作一个 trace，贯通
+                // tool_run（submit_correlated）与 evidence 事件流（015 面语义）。
+                let trace_id = format!(
+                    "tr-exec-{}-{}",
+                    plan_id.trim_start_matches("vp-"),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_micros()
+                );
                 let record = match item.provider_id.as_str() {
                     "nuclei" => {
                         let task_id = plan.task_ref.clone();
-                        let outcome = match execute_nuclei(&engine, &adapter, item, &run_id, task_id.as_deref(), network.clone(), template_path.as_deref()) {
+                        let outcome = match execute_nuclei(
+                            &engine,
+                            &adapter,
+                            item,
+                            &run_id,
+                            verification_engine::provider::DispatchOptions {
+                                task_id: task_id.as_deref(),
+                                trace_id: Some(&trace_id),
+                                network: network.clone(),
+                                template_path: template_path.as_deref(),
+                            },
+                        ) {
                             Ok(outcome) => outcome,
                             Err((category, message)) => {
                                 // 派发拒绝也归一化（§5.9：失败/不可用分类），不静默
@@ -510,13 +536,26 @@ fn run() -> i32 {
                                     Some(&normalized.result_reason),
                                     Some(category_word),
                                     None,
+                                    Some(&trace_id),
+                                );
+                                // 派发拒绝帧也是证据（log_excerpt）：失败现场留档
+                                let _ = store.record_evidence(
+                                    &item.item_id,
+                                    &plan_id,
                                     None,
+                                    Some(&trace_id),
+                                    "log_excerpt",
+                                    &serde_json::json!({
+                                        "dispatch": "rejected",
+                                        "reason": message,
+                                        "provider": item.provider_id,
+                                    }),
                                 );
                                 let _ = store.record_event(
                                     Some(&plan_id),
                                     Some(&item.item_id),
                                     None,
-                                    None,
+                                    Some(&trace_id),
                                     "result_assigned",
                                     Some(serde_json::json!({"dispatch": "rejected", "reason": message})),
                                 );
@@ -530,6 +569,41 @@ fn run() -> i32 {
                             summary: &outcome.summary,
                         };
                         let normalized = evaluate(&view);
+                        // Evidence 双帧落档（P5-7）：原始 Provider 结果帧 +
+                        // 归一化结论帧（SHA256 去重，append-only）。
+                        let evidence_provider = store
+                            .record_evidence(
+                                &item.item_id,
+                                &plan_id,
+                                outcome.tool_run_id.as_deref(),
+                                Some(&trace_id),
+                                "provider_result",
+                                &serde_json::json!({
+                                    "provider": outcome.provider_id,
+                                    "provider_version": outcome.provider_version,
+                                    "tool_version": outcome.tool_version,
+                                    "status_word": outcome.status_word,
+                                    "result": outcome.result,
+                                    "summary": outcome.summary,
+                                    "duration_ms": outcome.duration_ms,
+                                    "rule_ref": outcome.rule_ref,
+                                }),
+                            )
+                            .ok();
+                        let evidence_normalized = store
+                            .record_evidence(
+                                &item.item_id,
+                                &plan_id,
+                                outcome.tool_run_id.as_deref(),
+                                Some(&trace_id),
+                                "normalized_result",
+                                &checked_normalized_doc(&item.item_id, &normalized),
+                            )
+                            .ok();
+                        let evidence_provider_id =
+                            evidence_provider.as_ref().map(|(e, _)| e.evidence_id.clone());
+                        let evidence_normalized_id =
+                            evidence_normalized.as_ref().map(|(e, _)| e.evidence_id.clone());
                         store
                             .set_result(
                                 &item.item_id,
@@ -537,7 +611,7 @@ fn run() -> i32 {
                                 Some(&normalized.result_reason),
                                 normalized.error_category.as_deref(),
                                 outcome.tool_run_id.as_deref(),
-                                None,
+                                Some(&trace_id),
                             )
                             .map_err(|e| emit_error("execute_plan", &e.to_string()))
                             .ok();
@@ -546,12 +620,16 @@ fn run() -> i32 {
                                 Some(&plan_id),
                                 Some(&item.item_id),
                                 outcome.tool_run_id.as_deref(),
-                                None,
+                                Some(&trace_id),
                                 "dispatched",
                                 Some(serde_json::json!({
                                     "provider": outcome.provider_id,
                                     "tool_version": outcome.tool_version,
                                     "normalized": checked_normalized_doc(&item.item_id, &normalized),
+                                    "evidence_ids": [
+                                        evidence_provider_id.clone(),
+                                        evidence_normalized_id.clone(),
+                                    ],
                                 })),
                             )
                             .ok();
@@ -559,6 +637,11 @@ fn run() -> i32 {
                             "item_id": item.item_id,
                             "status_word": outcome.status_word,
                             "tool_run_id": outcome.tool_run_id,
+                            "trace_id": trace_id,
+                            "evidence_ids": [
+                                evidence_provider_id,
+                                evidence_normalized_id,
+                            ],
                             "normalized": checked_normalized_doc(&item.item_id, &normalized),
                         })
                     }
@@ -579,7 +662,7 @@ fn run() -> i32 {
                                 Some("RTIS POC reference recorded; probe provider required for automated conclusion"),
                                 None,
                                 None,
-                                None,
+                                Some(&trace_id),
                             )
                             .map_err(|e| emit_error("execute_plan", &e.to_string()))
                             .ok();
@@ -588,13 +671,13 @@ fn run() -> i32 {
                                 Some(&plan_id),
                                 Some(&item.item_id),
                                 None,
-                                None,
+                                Some(&trace_id),
                                 "dispatched",
                                 Some(meta_ref.clone()),
                             )
                             .ok();
                         dispatched += 1;
-                        serde_json::json!({"item_id": item.item_id, "reference": meta_ref})
+                        serde_json::json!({"item_id": item.item_id, "trace_id": trace_id, "reference": meta_ref})
                     }
                 };
                 emit(&record);
@@ -656,6 +739,93 @@ fn run() -> i32 {
                     0
                 }
                 Err(e) => emit_error("plan_resume", &e.to_string()),
+            }
+        }
+        "evidence-list" => {
+            // 证据档检索入口（P5-7，021 research_evidence）：计划项维度
+            // 时间升序，UI 跳转面与覆盖矩阵消费。
+            let item_id = match args.required("item") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match store.list_evidence(&item_id) {
+                Ok(records) => {
+                    emit(&serde_json::json!({
+                        "item_id": item_id,
+                        "items": records,
+                    }));
+                    0
+                }
+                Err(e) => emit_error("evidence_list", &e.to_string()),
+            }
+        }
+        "finding-link" => {
+            // RTIS Finding 闭环写面（P5-7）：CONFIRMED 项的验证结论经
+            // rt.py poc update --verified --note 回填（RTIS 既有接口
+            // sanctioned 写路径；结论性证据状态以 RTIS 为准，§3.1）。
+            // 守卫：非 CONFIRMED 项拒绝（避免把未确认结论当成漏洞事实）；
+            // 无 rtis_poc_id 引用的项拒绝（Finding 锚在 RTIS，RIP3 零自建）。
+            let item_id = match args.required("item") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let item = match store.get_item(&item_id) {
+                Ok(Some(item)) => item,
+                Ok(None) => return emit_error("not_found", &item_id),
+                Err(e) => return emit_error("finding_link", &e.to_string()),
+            };
+            if item.result_status.as_deref() != Some("CONFIRMED") {
+                return emit_error(
+                    "finding_link_requires_confirmed",
+                    &format!(
+                        "item {item_id} result_status={:?} (finding-link requires CONFIRMED with evidence review)",
+                        item.result_status
+                    ),
+                );
+            }
+            let Some(poc_id) = item.rtis_poc_id else {
+                return emit_error(
+                    "finding_link_requires_rtis_poc",
+                    &format!("item {item_id} has no rtis_poc_id reference (finding anchor lives in RTIS)"),
+                );
+            };
+            let note = args
+                .get("note")
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    item.result_reason
+                        .clone()
+                        .unwrap_or_else(|| "RIP3 verification confirmed".to_owned())
+                });
+            let rtis = RtisPocProvider::from_repo_root(&repo_root());
+            match rtis.record_verification(poc_id, &note) {
+                Ok(payload) => {
+                    store
+                        .record_event(
+                            Some(&item.plan_id),
+                            Some(&item.item_id),
+                            item.tool_run_id.as_deref(),
+                            item.trace_id.as_deref(),
+                            "result_assigned",
+                            Some(serde_json::json!({
+                                "finding_link": true,
+                                "rtis_poc_id": poc_id,
+                                "note": note,
+                            })),
+                        )
+                        .ok();
+                    emit(&serde_json::json!({
+                        "item_id": item.item_id,
+                        "rtis_poc_id": poc_id,
+                        "linked": true,
+                        "rtis_response": payload,
+                    }));
+                    0
+                }
+                Err((category, message)) => emit_error(
+                    "finding_link_rtis_failed",
+                    &format!("rt.py poc update failed ({category:?}): {message}"),
+                ),
             }
         }
         "match" => {

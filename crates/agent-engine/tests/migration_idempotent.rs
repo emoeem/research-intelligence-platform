@@ -61,10 +61,11 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     // 运行控制与步骤轨迹两表，015 为 P7-5 trace 关联，016 为 P8-1
     // workflow 定义版本化，017 为 P8-2 workflow 运行持久化，018 为 P8-3
     // workflow 控制面与六 ID 关联，019 为 P9-3 REST 对外访问审计表，
-    // 020 为 RIP3 P5-2 研究编排域三表 research_plan/plan_item/plan_event）。
+    // 020 为 RIP3 P5-2 研究编排域三表 research_plan/plan_item/plan_event，
+    // 021 为 RIP3 P5-7 验证证据档 research_evidence）。
     assert_eq!(
         applied_first,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
         "all migrations must apply once"
     );
 
@@ -79,7 +80,7 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     let user_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(user_version, 20);
+    assert_eq!(user_version, 21);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
