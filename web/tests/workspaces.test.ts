@@ -94,15 +94,19 @@ describe("workspaces 数据模型（P7-1 十一工作区）", () => {
     }
   });
 
-  it("路由与工作区数据一一对应且无重复（十一工作区 + 总览 + RIP3 文档中心 tab）", () => {
+  it("路由与工作区数据一一对应且无重复（十一工作区 + 总览 + RIP3 文档中心 + Research 子页 tab）", () => {
     const routes = ["/", ...WORKSPACES.flatMap((workspace) => workspace.tabs.map((tab) => tab.to))];
-    // Dashboard 的 entry 即「/」：列表含一次重复，去重后为 12 条路由
-    //（11 工作区主路由 + RIP3 P1-2 文档中心 tab，挂 Knowledge 工作区第二 tab）。
-    expect(new Set(routes).size).toBe(12);
+    // Dashboard 的 entry 即「/」：列表含一次重复，去重后为 15 条路由
+    //（11 工作区主路由 + RIP3 P1-2 文档中心 tab 挂 Knowledge 第二 tab
+    // + P5-1 Research 三子页 tab：tasks/assets/knowledge）。
+    expect(new Set(routes).size).toBe(15);
     for (const route of [
       "/",
       "/projects",
       "/research",
+      "/research/tasks",
+      "/research/assets",
+      "/research/knowledge",
       "/knowledge",
       "/documents",
       "/tools",

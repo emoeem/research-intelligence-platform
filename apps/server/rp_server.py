@@ -572,6 +572,15 @@ def handle_reviews(conn: sqlite3.Connection, params: dict) -> dict:
 
 
 def handle_tasks(conn: sqlite3.Connection, params: dict) -> dict:
+    # Phase 5（P5-1）Research Workspace 任务详情：?task_id= 单条全字段
+    # （含 status_history 保真 JSON）；镜像表只读语义不变，404 口径与
+    # /api/knowledge?knowledge_id= 一致。
+    task_id = clean_str(params, "task_id")
+    if task_id:
+        item = query_one(conn, "SELECT * FROM research_task WHERE task_id = ?", (task_id,))
+        if item is None:
+            raise ApiError(404, "no_task", f"研究任务不存在：{task_id}")
+        return {"available": True, "item": item, "task_id": task_id}
     limit = parse_limit(params)
     total = conn.execute("SELECT COUNT(*) FROM research_task").fetchone()[0]
     by_state = {
@@ -589,7 +598,8 @@ def handle_tasks(conn: sqlite3.Connection, params: dict) -> dict:
     items = query_all(
         conn,
         "SELECT task_id, title, objective, target, task_type, state, source_file, source_system,"
-        " created_at, updated_at FROM research_task ORDER BY updated_at DESC, task_id DESC LIMIT ?",
+        " created_at, updated_at, status_history FROM research_task"
+        " ORDER BY updated_at DESC, task_id DESC LIMIT ?",
         (limit,),
     )
     result = {"total": total, "by_state": by_state, "by_type": by_type, "limit": limit, "items": items}

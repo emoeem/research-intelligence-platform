@@ -1,18 +1,10 @@
-import { WorkspacePlaceholder } from "./WorkspacePlaceholder";
+/** 研究工作台（P5-1）：Research Workspace 骨架入口 = 总览子页。子页路由族
+ *  见 App.tsx（/research/*）；工作区 tab 数据源见 workspaces.ts research 面。
+ *  通用占位（WorkspacePlaceholder）自本批起移除——本页是真实 API 驱动的
+ *  工作区（P5-0 审计差距 G1 收口）。 */
 
-/** 研究工作区（占位，P7-1）：研究项目、目标、任务计划与研究时间线
- *  由后续批次实施（计划 §10.3 Research Workspace）。 */
+import { ResearchOverviewPage } from "./research/ResearchOverviewPage";
+
 export function ResearchPage() {
-  return (
-    <WorkspacePlaceholder
-      title="研究工作台"
-      workspaceNumber="3"
-      fillsIn="后续批次"
-      planItems={["研究项目与目标管理", "任务计划与研究时间线", "研究过程记录与上下文"]}
-      related={[
-        { to: "/projects", label: "项目区（现有任务树）" },
-        { to: "/knowledge", label: "知识库" },
-      ]}
-    />
-  );
+  return <ResearchOverviewPage />;
 }

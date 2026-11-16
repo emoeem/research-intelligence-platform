@@ -139,15 +139,25 @@ describe("图标轨与中央多标签工作区（P7-1）", () => {
     }
   });
 
-  it("标签区渲染十一个固定 tab 且带稳定编号，总览为活跃 tab", () => {
+  it("标签区渲染十四个固定 tab 且带稳定编号，总览为活跃 tab", () => {
     render(<App />);
     const tabarea = screen.getByRole("navigation", { name: "工作区标签页" });
     expect(tabarea.textContent).toContain("1.1");
+    // P5-1：Research 工作区扩为四 tab（3.1 总览到 3.4 知识上下文）。
+    expect(tabarea.textContent).toContain("3.1");
+    expect(tabarea.textContent).toContain("3.4");
     expect(tabarea.textContent).toContain("5.1");
     expect(tabarea.textContent).toContain("11.1");
     expect(tabarea.textContent).toContain("总览");
     expect(tabarea.textContent).toContain("Agent Studio");
-    expect(screen.getByRole("button", { name: /总览/ }).getAttribute("aria-current")).toBe("page");
+    // tab 可访问名含编号与标签（icon aria-hidden）：在 tabarea 内取 aria-current
+    // 的 tab，title 应为 Dashboard「1.1 · 总览 …」，research 的「研究总览」（3.1）
+    // 不会误中。
+    const activeTab = tabarea.querySelector(
+      ".tabarea-btn.is-active, .tabarea-tab.is-active .tabarea-btn",
+    );
+    expect(activeTab?.getAttribute("title")?.startsWith("1.1 · 总览")).toBe(true);
+    expect(activeTab?.getAttribute("aria-current")).toBe("page");
     // 固定 tab 无关闭钮
     expect(screen.queryByRole("button", { name: "关闭标签 总览" })).toBeNull();
   });

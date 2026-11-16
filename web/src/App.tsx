@@ -44,6 +44,27 @@ const PluginDetailPage = lazy(() =>
 const ResearchPage = lazy(() =>
   import("./routes/ResearchPage").then((m) => ({ default: m.ResearchPage })),
 );
+// P5-1：Research Workspace 子页族（总览即 /research 着陆；任务/资产/知识上下文）。
+const ResearchTasksPage = lazy(() =>
+  import("./routes/research/ResearchTasksPage").then((m) => ({
+    default: m.ResearchTasksPage,
+  })),
+);
+const ResearchTaskDetailPage = lazy(() =>
+  import("./routes/research/ResearchTaskDetailPage").then((m) => ({
+    default: m.ResearchTaskDetailPage,
+  })),
+);
+const ResearchAssetsPage = lazy(() =>
+  import("./routes/research/ResearchAssetsPage").then((m) => ({
+    default: m.ResearchAssetsPage,
+  })),
+);
+const ResearchKnowledgePage = lazy(() =>
+  import("./routes/research/ResearchKnowledgePage").then((m) => ({
+    default: m.ResearchKnowledgePage,
+  })),
+);
 const AgentsPage = lazy(() =>
   import("./routes/AgentsPage").then((m) => ({ default: m.AgentsPage })),
 );
@@ -101,6 +122,13 @@ export function App() {
             <Route path="plugins" element={lazyElement(<PluginsPage />)} />
             <Route path="plugins/:pluginId" element={lazyElement(<PluginDetailPage />)} />
             <Route path="research" element={lazyElement(<ResearchPage />)} />
+            <Route path="research/tasks" element={lazyElement(<ResearchTasksPage />)} />
+            <Route
+              path="research/tasks/:taskId"
+              element={lazyElement(<ResearchTaskDetailPage />)}
+            />
+            <Route path="research/assets" element={lazyElement(<ResearchAssetsPage />)} />
+            <Route path="research/knowledge" element={lazyElement(<ResearchKnowledgePage />)} />
             <Route path="agents" element={lazyElement(<AgentsPage />)} />
             <Route path="workflows" element={lazyElement(<WorkflowsPage />)} />
             <Route path="settings" element={lazyElement(<SettingsPage />)} />

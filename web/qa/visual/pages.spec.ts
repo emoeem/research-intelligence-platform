@@ -288,7 +288,7 @@ const API_STUBS: Record<string, unknown> = {
 const PAGES = [
   { path: "/", marker: "知识生命周期分布" },
   { path: "/projects", marker: "共 42 个任务" },
-  { path: "/research", marker: "研究工作台" },
+  { path: "/research", marker: "研究总览" },
   { path: "/knowledge", marker: "共 46 条" },
   { path: "/tools", marker: "共 20 个工具" },
   { path: "/plugins", marker: "插件中心" },
