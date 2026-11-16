@@ -161,8 +161,11 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
      能力记录（成熟库优先纪律）。
   4. 产物：页面复用矩阵 + 后端能力复用矩阵 + 差距清单 + 新 DTO/Schema/
      迁移/Provider 接口 ADR 草稿 + P5-1 设计冻结提案。
-- 参考图已落位：docs/rip3/ui-reference/yakit/{home,http-history,web-fuzzer}
-  .png（B 组）；A 组（用户当前 UI 截图两张）待用户附上落 current/。
+- 参考图已齐位：docs/rip3/ui-reference/yakit/{home,http-history,web-fuzzer}
+  .png（B 组）+ docs/rip3/ui-reference/current/（A 组六张：feature-map 正常
+  态全壳层 / dashboard-expired-token 错误态 / projects / research-placeholder
+  / workflows / documents；web/scripts/p5_current_ui_shots.mjs 可重拍——测试
+  栈 7801+5173 起后 node 运行，token 走 localStorage rip_auth_token）。
 - P4-4 坑位实录（本批，详见 P4-4-BENCHMARK.md G 节）：tool-engine 容器
   stdout 并发读（大输出 >64KB 管道死锁）；MMR 只能在 0-1 相关分上做（RRF
   分上做 = 多样性压倒相关性）；检索结果缓存键必须含 query（漏了 = 多查询
