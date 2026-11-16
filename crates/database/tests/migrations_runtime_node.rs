@@ -79,7 +79,7 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (20, "_research_verification"),
+        (21, "_research_evidence"),
         "first run must land 020 last"
     );
 

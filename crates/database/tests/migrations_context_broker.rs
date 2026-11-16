@@ -138,6 +138,7 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
             (18, "_workflow_control_correlation".to_string()),
             (19, "_external_api_audit".to_string()),
             (20, "_research_verification".to_string()),
+            (21, "_research_evidence".to_string()),
         ],
         "first run must apply exactly 001..021"
     );
@@ -146,7 +147,7 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 20,
+        uv1, 21,
         "user_version must be 21 after first run (chain tail 021)"
     );
     assert!(

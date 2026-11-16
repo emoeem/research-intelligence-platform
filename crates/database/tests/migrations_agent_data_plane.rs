@@ -95,8 +95,8 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (20, "_research_verification"),
-        "chain tail is now 020 (RIP3 P5-2 research orchestration)，006..019 落于链中段"
+        (21, "_research_evidence"),
+        "chain tail is now 021 (RIP3 P5-7 verification evidence ledger)，006..020 落于链中段"
     );
 
     let dump1 = schema_dump(&pool);
@@ -104,7 +104,7 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
     assert_eq!(
-        uv, 20,
+        uv, 21,
         "user_version must be 21 after first run (chain tail 021)"
     );
 
