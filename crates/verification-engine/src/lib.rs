@@ -28,6 +28,7 @@ pub mod contract;
 pub mod fingerprint;
 pub mod matcher;
 pub mod planner;
+pub mod provider;
 pub mod store;
 
 pub use contract::{SCHEMA_DIR, SCHEMA_VERSION};
@@ -37,4 +38,7 @@ pub use matcher::{
     UnifiedSearchChannel,
 };
 pub use planner::{draft_from_match, persist_draft, CacheDecision, PlanBudget, PlanDraft};
+pub use provider::{
+    execute_nuclei, NucleiProvider, ProviderOutcome, RtisPocProvider, VerificationProvider,
+};
 pub use store::{PlanRecord, PlanStore, PlanStoreError, PlanSummary, ResultGuard, StoreEvent};

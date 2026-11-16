@@ -1,0 +1,31 @@
+# ============================================================================
+# rip-nuclei：Nuclei 扫描 Provider 镜像族（RIP3 Phase 5 P5-5 批次交付物）
+# ============================================================================
+# 成熟库优先（AGENTS.md 硬约束）：Nuclei 是 projectdiscovery 官方维护的
+# 模板扫描器（MIT），作为 Provider 接入而非自研扫描引擎（补充计划 §5.6.B
+# 「Nuclei 是成熟 Provider，不当成 RIP 的全部扫描逻辑」）。
+# 基础镜像 digest 固定（计划 §5.4「镜像固定版本和 digest」）：
+#   docker.io/projectdiscovery/nuclei:latest
+#   本机 pull 实测 RepoDigest sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb
+#   （2026-11-17 实拉；基础镜像更换须重新对账并按 containerfiles/README.md
+#   digest 台账流程重取同步）
+# 运行面约束（keep-id 非 root 写面）：HOME/XDG_CONFIG_HOME 钉到 /task/out
+# （Adapter 只挂载 workspaces/<run_id>/out 可写，配置写面收敛到任务目录，
+#  根文件系统只读由 Adapter --read-only 注入）；模板经 /task/in 挂载由
+# 调用面提供（template_ref 锚 → 本地模板文件，不跑全量不自动装模板）；
+# wrapper 负责配置目录运行期创建（挂载覆盖镜像层目录，keep-id 下属主对齐）。
+# 构建命令（宿主机零安装，镜像属运行时数据）：
+#   podman build -t localhost/rip-nuclei:latest -f containerfiles/rip-nuclei/Containerfile containerfiles/rip-nuclei/
+FROM docker.io/projectdiscovery/nuclei@sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb
+
+ENV HOME=/task/out \
+    XDG_CONFIG_HOME=/task/out/.config \
+    XDG_CACHE_HOME=/task/out/.cache
+
+COPY wrapper.sh /usr/local/bin/rip-nuclei-wrapper
+RUN chmod +x /usr/local/bin/rip-nuclei-wrapper && mkdir -p /task/out
+
+# 镜像入口 = wrapper（Adapter 以 args-after-image 方式组装命令，见
+# podman_host.rs run_command：entrypoint 段是追加参数不是 --entrypoint；
+# wrapper exec nuclei "$@" 承载真正的 nuclei 调用面）
+ENTRYPOINT ["/usr/local/bin/rip-nuclei-wrapper"]

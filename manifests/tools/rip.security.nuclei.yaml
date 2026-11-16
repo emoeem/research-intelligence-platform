@@ -1,0 +1,119 @@
+# Nuclei 扫描 Provider（RIP3 Phase 5 P5-5 批次登记文件，补充计划 §5.6.B）。
+# Nuclei 是成熟扫描 Provider（projectdiscovery/nuclei，MIT；v3.11.1 镜像钉定），
+# 按「成熟库优先」纪律接入而非自研扫描引擎；Planner 先筛模板/引用，不跑
+# 全量模板（§5.6.B 硬要求：由 Planner 先筛选模板或模板标签）。
+# 执行面：tool_engine → runtime-gateway podman host Adapter（execute_container_
+# via_engine 链，RIP3 P5-5 起由 verification-engine provider 层承载派发），
+# 输出 JSONL 经 result 归一化（P5-7 evaluator 承载五态判定）。
+schema_version: "1"
+id: "rip.security.nuclei"
+name: "Nuclei Template Scanner"
+version: "0.1.0"
+kind: "tool"
+family: "network"
+description: "Nuclei 模板扫描 Provider：对目标执行受控模板检测（JSONL 输出），模板引用由 Planner/计划项承载（rtis-poc:<id> 或 knowledge:<id>），速率与请求预算强制（Manifest resources + input 双闸）"
+runtime:
+  type: "podman_host"
+  image: "localhost/rip-nuclei@sha256:4620cd3fed9dc43a3fe2d6fc4af0c00366a6c54d68293ab458a460905517c3f8"
+  entrypoint: ["/usr/local/bin/rip-nuclei-wrapper"]
+  mounts:
+    - role: "output"
+      path: "/task/out"
+      mode: "rw"
+input_schema:
+  type: "object"
+  required: ["target", "url"]
+  additionalProperties: false
+  properties:
+    url:
+      type: "string"
+      minLength: 1
+      maxLength: 512
+      description: "目标 URL（egress allowlist host 派生源，P3-2 NetworkPlan::EgressAllowlist 契约）"
+    target:
+      type: "string"
+      minLength: 1
+      maxLength: 512
+      description: "规范化目标（URL 或 host，计划项 target_ref）"
+    template_ref:
+      type: "string"
+      description: "模板引用锚（rtis-poc:<id> | knowledge:<id>；执行面据此选取模板/标签，不跑全量）"
+      default: ""
+    rate_limit:
+      type: "integer"
+      minimum: 1
+      maximum: 50
+      default: 10
+      description: "每秒请求上限（低并发纪律 ≤50）"
+    timeout_seconds:
+      type: "integer"
+      minimum: 1
+      maximum: 300
+      default: 60
+      description: "单项超时秒数（与 budget_json.timeout_s 同源）"
+    max_requests:
+      type: "integer"
+      minimum: 1
+      maximum: 1000
+      default: 10
+      description: "请求总量预算（planner 裁剪面）"
+output_schema:
+  type: "object"
+  required: ["matched_count"]
+  properties:
+    matched_count:
+      type: "integer"
+      description: "JSONL 命中行数（nuclei -jsonl 输出面；命中 ≠ CONFIRMED，五态判定在 evaluator）"
+    jsonl_excerpt:
+      type: "string"
+      description: "JSONL 输出尾部摘录（大输出截断，全文走 artifact）"
+    nuclei_version:
+      type: "string"
+      description: "工具版本（Provider 输出保留工具版本纪律）"
+resources:
+  cpu: "1"
+  memory: "512Mi"
+  timeout_seconds: 300
+  max_output_bytes: 8388608
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80, 443, 8080, 8443]
+    domains: []
+    note: "HTTP/HTTPS 常规端口白名单（本地靶场与常规 web 面）；allowlist 域名在派发面按计划项 target 派生临时条目，run 结束失效（P3-2 EgressProxy 同款）"
+secrets: []
+permission_level: "T1"
+idempotent: true
+health:
+  probe:
+    type: "worker_ping"
+    timeout_ms: 2000
+    interval_seconds: 300
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "opensource"
+  image_digest: "sha256:4620cd3fed9dc43a3fe2d6fc4af0c00366a6c54d68293ab458a460905517c3f8"
+  source_path: "docker.io/projectdiscovery/nuclei@sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb"
+  license: "MIT"
+  dependencies:
+    - "docker.io/projectdiscovery/nuclei（基础镜像 digest 钉定，containerfiles/rip-nuclei/Containerfile）"
+    - "tool-engine podman_host Adapter（execute_container_via_engine 派发链）"
+  known_limits:
+    - "模板选取由调用面承载（template_ref 锚），本 Manifest 不内嵌模板全集（不建第二套漏洞事实库）"
+    - "命中数不等于 Finding；结果经 P5-7 result-normalized 归一化五态判定"
+    - "egress_allowlist 端口转发面按 target 派生（P3-2 EgressProxy）"
+  tested: "2026-11-17 本批实拍：镜像 -version v3.11.1；本地靶场端到端随 P5-6 执行批次登记"
+context:
+  summary: "Nuclei 模板扫描 Provider（受控模板引用 + 速率/预算双闸）"
+  docs: "docs/rip3/RIP3-PHASE5-WEB-WORKBENCH-AND-KNOWLEDGE-DRIVEN-VERIFICATION-PLAN.md §5.6.B"
+  tags: ["security", "scanner", "nuclei", "provider"]
+examples:
+  - input:
+      url: "http://127.0.0.1:18080"
+      target: "http://127.0.0.1:18080"
+      template_ref: "rtis-poc:900008"
+      rate_limit: 10
+      timeout_seconds: 60
+      max_requests: 10

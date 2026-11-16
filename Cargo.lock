@@ -2665,6 +2665,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tool-engine",
+ "tool-registry",
 ]
 
 [[package]]

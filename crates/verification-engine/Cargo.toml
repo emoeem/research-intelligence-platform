@@ -15,10 +15,16 @@ description = "RIP3 Phase 5 知识驱动漏洞验证引擎（RIP-VRVE）契约�
 # 派发（P5-5/P5-6）单向依赖 tool-engine（反方向禁止）。
 domain = { workspace = true }
 database = { workspace = true }
+# P5-5 起执行派发链（单向依赖，反方向禁止）：submit D-TC-05 + 容器执行。
+tool-engine = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 jsonschema = { version = "0.56", default-features = false }
 sha2 = "0.10"
+
+[dev-dependencies]
+# 契约测试装配面（Engine 需要注册表装载 rip.security.nuclei Manifest）
+tool-registry = { workspace = true }
 
 [[bin]]
 name = "rp-verify"

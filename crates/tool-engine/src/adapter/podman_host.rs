@@ -777,7 +777,7 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
                             &row,
                             started,
                             transcript,
-                            "POLICY",
+                            "POLICY_DENIED",
                             format!("egress allowlist host derivation failed: {e}"),
                             &call.adapter.config.node_id,
                         );
@@ -790,7 +790,7 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
                         &row,
                         started,
                         transcript,
-                        "POLICY",
+                        "POLICY_DENIED",
                         "egress_allowlist requires string input.url to derive the temporary allowlist host"
                             .to_string(),
                         &call.adapter.config.node_id,
