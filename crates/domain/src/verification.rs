@@ -296,3 +296,85 @@ mod tests {
         assert!(ErrorCategory::parse("exit_code").is_err());
     }
 }
+
+/// 七维覆盖矩阵（RIP3 Phase 5 P5-8，补充计划 §5.10；022 迁移 dimension
+/// 列 CHECK 词表同源）。每维归属一个验证计划项，覆盖状态由项的五态结果
+/// 推导（未测试 ≠ 测试通过；无命中 ≠ 无漏洞）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CoverageDimension {
+    /// 资产与暴露面（host/port/服务识别）。
+    Assets,
+    /// API 端点（路径/方法/参数形态）。
+    ApiEndpoints,
+    /// 身份与权限（认证绕过/越权/会话）。
+    IdentityPermissions,
+    /// 输入点（注入面/校验缺失）。
+    InputPoints,
+    /// 业务流（逻辑缺陷/竞态/支付流程）。
+    BusinessFlows,
+    /// 文件处理（上传/解析/路径穿越）。
+    FileProcessing,
+    /// 数据流（敏感数据流转/存储/泄露面）。
+    DataFlows,
+}
+
+impl CoverageDimension {
+    /// 全部七维（§5.10 定义序）。
+    pub const ALL: [CoverageDimension; 7] = [
+        CoverageDimension::Assets,
+        CoverageDimension::ApiEndpoints,
+        CoverageDimension::IdentityPermissions,
+        CoverageDimension::InputPoints,
+        CoverageDimension::BusinessFlows,
+        CoverageDimension::FileProcessing,
+        CoverageDimension::DataFlows,
+    ];
+
+    /// 存储词值（022 迁移 CHECK 词表）。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CoverageDimension::Assets => "assets",
+            CoverageDimension::ApiEndpoints => "api_endpoints",
+            CoverageDimension::IdentityPermissions => "identity_permissions",
+            CoverageDimension::InputPoints => "input_points",
+            CoverageDimension::BusinessFlows => "business_flows",
+            CoverageDimension::FileProcessing => "file_processing",
+            CoverageDimension::DataFlows => "data_flows",
+        }
+    }
+
+    /// 从存储词值解析。
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        match value {
+            "assets" => Ok(CoverageDimension::Assets),
+            "api_endpoints" => Ok(CoverageDimension::ApiEndpoints),
+            "identity_permissions" => Ok(CoverageDimension::IdentityPermissions),
+            "input_points" => Ok(CoverageDimension::InputPoints),
+            "business_flows" => Ok(CoverageDimension::BusinessFlows),
+            "file_processing" => Ok(CoverageDimension::FileProcessing),
+            "data_flows" => Ok(CoverageDimension::DataFlows),
+            other => Err(DomainError::InvalidVerificationStatus(format!(
+                "coverage dimension: {other}"
+            ))),
+        }
+    }
+}
+
+impl fmt::Display for CoverageDimension {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod coverage_dimension_tests {
+    use super::*;
+
+    #[test]
+    fn dimension_word_values_round_trip() {
+        for d in CoverageDimension::ALL {
+            assert_eq!(CoverageDimension::parse(d.as_str()).unwrap(), d);
+        }
+        assert!(CoverageDimension::parse("unknown_dim").is_err());
+    }
+}

@@ -1,7 +1,7 @@
 //! P10-1 集成测试：backup()/restore() 真实实演（ROADMAP §11.3 P10-5 判据
 //! 「备份到恢复的 roundtrip 演练通过，数据一致性核对」）。
 //!
-//! 载具：真实 migrations/（001..021）在临时目录开发副本上执行，生产
+//! 载具：真实 migrations/（001..022）在临时目录开发副本上执行，生产
 //! migrations/platform*.db 零接触。三个用例：
 //! 1. roundtrip + 受控破坏副本恢复（破坏 -> 恢复 -> 行数/内容/sha256 对账）；
 //! 2. 归档被篡改（成员字节翻转）必须拒绝（sha256 mismatch）；
@@ -47,8 +47,8 @@ fn build_db(path: &Path) {
     let applied = migrate(&pool, &migrations_dir()).unwrap();
     assert_eq!(
         applied.last().map(|m| m.version),
-        Some(21),
-        "真实迁移链 001..021 应全应用"
+        Some(22),
+        "真实迁移链 001..022 应全应用"
     );
     pool.with_conn(|c| {
         c.execute_batch(

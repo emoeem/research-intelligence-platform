@@ -25,6 +25,7 @@
 //!   在场（执行失败/超时）时禁止写 NOT_REPRODUCED（store 层守卫强制）。
 
 pub mod contract;
+pub mod coverage;
 pub mod evaluator;
 pub mod fingerprint;
 pub mod matcher;
@@ -44,6 +45,7 @@ pub use evaluator::{evaluate, normalized_doc, NormalizedResult, OutcomeView};
 pub use scheduler::{
     budget_exhausted_result, pending_items, runtime_budget_ok, NormalizedOutcome,
 };
+pub use coverage::{coverage_matrix, generate_blind_spot_hypotheses, CoverageCell, CoverageMatrix};
 pub use provider::{
     execute_nuclei, NucleiProvider, ProviderOutcome, RtisPocProvider, VerificationProvider,
 };

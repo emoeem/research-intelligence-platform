@@ -36,6 +36,9 @@ pub struct PlanBudget {
     /// 并发上限（默认 1，低并发纪律）。
     #[serde(default = "default_concurrency")]
     pub concurrency: i64,
+    /// 假设研究最大轮次（P5-8 §5.10；默认 3，防低价值假设无限探索）。
+    #[serde(default = "default_max_rounds")]
+    pub max_rounds: i64,
 }
 
 fn default_max_requests() -> i64 {
@@ -47,6 +50,9 @@ fn default_timeout() -> i64 {
 fn default_concurrency() -> i64 {
     1
 }
+fn default_max_rounds() -> i64 {
+    3
+}
 
 impl PlanBudget {
     pub fn to_value(&self) -> Value {
@@ -54,6 +60,7 @@ impl PlanBudget {
             "max_requests": self.max_requests,
             "timeout_s": self.timeout_s,
             "concurrency": self.concurrency,
+            "max_rounds": self.max_rounds,
         })
     }
 }
@@ -220,6 +227,9 @@ pub fn draft_from_match(
                 timeout_budget_s: budget.timeout_s,
                 execution_order: order as i64,
                 expected_observation: Some(hit.title.clone()),
+                // 七维归属缺省 assets（P5-8）：知识命中到维度的映射随画像面
+                // 扩展；CLI item-add --dimension 已可显式归属。
+                dimension: "assets".to_owned(),
             },
             cache_decision,
             budget_source,
@@ -325,7 +335,7 @@ mod tests {
 
 
     fn budget(max: i64) -> PlanBudget {
-        PlanBudget { max_requests: max, timeout_s: 60, concurrency: 1 }
+        PlanBudget { max_requests: max, timeout_s: 60, concurrency: 1, max_rounds: 3 }
     }
 
     #[test]

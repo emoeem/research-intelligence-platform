@@ -92,6 +92,10 @@ pub struct PlanItemRecord {
     pub timeout_budget_s: i64,
     pub execution_order: i64,
     pub expected_observation: Option<String>,
+    /// 七维覆盖矩阵归属（P5-8，022 列；skip 序列化 = 契约 v1 冻结面不动，
+    /// 存储面与 coverage 推导消费）。
+    #[serde(skip)]
+    pub dimension: String,
     pub result_status: Option<String>,
     pub result_reason: Option<String>,
     pub error_category: Option<String>,
@@ -113,6 +117,46 @@ pub struct StoreEvent {
     pub event_type: String,
     pub payload: Option<Value>,
     pub created_at: String,
+}
+
+/// 研究假设记录（P5-8，022 research_hypothesis 形状）：假设是研究中间面，
+/// 没有证据不能生成 Finding（§5.10）；CONFIRMED 只能经计划项五态判定。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct HypothesisRecord {
+    pub hypothesis_id: String, // hi-YYYYMMDD-HHMMSS-ms-rand
+    pub plan_id: String,
+    pub dimension: String,
+    pub content: String,
+    pub source_evidence: String,
+    pub association_reason: String,
+    pub preconditions: Option<String>,
+    pub expected_observation: Option<String>,
+    pub negative_control: Option<String>,
+    pub suggested_verification: Option<String>,
+    pub cost_risk: Option<String>,
+    pub stop_condition: String,
+    pub round_number: i64,
+    pub status: String, // proposed | in_plan | validated | dropped
+    pub schema_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 假设创建输入（必填守卫：content/source_evidence/association_reason/
+/// stop_condition 非空；无证据不生成）。
+#[derive(Debug, Clone)]
+pub struct NewHypothesis {
+    pub dimension: String,
+    pub content: String,
+    pub source_evidence: String,
+    pub association_reason: String,
+    pub preconditions: Option<String>,
+    pub expected_observation: Option<String>,
+    pub negative_control: Option<String>,
+    pub suggested_verification: Option<String>,
+    pub cost_risk: Option<String>,
+    pub stop_condition: String,
+    pub round_number: i64,
 }
 
 /// 验证证据档记录（021 research_evidence 形状；payload 为采集时点原始快照）。
@@ -147,6 +191,8 @@ pub struct NewItem {
     pub timeout_budget_s: i64,
     pub execution_order: i64,
     pub expected_observation: Option<String>,
+    /// 七维覆盖归属（缺省 assets；词表外 add_item 守卫拒绝）。
+    pub dimension: String,
 }
 
 /// 计划列表行（摘要面，不带 items）。
@@ -428,6 +474,8 @@ impl PlanStore {
                 "excluded item requires at least one applicability reason".to_owned(),
             ));
         }
+        domain::verification::CoverageDimension::parse(&item.dimension)
+            .map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
         self.get_plan(plan_id)?
             .ok_or_else(|| PlanStoreError::NotFound(plan_id.to_owned()))?;
         let item_id = make_id("vi");
@@ -441,8 +489,8 @@ impl PlanStore {
                         provider_id, provider_version, target_ref, dedup_fingerprint,
                         applicability_status, applicability_reasons_json, risk_class,
                         request_budget, timeout_budget_s, execution_order, expected_observation,
-                        schema_version, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)",
+                        dimension, schema_version, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
                     database::rusqlite::params![
                         item_id,
                         plan_id,
@@ -459,6 +507,7 @@ impl PlanStore {
                         item.timeout_budget_s,
                         item.execution_order,
                         item.expected_observation,
+                        item.dimension,
                         SCHEMA_VERSION,
                         now
                     ],
@@ -476,6 +525,7 @@ impl PlanStore {
                 "target_ref": item.target_ref,
                 "dedup_fingerprint": item.dedup_fingerprint,
                 "applicability_status": applicability.as_str(),
+                "dimension": item.dimension,
             })),
         )?;
         self.get_item(&item_id)?
@@ -495,7 +545,7 @@ impl PlanStore {
                             provider_version, target_ref, dedup_fingerprint, applicability_status,
                             applicability_reasons_json, risk_class, request_budget, timeout_budget_s,
                             execution_order, expected_observation, result_status, result_reason,
-                            error_category, tool_run_id, trace_id, created_at, updated_at
+                            error_category, tool_run_id, trace_id, created_at, updated_at, dimension
                      FROM research_plan_item WHERE item_id = ?1",
                     [item_id],
                     |row| {
@@ -525,6 +575,7 @@ impl PlanStore {
                             trace_id: row.get(19)?,
                             created_at: row.get(20)?,
                             updated_at: row.get(21)?,
+                            dimension: row.get(22)?,
                         })
                     },
                 )
@@ -927,6 +978,258 @@ impl PlanStore {
             });
         }
         Ok(records)
+    }
+
+    // -----------------------------------------------------------------------
+    // 研究假设（RIP3 P5-8，022 research_hypothesis）：假设生成/轮次守卫/
+    // 状态机。假设是研究中间面（没有证据不能生成 Finding，§5.10）；轮次
+    // 上限由 PlanBudget.max_rounds 在调用面守卫（round_number 超限拒绝）。
+    // -----------------------------------------------------------------------
+
+    /// 假设登记（append 型创建；词表与必填守卫；round 超限拒绝）。
+    pub fn add_hypothesis(
+        &self,
+        plan_id: &str,
+        h: NewHypothesis,
+        max_rounds: i64,
+    ) -> Result<HypothesisRecord, PlanStoreError> {
+        if !id_prefix_matches(plan_id, "vp-") {
+            return Err(PlanStoreError::GuardRejected("plan id shape".to_owned()));
+        }
+        domain::verification::CoverageDimension::parse(&h.dimension)
+            .map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
+        for (field, value) in [
+            ("content", &h.content),
+            ("source_evidence", &h.source_evidence),
+            ("association_reason", &h.association_reason),
+            ("stop_condition", &h.stop_condition),
+        ] {
+            if value.trim().is_empty() {
+                return Err(PlanStoreError::GuardRejected(format!(
+                    "hypothesis {field} must not be empty (no evidence, no hypothesis)"
+                )));
+            }
+        }
+        if h.round_number < 1 || h.round_number > max_rounds {
+            return Err(PlanStoreError::GuardRejected(format!(
+                "hypothesis round {} outside budget max_rounds {max_rounds} (stop condition: round budget exhausted)",
+                h.round_number
+            )));
+        }
+        let now = now_iso();
+        let hypothesis_id = make_id("hi");
+        self.pool
+            .with_conn(|c| {
+                c.execute(
+                    "INSERT INTO research_hypothesis (hypothesis_id, plan_id, dimension, content,
+                        source_evidence, association_reason, preconditions, expected_observation,
+                        negative_control, suggested_verification, cost_risk, stop_condition,
+                        round_number, status, schema_version, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'proposed', ?14, ?15, ?15)",
+                    database::rusqlite::params![
+                        hypothesis_id,
+                        plan_id,
+                        h.dimension,
+                        h.content,
+                        h.source_evidence,
+                        h.association_reason,
+                        h.preconditions,
+                        h.expected_observation,
+                        h.negative_control,
+                        h.suggested_verification,
+                        h.cost_risk,
+                        h.stop_condition,
+                        h.round_number,
+                        SCHEMA_VERSION,
+                        now
+                    ],
+                )
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        self.get_hypothesis(&hypothesis_id)?
+            .ok_or(PlanStoreError::NotFound(hypothesis_id))
+    }
+
+    /// 假设状态推进（proposed→in_plan→validated/dropped；validated 不迁出）。
+    pub fn set_hypothesis_status(
+        &self,
+        hypothesis_id: &str,
+        status: &str,
+    ) -> Result<(), PlanStoreError> {
+        const STATUSES: [&str; 4] = ["proposed", "in_plan", "validated", "dropped"];
+        if !STATUSES.contains(&status) {
+            return Err(PlanStoreError::GuardRejected(format!(
+                "unknown hypothesis status: {status}"
+            )));
+        }
+        if !id_prefix_matches(hypothesis_id, "hi-") {
+            return Err(PlanStoreError::GuardRejected("hypothesis id shape".to_owned()));
+        }
+        let current: Option<String> = self
+            .pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT status FROM research_hypothesis WHERE hypothesis_id = ?1",
+                    [hypothesis_id],
+                    |r| r.get(0),
+                )
+                .optional()
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        match current.as_deref() {
+            None => return Err(PlanStoreError::NotFound(hypothesis_id.to_owned())),
+            Some("validated") => {
+                return Err(PlanStoreError::GuardRejected(format!(
+                    "hypothesis {hypothesis_id} is validated (terminal; finding path goes through plan item five-state + finding-link)"
+                )));
+            }
+            _ => {}
+        }
+        self.pool
+            .with_conn(|c| {
+                c.execute(
+                    "UPDATE research_hypothesis SET status = ?2, updated_at = ?3 WHERE hypothesis_id = ?1",
+                    database::rusqlite::params![hypothesis_id, status, now_iso()],
+                )
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        Ok(())
+    }
+
+    /// 假设列表（计划维度，轮次升序；研究 Trace 停止原因可追溯）。
+    pub fn list_hypotheses(&self, plan_id: &str) -> Result<Vec<HypothesisRecord>, PlanStoreError> {
+        if !id_prefix_matches(plan_id, "vp-") {
+            return Err(PlanStoreError::GuardRejected("plan id shape".to_owned()));
+        }
+        let rows = self
+            .pool
+            .with_conn(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT hypothesis_id, plan_id, dimension, content, source_evidence,
+                            association_reason, preconditions, expected_observation,
+                            negative_control, suggested_verification, cost_risk, stop_condition,
+                            round_number, status, schema_version, created_at, updated_at
+                     FROM research_hypothesis WHERE plan_id = ?1
+                     ORDER BY round_number ASC, hypothesis_id ASC",
+                )?;
+                let collected = stmt
+                    .query_map([plan_id], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, Option<String>>(6)?,
+                            r.get::<_, Option<String>>(7)?,
+                            r.get::<_, Option<String>>(8)?,
+                            r.get::<_, Option<String>>(9)?,
+                            r.get::<_, Option<String>>(10)?,
+                            r.get::<_, String>(11)?,
+                            r.get::<_, i64>(12)?,
+                            r.get::<_, String>(13)?,
+                            r.get::<_, i64>(14)?,
+                            r.get::<_, String>(15)?,
+                            r.get::<_, String>(16)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok::<Vec<_>, database::rusqlite::Error>(collected)
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        let mut records = Vec::with_capacity(rows.len());
+        for (hypothesis_id, plan_id, dimension, content, source_evidence, association_reason,
+             preconditions, expected_observation, negative_control, suggested_verification,
+             cost_risk, stop_condition, round_number, status, schema_version, created_at, updated_at) in rows {
+            records.push(HypothesisRecord {
+                hypothesis_id,
+                plan_id,
+                dimension,
+                content,
+                source_evidence,
+                association_reason,
+                preconditions,
+                expected_observation,
+                negative_control,
+                suggested_verification,
+                cost_risk,
+                stop_condition,
+                round_number,
+                status,
+                schema_version,
+                created_at,
+                updated_at,
+            });
+        }
+        Ok(records)
+    }
+
+    /// 单条假设。
+    pub fn get_hypothesis(
+        &self,
+        hypothesis_id: &str,
+    ) -> Result<Option<HypothesisRecord>, PlanStoreError> {
+        let mut all = self.pool.with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT hypothesis_id, plan_id, dimension, content, source_evidence,
+                        association_reason, preconditions, expected_observation,
+                        negative_control, suggested_verification, cost_risk, stop_condition,
+                        round_number, status, schema_version, created_at, updated_at
+                 FROM research_hypothesis WHERE hypothesis_id = ?1",
+            )?;
+            let collected = stmt
+                .query_map([hypothesis_id], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, String>(5)?,
+                        r.get::<_, Option<String>>(6)?,
+                        r.get::<_, Option<String>>(7)?,
+                        r.get::<_, Option<String>>(8)?,
+                        r.get::<_, Option<String>>(9)?,
+                        r.get::<_, Option<String>>(10)?,
+                        r.get::<_, String>(11)?,
+                        r.get::<_, i64>(12)?,
+                        r.get::<_, String>(13)?,
+                        r.get::<_, i64>(14)?,
+                        r.get::<_, String>(15)?,
+                        r.get::<_, String>(16)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<Vec<_>, database::rusqlite::Error>(collected)
+        }).map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        let _ = &mut all;
+        all.pop()
+            .map(|(hypothesis_id, plan_id, dimension, content, source_evidence, association_reason,
+                   preconditions, expected_observation, negative_control, suggested_verification,
+                   cost_risk, stop_condition, round_number, status, schema_version, created_at, updated_at)| {
+                HypothesisRecord {
+                    hypothesis_id,
+                    plan_id,
+                    dimension,
+                    content,
+                    source_evidence,
+                    association_reason,
+                    preconditions,
+                    expected_observation,
+                    negative_control,
+                    suggested_verification,
+                    cost_risk,
+                    stop_condition,
+                    round_number,
+                    status,
+                    schema_version,
+                    created_at,
+                    updated_at,
+                }
+            })
+            .map(Some)
+            .ok_or_else(|| PlanStoreError::NotFound(hypothesis_id.to_owned()))
     }
 
     /// 去重指纹查找（P5-4 缓存决策消费：同指纹最近一条已执行项）。

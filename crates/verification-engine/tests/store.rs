@@ -47,6 +47,7 @@ fn sample_item() -> NewItem {
         timeout_budget_s: 60,
         execution_order: 0,
         expected_observation: Some("差分回显形态出现".to_owned()),
+        dimension: "assets".to_owned(),
     }
 }
 

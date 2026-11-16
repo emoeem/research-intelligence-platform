@@ -34,7 +34,7 @@ use tool_engine::adapter::podman_host::{PodmanHostAdapter, PodmanHostConfig};
 use tool_engine::Engine;
 use tool_registry::Registry;
 use verification_engine::evaluator::{evaluate, normalized_doc, OutcomeView};
-use verification_engine::fingerprint::dedup_fingerprint;
+use verification_engine::fingerprint::{dedup_fingerprint, dedup_fingerprint_v2};
 use verification_engine::provider::{
     execute_nuclei, RtisPocProvider,
 };
@@ -55,12 +55,27 @@ fn usage_text() -> &'static str {
      \x20 item-add --plan <id> --provider <id> --target '<ref>' --fingerprint <sha256>\n\
      \x20   [--poc-id N] [--knowledge <id>] [--applicability ...] [--reasons '<json>']\n\
      \x20   [--risk ...] [--requests N] [--timeout-s N] [--order N] [--expected '<t>'] [--version v]\n\
+     \x20   [--dimension assets|api_endpoints|identity_permissions|input_points|business_flows|file_processing|data_flows]\n\
      \x20 item-get --item <id>\n\
      \x20 item-list --plan <id>\n\
      \x20 result-set --item <id> --status <五态> --reason '<r>' [--error-category <c>]\n\
      \x20   [--run-id <id>] [--trace-id <id>]\n\
      \x20 event-list --plan <id>\n\
      \x20 fingerprint --target h --endpoint e --poc p --provider pv [--params '<json>'] [--authctx <fp>]\n\
+     \x20 coverage-show --plan <id>
+\
+     \x20   七维覆盖矩阵（五态分计数 + 盲区；未测试与失败分开显示）
+\
+     \x20 hypothesis-add --plan <id> --dimension <d> --content '<c>' --source '<e>'
+\
+     \x20   --association '<r>' --stop '<s>' [--round N] [--expected/-control/-suggested/...]
+\
+     \x20   假设登记（无证据不生成；max_rounds 轮次守卫）
+\
+     \x20 hypothesis-list --plan <id>
+\
+     \x20 hypothesis-status --id <id> --status proposed|in_plan|validated|dropped
+\
      \x20 match --target '<t>' [--components 'a,b'] [--profile '<json>'] [--limit N]\n\
      \x20   双渠道匹配：pg-intel（rp-kc hybrid 统一检索）+ rtis-poc（rt.py poc 元数据面），\n\
      \x20   命中与排除原因逐条可解释；--components 中文零命中（RTIS 英文优先）\n\\
@@ -321,6 +336,7 @@ fn run() -> i32 {
                 timeout_budget_s: args.get("timeout-s").and_then(|v| v.parse().ok()).unwrap_or(60),
                 execution_order: args.get("order").and_then(|v| v.parse().ok()).unwrap_or(0),
                 expected_observation: args.get("expected").map(str::to_owned),
+                dimension: args.get("dimension").unwrap_or("assets").to_owned(),
             };
             match store.add_item(&plan, item) {
                 Ok(record) => {
@@ -828,6 +844,125 @@ fn run() -> i32 {
                 ),
             }
         }
+        "coverage-show" => {
+            // 七维覆盖矩阵（P5-8）：计划项 → 维度五态分计数 + 盲区列表；
+            // 未测试项与失败项分开显示（五态分计数），无命中不等于无漏洞
+            // （盲区可见）。
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let items = match store.list_items(&plan_id) {
+                Ok(items) => items,
+                Err(e) => return emit_error("coverage_show", &e.to_string()),
+            };
+            let matrix = verification_engine::coverage::coverage_matrix(&items);
+            emit(&serde_json::json!({
+                "plan_id": plan_id,
+                "cells": matrix.cells,
+                "blind_spots": matrix.blind_spots,
+            }));
+            0
+        }
+        "hypothesis-add" => {
+            // 假设登记（P5-8 自适应研究）：必填守卫（无证据不生成）+
+            // max_rounds 轮次守卫（计划 budget_json.max_rounds，缺省 3）。
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let dimension = match args.required("dimension") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let content = match args.required("content") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let source_evidence = match args.required("source") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let association = match args.required("association") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let stop = match args.required("stop") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let plan = match store.get_plan(&plan_id) {
+                Ok(Some(p)) => p,
+                Ok(None) => return emit_error("not_found", &plan_id),
+                Err(e) => return emit_error("hypothesis_add", &e.to_string()),
+            };
+            let max_rounds = plan
+                .budget
+                .as_ref()
+                .and_then(|b| b.get("max_rounds"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(3);
+            let round = args
+                .get("round")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            match store.add_hypothesis(
+                &plan_id,
+                verification_engine::store::NewHypothesis {
+                    dimension,
+                    content,
+                    source_evidence,
+                    association_reason: association,
+                    preconditions: args.get("preconditions").map(str::to_owned),
+                    expected_observation: args.get("expected").map(str::to_owned),
+                    negative_control: args.get("negative-control").map(str::to_owned),
+                    suggested_verification: args.get("suggested").map(str::to_owned),
+                    cost_risk: args.get("cost-risk").map(str::to_owned),
+                    stop_condition: stop,
+                    round_number: round,
+                },
+                max_rounds,
+            ) {
+                Ok(record) => {
+                    emit(&serde_json::to_value(&record).unwrap_or_default());
+                    0
+                }
+                Err(e) => emit_error("hypothesis_add", &e.to_string()),
+            }
+        }
+        "hypothesis-list" => {
+            // 假设列表（研究 Trace：停止原因经 stop_condition 与状态机可见）。
+            let plan_id = match args.required("plan") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match store.list_hypotheses(&plan_id) {
+                Ok(records) => {
+                    emit(&serde_json::json!({ "plan_id": plan_id, "items": records }));
+                    0
+                }
+                Err(e) => emit_error("hypothesis_list", &e.to_string()),
+            }
+        }
+        "hypothesis-status" => {
+            // 假设状态机推进（proposed→in_plan→validated/dropped；validated
+            // 终局不迁出——Finding 路径只走计划项五态 + finding-link）。
+            let id = match args.required("id") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let status = match args.required("status") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match store.set_hypothesis_status(&id, &status) {
+                Ok(()) => {
+                    emit(&serde_json::json!({ "hypothesis_id": id, "status": status }));
+                    0
+                }
+                Err(e) => emit_error("hypothesis_status", &e.to_string()),
+            }
+        }
         "match" => {
             use verification_engine::matcher::{
                 run_match, KnowledgeChannel, MatchQuery, RtisPocChannel, UnifiedSearchChannel,
@@ -906,6 +1041,7 @@ fn run() -> i32 {
                 max_requests: args.get("max-requests").and_then(|v| v.parse().ok()).unwrap_or(30),
                 timeout_s: args.get("timeout-s").and_then(|v| v.parse().ok()).unwrap_or(60),
                 concurrency: 1,
+                max_rounds: args.get("max-rounds").and_then(|v| v.parse().ok()).unwrap_or(3),
             };
             let limit: usize = args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(10);
             let root = repo_root();
@@ -956,14 +1092,31 @@ fn run() -> i32 {
                 (Ok(a), Ok(b), Ok(c), Ok(d)) => (a, b, c, d),
                 _ => return usage(),
             };
-            let value = dedup_fingerprint(
-                &target,
-                &endpoint,
-                &poc,
-                &provider,
-                args.get("params").unwrap_or("{}"),
-                args.get("authctx").unwrap_or("-"),
-            );
+            // P5-8：--profile-version/--knowledge-state 任一在场走 v2 八段键
+            // （画像版本 + 知识审核状态补段，§5.8）；缺省 v1 六段键兼容面。
+            let profile_version = args.get("profile-version");
+            let knowledge_state = args.get("knowledge-state");
+            let value = if profile_version.is_some() || knowledge_state.is_some() {
+                dedup_fingerprint_v2(
+                    &target,
+                    &endpoint,
+                    &poc,
+                    &provider,
+                    args.get("params").unwrap_or("{}"),
+                    args.get("authctx").unwrap_or("-"),
+                    profile_version.unwrap_or("-"),
+                    knowledge_state.unwrap_or("-"),
+                )
+            } else {
+                dedup_fingerprint(
+                    &target,
+                    &endpoint,
+                    &poc,
+                    &provider,
+                    args.get("params").unwrap_or("{}"),
+                    args.get("authctx").unwrap_or("-"),
+                )
+            };
             emit(&serde_json::json!({ "dedup_fingerprint": value }));
             0
         }

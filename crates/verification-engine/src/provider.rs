@@ -413,6 +413,7 @@ mod tests {
             timeout_budget_s: 60,
             execution_order: 0,
             expected_observation: None,
+            dimension: "assets".to_owned(),
             result_status: None,
             result_reason: None,
             error_category: None,
