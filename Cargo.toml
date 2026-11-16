@@ -16,6 +16,7 @@ members = [
     "crates/plugin-runtime",
     "crates/agent-engine",
     "crates/research-engine",
+    "crates/verification-engine",
     "crates/workflow-engine",
     "crates/mcp-server",
     "crates/rp-mcp-parity",

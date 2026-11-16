@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/verification/verification-plan.v1.json",
+  "title": "RIP Verification Plan v1",
+  "description": "验证计划契约 v1（RIP3 Phase 5 P5-2 冻结）。研究编排容器：一次知识驱动验证的组织单元，与 research_task（RTIS 任务镜像）按 task_ref 引用关联；五态结果与任务状态分离（status 是编排状态，result_status 在计划项上）。schema_version 升版需同步 crates/verification-engine/src/contract.rs 常量与契约测试。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_id",
+    "status",
+    "workspace_id",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "契约版本，当前恒为 1。",
+      "type": "integer",
+      "const": 1
+    },
+    "plan_id": {
+      "description": "计划 ID：vp- 前缀 + 时间戳 + 随机尾（store 生成）。",
+      "type": "string",
+      "pattern": "^vp-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "task_ref": {
+      "description": "RTIS research_task.task_id 引用（事实在 RTIS，镜像只读）。",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": ["string", "null"]
+    },
+    "target_summary": {
+      "description": "目标摘要（host/url/画像说明，展示用）。",
+      "type": ["string", "null"]
+    },
+    "status": {
+      "description": "编排状态（与结果五态分离；domain::verification::PlanStatus 词表）。",
+      "type": "string",
+      "enum": ["draft", "ready", "executing", "paused", "completed", "cancelled"]
+    },
+    "budget": {
+      "description": "预算（P5-4 起后端强制生效）。",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "max_requests": { "type": "integer", "minimum": 1 },
+        "timeout_s": { "type": "integer", "minimum": 1 },
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "max_rounds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/verification/verification-item.v1.json",
+  "title": "RIP Verification Plan Item v1",
+  "description": "验证计划项契约 v1（RIP3 Phase 5 P5-2 冻结）。一条候选知识到一个可执行验证的映射；dedup_fingerprint 为四层去重的验证层键（sha256(target|poc/template|provider|params|authctx)，P5-4 承载去重与缓存决策）；rtis_poc_id 只存 RTIS POC 数字 ID 引用（POC 正文/利用细节零复制，RTIS 红线）；result_status 五态研究结论与任务状态分离：CONFIRMED/FALSE_POSITIVE 必须带 result_reason（应用层守卫），执行失败/超时（error_category 在场）不得写 NOT_REPRODUCED。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "item_id",
+    "plan_id",
+    "provider_id",
+    "target_ref",
+    "dedup_fingerprint",
+    "applicability_status",
+    "risk_class",
+    "request_budget",
+    "timeout_budget_s",
+    "execution_order",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "契约版本，当前恒为 1。",
+      "type": "integer",
+      "const": 1
+    },
+    "item_id": {
+      "description": "计划项 ID：vi- 前缀 + 时间戳 + 随机尾（store 生成）。",
+      "type": "string",
+      "pattern": "^vi-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^vp-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "knowledge_ref": {
+      "description": "3.0 knowledge 条目引用（knowledge_id）。",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "rtis_poc_id": {
+      "description": "RTIS POC 数字 ID 引用（只存 ID，不复制正文）。",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "provider_id": {
+      "description": "Provider 词表：rtis-poc | nuclei | rip.tool.<tool_id>（P5-5 冻结）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_version": {
+      "type": ["string", "null"]
+    },
+    "target_ref": {
+      "description": "规范化目标（host/scheme/port/url；P5-4 Asset/Endpoint Dedup 规范化输出）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "dedup_fingerprint": {
+      "description": "sha256 hex（64 位小写）。",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "applicability_status": {
+      "description": "适用性三态（domain::verification::ApplicabilityStatus）。",
+      "type": "string",
+      "enum": ["applicable", "excluded", "needs_context"]
+    },
+    "applicability_reasons": {
+      "description": "命中/排除/信息不足的原因数组（Knowledge Context 页展示面）。",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "risk_class": {
+      "type": "string",
+      "enum": ["passive", "low_impact", "active_controlled"]
+    },
+    "request_budget": { "type": "integer", "minimum": 0 },
+    "timeout_budget_s": { "type": "integer", "minimum": 1 },
+    "execution_order": { "type": "integer" },
+    "expected_observation": {
+      "description": "预期观察（正向判据说明；判据落地面随 P5-7）。",
+      "type": ["string", "null"]
+    },
+    "result_status": {
+      "description": "五态研究结论（NULL = 计划未定稿；domain::verification::ResultStatus 词表）。",
+      "type": ["string", "null"],
+      "enum": [
+        "CONFIRMED",
+        "NOT_REPRODUCED",
+        "NOT_TESTED",
+        "INCONCLUSIVE",
+        "FALSE_POSITIVE",
+        null
+      ]
+    },
+    "result_reason": {
+      "description": "判定依据（CONFIRMED/FALSE_POSITIVE 必填，应用层守卫）。",
+      "type": ["string", "null"]
+    },
+    "error_category": {
+      "description": "执行失败分类（在场时不得写 NOT_REPRODUCED——应用层守卫）。",
+      "type": ["string", "null"],
+      "enum": [
+        "timeout",
+        "network",
+        "auth",
+        "tool_unavailable",
+        "assertion",
+        "budget_exhausted",
+        "unknown",
+        null
+      ]
+    },
+    "tool_run_id": {
+      "description": "tool_run.run_id 关联（P5-6 派发后回填）。",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "trace_id": {
+      "description": "六 ID 关联锚（015 trace_correlation 同源）。",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

@@ -106,6 +106,9 @@ WORKFLOW_BIN = (os.environ.get("RP_WORKFLOW_BIN") or "target/debug/rp-workflow")
 # RIP3 P1-2 文档面：rp-doc 子进程（intel-db PG 存取，python 侧零 PG 驱动依赖；
 # 进程边界即数据边界：文档读取与导入一律经 rp-doc JSON stdout，本文件零直连 PG）。
 DOC_BIN = (os.environ.get("RP_DOC_BIN") or "target/debug/rp-doc").strip()
+# RIP3 P5-2 验证编排面：rp-verify 子进程（verification-engine，SQLite 020 运营
+# 面；python 侧零直接 DB 依赖，进程边界即数据边界，rp-doc 惯例同款）。
+VERIFY_BIN = (os.environ.get("RP_VERIFY_BIN") or "target/debug/rp-verify").strip()
 DOC_SUBPROCESS_TIMEOUT_S = int(os.environ.get("RP_DOC_TIMEOUT_S") or 120)
 # 导入体上限（原始字节；base64 后 ~4/3；13-SECURITY 单文件帽 512MiB 的 P1 缺省收紧档）。
 DOC_IMPORT_MAX_BYTES = int(os.environ.get("RP_DOC_IMPORT_MAX_BYTES") or 67_108_864)
@@ -2886,6 +2889,66 @@ def _rp_doc_json(extra_args: list, timeout_s: int = DOC_SUBPROCESS_TIMEOUT_S) ->
         raise ApiError(502, "doc_cmd_bad_output", f"rp-doc 输出非 JSON：{exc}")
 
 
+# ---------------------------------------------------------------------------
+# RIP3 验证编排面（P5-2）：rp-verify 子进程通道（SQLite 020 运营面，rp-doc 惯例）
+# ---------------------------------------------------------------------------
+
+def _rp_verify_json(extra_args: list, timeout_s: int = 60) -> dict:
+    """跑 rp-verify 子进程并解析 JSON stdout。非零退出 → 502（stdout 的
+    error JSON 原样透出 code/message；守卫拒绝也走该通道，不静默）。"""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            [VERIFY_BIN, *extra_args],
+            capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "verify_cmd_timeout", f"rp-verify 超时（{timeout_s}s）：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "verify_cmd_spawn_failed",
+                       f"rp-verify 启动失败（RP_VERIFY_BIN={VERIFY_BIN}）：{exc}") from exc
+    try:
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "verify_cmd_bad_output", f"rp-verify 输出非 JSON：{exc}") from exc
+    if proc.returncode != 0:
+        inner = payload.get("error") or {}
+        raise ApiError(502, inner.get("code", "verify_cmd_failed"),
+                       inner.get("message", f"rp-verify 退出码 {proc.returncode}"))
+    return payload
+
+
+def handle_research_plans(_conn, params) -> dict:  # noqa: ARG001
+    """/api/research/plans：验证计划列表（rp-verify plan-list 子进程）。"""
+    limit_raw = (params.get("limit") or ["50"])[0]
+    try:
+        limit = max(1, min(int(limit_raw), 200))
+    except ValueError:
+        raise ApiError(400, "bad_limit", f"limit 非法：{limit_raw!r}")
+    payload = _rp_verify_json(["plan-list", "--limit", str(limit)])
+    return {"items": payload.get("items") or [], "limit": limit,
+            "available": True, "source": "rp-verify"}
+
+
+def handle_research_plan_detail(plan_id: str) -> dict:
+    """/api/research/plans/<id>：计划详情（plan + items + events 三面聚合）。"""
+    if not plan_id or "/" in plan_id or not plan_id.startswith("vp-"):
+        raise ApiError(400, "bad_plan_id", f"非法 plan_id：{plan_id!r}")
+    plan = _rp_verify_json(["plan-get", "--plan", plan_id])
+    items = _rp_verify_json(["item-list", "--plan", plan_id])
+    events = _rp_verify_json(["event-list", "--plan", plan_id])
+    return {"plan": plan, "items": items.get("items") or [],
+            "events": events.get("items") or [], "plan_id": plan_id}
+
+
+def handle_research_item_detail(item_id: str) -> dict:
+    """/api/research/items/<id>：计划项详情（五态与依据面）。"""
+    if not item_id or "/" in item_id or not item_id.startswith("vi-"):
+        raise ApiError(400, "bad_item_id", f"非法 item_id：{item_id!r}")
+    return _rp_verify_json(["item-get", "--item", item_id])
+
+
 def handle_documents(_conn, params) -> dict:  # noqa: ARG001
     """/api/documents：文档列表（workspace 过滤；all=1 含软删行）。
     rp-doc list 子进程（PG 情报核，权限前置谓词在 SQL 内）。"""
@@ -2980,6 +3043,7 @@ API_ROUTES = {
     "/api/workflows": handle_workflows,
     "/api/workflow-runs": handle_workflow_runs,
     "/api/documents": handle_documents,
+    "/api/research/plans": handle_research_plans,
 }
 
 
@@ -3119,6 +3183,18 @@ class RpHandler(BaseHTTPRequestHandler):
                     document_id = unquote(parsed.path[len("/api/documents/"):]).strip("/")
                     if document_id and "/" not in document_id:
                         self.send_json(handle_document_detail(document_id))
+                        return
+                # RIP3 P5-2 验证编排动态路径：计划详情（plan+items+events 聚合）
+                # 与计划项详情（五态与依据面）。
+                if parsed.path.startswith("/api/research/plans/"):
+                    plan_id = unquote(parsed.path[len("/api/research/plans/"):]).strip("/")
+                    if plan_id and "/" not in plan_id:
+                        self.send_json(handle_research_plan_detail(plan_id))
+                        return
+                if parsed.path.startswith("/api/research/items/"):
+                    item_id = unquote(parsed.path[len("/api/research/items/"):]).strip("/")
+                    if item_id and "/" not in item_id:
+                        self.send_json(handle_research_item_detail(item_id))
                         return
                 raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
             file_path = self.resolve_static(parsed.path)

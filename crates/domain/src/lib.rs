@@ -39,6 +39,7 @@ pub mod plugin;
 pub mod resource;
 pub mod time;
 pub mod tool;
+pub mod verification;
 pub mod workflow;
 
 pub use agent::{

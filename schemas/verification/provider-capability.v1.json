@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/verification/provider-capability.v1.json",
+  "title": "RIP Verification Provider Capability v1",
+  "description": "验证 Provider 能力契约 v1（RIP3 Phase 5 P5-2 冻结，P5-5 Adapter 实现消费）。Provider 侧向 Planner 声明的执行能力面：能跑什么检测类别、默认风险、是否需要容器、输出归一化形态；Adapter 不实现第二套任务管理/证据库/Finding 库（补充计划 §5.6 硬边界）。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider_id",
+    "provider_version",
+    "detection_kinds",
+    "risk_class",
+    "execution"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "契约版本，当前恒为 1。",
+      "type": "integer",
+      "const": 1
+    },
+    "provider_id": {
+      "description": "Provider 词表 ID：rtis-poc | nuclei | rip.tool.<tool_id>。",
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "detection_kinds": {
+      "description": "可承载的检测类别（如 cve-exploit / config-audit / info-leak；词表随 Provider 实现扩充）。",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "risk_class": {
+      "description": "Provider 默认风险分级（Planner 不得以 Provider 能力升级风险）。",
+      "type": "string",
+      "enum": ["passive", "low_impact", "active_controlled"]
+    },
+    "execution": {
+      "description": "执行面声明（全部经 Tool Engine / Runtime Gateway，禁止旁路）。",
+      "type": "object",
+      "required": ["transport", "container_required"],
+      "additionalProperties": false,
+      "properties": {
+        "transport": {
+          "description": "执行通道：tool-engine 派发（podman 容器）或受控 CLI 子进程（rt.py 元数据面）。",
+          "type": "string",
+          "enum": ["tool_engine", "cli_subprocess"]
+        },
+        "container_required": { "type": "boolean" },
+        "output_schema": {
+          "description": "输出归一化引用（result-normalized v1 随 P5-7 冻结）。",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "manifest_ref": {
+      "description": "tool-registry Manifest 引用（manifests/tools/rip.* 同款面；rtis-poc/nuclei 也登记 Manifest）。",
+      "type": ["string", "null"]
+    }
+  }
+}

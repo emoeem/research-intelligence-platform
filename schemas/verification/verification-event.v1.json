@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/verification/verification-event.v1.json",
+  "title": "RIP Verification Plan Event v1",
+  "description": "验证计划事件契约 v1（RIP3 Phase 5 P5-2 冻结）。计划/项/执行/结果流转的结构化事件流（Activity 面与 Trace 六 ID 对账的数据源）；事件是追加型（append-only），不承载结论修改——结论只经 item 的 result_status 列与 result_assigned 事件记录。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "契约版本，当前恒为 1。",
+      "type": "integer",
+      "const": 1
+    },
+    "event_id": {
+      "description": "事件 ID：ve- 前缀 + 时间戳 + 随机尾（store 生成）。",
+      "type": "string",
+      "pattern": "^ve-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "plan_id": {
+      "type": ["string", "null"],
+      "pattern": "^vp-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "item_id": {
+      "type": ["string", "null"],
+      "pattern": "^vi-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{4}$"
+    },
+    "tool_run_id": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "trace_id": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "event_type": {
+      "description": "事件类型词表（词表外拒绝，store 层守卫）。",
+      "type": "string",
+      "enum": [
+        "plan_created",
+        "plan_status",
+        "item_planned",
+        "item_skipped",
+        "dispatched",
+        "evidence_collected",
+        "result_assigned",
+        "budget_updated",
+        "cancelled"
+      ]
+    },
+    "payload": {
+      "description": "事件负载（自由 JSON；展示面只读）。",
+      "type": ["object", "null"]
+    },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}

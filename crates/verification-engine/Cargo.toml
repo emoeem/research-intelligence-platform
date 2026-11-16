@@ -1,0 +1,25 @@
+[package]
+publish = false  # 私有工程线（P10-4：cargo-deny [licenses] private.ignore 口径）
+name = "verification-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "RIP3 Phase 5 知识驱动漏洞验证引擎（RIP-VRVE）契约与持久化面（P5-2）：Verification Plan/Item/Event 契约 Schema（schemas/verification/ 四份 v1，jsonschema 0.56 校验）+ 五态结果词表（domain::verification，与任务状态分离）+ research_plan/research_plan_item/research_plan_event 持久化（SQLite 020 运营面迁移，P5-0-B3 判定冻结）+ 去重指纹（sha256 target|poc|provider|params|authctx）+ rp-verify CLI（plan/item/result/event 五面）；P5-3 Matcher/P5-4 Planner/P5-5 Provider/P5-6 派发随批次在同 crate 扩展（复用 intel-db 统一检索与 tool-engine 派发链，不建第二套内核）；RTIS 红线：rtis_poc_id 只存引用，POC 正文/利用细节零复制"
+
+[dependencies]
+# 依赖面（零新增第三方 package：serde/serde_json/domain/database 走 workspace
+# 既有；jsonschema 0.56 与 research-engine/workflow-engine/tool-registry 同
+# 版本钉 0.56，default-features 关闭远程与文件 $ref 解析；sha2 0.10 与
+# research-engine 同源）。依赖纪律：本 crate 依赖 domain/database，执行面
+# 派发（P5-5/P5-6）单向依赖 tool-engine（反方向禁止）。
+domain = { workspace = true }
+database = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonschema = { version = "0.56", default-features = false }
+sha2 = "0.10"
+
+[[bin]]
+name = "rp-verify"
+path = "src/bin/rp-verify.rs"
