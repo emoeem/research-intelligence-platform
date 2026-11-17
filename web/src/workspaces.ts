@@ -162,6 +162,20 @@ export const WORKSPACES: readonly Workspace[] = [
         icon: "shieldCheck",
         hint: "验证计划与五态结果（P5-6：暂停/恢复/取消控制面）",
       },
+      {
+        order: 6,
+        to: "/research/evidence",
+        label: "证据",
+        icon: "database",
+        hint: "证据档列表与详情（P5-9b：SHA256/六 ID 跳转/Raw 与 Pretty）",
+      },
+      {
+        order: 7,
+        to: "/research/coverage",
+        label: "覆盖矩阵",
+        icon: "radar",
+        hint: "七维五态覆盖与盲区（P5-8 coverage-show 面）",
+      },
     ],
   },
   {

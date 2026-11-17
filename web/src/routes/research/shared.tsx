@@ -229,3 +229,78 @@ export const RESULT_STATUSES = [
   "INCONCLUSIVE",
   "FALSE_POSITIVE",
 ] as const;
+
+// ---------------------------------------------------------------------------
+// 证据档与覆盖矩阵面（P5-9b）：/api/research/evidence（rp-verify
+// evidence-list/evidence-get 子进程读面）与 coverage-show 矩阵。
+// payload_json 是采集时点原始快照（append-only 不可变，021 语义）。
+// ---------------------------------------------------------------------------
+
+/** /api/research/evidence 行（EvidenceRecord）。 */
+export interface ResearchEvidenceRow {
+  evidence_id: string;
+  item_id: string;
+  plan_id: string;
+  tool_run_id?: string | null;
+  trace_id?: string | null;
+  /** 词表 provider_result / normalized_result / log_excerpt（021 CHECK）。 */
+  evidence_type: string;
+  /** payload 紧凑序列化 SHA256 hex（重复观察识别键）。 */
+  content_hash: string;
+  payload: unknown;
+  created_at: string;
+}
+
+export interface ResearchEvidenceList {
+  plan_id?: string;
+  item_id?: string;
+  available?: boolean;
+  source?: string;
+  items?: ResearchEvidenceRow[];
+}
+
+/** 证据类型 → 徽标 tone（词表三值，未知走 ghost）。 */
+export const EVIDENCE_TYPE_TONES: Record<string, string> = {
+  provider_result: "badge-info",
+  normalized_result: "badge-success",
+  log_excerpt: "badge-warning",
+};
+
+/** 七维覆盖维词表（domain CoverageDimension::ALL 同序；展示用中文标签）。 */
+export const COVERAGE_DIMENSIONS = [
+  "assets",
+  "api_endpoints",
+  "identity_permissions",
+  "input_points",
+  "business_flows",
+  "file_processing",
+  "data_flows",
+] as const;
+
+export const COVERAGE_DIMENSION_LABELS: Record<string, string> = {
+  assets: "资产",
+  api_endpoints: "API 与端点",
+  identity_permissions: "身份与权限",
+  input_points: "输入点",
+  business_flows: "业务流",
+  file_processing: "文件处理",
+  data_flows: "数据流",
+};
+
+/** coverage-show 单维覆盖格（P5-8 coverage.rs CoverageCell 直通）。 */
+export interface CoverageCell {
+  dimension: string;
+  item_count: number;
+  confirmed: number;
+  not_reproduced: number;
+  inconclusive: number;
+  not_tested: number;
+  false_positive: number;
+}
+
+/** coverage-show 响应（cells 七维 + blind_spots 维词列表）。 */
+export interface CoverageMatrixResponse {
+  plan_id?: string;
+  cells?: CoverageCell[];
+  blind_spots?: string[];
+}

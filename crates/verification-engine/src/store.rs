@@ -980,6 +980,98 @@ impl PlanStore {
         Ok(records)
     }
 
+    /// 证据列表（计划维度，时间升序；Evidence UI 列表面消费，P5-9b）。
+    pub fn list_evidence_by_plan(
+        &self,
+        plan_id: &str,
+    ) -> Result<Vec<EvidenceRecord>, PlanStoreError> {
+        if !id_prefix_matches(plan_id, "vp-") {
+            return Err(PlanStoreError::GuardRejected("plan id shape".to_owned()));
+        }
+        let rows = self
+            .pool
+            .with_conn(|c| {
+                let mut stmt = c
+                    .prepare(
+                        "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id,
+                                evidence_type, content_hash, payload_json, created_at
+                         FROM research_evidence
+                         WHERE plan_id = ?1
+                         ORDER BY created_at ASC, evidence_id ASC",
+                    )?;
+                let collected = stmt
+                    .query_map([plan_id], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, Option<String>>(3)?,
+                            r.get::<_, Option<String>>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, String>(6)?,
+                            r.get::<_, String>(7)?,
+                            r.get::<_, String>(8)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok::<Vec<_>, database::rusqlite::Error>(collected)
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        let mut records = Vec::with_capacity(rows.len());
+        for (evidence_id, item, plan, tool_run, trace, evidence_type, content_hash, payload_json, created_at) in rows {
+            records.push(EvidenceRecord {
+                evidence_id,
+                item_id: item,
+                plan_id: plan,
+                tool_run_id: tool_run,
+                trace_id: trace,
+                evidence_type,
+                content_hash,
+                payload: serde_json::from_str(&payload_json).unwrap_or(Value::Null),
+                created_at,
+            });
+        }
+        Ok(records)
+    }
+
+    /// 单条证据回读（Evidence 详情面，P5-9b；evidence_id 形状守卫）。
+    pub fn get_evidence(
+        &self,
+        evidence_id: &str,
+    ) -> Result<Option<EvidenceRecord>, PlanStoreError> {
+        if !id_prefix_matches(evidence_id, "re-") {
+            return Err(PlanStoreError::GuardRejected("evidence id shape".to_owned()));
+        }
+        let row = self.pool.with_conn(|c| {
+            c.query_row(
+                "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id, evidence_type,
+                        content_hash, payload_json, created_at
+                 FROM research_evidence
+                 WHERE evidence_id = ?1",
+                [evidence_id],
+                |r| {
+                    Ok(EvidenceRecord {
+                        evidence_id: r.get(0)?,
+                        item_id: r.get(1)?,
+                        plan_id: r.get(2)?,
+                        tool_run_id: r.get(3)?,
+                        trace_id: r.get(4)?,
+                        evidence_type: r.get(5)?,
+                        content_hash: r.get(6)?,
+                        payload: serde_json::from_str(&r.get::<_, String>(7)?)
+                            .unwrap_or(Value::Null),
+                        created_at: r.get(8)?,
+                    })
+                },
+            )
+            .optional()
+        });
+        match row {
+            Ok(found) => Ok(found),
+            Err(e) => Err(PlanStoreError::Db(e.to_string())),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // 研究假设（RIP3 P5-8，022 research_hypothesis）：假设生成/轮次守卫/
     // 状态机。假设是研究中间面（没有证据不能生成 Finding，§5.10）；轮次

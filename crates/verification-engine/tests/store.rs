@@ -273,6 +273,52 @@ fn evidence_type_and_id_shape_guards() {
     assert!(matches!(err3, PlanStoreError::GuardRejected(_)));
 }
 
+/// P5-9b Evidence 检索面扩展（计划域列表 + 单条回读，021 既有表零迁移）。
+#[test]
+fn evidence_plan_scope_listing_and_detail_get() {
+    let store = store();
+    let plan = store.create_plan(Some("rtis-p5-9b-ev"), "default", Some("P5-9b 证据检索面"), None, None).unwrap();
+    store.set_plan_status(&plan.plan_id, "ready").unwrap();
+    let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
+
+    let (record, _) = store
+        .record_evidence(
+            &item.item_id,
+            &plan.plan_id,
+            None,
+            Some("tr-exec-p59b"),
+            "provider_result",
+            &evidence_fixture(),
+        )
+        .unwrap();
+
+    // 计划域列表（Evidence 页列表消费）
+    let listed = store.list_evidence_by_plan(&plan.plan_id).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].evidence_id, record.evidence_id);
+    assert_eq!(listed[0].tool_run_id, None);
+    assert_eq!(listed[0].trace_id.as_deref(), Some("tr-exec-p59b"));
+
+    // 单条回读（Evidence 详情面）
+    let got = store
+        .get_evidence(&record.evidence_id)
+        .unwrap()
+        .expect("detail row found");
+    assert_eq!(got.payload, evidence_fixture());
+    assert_eq!(got.content_hash, record.content_hash);
+
+    // 守卫：域 id 形状违规拒绝 + 未命中 None
+    assert!(matches!(
+        store.list_evidence_by_plan("vi-wrong-domain"),
+        Err(PlanStoreError::GuardRejected(_))
+    ));
+    assert!(matches!(
+        store.get_evidence("vi-not-evidence"),
+        Err(PlanStoreError::GuardRejected(_))
+    ));
+    assert!(store.get_evidence("re-does-not-exist").unwrap().is_none());
+}
+
 /// P5-8 假设生命周期（真实 022 research_hypothesis schema）：登记 → 推进 → validated 终局。
 #[test]
 fn hypothesis_lifecycle_on_real_schema() {

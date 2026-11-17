@@ -93,8 +93,11 @@ fn usage_text() -> &'static str {
      \x20   计划级暂停（executing/ready→paused；执行进程项间检查位停）\n\
      \x20 plan-resume --plan <id>\n\
      \x20   计划级恢复（paused→ready；续跑 execute-plan 幂等只派未判定项）\n\
-     \x20 evidence-list --item <id>\n\
-     \x20   证据档检索（021 research_evidence；SHA256 去重 append-only 快照）\n\
+     \x20 evidence-list (--item <id> | --plan <id>)\n\
+     \x20   证据档检索（021 research_evidence；SHA256 去重 append-only 快照；\n\
+     \x20   项域或计划域二选一，P5-9b Evidence 页列表消费）\n\
+     \x20 evidence-get --id <id>\n\
+     \x20   单条证据回读（re- 形状守卫；Evidence 详情面，P5-9b）\n\
      \x20 finding-link --item <id> [--note '<t>']\n\
      \x20   CONFIRMED 项验证结论回填 RTIS（rt.py poc update --verified；\n\
      \x20   非 CONFIRMED 或无 rtis_poc_id 引用拒绝）\n\\
@@ -758,21 +761,52 @@ fn run() -> i32 {
             }
         }
         "evidence-list" => {
-            // 证据档检索入口（P5-7，021 research_evidence）：计划项维度
-            // 时间升序，UI 跳转面与覆盖矩阵消费。
-            let item_id = match args.required("item") {
+            // 证据档检索入口（P5-7，021 research_evidence）：项域或计划域
+            // 二选一（P5-9b Evidence 页列表消费），时间升序，UI 跳转面与
+            // 覆盖矩阵消费。
+            let item_id = args.get("item").map(str::to_owned);
+            let plan_id = args.get("plan").map(str::to_owned);
+            match (item_id, plan_id) {
+                (Some(item), None) => match store.list_evidence(&item) {
+                    Ok(records) => {
+                        emit(&serde_json::json!({
+                            "item_id": item,
+                            "items": records,
+                        }));
+                        0
+                    }
+                    Err(e) => emit_error("evidence_list", &e.to_string()),
+                },
+                (None, Some(plan)) => match store.list_evidence_by_plan(&plan) {
+                    Ok(records) => {
+                        emit(&serde_json::json!({
+                            "plan_id": plan,
+                            "items": records,
+                        }));
+                        0
+                    }
+                    Err(e) => emit_error("evidence_list", &e.to_string()),
+                },
+                _ => {
+                    // 用法违规：两项同给或缺一（exit 2，不做静默默认域）。
+                    eprintln!("evidence-list 需要且仅需要 --item 或 --plan 其一");
+                    2
+                }
+            }
+        }
+        "evidence-get" => {
+            // 单条证据回读（P5-9b Evidence 详情面；re- 形状守卫在 store 层）。
+            let evidence_id = match args.required("id") {
                 Ok(v) => v,
                 Err(code) => return code,
             };
-            match store.list_evidence(&item_id) {
-                Ok(records) => {
-                    emit(&serde_json::json!({
-                        "item_id": item_id,
-                        "items": records,
-                    }));
+            match store.get_evidence(&evidence_id) {
+                Ok(Some(record)) => {
+                    emit(&serde_json::to_value(&record).unwrap_or(serde_json::Value::Null));
                     0
                 }
-                Err(e) => emit_error("evidence_list", &e.to_string()),
+                Ok(None) => emit_error("not_found", &evidence_id),
+                Err(e) => emit_error("evidence_get", &e.to_string()),
             }
         }
         "finding-link" => {

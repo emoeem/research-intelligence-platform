@@ -2949,6 +2949,47 @@ def handle_research_item_detail(item_id: str) -> dict:
     return _rp_verify_json(["item-get", "--item", item_id])
 
 
+def handle_research_evidence(_conn, params) -> dict:  # noqa: ARG001
+    """/api/research/evidence：证据档列表（P5-9b，rp-verify evidence-list
+    子进程；plan 与 item 域二选一，021 research_evidence 检索入口）。"""
+    plan = (params.get("plan") or [""])[0].strip()
+    item = (params.get("item") or [""])[0].strip()
+    if bool(plan) == bool(item):
+        raise ApiError(400, "bad_evidence_scope",
+                       "需要且仅需要 plan 或 item 查询参数其一")
+    if plan:
+        if not plan.startswith("vp-"):
+            raise ApiError(400, "bad_plan_id", f"非法 plan_id：{plan!r}")
+        payload = _rp_verify_json(["evidence-list", "--plan", plan])
+        return {"plan_id": plan, "items": payload.get("items") or [],
+                "available": True, "source": "rp-verify"}
+    if not item.startswith("vi-"):
+        raise ApiError(400, "bad_item_id", f"非法 item_id：{item!r}")
+    payload = _rp_verify_json(["evidence-list", "--item", item])
+    return {"item_id": item, "items": payload.get("items") or [],
+            "available": True, "source": "rp-verify"}
+
+
+def handle_research_evidence_detail(evidence_id: str) -> dict:
+    """/api/research/evidence/<id>：单条证据详情（P5-9b，rp-verify
+    evidence-get 子进程；payload_json append-only 快照原样透出）。"""
+    if not evidence_id or "/" in evidence_id or not evidence_id.startswith("re-"):
+        raise ApiError(400, "bad_evidence_id", f"非法 evidence_id：{evidence_id!r}")
+    return _rp_verify_json(["evidence-get", "--id", evidence_id])
+
+
+def handle_research_coverage(_conn, params) -> dict:  # noqa: ARG001
+    """/api/research/coverage：七维覆盖矩阵（P5-9b，rp-verify coverage-show
+    子进程；cells 七维五态分计数 + blind_spots 盲区词表直通）。"""
+    plan = (params.get("plan") or [""])[0].strip()
+    if not plan or not plan.startswith("vp-"):
+        raise ApiError(400, "bad_plan_id", f"非法 plan_id：{plan!r}")
+    payload = _rp_verify_json(["coverage-show", "--plan", plan])
+    return {"plan_id": plan, "cells": payload.get("cells") or [],
+            "blind_spots": payload.get("blind_spots") or [],
+            "available": True, "source": "rp-verify"}
+
+
 RESEARCH_PLAN_CONTROL_ACTIONS = ("pause", "resume", "cancel")
 
 
@@ -3058,6 +3099,8 @@ API_ROUTES = {
     "/api/workflow-runs": handle_workflow_runs,
     "/api/documents": handle_documents,
     "/api/research/plans": handle_research_plans,
+    "/api/research/evidence": handle_research_evidence,
+    "/api/research/coverage": handle_research_coverage,
 }
 
 
@@ -3209,6 +3252,12 @@ class RpHandler(BaseHTTPRequestHandler):
                     item_id = unquote(parsed.path[len("/api/research/items/"):]).strip("/")
                     if item_id and "/" not in item_id:
                         self.send_json(handle_research_item_detail(item_id))
+                        return
+                # RIP3 P5-9b 证据档动态路径：/api/research/evidence/<id>（单条详情）。
+                if parsed.path.startswith("/api/research/evidence/"):
+                    evidence_id = unquote(parsed.path[len("/api/research/evidence/"):]).strip("/")
+                    if evidence_id and "/" not in evidence_id:
+                        self.send_json(handle_research_evidence_detail(evidence_id))
                         return
                 raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
             file_path = self.resolve_static(parsed.path)

@@ -264,6 +264,15 @@ pub fn execute_nuclei(
         }
     }
     let input = NucleiProvider::build_input(item, item.request_budget);
+    // 模板装载旗标（P5-9b 实拍缺陷修复）：wrapper 把 /task/in/template.yaml
+    // 装入 /task/out/nuclei-templates，但 nuclei 不读默认目录，缺 -t 旗标时
+    // FTL "no templates provided"（真实执行恒 INCONCLUSIVE，本地靶场
+    // CONFIRMED 不可达）。模板落位成功才追加，派发面不静默装空目录。
+    let mut entrypoint_extra: Vec<String> = Vec::new();
+    if options.template_path.is_some() {
+        entrypoint_extra.push("-t".to_string());
+        entrypoint_extra.push("/task/out/nuclei-templates".to_string());
+    }
     let mut request = json!({
         "protocol_version": "1",
         "tool_id": NUCLEI_TOOL_ID,
@@ -297,7 +306,11 @@ pub fn execute_nuclei(
             item.request_budget.clamp(1, 50).to_string(),
             "-timeout".to_string(),
             item.timeout_budget_s.clamp(1, 300).to_string(),
-        ],
+        ]
+        .iter()
+        .chain(entrypoint_extra.iter())
+        .cloned()
+        .collect::<Vec<String>>(),
         family: NUCLEI_FAMILY,
         network: options.network,
     };

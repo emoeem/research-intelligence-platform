@@ -70,6 +70,16 @@ const ResearchPlansPage = lazy(() =>
     default: m.ResearchPlansPage,
   })),
 );
+const ResearchEvidencePage = lazy(() =>
+  import("./routes/research/ResearchEvidencePage").then((m) => ({
+    default: m.ResearchEvidencePage,
+  })),
+);
+const ResearchCoveragePage = lazy(() =>
+  import("./routes/research/ResearchCoveragePage").then((m) => ({
+    default: m.ResearchCoveragePage,
+  })),
+);
 const AgentsPage = lazy(() =>
   import("./routes/AgentsPage").then((m) => ({ default: m.AgentsPage })),
 );
@@ -135,6 +145,8 @@ export function App() {
             <Route path="research/assets" element={lazyElement(<ResearchAssetsPage />)} />
             <Route path="research/knowledge" element={lazyElement(<ResearchKnowledgePage />)} />
             <Route path="research/plans" element={lazyElement(<ResearchPlansPage />)} />
+            <Route path="research/evidence" element={lazyElement(<ResearchEvidencePage />)} />
+            <Route path="research/coverage" element={lazyElement(<ResearchCoveragePage />)} />
             <Route path="agents" element={lazyElement(<AgentsPage />)} />
             <Route path="workflows" element={lazyElement(<WorkflowsPage />)} />
             <Route path="settings" element={lazyElement(<SettingsPage />)} />
