@@ -193,7 +193,7 @@ impl VerificationProvider for RtisPocProvider {
 
 /// Nuclei Manifest 钉定面（rip.security.nuclei.yaml 同源三处：镜像/入口/族）。
 pub const NUCLEI_IMAGE: &str =
-    "localhost/rip-nuclei@sha256:4620cd3fed9dc43a3fe2d6fc4af0c00366a6c54d68293ab458a460905517c3f8";
+    "localhost/rip-nuclei@sha256:9ff41ce98d4279ed528819ebc42cb32fe5b98916e8fb9a8633110fad83354cb8";
 pub const NUCLEI_ENTRYPOINT: [&str; 1] = ["/usr/local/bin/rip-nuclei-wrapper"];
 pub const NUCLEI_FAMILY: &str = "network";
 pub const NUCLEI_TOOL_ID: &str = "rip.security.nuclei";

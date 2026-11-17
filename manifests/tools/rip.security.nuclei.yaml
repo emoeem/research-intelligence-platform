@@ -14,7 +14,7 @@ family: "network"
 description: "Nuclei 模板扫描 Provider：对目标执行受控模板检测（JSONL 输出），模板引用由 Planner/计划项承载（rtis-poc:<id> 或 knowledge:<id>），速率与请求预算强制（Manifest resources + input 双闸）"
 runtime:
   type: "podman_host"
-  image: "localhost/rip-nuclei@sha256:4620cd3fed9dc43a3fe2d6fc4af0c00366a6c54d68293ab458a460905517c3f8"
+  image: "localhost/rip-nuclei@sha256:9ff41ce98d4279ed528819ebc42cb32fe5b98916e8fb9a8633110fad83354cb8"
   entrypoint: ["/usr/local/bin/rip-nuclei-wrapper"]
   mounts:
     - role: "output"
@@ -94,7 +94,7 @@ health:
   on_run_recover: true
 provenance:
   origin: "opensource"
-  image_digest: "sha256:4620cd3fed9dc43a3fe2d6fc4af0c00366a6c54d68293ab458a460905517c3f8"
+  image_digest: "sha256:9ff41ce98d4279ed528819ebc42cb32fe5b98916e8fb9a8633110fad83354cb8"
   source_path: "docker.io/projectdiscovery/nuclei@sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb"
   license: "MIT"
   dependencies:

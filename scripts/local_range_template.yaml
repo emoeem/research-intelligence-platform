@@ -1,0 +1,18 @@
+id: p59c-local-range-marker
+info:
+  name: RIP3 P5-9c local range marker disclosure
+  author: security-research
+  severity: info
+  description: >
+    Detects the fixed info marker exposed by the P5-9c loopback local range
+    (scripts/local_range.py /p59c-marker). Exercise fixture for the Phase 5
+    acceptance chain; zero real-vulnerability semantics.
+  tags: local-range,e2e,p59c
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/p59c-marker"
+    matchers:
+      - type: word
+        words:
+          - "RIP3-P59C-LOCAL-RANGE-MARKER"
