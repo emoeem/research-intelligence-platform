@@ -7,7 +7,7 @@ use verification_engine::contract::{
     validate_event_doc, validate_item_doc, validate_plan_doc, SCHEMA_VERSION,
 };
 use verification_engine::fingerprint::dedup_fingerprint;
-use verification_engine::store::{NewItem, PlanStore, PlanStoreError};
+use verification_engine::store::{NewHypothesis, NewItem, PlanStore, PlanStoreError};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -271,4 +271,140 @@ fn evidence_type_and_id_shape_guards() {
         .record_evidence(&item.item_id, "plan-1", None, None, "provider_result", &evidence_fixture())
         .unwrap_err();
     assert!(matches!(err3, PlanStoreError::GuardRejected(_)));
+}
+
+/// P5-8 假设生命周期（真实 022 research_hypothesis schema）：登记 → 推进 → validated 终局。
+#[test]
+fn hypothesis_lifecycle_on_real_schema() {
+    let store = store();
+    let plan = store
+        .create_plan(
+            Some("rt-p58-e2e"),
+            "default",
+            Some("P5-8 hypothesis 集成测试场景"),
+            Some("127.0.0.1"),
+            Some(&serde_json::json!({ "max_requests": 15, "max_rounds": 2 })),
+        )
+        .unwrap();
+
+    let h = store
+        .add_hypothesis(
+            &plan.plan_id,
+            NewHypothesis {
+                dimension: "assets".to_owned(),
+                content: "9443 端口服务可能暴露未鉴权管理面".to_owned(),
+                source_evidence: "assets 维 item 登记但未判定（unjudged 盲区）".to_owned(),
+                association_reason: "盲区直接关联该目标端口".to_owned(),
+                preconditions: Some("本地靶场服务可达".to_owned()),
+                expected_observation: Some("管理面路径返回 200 或 401 特征".to_owned()),
+                negative_control: Some("未开放端口同型探测无匹配".to_owned()),
+                suggested_verification: Some("nuclei 指纹模板".to_owned()),
+                cost_risk: Some("低于 10 请求 low_impact".to_owned()),
+                stop_condition: "连续两轮 NOT_REPRODUCED 或 round 达 max_rounds".to_owned(),
+                round_number: 1,
+            },
+            2,
+        )
+        .unwrap();
+    assert!(h.hypothesis_id.starts_with("hi-"));
+    assert_eq!(h.status, "proposed");
+    assert_eq!(h.round_number, 1);
+    assert_eq!(h.dimension, "assets");
+    assert_eq!(h.negative_control.as_deref(), Some("未开放端口同型探测无匹配"));
+    assert_eq!(h.schema_version, SCHEMA_VERSION);
+
+    store
+        .set_hypothesis_status(&h.hypothesis_id, "in_plan")
+        .unwrap();
+    store
+        .set_hypothesis_status(&h.hypothesis_id, "validated")
+        .unwrap();
+    let done = store.get_hypothesis(&h.hypothesis_id).unwrap().unwrap();
+    assert_eq!(done.status, "validated");
+    let rows = store.list_hypotheses(&plan.plan_id).unwrap();
+    assert_eq!(rows.len(), 1);
+}
+
+/// P5-8 假设守卫负例矩阵：无证据不生成 / 轮次预算 / 维度词表 / validated 终局不迁出。
+#[test]
+fn hypothesis_guards_evidence_round_and_terminal() {
+    let store = store();
+    let plan = store
+        .create_plan(
+            Some("rt-p58-e2e"),
+            "default",
+            Some("P5-8 hypothesis 守卫负例场景"),
+            Some("127.0.0.1"),
+            Some(&serde_json::json!({ "max_requests": 15, "max_rounds": 2 })),
+        )
+        .unwrap();
+    let base = || NewHypothesis {
+        dimension: "assets".to_owned(),
+        content: "假设内容".to_owned(),
+        source_evidence: "来源依据".to_owned(),
+        association_reason: "关联原因".to_owned(),
+        preconditions: None,
+        expected_observation: None,
+        negative_control: None,
+        suggested_verification: None,
+        cost_risk: None,
+        stop_condition: "停止条件".to_owned(),
+        round_number: 1,
+    };
+
+    // 必填四项任一为空（trim 后）即拒：无证据不生成
+    let mut h1 = base();
+    h1.content = "  ".to_owned();
+    let mut h2 = base();
+    h2.source_evidence = String::new();
+    let mut h3 = base();
+    h3.association_reason = " ".to_owned();
+    let mut h4 = base();
+    h4.stop_condition = String::new();
+    for h in [h1, h2, h3, h4] {
+        assert!(matches!(
+            store.add_hypothesis(&plan.plan_id, h, 2).unwrap_err(),
+            PlanStoreError::GuardRejected(_)
+        ));
+    }
+
+    // 轮次预算：round 0 与 round 3（超 max_rounds=2）均拒
+    let mut r0 = base();
+    r0.round_number = 0;
+    assert!(matches!(
+        store.add_hypothesis(&plan.plan_id, r0, 2).unwrap_err(),
+        PlanStoreError::GuardRejected(_)
+    ));
+    let mut r3 = base();
+    r3.round_number = 3;
+    assert!(matches!(
+        store.add_hypothesis(&plan.plan_id, r3, 2).unwrap_err(),
+        PlanStoreError::GuardRejected(_)
+    ));
+
+    // 维度词表外拒绝
+    let mut bad_dim = base();
+    bad_dim.dimension = "not_a_dimension".to_owned();
+    assert!(matches!(
+        store.add_hypothesis(&plan.plan_id, bad_dim, 2).unwrap_err(),
+        PlanStoreError::GuardRejected(_)
+    ));
+
+    // validated 终局不迁出（dropped 同守卫）与未知状态词拒绝
+    let ok = store.add_hypothesis(&plan.plan_id, base(), 2).unwrap();
+    store
+        .set_hypothesis_status(&ok.hypothesis_id, "validated")
+        .unwrap();
+    assert!(matches!(
+        store.set_hypothesis_status(&ok.hypothesis_id, "proposed").unwrap_err(),
+        PlanStoreError::GuardRejected(_)
+    ));
+    assert!(matches!(
+        store.set_hypothesis_status(&ok.hypothesis_id, "dropped").unwrap_err(),
+        PlanStoreError::GuardRejected(_)
+    ));
+    assert!(matches!(
+        store.set_hypothesis_status(&ok.hypothesis_id, "flying").unwrap_err(),
+        PlanStoreError::GuardRejected(_)
+    ));
 }
