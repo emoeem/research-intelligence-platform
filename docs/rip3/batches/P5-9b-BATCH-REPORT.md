@@ -103,7 +103,7 @@ $ rp-verify coverage-show --plan vp-…-03d6
 
 ### E4 CI
 
-本批 commit push 后 `gh run watch` 收口，红则修复批再进下一批（P5-7 dbb582d1 先例）；终态记入 HANDOVER 与 P5-9c 开工核对。
+本批 commit 90311c1b push 后收口：run 44174495630 **success**（2026-11-18 实测，4 job 全绿：Rust workspace 4m12s / 协议一致性载具 1m11s / Web 工作台 30s / Python worker 25s）。CI 绿，进下一批 P5-9c。
 
 ## F. 性能数据
 
