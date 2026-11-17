@@ -1,17 +1,17 @@
-# HANDOVER：Phase 5 断点续作专档（2026-11-17，P5-8 已收口：P5-9/RELEASE 待做）
+# HANDOVER：Phase 5 断点续作专档（2026-11-18，P5-9a 已收口：P5-9b/9c/RELEASE 待做）
 
 > 主交接入口仍是 docs/HANDOVER-RIP3-CONTINUATION.md（唯一入口原则不变）；
 > 本文件聚焦 Phase 5 中断点的精确现场。接手会话读完主 HANDOVER 第四、五节
-> （贯穿纪律与环境事实）后读本文件即可续作。本档取代前版断点（P5-8 收尾）。
+> （贯穿纪律与环境事实）后读本文件即可续作。本档取代前版断点（P5-8 收口）。
 
 ## 一、状态快照
 
 | 项 | 值 |
 | --- | --- |
-| HEAD | 092d46e8（P5-8 收口批：hypothesis 实拍链六步 PASS + 集成测试 2 条 + P5-8-BATCH-REPORT.md，已 push）；前一编排批 13381445（rip3-p5-finish 收官工作流入库） |
-| HEAD CI | P5-8 批 run 44115292783 查询时点 in_progress，终态由 rip3-p5-finish 收口确认段兜底核实（红则修复批） |
+| HEAD | dd0860ae（P5-9a 收口批：十三步两模板 + Schema 表单对齐 + 模板钉值测试 + P5-9a-BATCH-REPORT.md，已 push） |
+| HEAD CI | run 44124032312 **success 4 job 全绿**（Rust 4m38s / 协议一致性 1m12s / Web 42s / Python 23s，2026-11-18 实测） |
 | 工作树 | 4 项用户未提交 WSW 素材（M docs/README.md、M Phase 5 计划书、?? WEB-SECURITY-WORKBENCH-PLAN.md、?? docs/ui-ux/）不提交不还原不清理；批次 commit 显式 add 禁 add -A |
-| Phase 5 进度 | P5-0 至 P5-8 八批已收口入库；P5-9（三子批 9a/9b/9c）/RELEASE 未开 |
+| Phase 5 进度 | P5-0 至 P5-9a 九批已收口入库；P5-9b（Evidence 与 Coverage 页面）/ P5-9c（本地靶场实拍与端到端验收）/ RELEASE 未开 |
 | 收官编排 | rip3-p5-finish 动态工作流（.zcode/workflows/rip3-p5-finish.dwf.ts）：P5-8 收口确认 → P5-9 三子批 → RELEASE，有动态工作流工具面会话 `CreateWorkflow saved: { name: "rip3-p5-finish" }` 启动；无工具面按 P5-CONTINUATION-WORKFLOW.md（仓库外手册 /media/emo/code/pensting/P5-CONTINUATION-WORKFLOW.md）d 案手动 |
 
 ## 二、Phase 5 已收口批次账目（提交链按时间序，P5-5 起补全）

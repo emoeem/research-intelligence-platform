@@ -116,7 +116,7 @@ build 775ms 通过；vitest 19 files / 124 passed（NodeInspector 改动后全�
 
 ### E4 CI
 
-本批 commit push 后 `gh run watch` 收口，红则修复批再进下一批（P5-7 dbb582d1 先例）；终态记入 HANDOVER 与 P5-9b 开工核对。
+本批 commit dd0860ae push 后 `gh run watch` 收口：run 44124032312 **success**（2026-11-18 实测，4 job 全绿：Rust workspace 4m38s / 协议一致性载具 1m12s / Web 工作台 42s / Python worker 23s；annotations 仅 Node.js 20 deprecation 与 runner label 迁移两条环境提示，非本批引入）。CI 绿，进下一批 P5-9b。
 
 ## F. 性能数据
 
