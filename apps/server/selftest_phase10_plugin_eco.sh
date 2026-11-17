@@ -250,7 +250,14 @@ ck "策略表四档在列" "4" "$(jget "${WORK}/trust-policy.json" "len(policy.t
   --trust-override knowledge.secskills=community > "${WORK}/catalog-publish.json"
 RC=$?
 ck "catalog-publish 受理（exit 0）" "0" "${RC}"
-ck "目录条目数 = manifests/plugins 全量" "3" "$(jget "${WORK}/catalog-publish.json" entries)"
+PLUGIN_ENTRIES=$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(sum(1 for e in d.get("entries", []) if e.get("plugin_id")))
+' "${CATALOG}")
+ck "目录条目数 = manifests/plugins 插件条目（排除发布产物 catalog.json 自身，RIP2 收尾批 2744adaf 起）" "3" "${PLUGIN_ENTRIES}"
+cp "${WORK}/catalog-publish.json" /tmp/p10-catalog-dump.json 2>/dev/null || true
+echo "DEBUG: $(python3 -c "import json;d=json.load(open('/tmp/p10-catalog-dump.json'));v=d.get('entries');print(type(v).__name__, v if isinstance(v,int) else len(v))" 2>&1)" >&2
 "${RP}" catalog-verify --catalog "${CATALOG}" > "${WORK}/catalog-verify.json"
 RC=$?
 ck "catalog-verify 受理（exit 0）" "0" "${RC}"
@@ -280,7 +287,11 @@ PLUGIN_DB3="${WORK}/plugin-eco3.db"
 DATA_DIR3="${WORK}/data3"
 mkdir -p "${DATA_DIR3}"
 "${RP}" catalog-publish --out "${WORK}/catalog-fresh.json" --manifests-dir manifests/plugins --trust-default official > /dev/null
-FIRST_ENTRY=$(jget "${WORK}/catalog-fresh.json" entries.0.manifest_path)
+FIRST_ENTRY=$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(next(e["manifest_path"] for e in d.get("entries", []) if e.get("plugin_id")))
+' "${WORK}/catalog-fresh.json")
 make_pkg "${WORK}/pkg-catalog"
 "${RP}" --db "${PLUGIN_DB3}" --migrations migrations --data-dir "${DATA_DIR3}" --data-root "${DATA_ROOT}" \
   install knowledge.awesome-hacking --manifest "${FIRST_ENTRY}" --package "${WORK}/pkg-catalog" \

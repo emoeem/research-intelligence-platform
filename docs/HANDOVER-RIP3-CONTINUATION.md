@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-17，**Phase 5 进行中**：P5-0 至 P5-7 已收口（P5-6 c49e89c9 / P5-7 bf55c9b3+dbb582d1+b1460702，CI 绿），P5-8 半成品已 WIP 入库（HEAD 4b949614：022 迁移/coverage.rs/指纹 v2/四子命令，代码面完成待实拍收尾），断点现场专档 docs/HANDOVER-P5-WIP.md；Phase 4 收口账目见 RELEASE_2026-11-17_RIP3-PHASE4.md） |
+| 状态 | 生效中（2026-11-18，**Phase 5 已收口**：P5-0 至 P5-9c 全批入库（P5-9a dd0860ae / P5-9b 90311c1b / P5-9c 9833aedc，CI 全绿），RELEASE 文档 docs/releases/RELEASE_2026-11-17_RIP3-PHASE5.md（门禁 775 passed + selftest 全集 14/14 + RTIS 零 diff）；下一阶段入口 = WSW-0 只读审计（用户任务书第三阶段）与 Phase 6 报告智能（主队列序 5）；Phase 5 断点专档 docs/HANDOVER-P5-WIP.md 已收档留账） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
 | 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
 | CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
@@ -72,7 +72,7 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 | 1 | Phase 2 文档智能 | rip-parser 容器族（Docling/PyMuPDF/Tesseract 模型烘焙离线 + digest 台账）；Parser Registry + Provider 接口；解析管线 = workflow 定义（九态状态机映射既有八类节点）；Document IR v1 落库（04 号冻结物 Schema）；解析质量检查；OCR 面。验收：PDF/EPUB/MD/DOCX/PPTX/XLSX/HTML/TXT/图片/ZIP 统一入库；结构正确；页码可定位；失败可重试；解析器版本可记录；network=none |
 | 2 | Phase 3 知识治理 | D1 sha256 / D2 规范化哈希 / D3 datasketch MinHash+LSH worker（容器）/ D4 语义候选（pgvector，禁自动合并）/ D5 CONTRADICTS 进审核；KnowledgeRelation 10 型；质量分六权重 + 七类风险标记；审核工作流（复用 018 控制面 + Human 节点）；RTIS 对账零回归（15155 口径） |
 | 3 | Phase 4 混合检索 | 统一 Search API（PG 面：pg_search BM25 + pgvector + JSONB 过滤）；RRF/MMR 融合在 Rust 检索层（跨 SQLite 知识面与 PG 文档面）；reranker worker（bge-reranker ONNX）；tokenizers 接入替换 est_tokens；缓存升级；Benchmark（RTIS 语料播种，Recall@K/MRR/NDCG） |
-| 4 | Phase 5 工作流与安全研究 | workflow 模板机制（现无模板能力，审计实证）；渗透/SRC 十三步模板；自适应研究引擎（覆盖矩阵七维/假设生成/五态纪律 CONFIRMED 等）；画布增强；Findings 经 RTIS 接口落库 |
+| 4 | Phase 5 工作流与安全研究 | **已收口（2026-11-18，RELEASE_2026-11-17_RIP3-PHASE5.md）**：workflow 模板机制（十三步双模板入库）；自适应研究引擎（覆盖矩阵七维/假设生成/五态纪律）；画布增强（Evidence/Coverage 页）；Findings 经 RTIS 接口落库（900064 闭环正例） |
 | 5 | Phase 6 报告智能 | Report Domain/IR（事实引用 RTIS）；typst PDF 渲染（字体烘焙离线）；DOCX/HTML/MD/JSON 渲染器（统一 IR 单源）；Diagram Engine（Mermaid + typst cetz/fletcher）；通俗+技术双解释；导出质检 |
 | 6 | Phase 7 知识回流 | Finding 到候选 KnowledgeCard 流水线（复用 k_proposal 模式）；Evidence 溯源（六 ID）；上游更新监测（复用 source_sync） |
 | 7 | Phase 8 规模测试 | 1k/10k/100k 文档 + 百万 chunk 合成语料；导入/索引/检索/内存/存储/并发/迁移/重建/备份基准报告；决定运营核是否移植 PG |

@@ -1,17 +1,20 @@
-# HANDOVER：Phase 5 断点续作专档（2026-11-18，P5-9b 已收口：P5-9c/RELEASE 待做）
+# HANDOVER：Phase 5 断点续作专档（2026-11-18，Phase 5 已收口，本档收档留账）
 
-> 主交接入口仍是 docs/HANDOVER-RIP3-CONTINUATION.md（唯一入口原则不变）；
-> 本文件聚焦 Phase 5 中断点的精确现场。接手会话读完主 HANDOVER 第四、五节
-> （贯穿纪律与环境事实）后读本文件即可续作。本档取代前版断点（P5-9a 收口）。
+> **收档注记**：Phase 5 全批（P5-0 至 P5-9c）已收口入库，阶段总账见
+> docs/releases/RELEASE_2026-11-17_RIP3-PHASE5.md；本档作为断点续作专档
+> 收档留账，不再作为续作入口。下一阶段入口 = WSW-0 只读审计（用户任务书
+> 第三阶段）与 Phase 6 报告智能（主 HANDOVER 第三节序 5）；主交接入口仍是
+> docs/HANDOVER-RIP3-CONTINUATION.md。
 
-## 一、状态快照
+## 一、状态快照（收档时点）
 
 | 项 | 值 |
 | --- | --- |
-| HEAD | 90311c1b（P5-9b 收口批：Evidence/Coverage 页 + 检索端点×3 + 路由 18 + 派发面 `-t` 修复 + 16 断言浏览器 e2e + P5-9b-BATCH-REPORT.md，已 push）；前一 docs 批 942d453c |
-| HEAD CI | run 44174495630 **success 4 job 全绿**（Rust 4m12s / 协议一致性 1m11s / Web 30s / Python 25s，2026-11-18 实测） |
+| HEAD | 9833aedc（P5-9c 收口批）→ RELEASE 收口批（selftest 钉值同步 ×4 + RELEASE_2026-11-17_RIP3-PHASE5.md + 主 HANDOVER 勾销） |
+| P5-9c CI | run 44183557099 **success 4 job 全绿**（Rust 3m53s / 协议一致性 1m9s / Web 32s / Python 19s，2026-11-18 实测） |
+| 门禁终测 | cargo workspace 775 passed（串行）/ clippy 零告警 / unittest 232 / web 124 / auth 11/11 / selftest 全集 14/14（本收口批修四处预存钉值） |
 | 工作树 | 4 项用户未提交 WSW 素材（M docs/README.md、M Phase 5 计划书、?? WEB-SECURITY-WORKBENCH-PLAN.md、?? docs/ui-ux/）不提交不还原不清理；批次 commit 显式 add 禁 add -A |
-| Phase 5 进度 | P5-0 至 P5-9b 十批已收口入库；P5-9c（本地靶场实拍与端到端验收）/ RELEASE 未开 |
+| Phase 5 进度 | **全批收口**：P5-0 至 P5-9c 九批 + RELEASE 入库；RTIS Finding 闭环正例 900064 verified 实拍在案 |
 | 收官编排 | rip3-p5-finish 动态工作流（.zcode/workflows/rip3-p5-finish.dwf.ts）：P5-8 收口确认 → P5-9 三子批 → RELEASE，有动态工作流工具面会话 `CreateWorkflow saved: { name: "rip3-p5-finish" }` 启动；无工具面按 P5-CONTINUATION-WORKFLOW.md（仓库外手册 /media/emo/code/pensting/P5-CONTINUATION-WORKFLOW.md）d 案手动 |
 
 ## 二、Phase 5 已收口批次账目（提交链按时间序，P5-5 起补全）

@@ -122,17 +122,17 @@ ck "未安装插件 enable 走 CLI 返回 502" "502" "$(jget "<dummy>" 0 >/dev/n
 
 # ---- 2. install：两插件经真实 API 落位（knowledge + tool + project 经 CLI 子进程）----
 KNOWLEDGE_MANIFEST=$(prepare_manifest "knowledge.rtis-redteam")
-body=$(api_post "/api/plugins/install" "{\"manifest_path\": \"${KNOWLEDGE_MANIFEST}\", \"trust\": \"local\"}")
+body=$(api_post "/api/plugins/install" "{\"manifest_path\": \"${KNOWLEDGE_MANIFEST}\", \"trust\": \"local\", \"confirm\": true}")  # P10-2 信任级分级确认：local 需 confirm=true
 ck "install knowledge.rtis-redteam 经 API exit ok" "True" "$(jget "${body}" "d['ok']")"
 ck "install 后 state=REGISTERED" "REGISTERED" "$(jget "${body}" "d['result']['outcome']['state_after']")"
 test -d "rip-data/plugins/installed/knowledge.rtis-redteam/0.1.0" && echo "[PASS] DATA_RETAINED 安装目录在位" && PASS=$((PASS+1))
 
 TOOL_MANIFEST=$(prepare_manifest "tool.rip.python-workers")
-body=$(api_post "/api/plugins/install" "{\"manifest_path\": \"${TOOL_MANIFEST}\", \"trust\": \"local\"}")
+body=$(api_post "/api/plugins/install" "{\"manifest_path\": \"${TOOL_MANIFEST}\", \"trust\": \"local\", \"confirm\": true}")
 ck "install tool.rip.python-workers 经 API ok" "True" "$(jget "${body}" "d['ok']")"
 
 PROJECT_MANIFEST=$(prepare_manifest "project.rtis-mcp")
-body=$(api_post "/api/plugins/install" "{\"manifest_path\": \"${PROJECT_MANIFEST}\", \"trust\": \"remote\"}")
+body=$(api_post "/api/plugins/install" "{\"manifest_path\": \"${PROJECT_MANIFEST}\", \"trust\": \"remote\", \"confirm\": true, \"confirm_id\": \"project.rtis-mcp\"}")  # remote 档需 confirm_id 与 Manifest id 一致
 ck "install project.rtis-mcp 经 API ok" "True" "$(jget "${body}" "d['ok']")"
 
 # ---- 3. 目录列表 + 分类 ----
@@ -184,7 +184,7 @@ ck "re-enable 经真实 API" "True" "$(jget "${body}" "d['ok']")"
 
 # ---- 6. upgrade：新版本 Manifest（0.2.0）经 API ----
 UP_MANIFEST=$(prepare_manifest "knowledge.rtis-redteam" "0.2.0")
-body=$(api_post "/api/plugins/knowledge.rtis-redteam/upgrade" "{\"manifest_path\": \"${UP_MANIFEST}\"}")
+body=$(api_post "/api/plugins/knowledge.rtis-redteam/upgrade" "{\"manifest_path\": \"${UP_MANIFEST}\", \"confirm\": true}")  # upgrade 沿用当前 active 信任级 local，同需 confirm=true
 ck "upgrade 0.2.0 经真实 API ok" "True" "$(jget "${body}" "d['ok']")"
 body=$(api "/api/plugins/knowledge.rtis-redteam")
 ck "upgrade 后 active 版本 = 0.2.0" "0.2.0" "$(jget "${body}" "d['version']")"

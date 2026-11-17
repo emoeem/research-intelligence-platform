@@ -229,7 +229,7 @@ doc = pathlib.Path("docs/phase9/REST-API-CONTRACT.md").read_text()
 # rp_server.py API_ROUTES 键（词含连字符：agent-runs / workflow-runs）
 block = re.search(r"API_ROUTES = \{(.*?)\n\}", src, re.S).group(1)
 routes = sorted(set(re.findall(r'"(/api/[a-z0-9_-]+)":', block)))
-assert len(routes) == 17, f"API_ROUTES 应 17 条只读路由（P9-4 起 16 条加 /api/mcp-catalog），实得 {len(routes)}: {routes}"
+assert len(routes) == 18, f"API_ROUTES 应 18 条只读路由（P9-4 起 16 条加 /api/mcp-catalog，RIP3 P1-1 41bf3359 加 /api/documents），实得 {len(routes)}: {routes}"
 
 # 文档端点总览段（标记之间）
 m = re.search(r"<!-- ENDPOINTS:BEGIN -->(.*?)<!-- ENDPOINTS:END -->", doc, re.S)
@@ -255,8 +255,8 @@ if doc_get != set(routes) | dynamic_get:
     problems.append(f"文档 GET 集合不一致: doc={sorted(doc_get)} expect={sorted(set(routes)|dynamic_get)}")
 if doc_post != expected_post:
     problems.append(f"文档 POST 集合不一致: doc={sorted(doc_post)} expect={sorted(expected_post)}")
-if len(doc_get) != 18:
-    problems.append(f"文档 GET 行应 18（17 静态 + 1 动态详情），实得 {len(doc_get)}")
+if len(doc_get) != 19:
+    problems.append(f"文档 GET 行应 19（18 静态 + 1 动态详情），实得 {len(doc_get)}")
 
 # 动作词表对账（rp_server.py 词表 ↔ 文档行内词表）
 plug = re.search(r"PLUGIN_WRITE_ACTIONS = \(([^)]*)\)", src).group(1)

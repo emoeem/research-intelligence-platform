@@ -124,10 +124,11 @@
 | GET | /api/traces | 统一关联查询 ?id=<六 ID 之一>（单锚 trace_id/correlation_id + 关联头） | Bearer |
 | GET | /api/agents | Agent 定义读面 | Bearer |
 | GET | /api/agent-runs | AgentRun 列表；?id= 详情（correlation_id + 关联头） | Bearer |
+| GET | /api/documents | RIP3 文档列表（?workspace= 过滤，all=1 含软删；RIP3 P1-1 起） | Bearer |
 | GET | /api/workflows | Workflow 定义读面；?id= 全版本 + graph | Bearer |
 | GET | /api/workflow-runs | WorkflowRun 读面；?id= 详情（六 ID correlation + correlation_id + 关联头） | Bearer |
 | POST | /api/plugins/install | 插件安装（经 rp-plugin 子进程） | Bearer（写面强制） |
-| POST | /api/plugins/<plugin_id>/<action> | 插件写面：action ∈ enable, disable, uninstall, ingest, upgrade | Bearer（写面强制） |
+| POST | /api/plugins/<plugin_id>/<action> | 插件写面：action ∈ enable, disable, uninstall, ingest, cleanup-rollback, upgrade | Bearer（写面强制） |
 | POST | /api/workflows | 画布保存（definition-v1，版本存储侧递增；put 同步 60s 超时） | Bearer（写面强制） |
 | POST | /api/workflow-runs | 受理新 run（run_id 预生成，异步 Popen；action=run） | Bearer（写面强制） |
 | POST | /api/workflow-runs/<action> | 控制面形状一：action ∈ pause, resume, retry（run_id 在 body） | Bearer（写面强制） |
