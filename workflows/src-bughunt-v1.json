@@ -1,0 +1,306 @@
+{
+  "schema": "workflow/definition-v1",
+  "workflow_id": "wf-src-bughunt-v1",
+  "version": 1,
+  "name": "RIP3 SRC 漏洞挖掘模板（十三步）",
+  "description": "P5-9a SRC 漏洞挖掘十三步模板（Phase 5 计划 §6.2 逐条映射，映射对账见 docs/rip3/batches/P5-9a-BATCH-REPORT.md ADR 节）。骨架语义：公开资料收集走 rip.knowledge.document.fetch（Registry approved 闸默认开，URL 须等于已批准条目 canonical_url）；低影响检测与受控验证两处 nuclei 节点分离，检测面与验证面模板锚由 run 输入分别承载，速率与请求预算以节点参数钉住（rate_limit 5、max_requests 30 或 20、timeout_seconds 60）。循环上限 ADR：definition-v1 静态校验禁环（validate 规则 cycle），迭代上限不在图上做回边，统一以节点参数承载（nuclei max_requests/timeout_seconds/rate_limit 与 verification-engine PlanBudget.max_rounds，覆盖矩阵与假设草稿持久化走 rp-verify item-add 或 hypothesis-add，即 P5-8 七维五态面）。查重步骤为 tool 检索（rip.kb.rtis RTIS 既有接口）加 condition 分流：impact_assessment 输出 duplicate_suspected 布尔，true 停等人工核对避免重复提交，false 进报告面。Finding 与报告事实只经 RTIS 既有接口：本模板零 RTIS 直写节点，验证结论回填与 SRC 提交由人工经 rt.py CLI 或 rp-verify finding-link 承载（受控验证节点输出五态结论，CONFIRMED 才可关联）。Evidence 记录节点为 rtk ledger 同步校验钩子，021 research_evidence 落档由 verification-engine execute-plan 自动承载（P5-7 面），零证据运行时重建。报告节点为 rtk lint 报告面（必备章节 校验），报告正文事实锚回 RTIS。agent 节点 agent_id 运行前须登记 agent_definition，装载与静态校验不查存在性。",
+  "compat": "graph-v1",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "program_url",
+      "target_host",
+      "target_url",
+      "case_query",
+      "detection_template_ref",
+      "verification_template_ref",
+      "engagement_root",
+      "report_path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "program_url": {
+        "type": "string",
+        "description": "SRC 公开资料页 URL（须等于知识 Registry 已批准条目 canonical_url）"
+      },
+      "target_host": {
+        "type": "string",
+        "description": "目标主机（TLS 指纹面）"
+      },
+      "target_url": {
+        "type": "string",
+        "description": "目标 URL（nuclei egress allowlist host 派生源）"
+      },
+      "case_query": {
+        "type": "string",
+        "description": "相似漏洞案例检索词（RTIS 既有接口）"
+      },
+      "detection_template_ref": {
+        "type": "string",
+        "description": "低影响检测模板锚（rtis-poc:<id> 或 knowledge:<id>）"
+      },
+      "verification_template_ref": {
+        "type": "string",
+        "description": "受控验证模板锚（rtis-poc:<id>，与检测面分离）"
+      },
+      "engagement_root": {
+        "type": "string",
+        "description": "engagement 根目录（rtk ledger 证据同步校验，相对平台仓库根）"
+      },
+      "report_path": {
+        "type": "string",
+        "description": "SRC 报告文件路径（rtk lint，相对平台仓库根）"
+      }
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start"
+      },
+      {
+        "id": "public_recon",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.knowledge.document.fetch",
+          "input": {
+            "url": "$/program_url"
+          }
+        }
+      },
+      {
+        "id": "asset_function_map",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.inventory",
+          "input": {}
+        }
+      },
+      {
+        "id": "stack_fingerprint",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.http.tls_inspect",
+          "input": {
+            "host": "$/target_host",
+            "timeout_seconds": 10
+          }
+        }
+      },
+      {
+        "id": "case_search",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.rtis",
+          "input": {
+            "surface": "engine",
+            "q": "$/case_query",
+            "limit": 10
+          }
+        }
+      },
+      {
+        "id": "coverage_matrix",
+        "type": "agent",
+        "params": {
+          "agent_id": "ag-coverage-planner",
+          "goal": "步骤 5 建立测试覆盖矩阵：按七维五态口径（P5-8 coverage 面）起草矩阵草稿与盲区清单，持久化经 rp-verify item-add（verification-engine 面，零自建矩阵运行时），输出 object 并入 run state"
+        }
+      },
+      {
+        "id": "low_impact_scan",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.security.nuclei",
+          "input": {
+            "target": "$/target_url",
+            "url": "$/target_url",
+            "template_ref": "$/detection_template_ref",
+            "rate_limit": 5,
+            "max_requests": 30,
+            "timeout_seconds": 60
+          }
+        }
+      },
+      {
+        "id": "authz_boundary_analysis",
+        "type": "agent",
+        "params": {
+          "agent_id": "ag-authz-analyst",
+          "goal": "步骤 7 分析业务逻辑与权限边界：以低影响检测结果与案例检索为输入，输出越权与逻辑风险候选清单（低影响假设，不执行写操作），输出 object 并入 run state"
+        }
+      },
+      {
+        "id": "hypothesis_draft",
+        "type": "agent",
+        "params": {
+          "agent_id": "ag-hypothesis-planner",
+          "goal": "步骤 8 建立安全假设：按盲区假设草稿口径（来源依据、负向对照、停止条件内置，P5-8 generate_blind_spot_hypotheses 面），持久化经 rp-verify hypothesis-add，输出 object 并入 run state"
+        }
+      },
+      {
+        "id": "controlled_verify",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.security.nuclei",
+          "input": {
+            "target": "$/target_url",
+            "url": "$/target_url",
+            "template_ref": "$/verification_template_ref",
+            "rate_limit": 5,
+            "max_requests": 20,
+            "timeout_seconds": 60
+          }
+        }
+      },
+      {
+        "id": "evidence_record",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.evidence.rtk.ledger",
+          "input": {
+            "check_mode": true,
+            "root": "$/engagement_root"
+          }
+        }
+      },
+      {
+        "id": "impact_assessment",
+        "type": "agent",
+        "params": {
+          "agent_id": "ag-impact-assessor",
+          "goal": "步骤 11 评估影响：按五态纪律给出受控验证结论（CONFIRMED 或非 CONFIRMED 依据）与影响面评级，输出 {\"duplicate_suspected\": bool, \"duplicate_ref\": \"…\", \"severity\": \"…\", \"rationale\": \"…\"}"
+        }
+      },
+      {
+        "id": "dedup_search",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.kb.rtis",
+          "input": {
+            "surface": "cli",
+            "q": "$/case_query",
+            "limit": 20
+          }
+        }
+      },
+      {
+        "id": "dedup_gate",
+        "type": "condition",
+        "params": {
+          "expression": {
+            "type": "object",
+            "required": [
+              "duplicate_suspected"
+            ],
+            "properties": {
+              "duplicate_suspected": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "dedup_review",
+        "type": "human",
+        "params": {
+          "prompt": "步骤 12 查重人工核对：疑似重复提交（RTIS 检索命中）人工比对既有条目，决定差异说明后放行（批准参数 = {\"dedup\": {\"proceed\": true, \"note\": \"…\"}}）",
+          "key": "dedup_review"
+        }
+      },
+      {
+        "id": "src_report_lint",
+        "type": "tool",
+        "params": {
+          "tool_id": "rip.evidence.rtk.lint",
+          "input": {
+            "paths": [
+              "$/report_path"
+            ],
+            "require": "复现步骤"
+          }
+        }
+      },
+      {
+        "id": "done",
+        "type": "end"
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "to": "public_recon"
+      },
+      {
+        "from": "public_recon",
+        "to": "asset_function_map"
+      },
+      {
+        "from": "asset_function_map",
+        "to": "stack_fingerprint"
+      },
+      {
+        "from": "stack_fingerprint",
+        "to": "case_search"
+      },
+      {
+        "from": "case_search",
+        "to": "coverage_matrix"
+      },
+      {
+        "from": "coverage_matrix",
+        "to": "low_impact_scan"
+      },
+      {
+        "from": "low_impact_scan",
+        "to": "authz_boundary_analysis"
+      },
+      {
+        "from": "authz_boundary_analysis",
+        "to": "hypothesis_draft"
+      },
+      {
+        "from": "hypothesis_draft",
+        "to": "controlled_verify"
+      },
+      {
+        "from": "controlled_verify",
+        "to": "evidence_record"
+      },
+      {
+        "from": "evidence_record",
+        "to": "impact_assessment"
+      },
+      {
+        "from": "impact_assessment",
+        "to": "dedup_search"
+      },
+      {
+        "from": "dedup_search",
+        "to": "dedup_gate"
+      },
+      {
+        "from": "dedup_gate",
+        "to": "dedup_review",
+        "kind": "branch",
+        "when": true
+      },
+      {
+        "from": "dedup_gate",
+        "to": "src_report_lint",
+        "kind": "branch",
+        "when": false
+      },
+      {
+        "from": "dedup_review",
+        "to": "src_report_lint"
+      },
+      {
+        "from": "src_report_lint",
+        "to": "done"
+      }
+    ]
+  }
+}

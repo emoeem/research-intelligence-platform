@@ -241,10 +241,9 @@ export function NodeInspector({
           ) : null}
           {data.nodeType === "condition" ? (
             <div className="mt-2">
-              <TextField
-                label="expression"
-                required
-                value={String(params.expression ?? "")}
+              <JsonField
+                label="expression（JSON 条件载荷，P5-9a 模板为 JSON Schema 形状）"
+                value={params.expression}
                 onChange={(value) => setParam("expression", value)}
               />
             </div>
