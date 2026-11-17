@@ -1,19 +1,18 @@
-# HANDOVER：Phase 5 断点续作专档（2026-11-17，P5-8 收尾断点）
+# HANDOVER：Phase 5 断点续作专档（2026-11-17，P5-8 已收口：P5-9/RELEASE 待做）
 
 > 主交接入口仍是 docs/HANDOVER-RIP3-CONTINUATION.md（唯一入口原则不变）；
-> 本文件聚焦 Phase 5 中断点的精确现场：哪些已收口、半成品是什么、剩余批次
-> 怎么接。接手会话读完主 HANDOVER 第四、五节（贯穿纪律与环境事实）后读本
-> 文件即可续作。本档取代前版断点（P5-6/P5-7 已收口入库）。
+> 本文件聚焦 Phase 5 中断点的精确现场。接手会话读完主 HANDOVER 第四、五节
+> （贯穿纪律与环境事实）后读本文件即可续作。本档取代前版断点（P5-8 收尾）。
 
 ## 一、状态快照
 
 | 项 | 值 |
 | --- | --- |
-| HEAD | 4b949614（P5-8 半成品 WIP 备份入库，已 push 至 origin/main） |
-| HEAD CI | docs+Rust 面 push 后未核对（前序 HEAD b1460702 run 43943622788 success；WIP 含 Rust 代码改动，接手先核 CI 结论，红先修复） |
-| 工作树 | 干净（P5-8 半成品已随 4b949614 WIP 入库，见第三节） |
-| Phase 5 进度 | P5-0 至 P5-7 七批已收口入库；P5-8 代码面完成待收尾；P5-9/RELEASE 未开 |
-| 收官编排 | 手动 d 案逐批推进（每批 §17.6 A-H 报告 + commit + push + CI watch 至绿） |
+| HEAD | 092d46e8（P5-8 收口批：hypothesis 实拍链六步 PASS + 集成测试 2 条 + P5-8-BATCH-REPORT.md，已 push）；前一编排批 13381445（rip3-p5-finish 收官工作流入库） |
+| HEAD CI | P5-8 批 run 44115292783 查询时点 in_progress，终态由 rip3-p5-finish 收口确认段兜底核实（红则修复批） |
+| 工作树 | 4 项用户未提交 WSW 素材（M docs/README.md、M Phase 5 计划书、?? WEB-SECURITY-WORKBENCH-PLAN.md、?? docs/ui-ux/）不提交不还原不清理；批次 commit 显式 add 禁 add -A |
+| Phase 5 进度 | P5-0 至 P5-8 八批已收口入库；P5-9（三子批 9a/9b/9c）/RELEASE 未开 |
+| 收官编排 | rip3-p5-finish 动态工作流（.zcode/workflows/rip3-p5-finish.dwf.ts）：P5-8 收口确认 → P5-9 三子批 → RELEASE，有动态工作流工具面会话 `CreateWorkflow saved: { name: "rip3-p5-finish" }` 启动；无工具面按 P5-CONTINUATION-WORKFLOW.md（仓库外手册 /media/emo/code/pensting/P5-CONTINUATION-WORKFLOW.md）d 案手动 |
 
 ## 二、Phase 5 已收口批次账目（提交链按时间序，P5-5 起补全）
 
@@ -79,19 +78,16 @@
 - coverage-show：七维矩阵 + 盲区可见（assets 有项、其余六维 uncovered）；
 - 指纹 v2 补段失效：profile v1/v2 与 knowledge approved/recalled 三键互异。
 
-### 未完成（接手即做，按序）
+### 未完成清单（已全部收口，092d46e8，留档对账）
 
-1. **hypothesis 实拍链重跑**：上轮 not_found 是环境未挂（RP_DB_PATH 未随
-   命令携带，落到内存空库），非代码缺陷。每条命令带
-   `export RP_DB_PATH=/tmp/p5-8-e2e/verify.db` 重跑：hypothesis-add 正例
-   （plan vp-20261116-200640-186-006a 已在库）到负例两（空 source / round
-   超 max_rounds=2）到 hypothesis-status validated 推进 + validated 终局
-   负例。
-2. **hypothesis 集成测试**（tests/store.rs 惯例 2 条：生命周期/守卫负例，
-   store() fixture + NewHypothesis）。
-3. **P5-8-BATCH-REPORT.md**（A-H 格式；E 节贴实际输出；教训实录三条：
-   链尾钉值三形状定位法 / sub() 整文件跳过陷阱 / ALTER 单行纪律）。
-4. **commit（中文长描述）+ push + CI watch 至绿**。
+1. hypothesis 实拍链重跑：DONE（六步 PASS；原 /tmp 库被清，等效重建
+   max_rounds=2 场景，新计划 vp-20261117-152808-425-00a6；实拍原文见
+   P5-8-BATCH-REPORT.md E2）。
+2. hypothesis 集成测试 2 条：DONE（tests/store.rs 生命周期/守卫负例矩阵，
+   store 8 过全量 52 过）。
+3. P5-8-BATCH-REPORT.md：DONE（A-K 十一节，教训三条 + RP_DB_PATH 教训）。
+4. commit + push + CI：DONE（092d46e8 已 push；CI 终态由工作流收口确认段
+   兜底）。
 
 ## 四、剩余批次（P5-8 收尾之后）
 
@@ -144,12 +140,15 @@
 
 ## 六、接手方式
 
-- 接手第一步：`git status -sb` 核对干净 → `gh run view` 核对 4b949614
-  的 CI 结论（红先修复）→ 按第三节「未完成」清单顺序收口 P5-8
-  （实拍链 → 集成测试 → 批次报告 → commit/push/CI）；
-- P5-8 收口后按第四节顺序推进 P5-9 → Phase 5 RELEASE；
-- 每批纪律不变：R2 §17.6 A-H 报告落 docs/rip3/batches/ + commit（中文长
-  描述）+ push（SSH 断连重试 2-3 次）+ CI 红不进下一批 + 批内定向测试；
+- 首选：有动态工作流工具面的会话（仓库根）
+  `CreateWorkflow saved: { name: "rip3-p5-finish" }`（或 path 直提
+  .zcode/workflows/rip3-p5-finish.dwf.ts）自主跑完 P5-8 收口确认 →
+  P5-9 三子批 → RELEASE；受阻处置站（hole）按通知处置即可；
+- 无工具面会话：按 /media/emo/code/pensting/P5-CONTINUATION-WORKFLOW.md
+  d 案手动（段 B P5-9 三子批 → 段 C 全量门禁 + RELEASE；段 A 已收口）；
+- 每批纪律不变：A-J 报告落 docs/rip3/batches/ + commit（中文长描述，显式
+  add 禁 add -A）+ push（SSH 断连重试 2-3 次）+ CI 红不进下一批 + 批内
+  定向测试（全量门禁只在收口时编排面静场串行复测）；
 - 硬红线不变：RTIS 只走 rt.py CLI 零直写、POC 正文零复制、新增域永不落
   PG 链（SQLite 运营面 022+ 沿 P5-0-B3 判定）、五态纪律、授权审批不内置、
   宿主机零系统级安装、生产 migrations/platform*.db 零触碰、不 reset/

@@ -1,7 +1,7 @@
 /* zcode-workflow
 name: rip3-p5-finish
-description: "RIP3 Phase 5 续作收官：P5-8 收尾（hypothesis 实拍链 + 集成测试 + 批次报告）→ P5-9 三子批（Workflow 模板与画布 / Evidence 与 Coverage 页面 / 本地靶场实拍与端到端验收）→ Phase 5 RELEASE（编排面全量门禁复测 + RELEASE 报告 + HANDOVER 勾销）。每子批自动化入库（显式 add + 中文长描述 commit + push 重试 + CI watch），收口经编排面确定性门禁复测与 HEAD CI 确认，受阻处置站逐段内建。接手断点 docs/HANDOVER-P5-WIP.md（P5-8 收尾）。"
-whenToUse: "P5-0 至 P5-7 已收口、P5-8 半成品已 WIP 入库后，驱动 Phase 5 剩余全部内容（P5-8 收尾 → P5-9 → RELEASE）的自主收官；仓库根 /media/emo/code/pensting/research-platform。取代 rip3-finish 工作流中 Phase 5 段的粗粒度 brief。"
+description: "RIP3 Phase 5 续作收官：P5-8 收口 CI 确认（实施已由 092d46e8 会话预收口入库：实拍链六步 PASS + 集成测试 2 条 + 批次报告，本工作流只做收口确认与兜底修复）→ P5-9 三子批（Workflow 模板与画布 / Evidence 与 Coverage 页面 / 本地靶场实拍与端到端验收）→ Phase 5 RELEASE（编排面全量门禁复测 + RELEASE 报告 + HANDOVER 勾销）。每子批自动化入库（显式 add + 中文长描述 commit + push 重试 + CI watch），收口经编排面确定性门禁复测与 HEAD CI 确认，受阻处置站逐段内建。接手断点 docs/HANDOVER-P5-WIP.md。"
+whenToUse: "P5-0 至 P5-8 已收口（P5-8 收口批 092d46e8）后，驱动 Phase 5 剩余全部内容（P5-8 收口确认 → P5-9 → RELEASE）的自主收官；仓库根 /media/emo/code/pensting/research-platform。取代 rip3-finish 工作流中 Phase 5 段的粗粒度 brief。"
 scope: project
 */
 
@@ -158,17 +158,6 @@ async function gateFixLoop(impl: Agent, label: string): Promise<GateResult> {
 
 const IMPL_PERSONA = `你是 RIP3 Phase 5 续作的资深实施工程师，独立负责一个子批的完整交付与自动入库。仓库根 = ${REPO}；所有文件工具与 shell 命令一律用绝对路径定位仓库内文件；开工先读仓库根 AGENTS.md、docs/HANDOVER-RIP3-CONTINUATION.md 与 docs/HANDOVER-P5-WIP.md。铁律：继承优先（trace 六 ID、Tool Contract 信封、workflow-engine、Context Broker、podman 执行面、audit correlation、source_sync、RTIS 接口八项复用不重建，禁建第二套 Workflow Runtime / Tool Registry / Findings 库）；RTIS 红线（读写只走 rt.py CLI / rtis MCP 工具面零直写零行为变更，POC 正文零复制，15155 对账零回归）；数据库链纪律（情报核新表走 migrations_pg，PG 链头 V0006；SQLite 仅运营面小迁移，链头 022，verification research 表沿 P5-0-B3 判定属运营面；演进链尾先按五形状全量定位九个钉值文件再改：vec![1, 2、vec![13, 14、(2X, \"_ 链尾名、uv1?、001.. 区间枚数）；五态纪律（Phase 5 计划 §5.7：工具退出码 0 不等于 CONFIRMED；失败/超时不等于 NOT_REPRODUCED；无命中不等于无漏洞；未测试不得计为通过；FALSE_POSITIVE 必须有明确依据；新代码不得绕过 ResultGuard 与 checked_normalized_doc）；授权审批节点不内置；宿主机零系统级安装（npm 只进 web/，Python 重依赖只进容器镜像，不用 sudo）；生产 migrations/platform*.db 零触碰；不 reset/clean/checkout/stash/rebase 改写历史；不删失败测试不降验收标准。工作树保护：仓库有 4 项用户未提交 WSW 素材（docs/README.md 修改、docs/rip3/RIP3-PHASE5-WEB-WORKBENCH-AND-KNOWLEDGE-DRIVEN-VERIFICATION-PLAN.md 修改、docs/rip3/WEB-SECURITY-WORKBENCH-PLAN.md 与 docs/ui-ux/ 未跟踪）——绝不提交、不还原、不清理、不混入；commit 一律显式 git add 本批文件清单，禁 git add -A 与 git add .；每批 commit 后 git status 核对这 4 项仍在。环境事实：RP_DB_PATH 必须随每条 rp-verify CLI 命令（Bash 环境不跨调用持久，漏带落内存空库，症状 not_found）；podman shim 在 /tmp 会被清（mkdir -p /tmp/podman-shim && printf '#!/bin/sh\\nexec distrobox-host-exec podman \"$@\"\\n' > /tmp/podman-shim/podman && chmod +x /tmp/podman-shim/podman 后 export PATH）；端口 7800 被生产 rp_server 常驻占用勿动，测试 rp_server 用 7801+，vite dev 需 RP_API_TARGET=http://127.0.0.1:7801 且监听 [::1]（curl 用 localhost）；批量替换脚本逐对独立判定独立写（整文件 sub() 遇 MISS 跳过其余已配对）；ALTER 必须单行书写（migrate.rs 行守卫切断多行 ALTER）；web/tests/workspaces.test.ts 路由钉值 16；web/scripts/rip3_p5_browser_e2e.mjs 为可扩展浏览器验收模板；gh/api.github.com 间歇 EOF，重试 2 到 3 次仍败改走 commit checks 页面。批次纪律：每批按 Phase 5 计划 §13 A-J 十节出批次报告落 docs/rip3/batches/（无证据写未验证，坏消息单列，中文零 em/en dash，数字实测写来源）；批内只跑定向测试（收口全量门禁由编排面统一复测，你不要在收口时自行复跑）；commit 中文长描述 + push（SSH 断连重试 2 到 3 次）+ gh run watch 至绿，CI 红不进下一批；同一失败方法两次无新信息就换本质不同的方法。若门禁不可能通过、验收互相矛盾或遇到只有用户能定的事，escalate 并说明，不要绕过。`;
 
-const P5_8_BRIEF = `收口 RIP3 P5-8（Coverage Matrix 与自适应研究）。接手断点：4b949614 WIP 已入库，当前 HEAD 树含全部半成品（022 迁移 / coverage.rs / 指纹 v2 / rp-verify 四子命令），clippy 零告警 + 定向测试全绿为交接记录口径，你先实测复核。
-
-工作内容（按序）：
-1. 前置核实：cargo test --offline -p verification-engine（预期 42 lib + 2 provider + 6 store 全过）与 cargo clippy --offline -p verification-engine --all-targets -- -D warnings（预期零告警）；红先修再继续。
-2. hypothesis 实拍链重跑。上轮 not_found 根因 = RP_DB_PATH 未随命令携带（环境未挂非代码缺陷）；每条命令前 export RP_DB_PATH=/tmp/p5-8-e2e/verify.db。/tmp 被清则先重建场景（重建库、plan-create、item-add --dimension assets）再跑链。链路：hypothesis-add 正例（--plan vp-20261116-200640-186-006a --dimension assets --content/--source/--association/--stop 四必填齐备，可选 --preconditions/--expected/--negative-control/--suggested/--cost-risk）→ 负例一 --source 传空串（必填守卫拒，无证据不生成）→ 负例二 --round 3（该计划 budget max_rounds=2，轮次守卫拒）→ hypothesis-list --plan 确认在库 → hypothesis-status --id <正例回显 id> --status in_plan → --status validated → 终局负例 validated 后再 --status proposed（validated 终局不迁出，守卫拒）。七维词值：assets / api_endpoints / identity_permissions / input_points / business_flows / file_processing / data_flows。全部输出原文留档。
-3. hypothesis 集成测试 2 条（crates/verification-engine/tests/store.rs 惯例：store() fixture + NewHypothesis）：生命周期正例（add → list/get → status 推进）与守卫负例（空 source / 超 max_rounds / validated 终局不迁出）。
-4. 定向复测：cargo test --offline -p verification-engine 全过 + clippy 全 targets 零告警（如动 crates/domain 再跑 cargo test --offline -p domain）。
-5. docs/rip3/batches/P5-8-BATCH-REPORT.md（A-J 十节）：E 节贴实拍原文；教训三条必写（迁移链尾钉值五形状定位法 / 批量替换 sub() 整文件跳过陷阱 / ALTER 必须单行书写）；G 节如实登记遗留；I 节引两组既有实拍（coverage-show 七维矩阵与盲区 PASS、指纹 v2 补段失效三键互异 PASS）加本批新实拍。
-6. 收口：显式 git add 本批文件清单 → commit 中文长描述 → git push origin main（SSH 断连重试 2 到 3 次）→ gh run watch 至绿。
-返回 BatchOutcome（batch="P5-8 收尾"，batches/commits/ciRunId/leftovers/head 全如实填写）。`;
-
 const P5_9A_BRIEF = `实施 RIP3 P5-9 子批一（Workflow 模板与画布）。开工先读：docs/HANDOVER-P5-WIP.md 第四节、Phase 5 计划 docs/rip3/RIP3-PHASE5-WEB-WORKBENCH-AND-KNOWLEDGE-DRIVEN-VERIFICATION-PLAN.md §6（Workflow 模板要求）与 §7 P5-9 行、workflows/ 目录既有 JSON 定义惯例（parse-pipeline-v1.json / review-card-v1.json）与 workflow-engine 018 控制面。
 
 工作内容：
@@ -289,30 +278,33 @@ if (!preOk) {
 }
 report({ phase: "环境预检", state: "已收口", note: "git / podman shim / gh 就绪" }, "phases");
 
-phase("P5-8 收尾实施");
-report({ phase: "P5-8 收尾", state: "实施中", note: "" }, "phases");
-const implA = agent("P5-8 收尾实施工程师", IMPL_PERSONA);
-const p58 = await implA.ask<BatchOutcome>(P5_8_BRIEF);
-log(`P5-8 收尾返回：${p58.commits.length} 个提交，报告=${p58.batches.join("/")}，CI=${p58.ciRunId}`);
-
-phase("P5-8 收口 CI 确认");
-report({ phase: "P5-8 收尾", state: "CI 确认", note: `HEAD ${p58.head}` }, "phases");
-const gA = await ciEnsure(implA, "P5-8 收尾");
+phase("P5-8 收口确认（实施已由 092d46e8 入库）");
+report({ phase: "P5-8 收尾", state: "CI 确认", note: "092d46e8 会话预收口（实拍链六步 PASS + 集成测试 2 条 + 批次报告已入库）" }, "phases");
+const implFixA = agent("P5-8 收口确认工程师", IMPL_PERSONA);
+const gA = await ciEnsure(implFixA, "P5-8 收口");
 findings.push(...gA.incidents);
 if (gA.block !== null) {
   report({ phase: "P5-8 收尾", state: "受阻", note: gA.block }, "phases");
   await hole<void>(
     "P5-8 收口受阻处置",
-    `P5-8 收尾 CI 确认受阻：${gA.block}\n请处置（修复 / 显式豁免并写入批次报告）；返回即视为该子批可继续推进。`,
+    `P5-8 收口 CI 确认受阻（实施批 092d46e8 已入库，本站只兜底 CI）：${gA.block}\n请处置（修复 / 显式豁免并写入批次报告）；返回即视为该子批可继续推进。`,
   );
-  const gAre = await ciEnsure(implA, "P5-8 收尾");
+  const gAre = await ciEnsure(implFixA, "P5-8 收口");
   findings.push(...gAre.incidents);
   if (gAre.block !== null) {
     return await finishNow(results, findings, `P5-8 处置后 CI 仍未绿：${gAre.block}`);
   }
 }
-results.push(p58);
-report({ phase: "P5-8 收尾", state: "已收口", note: `HEAD ${p58.head}，CI ${p58.ciRunId}` }, "phases");
+const headA = await repo("git rev-parse --short HEAD");
+results.push({
+  batch: "P5-8 收尾（实施会话预收口 092d46e8）",
+  batches: ["docs/rip3/batches/P5-8-BATCH-REPORT.md"],
+  commits: ["092d46e8"],
+  ciRunId: "编排面收口确认段",
+  leftovers: [],
+  head: headA.stdout.trim(),
+});
+report({ phase: "P5-8 收尾", state: "已收口", note: `092d46e8 + HEAD ${headA.stdout.trim()}` }, "phases");
 
 phase("P5-9 批一实施：Workflow 模板与画布");
 report({ phase: "P5-9 批一", state: "实施中", note: "" }, "phases");
