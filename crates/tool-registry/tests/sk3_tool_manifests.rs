@@ -140,3 +140,220 @@ fn sk3_license_unknown_rejected_at_registration() {
         other => panic!("expect Validation, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// RT-1 native_rust allowlist 形状（RT-1-ADR D3；S2 增强面正负例矩阵）
+// ---------------------------------------------------------------------------
+
+/// 以既有四份 Manifest 之一为底座换 runtime 面的构造器（其余字段走原
+/// Manifest，保证 rule1/3/5/6/8 全链参与）。
+fn native_rust_doc() -> serde_json::Value {
+    let mut doc = load_json("rip.knowledge.catalog.extract");
+    doc["input_schema"] = serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subcommand"],
+        "properties": {
+            "subcommand": {"type": "string", "enum": ["-layout", "-opw"]},
+            "input_path": {"type": "string", "minLength": 1}
+        }
+    });
+    doc["output_schema"] = serde_json::json!({"type": "object"});
+    doc["examples"] = serde_json::json!([
+        {"input": {"subcommand": "-layout", "input_path": "sample.pdf"}}
+    ]);
+    doc
+}
+
+#[test]
+fn sk3_native_rust_allowlist_shapes_accept() {
+    // 形态 A：binary 直呼 + 64hex 钉值 + capability_ref（无 subcommand，
+    // argv_template 承接参数面）。
+    let mut a = native_rust_doc();
+    a["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+        "capability_ref": "pdf.pdftotext"
+    });
+    validate_static(&a, &Options::default()).unwrap_or_else(|e| panic!("shape A rejected: {e}"));
+
+    // 形态 B：subcommands 白名单 + argv_template（D3 形状）。
+    let mut b = native_rust_doc();
+    b["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+        "subcommands": ["-layout", "-opw"],
+        "argv_template": ["{{input_path}}", "-enc", "UTF-8"]
+    });
+    validate_static(&b, &Options::default()).unwrap_or_else(|e| panic!("shape B rejected: {e}"));
+
+    // wrapper 形态：binary_target_sha256（C §5.1:270 wrapper 与 exec 目标双钉）。
+    let mut w = native_rust_doc();
+    w["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/7z",
+        "binary_sha256": "f802383f13b8331aabaf779def00a356c8d2b8148255170b75b03028f4d23ad4",
+        "binary_target_sha256": "d48e622e9009acdb000000000000000000000000000000000000000000000000",
+        "subcommands": ["l", "x"],
+        "argv_template": ["{{out_dir}}"]
+    });
+    validate_static(&w, &Options::default())
+        .unwrap_or_else(|e| panic!("wrapper shape rejected: {e}"));
+
+    // 旧 subcommand 单值字段与新白名单并存仍接受（保留兼容）。
+    let mut c = b.clone();
+    c["runtime"]["subcommand"] = serde_json::json!("-layout");
+    validate_static(&c, &Options::default())
+        .unwrap_or_else(|e| panic!("subcommand+subcommands rejected: {e}"));
+}
+
+#[test]
+fn sk3_native_rust_allowlist_negative_matrix() {
+    // 相对路径 + 钉值字段在场 → 登记面拒绝（判据 3）。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "tools/bin/pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112"
+    });
+    let err = validate_static(&doc, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("must be an absolute path"),
+        "relative path must be rejected: {err}"
+    );
+
+    // PATH 名称解析形态 + 钉值字段在场 → 拒绝（D3 否决项）。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112"
+    });
+    let err = validate_static(&doc, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("must be an absolute path"),
+        "PATH name form must be rejected: {err}"
+    );
+
+    // 坏 hash（非 64 小写 hex）→ 拒绝。
+    for bad in [
+        "xyz",
+        "ABCDEF0123ABCDEF0123ABCDEF0123ABCDEF0123ABCDEF0123ABCDEF0123ABCD",
+    ] {
+        let mut doc = native_rust_doc();
+        doc["runtime"] = serde_json::json!({
+            "type": "native_rust",
+            "binary": "/usr/bin/pdftotext",
+            "binary_sha256": bad
+        });
+        let err = validate_static(&doc, &Options::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("64 lowercase hex"),
+            "bad hash {bad:?} must be rejected: {err}"
+        );
+    }
+
+    // subcommands 越界：空数组 / 非字符串项 / 空串项。
+    for bad in [
+        serde_json::json!([]),
+        serde_json::json!(["-layout", 3]),
+        serde_json::json!(["-layout", ""]),
+    ] {
+        let mut doc = native_rust_doc();
+        doc["runtime"] = serde_json::json!({
+            "type": "native_rust",
+            "binary": "/usr/bin/pdftotext",
+            "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+            "subcommands": bad
+        });
+        let err = validate_static(&doc, &Options::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("subcommands"),
+            "bad subcommands {bad} must be rejected: {err}"
+        );
+    }
+
+    // argv_template 注入面：`../` 路径穿越与 shell 元字符 → 拒绝（判据 3）。
+    for bad in ["../escape", "a;rm", "a|b", "$(x)", "`id`", "a\nb"] {
+        let mut doc = native_rust_doc();
+        doc["runtime"] = serde_json::json!({
+            "type": "native_rust",
+            "binary": "/usr/bin/pdftotext",
+            "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+            "argv_template": ["{{input_path}}", bad]
+        });
+        let err = validate_static(&doc, &Options::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("argv_template item"),
+            "argv injection {bad:?} must be rejected: {err}"
+        );
+    }
+
+    // capability_ref 越界（非两段小写）→ 拒绝。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+        "capability_ref": "pdftotext"
+    });
+    let err = validate_static(&doc, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("two-segment lowercase capability id"),
+        "bad capability_ref must be rejected: {err}"
+    );
+
+    // 旧形状收紧不破：无钉值时 subcommand 仍必填（缺省拒绝）。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({"type": "native_rust", "binary": "rp-plugin"});
+    let err = validate_static(&doc, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("`subcommand` must be a non-empty string"),
+        "legacy shape without subcommand must be rejected: {err}"
+    );
+}
+
+#[test]
+fn sk3_native_rust_allowlist_registers_end_to_end() {
+    // 新形状正例走完整登记链（fresh DB，version comparable 无冲突）。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+        "subcommands": ["-layout", "-opw"],
+        "argv_template": ["{{input_path}}"]
+    });
+    doc["id"] = serde_json::json!("rip.doc.pdf.extract");
+    doc["name"] = serde_json::json!("PDF Text Extract (native)");
+    doc["version"] = serde_json::json!("0.1.0");
+    doc["provenance"]["source_path"] =
+        serde_json::json!("manifests/tools/rip.doc.pdf.extract.json");
+
+    let db = std::env::temp_dir().join(format!("sk3-native-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&db);
+    let pool = Pool::open(PoolConfig {
+        path: DbPath::File(db.clone()),
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: std::time::Duration::from_secs(5),
+    })
+    .unwrap();
+    std::panic::catch_unwind(|| {
+        database::migrate(&pool, &repo_root().join("migrations")).unwrap();
+        let registry = Registry::open(pool.clone());
+        let r = registry
+            .register(&doc)
+            .unwrap_or_else(|e| panic!("register: {e}"));
+        assert_eq!(r.tool_id, "rip.doc.pdf.extract");
+    })
+    .unwrap_or_else(|e| {
+        let _ = std::fs::remove_file(&db);
+        std::panic::resume_unwind(e);
+    });
+    let _ = std::fs::remove_file(&db);
+}

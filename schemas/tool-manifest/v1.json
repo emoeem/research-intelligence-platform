@@ -156,11 +156,33 @@
         {
           "if": { "properties": { "type": { "const": "native_rust" } } },
           "then": {
-            "required": ["binary", "subcommand"],
+            "description": "RT-1 Native Rust Adapter（docs/phase0/RT-1-ADR-NATIVE-ADAPTER.md D3）：可执行路径唯一来源 = Manifest 固定绝对路径；binary_sha256/binary_target_sha256/subcommands/argv_template/capability_ref 为 additive 可选字段（词表零新增值），执行面强制（缺钉值 PREPARING 拒绝）、登记面兼容（RT-4 逐项补录）。",
+            "required": ["binary"],
             "properties": {
-              "binary": { "description": "Registry 已知二进制名（rp-resolve、rp-search-index、rp-review 等），禁止宿主机任意 shell（计划 6 节 370 行）。", "type": "string" },
-              "subcommand": { "type": "string" }
+              "binary": { "description": "可执行文件唯一来源：固定绝对路径（`/` 前缀）；PATH 名称解析形态禁止（RT-1 ADR D3 否决项）；禁宿主机任意 shell（计划 6 节 370 行）。", "type": "string" },
+              "subcommand": { "description": "旧单值子命令字段，保留兼容（RT-1 ADR D3）；subcommands/argv_template 均缺省时必填（与 validate.rs rule4 同语义）。", "type": "string" },
+              "binary_sha256": { "description": "可执行文件身份钉值：64 位小写 hex 全量 sha256。执行面必填（缺失 PREPARING 拒绝）；登记面可选，钉值补录属 RT-4 逐项迁移。", "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "binary_target_sha256": { "description": "wrapper 形态（file 类型为脚本）的 exec 目标身份钉值，64 位小写 hex；指纹必须同时覆盖 wrapper 与 exec 目标（RT-0.5-C §5.1:270）。", "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "subcommands": { "description": "子命令/旗标白名单（非空字符串数组，逐项全匹配）。生效时 input.subcommand（经 input_schema 校验）为唯一子命令来源，越白名单 PREPARING 拒绝（RT-1 ADR D3 形态 B）。", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+              "argv_template": { "description": "参数模板（字符串数组，与 cli_adapter 同形状）。{{slot}} 槽位只由 input_schema 校验后参数填充；{{input_path}} 槽位值必须落在任务 in/ 目录前缀内；{{out_dir}}/{{tmp_dir}} 为 Adapter 保留槽位（RT-1 ADR D8.3）。", "type": "array", "items": { "type": "string" } },
+              "capability_ref": { "description": "Capability 目录引用（domain.name 两段小写，RT-0.5-F §2 CapabilityId）。派发前查目录（status=available 且 fresh），missing/stale 拒绝派发（RT-0.5-F §6）。", "type": "string", "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*){1}$" }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "native_rust" } },
+            "not": { "anyOf": [
+              { "required": ["binary_sha256"] },
+              { "required": ["binary_target_sha256"] },
+              { "required": ["subcommands"] },
+              { "required": ["argv_template"] },
+              { "required": ["capability_ref"] }
+            ] }
+          },
+          "then": {
+            "description": "旧两字段形态（RT-4 钉值补录前，登记面兼容）：binary + subcommand 必填（与 validate.rs rule4 旧分支同语义）。",
+            "required": ["binary", "subcommand"]
           }
         },
         {

@@ -240,6 +240,39 @@ fn sha256_digest_ok(s: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
+/// native_rust argv_template 令牌卫生检查（RT-1 判据 3：模板注入 `../` 或
+/// shell 元字符在登记面拒绝）。argv 经 execve 直达，无 shell 解释层；拒绝
+/// 集是白名单纪律（宁可误拒不放过注入面），`{{slot}}` 花括号为槽位语法放行。
+fn argv_token_violation(item: &str) -> Option<&'static str> {
+    if item.contains('\0') {
+        Some("NUL byte")
+    } else if item.contains('\n') || item.contains('\r') {
+        Some("newline/CR")
+    } else if item.contains("..") {
+        Some("`..` path traversal segment")
+    } else if item.chars().any(|c| {
+        matches!(
+            c,
+            ';' | '|' | '&' | '$' | '`' | '<' | '>' | '\\' | '\'' | '"'
+        )
+    }) {
+        Some("shell metacharacter")
+    } else {
+        None
+    }
+}
+
+/// capability_ref 形状：`domain.name` 两段小写（RT-0.5-F §2 CapabilityId）。
+fn capability_ref_ok(s: &str) -> bool {
+    let segs: Vec<&str> = s.split('.').collect();
+    segs.len() == 2
+        && segs.iter().all(|s| {
+            !s.is_empty()
+                && s.starts_with(|c: char| c.is_ascii_lowercase())
+                && is_lower_seg_chars(s)
+        })
+}
+
 // ---------------------------------------------------------------------------
 // 第 1 条：顶层必填字段齐全 + 结构形状（对齐冻结 v1.json）
 // ---------------------------------------------------------------------------
@@ -742,11 +775,107 @@ fn rule4_runtime(
             }
         }
         "native_rust" => {
-            if req_str(runtime, "binary").map_err(err4)?.is_empty() {
+            // RT-1 ADR D3：登记面 additive 增强。旧两字段形态（binary + subcommand，
+            // 现有 rp-plugin/rp-knowledge-fetch 名称形态）保持原语义登记不破，钉值
+            // 补录属 RT-4 逐项迁移；任一钉值/白名单字段在场时按新形状校验，执行
+            // 面强制（NativeRustAdapter PREPARING 拒绝）由 tool-engine 承载。
+            let binary = req_str(runtime, "binary").map_err(err4)?;
+            if binary.is_empty() {
                 return Err(err4("runtime.binary must be non-empty".to_string()));
             }
-            if req_str(runtime, "subcommand").map_err(err4)?.is_empty() {
-                return Err(err4("runtime.subcommand must be non-empty".to_string()));
+            const NATIVE_ALLOWLIST_FIELDS: [&str; 5] = [
+                "binary_sha256",
+                "binary_target_sha256",
+                "subcommands",
+                "argv_template",
+                "capability_ref",
+            ];
+            let allowlist_shape = NATIVE_ALLOWLIST_FIELDS
+                .iter()
+                .any(|k| runtime.contains_key(*k));
+            // subcommand 单值字段保留兼容：无任何钉值/白名单字段时仍必填（旧形状
+            // 原语义），allowlist 形状在场时可选（新形状 A/B 以模板/白名单承接）。
+            if !allowlist_shape {
+                if req_str(runtime, "subcommand").map_err(err4)?.is_empty() {
+                    return Err(err4("runtime.subcommand must be non-empty".to_string()));
+                }
+            } else if let Some(sc) = runtime.get("subcommand") {
+                let s = sc
+                    .as_str()
+                    .ok_or_else(|| err4("runtime.subcommand must be a string".to_string()))?;
+                if s.is_empty() {
+                    return Err(err4("runtime.subcommand must be non-empty".to_string()));
+                }
+            }
+            if allowlist_shape {
+                // 可执行路径唯一来源 = Manifest 固定绝对值（D3 否决 PATH 名称解析）。
+                if !binary.starts_with('/') {
+                    return Err(err4(format!(
+                        "runtime.binary {binary:?} must be an absolute path (`/` prefix) when native_rust allowlist pin/whitelist fields are present (RT-1 ADR D3)"
+                    )));
+                }
+                if let Some(v) = runtime.get("binary_sha256") {
+                    let s = v.as_str().ok_or_else(|| {
+                        err4("runtime.binary_sha256 must be a string".to_string())
+                    })?;
+                    if !sha256_digest_ok(s) {
+                        return Err(err4(format!(
+                            "runtime.binary_sha256 {s:?} must be 64 lowercase hex (identity pin, RT-1 ADR D3)"
+                        )));
+                    }
+                }
+                if let Some(v) = runtime.get("binary_target_sha256") {
+                    let s = v.as_str().ok_or_else(|| {
+                        err4("runtime.binary_target_sha256 must be a string".to_string())
+                    })?;
+                    if !sha256_digest_ok(s) {
+                        return Err(err4(format!(
+                            "runtime.binary_target_sha256 {s:?} must be 64 lowercase hex (wrapper exec-target pin, RT-0.5-C 5.1)"
+                        )));
+                    }
+                }
+                if let Some(v) = runtime.get("subcommands") {
+                    let arr = v
+                        .as_array()
+                        .ok_or_else(|| err4("runtime.subcommands must be an array".to_string()))?;
+                    if arr.is_empty()
+                        || arr
+                            .iter()
+                            .any(|i| !i.is_string() || i.as_str().unwrap_or_default().is_empty())
+                    {
+                        return Err(err4(
+                            "runtime.subcommands must be a non-empty array of non-empty strings"
+                                .to_string(),
+                        ));
+                    }
+                }
+                if let Some(v) = runtime.get("argv_template") {
+                    let arr = v.as_array().ok_or_else(|| {
+                        err4("runtime.argv_template must be an array".to_string())
+                    })?;
+                    if arr.iter().any(|i| !i.is_string()) {
+                        return Err(err4(
+                            "runtime.argv_template items must be strings".to_string(),
+                        ));
+                    }
+                    for item in arr.iter().filter_map(Value::as_str) {
+                        if let Some(bad) = argv_token_violation(item) {
+                            return Err(err4(format!(
+                                "runtime.argv_template item {item:?}: {bad} (RT-1 task judge 3)"
+                            )));
+                        }
+                    }
+                }
+                if let Some(v) = runtime.get("capability_ref") {
+                    let s = v.as_str().ok_or_else(|| {
+                        err4("runtime.capability_ref must be a string".to_string())
+                    })?;
+                    if !capability_ref_ok(s) {
+                        return Err(err4(format!(
+                            "runtime.capability_ref {s:?} must be a two-segment lowercase capability id (`domain.name`, RT-0.5-F 2)"
+                        )));
+                    }
+                }
             }
         }
         "mcp_client" => {
