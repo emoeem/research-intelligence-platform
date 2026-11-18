@@ -3,7 +3,7 @@
 - 日期：2026-11-18
 - 状态：策略裁决已确认；代码迁移分阶段实施
 - 范围：RIP 平台进程、Rust 工具、可信 Python Worker、第三方工具、容器/VM 执行边界，以及 Cargo 构建产物治理
-- 前置：Phase 5 RELEASE 已收口；RIP3 WSW-0 已收口；WSW-1 当前存在未提交工作，本策略不得覆盖或打断该批次
+- 前置：Phase 5 RELEASE 已收口；RIP3 WSW-0 已收口；WSW-1 已于 077a8dd4 收口（本文写作时点存在未提交工作，见 §8.2 时点标注），本策略不得覆盖或打断该批次
 - 历史依据：`TOOL-RUNTIME-ADR.md`、`phase2/PHASE2-DESIGN.md`、`phase2/PHASE2-ACCEPTANCE.md`
 
 ## 1. 决策摘要
@@ -208,7 +208,7 @@ debug = 1
 
 ### 8.2 WSW-1 不受影响
 
-当前工作树已有 WSW-1 未提交修改（本轮开工核验：`Cargo.toml`、`Cargo.lock`、`crates/wsw-message/`、`migrations/023_wsw_body_blob.sql`）。这些文件不属于本策略文档修改范围，必须保留。
+当前工作树已有 WSW-1 未提交修改（本轮开工核验：`Cargo.toml`、`Cargo.lock`、`crates/wsw-message/`、`migrations/023_wsw_body_blob.sql`；该快照截至 2026-11-18 上午——WSW-1 已于 077a8dd4（2026-11-18 19:18）收口提交，上述文件已在收口提交内，后续以前置行收口口径为准，勿据本句误判 WSW-1 未收口）。这些文件不属于本策略文档修改范围，必须保留。
 
 WSW-1 当前任务书的八条红线继续生效，尤其是零 vendor 增量、不改变 tokio feature 面、不碰生产库、不建立第二套事实体系。不得借本 Runtime 策略调整 WSW-1 的依赖、迁移或实现范围。
 
