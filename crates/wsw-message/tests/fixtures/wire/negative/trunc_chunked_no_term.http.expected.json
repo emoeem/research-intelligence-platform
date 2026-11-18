@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": "truncated_chunk",
+    "fidelity": "truncated",
+    "message": {
+      "body": "YWI=",
+      "delimiting": "chunked",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Transfer-Encoding",
+          "value": "chunked"
+        }
+      ],
+      "kind": "request",
+      "method": "POST",
+      "reason": null,
+      "status": null,
+      "target": "/",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "partial"
+  },
+  "wire_sha256": "121258662f66cc0d2777f60bf9e24dd0c371107aabeee68e73e28cff369664f6"
+}

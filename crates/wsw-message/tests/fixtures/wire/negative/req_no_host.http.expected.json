@@ -1,0 +1,11 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": "missing_host",
+    "fidelity": "full",
+    "message": null,
+    "parse_status": "failed"
+  },
+  "wire_sha256": "745218a77003d001fe787884a7da3ef289e5d93a017dcfc09c08f15e2dc124d3"
+}

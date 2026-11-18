@@ -5,7 +5,7 @@
 | 项       | 值                   |
 | -------- | -------------------- |
 | 状态     | 生效中               |
-| 日期     | 2026-11-13           |
+| 日期     | 2026-11-18           |
 
 ## 日常看
 
@@ -27,11 +27,14 @@
 | ---------------- | ---------------------------------------------------------------------- |
 | 2.0 总体计划     | [RIP-2.0-PLATFORM-AND-TOOLING-PLAN.md](RIP-2.0-PLATFORM-AND-TOOLING-PLAN.md) |
 | 工具执行隔离拓扑 | [phase0/TOOL-RUNTIME-ADR.md](phase0/TOOL-RUNTIME-ADR.md)               |
+| Runtime 原生优先与混合隔离策略（当前生效；历史 ADR 保留） | [phase0/NATIVE-FIRST-HYBRID-RUNTIME-STRATEGY.md](phase0/NATIVE-FIRST-HYBRID-RUNTIME-STRATEGY.md) |
+| RT-0.5 宿主软件能力发现与目录设计 | [phase0/RT-0.5-HOST-CAPABILITY-DISCOVERY.md](phase0/RT-0.5-HOST-CAPABILITY-DISCOVERY.md) |
 | 工具协议         | [phase0/TOOL-CONTRACT-DRAFT.md](phase0/TOOL-CONTRACT-DRAFT.md)         |
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |
 | 安全知识源接入计划 | [RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md](RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md) |
 | Burp / Yakit 风格 Web 安全工作台扩展 | [rip3/WEB-SECURITY-WORKBENCH-PLAN.md](rip3/WEB-SECURITY-WORKBENCH-PLAN.md)（Proxy / MITM、HTTP History、Repeater、Web Fuzzer、WebSocket、插件与 Rust-First 规划） |
+| WSW-1 HTTP Message Foundation 批次收口 | [rip3/wsw/WSW-1-BATCH-REPORT.md](rip3/wsw/WSW-1-BATCH-REPORT.md)（Rust 消息模型、HTTP 解析/序列化、CAS、023 迁移与 conformance fixtures） |
 | SK-1 摄取接线裁决 | [adr/SK1-INGEST-ADR.md](adr/SK1-INGEST-ADR.md)（指针：[phase6/SK1-INGEST-ADR.md](phase6/SK1-INGEST-ADR.md)） |
 | 现状架构盘点     | [phase0/CURRENT-ARCHITECTURE-INVENTORY.md](phase0/CURRENT-ARCHITECTURE-INVENTORY.md) |
 | 可登记工具清单   | [phase0/TOOL-INVENTORY.md](phase0/TOOL-INVENTORY.md)                   |

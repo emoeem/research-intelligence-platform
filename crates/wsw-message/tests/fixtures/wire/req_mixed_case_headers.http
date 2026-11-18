@@ -1,0 +1,4 @@
+GET /case HTTP/1.1
+hOsT: example.test
+cOnTeNt-LeNgTh: 0
+

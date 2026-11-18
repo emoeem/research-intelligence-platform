@@ -1,0 +1,39 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "",
+      "delimiting": "none",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Upgrade",
+          "value": "websocket"
+        },
+        {
+          "name": "Connection",
+          "value": "Upgrade"
+        },
+        {
+          "name": "Sec-WebSocket-Key",
+          "value": "dGhlIHNhbXBsZSBub25jZQ=="
+        }
+      ],
+      "kind": "request",
+      "method": "GET",
+      "reason": null,
+      "status": null,
+      "target": "/chat",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "7cd12dbacd14d416ff2aa0556f44ca6524f6440e101470ee4c2e10aad868bb60"
+}

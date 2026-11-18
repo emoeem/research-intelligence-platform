@@ -1,0 +1,11 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": "header_cap_exceeded",
+    "fidelity": "full",
+    "message": null,
+    "parse_status": "failed"
+  },
+  "wire_sha256": "27092c12af8f907bcedd3fb6391a7ed246b4d072e130a3668efa287733ead5d7"
+}

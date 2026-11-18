@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Content-Length",
+          "value": "0"
+        }
+      ],
+      "kind": "request",
+      "method": "GET",
+      "reason": null,
+      "status": null,
+      "target": "/health",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "ce19587fd07fdeb6b971e23b1100fda1c87fd52085bb5ffd093ee8f04261c382"
+}

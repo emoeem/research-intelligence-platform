@@ -1,0 +1,31 @@
+[package]
+name = "wsw-message"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+
+# WSW-1 HTTP Message Foundation（docs/rip3/wsw/WSW-1-TASK.md）：
+# 四表示类型（Wire/Parsed/Display/Outbound，DESIGN §1.1）+ Exchange 结构
+# （DESIGN §1.2 全字段）+ HTTP/1.1 解析/序列化 + CAS Artifact Adapter +
+# 脱敏接口。依赖红线（任务书 §五）：
+# - 不含 tokio（红线 8：本批不动 tokio feature 面；本 crate 无任何异步 IO）
+# - 不含 rcgen/rustls/hudsucker（无网络 IO；Listener/CA 面归 WSW-2 wsw-proxy）
+# - 不含 reqwest 等高层客户端（红线 6；发送面 WSW-3 用 hyper client 随现有栈）
+# - rusqlite 经 database 重导出使用，不直连（先例 crates/database/src/lib.rs:30-31）
+# - tool-engine 仅复用 egress host 派生（§一.2「host 派生一致」）与 envelope
+#   截断口径（红线 7：超帽截断唯一口径），无执行运行时
+[dependencies]
+http = { workspace = true }
+http-body = { workspace = true }
+http-body-util = { workspace = true }
+httparse = { workspace = true }
+bytes = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+domain = { workspace = true }
+database = { workspace = true }
+tool-engine = { workspace = true }

@@ -1,0 +1,35 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "",
+      "delimiting": "none",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "a=1"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "b=2"
+        }
+      ],
+      "kind": "request",
+      "method": "GET",
+      "reason": null,
+      "status": null,
+      "target": "/cookies",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "c6e30dfcc7ad93bef8d56eca976ad6ac8b720b8739476fa179b5099f1ea9014a"
+}

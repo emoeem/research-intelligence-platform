@@ -1,0 +1,7 @@
+HTTP/1.1 201 Created
+Content-Length: 0
+X-Tag: one
+X-Tag: two
+Set-Cookie: a=1
+Set-Cookie: b=2
+

@@ -742,3 +742,61 @@ virsh -c qemu:///session pool-list --all               # 镜像池占用在 50 G
 | `ls -l /dev/kvm` | `crw-rw-rw-`（PC2-4 复核） |
 
 未执行项：未启动任何虚拟机、未写任何数据库、未安装任何依赖、未修改任何源文件。本文所有验收命令为各阶段完工时待执行的 prescribe 形式，本文不将其计为已通过。
+
+---
+
+## 16. 2026-11-18 Runtime 策略修订：Native-first 混合执行
+
+> 本节是对既有 2.0 路线中“工具默认进入专用 VM/Podman”的未来执行策略补充。历史 Phase 2/3/10 已完成批次、验收记录和当时的宿主机零系统级安装纪律不追溯改写。自本节生效后，新工具与新 Runtime 设计以 [NATIVE-FIRST-HYBRID-RUNTIME-STRATEGY.md](NATIVE-FIRST-HYBRID-RUNTIME-STRATEGY.md) 为准；与本文早期章节冲突时，以本节的未来策略为准。
+
+### 16.1 新默认原则
+
+RIP 采用 **Native-first、Isolation-when-needed（原生优先、按风险隔离）**：
+
+- RIP 自身 Rust 服务、Workflow/Agent/Tool 编排、数据库访问层、API 和 WSW Proxy/MITM 平台服务默认原生运行。
+- 可信 Rust 工具走受控原生子进程；可信 Python Worker 优先项目级 venv + 既有 Worker Protocol。禁止全局 pip 和未经授权的系统级安装。
+- 依赖/系统库冲突、重型运行时、明确资源/文件/网络隔离需求成立时，才使用 rootless `podman_host`。
+- 不受信任或高风险工具进入 `podman_vm` 等强隔离环境；不得因追求性能而将不受信工具降级到宿主原生或共享内核容器。
+- 所有执行方式继续共用 Tool Registry、Tool Engine、Runtime Gateway、ToolRun、Artifact、Evidence、Trace、预算和取消语义，不建立第二套执行/事实体系。
+- Cargo build/test/Clippy、Web 构建与 GitHub CI 默认原生执行。容器仅用于确有需要的工具运行环境，不承载整个开发仓库或完整 CI。
+
+### 16.2 现有能力状态不得混淆
+
+| 能力 | 当前事实 | 后续动作 |
+|---|---|---|
+| `python_worker` | 宿主进程池和 Worker Protocol 已存在 | 可信 Worker 逐项核验项目级 venv；不改变协议 |
+| `podman_host` | Phase 2 已验收的 rootless 容器适配器 | 保留为按需隔离后端，不再作为所有工具的默认路径 |
+| `podman_vm` | VM 目标拓扑设计与词表保留；不能把设计态误报成已交付的通用 VM Runner | 作为高风险工具的隔离目标，按实际需求补齐和验收 |
+| `native_rust` | Registry 已有 Manifest 校验分支；Tool Engine 尚无完整通用 Native Rust Adapter | 单独实施 RT-1，完成前不宣称原生 Runtime 已全功能可用 |
+| MCP / HTTP API | 外部服务适配类型 | 直接走受控服务连接，不为 API 调用额外创建容器 |
+
+### 16.3 Cargo 磁盘治理
+
+2026-11-18 本机实测 `target/` 约 70 GiB，其中 `target/debug/deps/` 约 69 GiB；`vendor/` 约 386 MiB，不能把 Cargo 构建产物误归因为容器镜像。该问题建立独立 RT-5：先在独立 probe target 做默认 Debug 与 `debug=1` 的磁盘/耗时/回溯诊断 A/B，再决定是否调整 `[profile.dev]` / `[profile.test]`。在完成 A/B 前不修改 Cargo Profile、不运行 `cargo clean`，也不删除构建文件。
+
+日常开发按受影响 crate 做定向 check/test/Clippy；批次收口和 GitHub CI 仍执行完整 Workspace 测试及全 targets Clippy。不得通过删测试、缩小 CI 或无依据的全局 RUSTFLAGS 达成磁盘优化。
+
+### 16.4 Runtime 治理实施轨
+
+| 批次 | 工作 | 完成判据 |
+|---|---|---|
+| RT-0 | 只读盘点 Runtime Manifest、Adapter、Podman 镜像/卷和 Cargo 产物 | 分类表与可复核磁盘基线入库，不改代码 |
+| RT-0.5 | Host Capability Discovery 与宿主软件能力目录 | 只读盘点宿主软件路径/版本/包来源/能力；设计安全探测、能力目录和文档解析路由；不安装软件、不迁移 Manifest，详见 [RT-0.5-HOST-CAPABILITY-DISCOVERY.md](RT-0.5-HOST-CAPABILITY-DISCOVERY.md) |
+| RT-1 | Native Rust Adapter | 固定可执行文件/子命令 allowlist、参数 Schema、环境白名单、工作区边界、超时/取消/进程回收/输出限制、统一 ToolRun 信封 |
+| RT-2 | Python Worker 原生环境 | 项目级 venv、依赖锁、启动探测、版本/哈希记录、协议一致性测试 |
+| RT-3 | Runtime Policy Resolver | 根据工具信任等级、依赖复杂度和隔离需求选择 Runtime；拒绝不安全降级 |
+| RT-4 | Manifest 逐项迁移 | 每个工具有选择理由和实测证据，禁止批量一刀切 |
+| RT-5 | Cargo Profile A/B 与构建磁盘治理 | 有数据后再决定 Profile；不降低质量门 |
+| RT-6 | Podman 存储预算与归属治理 | 镜像/容器/卷分别计量，只清理明确属于 RIP 且无引用的对象 |
+| RT-7 | CI / 发布核验 | 原生构建，完整 Workspace 测试和 Clippy 保持 |
+
+RT-0 基线已完成；RT-0.5 的宿主软件盘点与设计、以及后续 RT 实施，均须在当前 WSW-1 稳定收口后启动。RT 轨独立推进，不插入 WSW-1 当前工作树，不改变 WSW-1 → WSW-2 既定顺序。RT 任务不得修改 WSW-1 的 Cargo 依赖、vendor、tokio feature、迁移和任务书范围。
+
+### 16.5 安全红线
+
+- 原生运行不等于安全沙箱；只允许运行审核过、身份固定、Manifest 登记的工具，不开放任意 Shell/任意路径/任意脚本。
+- 不受信任工具不能通过 `native_rust`、`python_worker` 或 `cli_adapter` 绕过隔离。
+- 原生工具仍受预算、超时、取消、工作区、网络策略、凭据最小化、输出截断和统一审计约束。
+- `podman_host` 保持 rootless、非 root、只读 rootfs、最小挂载、无容器 Socket、资源上限和默认无网络；VM 用于需要更强隔离的场景。
+- 不执行全局 Podman prune；清理前核实镜像/容器/卷归属、引用和可恢复性。
+- 不触碰生产 `platform*.db`、RTIS 私有数据和用户自有容器。

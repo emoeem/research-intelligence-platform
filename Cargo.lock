@@ -3787,6 +3787,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
+name = "wsw-message"
+version = "0.2.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "database",
+ "domain",
+ "http",
+ "http-body",
+ "http-body-util",
+ "httparse",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tool-engine",
+]
+
+[[package]]
 name = "wsw-poc"
 version = "0.2.0"
 dependencies = [
@@ -3796,6 +3814,13 @@ dependencies = [
  "rcgen",
  "tokio",
  "webpki-roots 1.0.12",
+]
+
+[[package]]
+name = "wsw-runtime"
+version = "0.2.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

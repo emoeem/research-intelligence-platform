@@ -55,7 +55,10 @@ fn put_appends_versions_and_get_is_byte_identical() {
     assert_eq!((first.node_count, first.edge_count), (4, 3));
 
     // 首版回读快照（字节一致性基准）
-    let v1_before = store.get("wf-four-node", Some(1)).expect("get v1").definition_json;
+    let v1_before = store
+        .get("wf-four-node", Some(1))
+        .expect("get v1")
+        .definition_json;
     // 规范形状：version 字段与存储行一致
     assert!(v1_before.contains("\"version\":1"), "{v1_before}");
 
@@ -133,11 +136,17 @@ fn migration_017_replay_twice_is_idempotent() {
 
     assert!(first.iter().any(|m| m.version == 17), "first: {first:?}");
     assert!(first.iter().any(|m| m.version == 18), "first: {first:?}");
-    assert!(!second.iter().any(|m| m.version == 17), "重放不应重复应用: {second:?}");
-    assert!(!second.iter().any(|m| m.version == 18), "重放不应重复应用: {second:?}");
-    // RIP3 P5-2 起链尾 020_research_verification（追加结构，workflow 面零改动）。
-    assert_eq!(version_1, 22);
-    assert_eq!(version_2, 22);
+    assert!(
+        !second.iter().any(|m| m.version == 17),
+        "重放不应重复应用: {second:?}"
+    );
+    assert!(
+        !second.iter().any(|m| m.version == 18),
+        "重放不应重复应用: {second:?}"
+    );
+    // WSW-1 追加 023_wsw_body_blob 后，当前链尾为 023（追加结构，workflow 面零改动）。
+    assert_eq!(version_1, 23);
+    assert_eq!(version_2, 23);
     assert_eq!(tables_1, tables_2, "两次重放表清单一致（幂等）");
     assert!(tables_1.contains(&"workflow_definition".to_string()));
     assert!(tables_1.contains(&"workflow_run".to_string()));
@@ -169,7 +178,8 @@ fn migration_017_replay_twice_is_idempotent() {
 
     // 另开第二个临时库直跑两次 017 SQL 原文（raw file replay 口径，同 002 头注守卫）：
     // 017 无 ALTER 语句，全部 IF NOT EXISTS / INSERT OR IGNORE，重放安全。
-    let sql = std::fs::read_to_string(format!("{MIGRATIONS_DIR}/017_workflow_run.sql")).expect("read 017");
+    let sql = std::fs::read_to_string(format!("{MIGRATIONS_DIR}/017_workflow_run.sql"))
+        .expect("read 017");
     let second_pool = writable_pool(&db).expect("reopen");
     second_pool
         .with_conn(|c| c.execute_batch(&sql).map_err(database::DbError::Sqlite))

@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "YWJjZGVmZw==",
+      "delimiting": "chunked",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Transfer-Encoding",
+          "value": "chunked"
+        }
+      ],
+      "kind": "request",
+      "method": "POST",
+      "reason": null,
+      "status": null,
+      "target": "/upload",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "a3cb0ff34ad427200f0f34c61b5855261bb0d2cfe64849698d7ee64680dd09e3"
+}

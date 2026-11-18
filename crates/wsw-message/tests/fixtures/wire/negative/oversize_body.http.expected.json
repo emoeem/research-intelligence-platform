@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "dGhpcy1ib2R5LWV4Y2VlZHMtY2FwLXll",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Content-Length",
+          "value": "24"
+        }
+      ],
+      "kind": "request",
+      "method": "POST",
+      "reason": null,
+      "status": null,
+      "target": "/upload",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "78956575e576903901ab0b3e6db7467a92ad17f6cd869959de2969ea6d2a4809"
+}

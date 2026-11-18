@@ -15,12 +15,12 @@
 | 表示 | 内容 | 归属批次与 crate | 存储 |
 |---|---|---|---|
 | **Wire** | 捕获时的原始传输字节：CONNECT 建链后 TLS 明文的首个原始 HTTP 报文字节流（请求与响应各一份），保留原样头序、原始空格/制表、原始 chunked 分帧字节 | WSW-1 `crates/wsw-message`（类型）+ WSW-2 `crates/wsw-proxy`（采集） | 原始字节落 CAS 正文（§3.3），元数据表存 sha256 引用；超帽截断时 `capture_fidelity=truncated` + 原因（PLAN :482"记录明确的 Capture Fidelity 状态和原因"） |
-| **Parsed** | 结构化表示：`http::Request`/`http::Response` 类型（lock 已有 http 1.5.0/http-body 1.1.0，ADR-0004 §2.1）+ 头序保持的 HeaderMap、方法、URI、status、体定界结果；供 UI 过滤/搜索/规则匹配 | WSW-1 | 数据库元数据列（exchange 表，§3.2） |
+| **Parsed** | `wsw_message::ParsedMessage` 作为权威结构（有序 `Vec<HeaderRecord>` 保留头序/重复头/原始大小写，另含 method/target/status/body/trailers/framing）；通过 `to_http_request()` / `to_http_response()` 提供 `http::Request` / `http::Response` 互操作视图。HTTP HeaderMap 视图不取代有序头数组 | WSW-1 | 数据库元数据列（exchange 表，§3.2；WSW-3 起落库） |
 | **Display** | 展示内容：经解压（gzip/br/zlib 按需，zstd 不进第一版，ADR-0004 D1 代价注）、字符集转换、格式化（Pretty JSON/Hex/Rendered）；永不回写 | WSW-6 Decoder/Comparer 批次起建视图，WSW-1 只定义 conversion 接口位 | 不落库，即时转换 |
 | **Outbound** | 实际发送到目标的序列化字节（Repeater/Fuzzer 编辑后的重序列化产物） | WSW-3 Repeater 起 | 发送前落 CAS（编辑产物可溯源），Outbound ≠ Wire 时 `edited=true` |
 
 不变式（PLAN :482"四者不能混为一谈"的机制化）：
-1. Wire 字节是唯一"原始事实"，Parsed 从 Wire 派生并记录 `parse_status`；解析失败不伪造 Parsed（`parse_status=failed` + `error_code`，字段见 1.2）。
+1. Wire 字节是唯一"原始事实"，Parsed 从 Wire 派生并记录 `parse_status`；解析失败不伪造 Parsed（`parse_status=failed` + `error_code`，字段见 1.2）。`capture_fidelity` 描述捕获完整性，不等同解析成功与否：完整捕获但语法非法时仍可为 `full`；截断才为 `truncated`。
 2. Outbound 只能从用户编辑态重序列化产生，任何路径不得把 Display 直接发送（防解压后超帽体被原样上行）。
 3. Display 生成过程不得改变 Wire/Parsed 存储（纯函数，输入字节→输出展示体）。
 
@@ -126,22 +126,29 @@ PENDING → SKIPPED_SCOPE | SKIPPED_BUDGET
 | 正式 Finding/POC/漏洞等级/攻击链 | **RTIS 唯一事实源**，经 rt.py / RTIS MCP 接口，平台面只存 evidence 引用 | PLAN §8.1 :566；02 矩阵 RTIS Adapter 行 |
 | 文档/知识/向量 | intel-db + PG，WSW 不新增 | 02 矩阵 Database（PG 情报核）行 |
 
-### 3.2 新表面（草案；迁移文件号 023+，WSW-1 起写，开发库副本验证，不碰生产 `migrations/platform*.db`——022 文件头纪律 `migrations/022_coverage_matrix.sql:17-19`）
+### 3.2 新表面与迁移批次归属
 
-- `wsw_listener`（六态 + 配置 JSON）
-- `wsw_session`（会话/工作区范围）
-- `wsw_exchange`（§1.2 字段；索引：session_id+sequence_no、host、started_at、method、response_status、trace_id）
-- `wsw_intercept_event`（Intercept Item 五态迁移事件，幂等键 event_id）
-- `wsw_body_blob`（CAS 去重表，见 §3.3）
-- `wsw_repeater_send` / `wsw_fuzzer_job` / `wsw_fuzzer_case`（§2.3/2.4/2.5 状态面）
+**WSW-1 定稿迁移 023 只新增 `wsw_body_blob`**。迁移在测试内存库与 dev-b1 临时副本验证；不碰生产 `migrations/platform*.db`，遵守 `migrations/022_coverage_matrix.sql:17-19` 文件头纪律。
+
+| 表 | 归属批次 | 说明 |
+|---|---|---|
+| `wsw_body_blob` | **WSW-1 / migration 023** | CAS 正文去重登记，见 §3.3 |
+| `wsw_listener` | WSW-2 | Listener 六态与配置 |
+| `wsw_session` | WSW-2 | 会话/工作区范围 |
+| `wsw_exchange` | WSW-2/3（按数据面验收拆批） | §1.2 字段；session_id+sequence_no、host、started_at、method、response_status、trace_id 索引 |
+| `wsw_intercept_event` | WSW-2 | Intercept Item 五态迁移事件，幂等键 event_id |
+| `wsw_repeater_send` / `wsw_fuzzer_job` / `wsw_fuzzer_case` | WSW-3/4 | 主动发送与 Fuzzer 状态面 |
+
+不得为了提前创建空表而把后续批次 schema 塞进 023；后续表按各自批次设计复核后使用新的增量迁移号。
 
 ### 3.3 Body → Artifact/CAS 决策
 
 **问题**：既有 `artifact` 表 `run_id TEXT NOT NULL REFERENCES tool_run(run_id)`（`migrations/005_tool_contract.sql:78-90` 实读），被动捕获的 Exchange 没有 tool_run，直接写 artifact 表破坏外键语义。
 
 **裁决（双层）**：
-1. **被动捕获面（History）**：新增 `wsw_body_blob` CAS 表（sha256 主键 + uri + size_bytes + mime + first_seen_exchange_id），正文落 `<RP_ARTIFACTS_DIR>/wsw/<sha256 前2>/<sha256>`；同 sha256 去重复用（PLAN §8.2 :576"内容寻址、哈希校验和去重"）。截断协议复用 envelope 语义（`crates/tool-engine/src/envelope.rs:281-321` TruncationOutcome：超帽降级 + 原始 sha256 + 建议引用）。
-2. **主动发送面（Repeater/Fuzzer/Scanner）**：一切执行动作经 `Engine::submit` 落 tool_run，产物走既有 `insert_artifact`（`crates/tool-engine/src/lib.rs:795`）+ artifact 表 + EvidenceRegistrar（`crates/agent-engine/src/evidence.rs:7-13`）链，零新体系。
+1. **被动捕获面（History）**：新增 `wsw_body_blob` CAS 表（sha256 主键 + uri + size_bytes + mime + first_seen_exchange_id），正文落 `<RP_ARTIFACTS_DIR>/wsw/<sha256 前2>/<sha256>`；同 sha256 去重复用（PLAN §8.2 :576"内容寻址、哈希校验和去重"）。超 `cap` 时 `capture_fidelity=truncated`，但 CAS 仍保留原始全量字节和原始 SHA-256（内联降级由消费方承载），不把原始证据静默裁掉。写入采用同目录临时文件 + 原子 hard-link no-clobber；命中已有对象先验 hash；读回校验 URI、拒绝路径穿越/符号链接并重新校验 hash。Unix 文件权限 0600、前缀目录 0700。
+2. **BodyArtifactAdapter / ToolRun 桥接契约**：`BodyArtifactAdapter` 复用现有 `database::Pool`，先登记 `wsw_body_blob`，再通过 `BodyArtifactRegistrar` trait 将 BodyRef、ToolRunId、ExchangeId、TaskId、TraceId、方向与 MIME 交给平台既有 Artifact/Evidence Registrar。幂等键由 ToolRun + 方向 + 正文 SHA-256 确定；登记失败时返回已持久化 BodyRef 供重试。WSW-1 只定义 trait 与 adapter，不创建第二套 Artifact/Evidence/ToolRun 表；后续批次实现对现有 registrar 的具体桥接。
+3. **主动发送面（Repeater/Fuzzer/Scanner）**：一切执行动作经 `Engine::submit` 落 tool_run，产物走既有 `insert_artifact`（`crates/tool-engine/src/lib.rs:795`）+ artifact 表 + EvidenceRegistrar（`crates/agent-engine/src/evidence.rs:7-13`）链，零新体系。
 
 ### 3.4 History 保留策略（草案，PLAN §6.3 :495"容量上限、保留策略和用户可控清理"）
 

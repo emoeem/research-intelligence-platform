@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": 10,
+    "body_received": 3,
+    "error_code": "truncated_body",
+    "fidelity": "truncated",
+    "message": {
+      "body": "YWJj",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Content-Length",
+          "value": "10"
+        }
+      ],
+      "kind": "request",
+      "method": "POST",
+      "reason": null,
+      "status": null,
+      "target": "/",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "partial"
+  },
+  "wire_sha256": "18c5967926e31094dbf9bcb0467f817753c4e55a82ebde7d2de88bc2b3768093"
+}

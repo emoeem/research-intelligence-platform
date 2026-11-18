@@ -1,0 +1,11 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": "truncated_header",
+    "fidelity": "truncated",
+    "message": null,
+    "parse_status": "partial"
+  },
+  "wire_sha256": "9bc4570652a6b235033cfedc520b8066e0d250942d7fd4ba613d6ec63c072208"
+}

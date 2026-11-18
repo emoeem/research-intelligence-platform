@@ -1,0 +1,43 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "Content-Length",
+          "value": "0"
+        },
+        {
+          "name": "X-Tag",
+          "value": "one"
+        },
+        {
+          "name": "X-Tag",
+          "value": "two"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "a=1"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "b=2"
+        }
+      ],
+      "kind": "response",
+      "method": null,
+      "reason": "Created",
+      "status": 201,
+      "target": null,
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "b2862e7342eaf1ff220cf94fd306f065ab82f0eeddceb8f91e091a75b364cf93"
+}

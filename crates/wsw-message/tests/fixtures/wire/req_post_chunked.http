@@ -1,0 +1,10 @@
+POST /upload HTTP/1.1
+Host: example.test
+Transfer-Encoding: chunked
+
+3
+abc
+4
+defg
+0
+

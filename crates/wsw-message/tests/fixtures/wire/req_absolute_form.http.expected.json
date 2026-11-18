@@ -1,0 +1,27 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "",
+      "delimiting": "none",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "Example.COM:8080"
+        }
+      ],
+      "kind": "request",
+      "method": "GET",
+      "reason": null,
+      "status": null,
+      "target": "http://ProxyUser:pw@Example.COM:8080/p?q=1",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "509605b780cd79335b74f14fb1daf52f79dbcff7167eb74c83edc64ab8739e3c"
+}

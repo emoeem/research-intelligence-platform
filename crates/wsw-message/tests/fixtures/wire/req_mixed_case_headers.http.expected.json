@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "hOsT",
+          "value": "example.test"
+        },
+        {
+          "name": "cOnTeNt-LeNgTh",
+          "value": "0"
+        }
+      ],
+      "kind": "request",
+      "method": "GET",
+      "reason": null,
+      "status": null,
+      "target": "/case",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "66c031957f87a7e61ad2e85ff9655187acdc14a8f872779cffcbc0d8c4c0aef6"
+}

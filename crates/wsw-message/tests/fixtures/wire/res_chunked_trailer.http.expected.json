@@ -1,0 +1,36 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "YWJj",
+      "delimiting": "chunked",
+      "headers": [
+        {
+          "name": "Transfer-Encoding",
+          "value": "chunked"
+        }
+      ],
+      "kind": "response",
+      "method": null,
+      "reason": "OK",
+      "status": 200,
+      "target": null,
+      "trailers": [
+        {
+          "name": "X-Checksum",
+          "value": "yes"
+        },
+        {
+          "name": "X-End",
+          "value": "done"
+        }
+      ],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "794f232361c5e5b997c8487d7d8f1ff6e866a028dda4489e22eba9c88bb1ac86"
+}

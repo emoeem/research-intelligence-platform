@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "YWJj/w==",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "Host",
+          "value": "example.test"
+        },
+        {
+          "name": "Content-Length",
+          "value": "4"
+        }
+      ],
+      "kind": "request",
+      "method": "POST",
+      "reason": null,
+      "status": null,
+      "target": "/binary",
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "4d765d7c6168c9ebee757651fc594bf9cb0606a94feec75fb96832717988de3f"
+}

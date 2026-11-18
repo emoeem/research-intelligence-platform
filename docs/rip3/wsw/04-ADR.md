@@ -100,7 +100,7 @@ POC 实拍（2026-11-18 会话，三后台进程用完即停，代码 `crates/ws
 2. **钉版表即 D1 §2.1 表**；新增 workspace 依赖一律 `=x.y.z` 等号钉 + lock 增量记录进 ADR 台账（承接 ADR-0002 纪律）。
 3. **OSV 门**：WSW 每个实施批次开批前对 rustls/h2/hyper/hudsucker 四 crate 复查 api.osv.dev + `cargo deny check licenses`（离线可跑）；rustls ≥0.23.46 为持续硬门（01 §5 四条 2026 公告 11-08/11-09 才挂 OSV，节奏必须短于 OSV 挂牌滞后）。
 4. **deny licenses 门红态与修复实录（2026-11-18 评审修订批补账）**：POC 批 vendor 增量未随批同步 deny.toml，评审实测 `cargo deny check licenses` **FAILED 9 error**——8 个第三方 crate 许可不在 allow 清单（当时仅 MIT/MIT-0/Apache-2.0/Unicode-3.0/Zlib）。逐包 license 字段实测（vendor/ manifest）：aws-lc-rs 1.19.0 `ISC AND (Apache-2.0 OR ISC)`、aws-lc-sys 0.47.0 `ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)`、rustls-webpki 0.103.17 / untrusted 0.9.0 `ISC`、ring 0.17.14 `Apache-2.0 AND ISC`、subtle 2.6.1 `BSD-3-Clause`、hyper-tungstenite 0.30.0 `BSD-2-Clause`、webpki-roots 0.26.11 / 1.0.12 `CDLA-Permissive-2.0`（**实装为数据许可，评审原判"ISC/BSD 类"与实装不符，以此为准**）。修复 = deny.toml `[licenses] allow` 补录 **ISC / BSD-2-Clause / BSD-3-Clause / CDLA-Permissive-2.0** 四项（含 lock 内组合表达式所需原子许可），复跑同命令 → `licenses ok`；WSW-1-TASK §三 S1 该门据此由红转绿，复现见 §六。
-5. **WSW-1 零新增 vendor**：消息模型只消费已在 lock 的 http/http-body/http-body-util/bytes/httparse/rcgen/rustls 类型与函数，不引新 crate（含 reqwest 一类高层客户端——Repeater 发送面 WSW-3 用 hyper client，随现有栈）。
+5. **WSW-1 零新增 vendor**：消息模型使用已在 lock/vendor 的 http/http-body/http-body-util/bytes/httparse/sha2/base64；不新增 registry package，不引 reqwest 一类高层客户端。rcgen/rustls 仍只由 hudsucker 组合栈使用，wsw-message 不直接依赖；Repeater 发送面 WSW-3 用现有 hyper 栈。
 6. **windows-\*/loom 等非 Linux 目标 crate**：vendored 保留（cargo vendor 全量重生成口径，01 §4.6/§4 差距 (e)），不手工裁剪 vendor 目录——手工裁剪会在下次 `cargo vendor` 全量重生时回弹且破坏 lock 一致性校验。
 
 ## 五、性能基线登记
@@ -144,3 +144,62 @@ cargo deny check licenses                                   # 修复前：licens
 ```
 
 预期回显与本文引用一致；deny 门禁面另见 `deny.toml:13`（GPL 类 fail-closed）与 `.cargo/config.toml`（vendored-sources）。
+
+
+## 七、WSW-1 开批复核与实施结论（2026-11-18）
+
+### 7.1 开批复核
+
+- 用户于 2026-11-18 明确授权完成 WSW-1；据此启动本批实施。
+- ADR-0004 D1–D5、DESIGN §1.1/§1.2、WSW-1-TASK 的消息四表示、Exchange 字段、迁移边界和安全红线逐项复核。WSW-1 只实现消息模型、HTTP/1 解析/序列化、脱敏、CAS Body Adapter 和 migration 023；Listener/MITM 运行时、UI、Repeater/Fuzzer 发送面仍分别留给后续批次。
+- DESIGN §3.2 冻结：migration 023 只新增 `wsw_body_blob`；不提前创建 listener/session/exchange/intercept/repeater/fuzzer 表。
+- 用户授权不包含 commit/push；本批只在工作树完成并验证，不自动提交或推送。
+
+### 7.2 OSV / RustSec 手工复核
+
+复核日期：2026-11-18；Cargo.lock 实际锁定版本：
+
+| crate | 锁定版本 | 复核结论 |
+|---|---:|---|
+| rustls | 0.23.46 | 满足 RUSTSEC-2026-0346/0347/0348/0349 的 fixed 0.23.46；也高于 RUSTSEC-2026-0285 的修复版本 0.23.45 |
+| h2 | 0.4.20 | 高于 RUSTSEC-2026-0258 的 fixed 0.4.16；同时高于该 crate 既有 0.4.x 修复线 |
+| hyper | 1.12.0 | 当前锁定为 1.x；已核对的 2021/2022 RustSec 记录影响旧 0.14.x/更早版本，不影响 1.12.0 |
+| hudsucker | 0.25.0 | 当前可检索 RustSec/OSV 页面未发现该版本的直接公告记录；此项不把“未检出”解释成不存在未知漏洞 |
+
+参考记录：
+- https://rustsec.org/advisories/RUSTSEC-2026-0346.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0347.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0348.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0349.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0285.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0258.html
+- https://rustsec.org/advisories/RUSTSEC-2021-0078.html
+- https://rustsec.org/advisories/RUSTSEC-2022-0022.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0459.html
+- https://rustsec.org/advisories/RUSTSEC-2026-0543.html
+- https://rustsec.org/advisories/RUSTSEC-2024-0436.html
+- https://rustsec.org/advisories/RUSTSEC-2024-0449.html
+
+自动化扫描结果：首次 advisory-db 拉取遇 TLS unexpected EOF；改用 Git HTTP/1.1 重试后，`cargo deny check advisories` 已返回完整工作区结果，但**整体失败**，原因是下列既有依赖公告，而非 rustls/h2/hyper/hudsucker 这四个目标网络栈 crate：
+
+| 既有依赖 | 锁定版本 | 公告 | 影响 / 处置边界 |
+|---|---:|---|---|
+| libsqlite3-sys（bundled SQLite） | 0.30.1 | RUSTSEC-2026-0459 / CVE-2026-119375 | bundled SQLite 低于 3.54.0；公告修复线为 libsqlite3-sys >=0.39.0 / rusqlite 0.41。数据库是 WSW-1 复用的既有 workspace crate，需独立数据库依赖安全批处理；本批不擅自升级以免突破零 vendor 增量与依赖冻结 |
+| chrono | 0.4.45 | RUSTSEC-2026-0543 | 上游标记 unmaintained；由 rmcp/schemars 引入 |
+| paste | 1.0.15 | RUSTSEC-2024-0436 | 上游归档且 unmaintained；经 tokenizers 引入 |
+| unsafe-libyaml | 0.2.11 | RUSTSEC-2024-0449 | 上游归档且 unmaintained；经 serde_yaml_ng 引入 |
+
+此外 cargo-deny 对 email_address 0.2.10 与 filetime 0.2.30 返回 registry index-failure/yanked 查询警告；不能把它们记为已完成 yanked 检查。目标四个网络栈 crate 在此次 advisories 输出中没有匹配公告；hudsucker 0.25.0 的直接公告检索也未检出记录，但“未检出”不代表不存在未知漏洞。离线 `cargo deny check licenses` 通过。
+
+**安全裁决**：WSW-1 自身代码、锁文件 registry package 集合和 vendor 均未引入上述依赖版本；但工作区通过既有 database crate 使用了受 RUSTSEC-2026-0459 影响的 bundled SQLite，不能宣称整个 RIP 安全扫描全绿。此项列为独立高优先级遗留，需另开数据库依赖升级/系统 SQLite 方案评估，不在 WSW-1 中暗中扩大依赖范围。
+
+### 7.3 依赖与锁文件核算
+
+- WSW-0 基线 Cargo.lock：397 个 package 条目；WSW-1 后：398 个。
+- 唯一新增条目是本地 workspace package `wsw-message`；registry package 仍为 375 个，逐项比较 `(name, version, source, checksum)` 元组完全一致。
+- `sha2 = 0.10.9` 与 `base64 = 0.22.1` 是本 crate 新增的直接依赖声明，但两个版本均已存在于 lock/vendor，不增加 registry package。
+- vendor 目录没有修改；workspace tokio feature 面没有修改；wsw-message 不依赖 tokio、rcgen、rustls 或 reqwest。
+
+### 7.4 批次结论
+
+WSW-1 的代码、migration 023、fixtures、BodyArtifactAdapter（CAS → wsw_body_blob → 既有 Artifact/Evidence Registrar trait）、集成测试和批次文档完成；全量本地门禁结果、迁移副本保护、未执行的远程 GitHub CI 与剩余事项见 `WSW-1-BATCH-REPORT.md`。工作区 advisories 的既有 bundled SQLite CVE 单独登记，不在 WSW-1 依赖冻结中隐式升级。WSW-2 不因本批完成而自动开批，仍按总路线独立授权和验收。

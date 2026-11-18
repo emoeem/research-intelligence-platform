@@ -595,7 +595,7 @@ Python Worker 不得维护第二套 Proxy Session、History、Repeater、Fuzzer 
 
 ## 九、分阶段实施路线
 
-以下 WSW 是独立工作流编号，不占用 RIP3 Phase 6、7、8 的既有编号，也不改变它们的依赖关系。当前只批准文档规划，不代表允许立即开代码批次。
+以下 WSW 是独立工作流编号，不占用 RIP3 Phase 6、7、8 的既有编号，也不改变它们的依赖关系。状态记录（2026-11-18）：WSW-0 已完成；WSW-1 本地验收完成，交付见 `docs/rip3/wsw/WSW-1-BATCH-REPORT.md`。WSW-2 当前仅完成安全基础模型 crate（`crates/wsw-runtime`），验收记录见 `docs/rip3/wsw/WSW-2-FOUNDATION-REPORT.md`；不等同于完整 Proxy/MITM Runtime，网络捕获/转发/TLS 面仍未实现。后续批次逐步核验并保持授权边界。
 
 | 批次 | 名称 | 主要交付 | 不包含 |
 |---|---|---|---|

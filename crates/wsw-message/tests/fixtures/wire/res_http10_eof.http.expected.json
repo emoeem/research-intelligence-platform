@@ -1,0 +1,27 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "bGVnYWN5LWJvZHk=",
+      "delimiting": "eof",
+      "headers": [
+        {
+          "name": "Connection",
+          "value": "close"
+        }
+      ],
+      "kind": "response",
+      "method": null,
+      "reason": "OK",
+      "status": 200,
+      "target": null,
+      "trailers": [],
+      "version": "http/1.0"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "ef3e7e80157426db87a5e7954552583500c9a33b7148d7f252bc011a6cf9206a"
+}

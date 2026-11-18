@@ -1,0 +1,31 @@
+{
+  "outcome": {
+    "body_declared": null,
+    "body_received": null,
+    "error_code": null,
+    "fidelity": "full",
+    "message": {
+      "body": "aGVsbG8=",
+      "delimiting": "content_length",
+      "headers": [
+        {
+          "name": "Content-Length",
+          "value": "5"
+        },
+        {
+          "name": "Content-Type",
+          "value": "text/plain"
+        }
+      ],
+      "kind": "response",
+      "method": null,
+      "reason": "OK",
+      "status": 200,
+      "target": null,
+      "trailers": [],
+      "version": "http/1.1"
+    },
+    "parse_status": "ok"
+  },
+  "wire_sha256": "7327f3c772427d1cf1d3e6e501a08a7a2e2d4f1f38f852bac9916b67b9f372ea"
+}
