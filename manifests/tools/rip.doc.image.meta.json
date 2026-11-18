@@ -1,0 +1,143 @@
+{
+  "schema_version": "1",
+  "id": "rip.doc.image.meta",
+  "name": "Image Metadata Probe (native)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "图像元数据受限探测（DI-1 ADR D3 图像通道）：magick identify -ping 仅读头部不全量解码（像素内存放大器受控），-format 单行元数据串（本机 IM7 7.1.2-35 identify -json 不支持，D3 否决项 JSON coder 路径）。只登 magick 不登 convert 别名（RT-0.5-E §4.6）；输入签名仅 PNG/JPEG，PDF/PS/MSL/MVG/URL 面永远到不了 magick argv（嗅探前置 D6 = policy.xml 空壳 E §4.1 的补偿面）。形态 B：subcommands 白名单 input.subcommand 为唯一子命令来源。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/magick",
+    "binary_sha256": "ff050139cbc6dbd93a5a50980c60693f8be0bbe49a0497ebdaf5a56595452a40",
+    "capability_ref": "image.magick",
+    "subcommands": [
+      "identify"
+    ],
+    "argv_template": [
+      "-ping",
+      "-quiet",
+      "-format",
+      "{{identify_fmt}}",
+      "{{input_path}}"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "subcommand",
+      "input_path",
+      "identify_fmt"
+    ],
+    "properties": {
+      "subcommand": {
+        "type": "string",
+        "enum": [
+          "identify"
+        ],
+        "description": "子命令白名单唯一值（形态 B；越白名单 PREPARING 拒绝零 spawn）"
+      },
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      },
+      "identify_fmt": {
+        "type": "string",
+        "const": "%m %wx%h %[colorspace] depth=%z",
+        "description": "identify 输出格式（D3 实测冻结单行形态，Router 解析面锁定）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "subcommand": "identify",
+        "input_path": "sample.png",
+        "identify_fmt": "%m %wx%h %[colorspace] depth=%z"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/magick",
+    "license": "ImageMagick",
+    "dependencies": [
+      "imagemagick 7.1.2.35-1.1 sha256_prefix ff050139cbc6dbd9"
+    ],
+    "tested": "DI-1 e2e：sample.png 与 magick 本地生成 JPEG 子 run SUCCEEDED（format/width/height/colorspace/depth），crates/document-router/tests/",
+    "known_limits": [
+      "policy.xml 空壳（唯一生效 Undefined:none）不构成豁免：嗅探前置使 URL/MSL/MVG coder 面结构不可达 + network:none 双闸（红线 2，E §4.1）",
+      "像素帽 100 MP Router 门（identify 输出解析定案，D7 #8）；元数据 -ping 路径不触发渲染内存放大",
+      "不可信图像禁宿主 magick 直连（C §3.10:160），本 Manifest 仅承载可信低风险档"
+    ]
+  }
+}

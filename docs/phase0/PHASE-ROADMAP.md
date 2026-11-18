@@ -257,7 +257,7 @@ sha256sum <artifact_uri 指向的文件>                           # 与 artifac
 | P3-1 | Pack 基础镜像族构建流水线：每 Pack 一份 Containerfile，构建全部在容器内完成（宿主零安装），产物 digest 固定并登记 | 每个基础镜像构建成功且 `podman inspect` digest 与登记一致；构建过程宿主机无新安装 | 【串行】起点 |
 | P3-2 | Web Research Pack 首工具：rip.http.inspect 真实镜像落地（替换 TOOL-CONTRACT §9 占位 digest，消解其待验证项 1），完成 §4.3 三项验证 | 从 RIP API 派发对 example.com 的 GET，返回结构化结果 + 响应体 Artifact（TOOL-CONTRACT §9.3 四步全走通） | 【并行】依赖 P3-1 与 P2-5 |
 | P3-3 | Core Utilities Pack：文件元数据、哈希、压缩、格式转换、JSON/YAML/CSV 五个最小工具 | 五工具各一个 run 端到端 + Artifact 登记 + 契约测试 | 【并行】依赖 P3-1 与 P2-5 |
-| P3-4 | Document Pack 补强：PDF/Office/OCR 进容器（现 parsing_worker 仅 md/txt/html 纯文本，TOOL-INVENTORY §1.2） | PDF 解析工具一个 run 端到端；第三方解析库全部在容器内 | 【并行】依赖 P3-1（自研可走 P2-5，引入第三方库建议等 P2-6 后走 VM，按信任级裁定） |
+| P3-4 | Document Pack 补强：PDF/Office/OCR 进容器（现 parsing_worker 仅 md/txt/html 纯文本，TOOL-INVENTORY §1.2） | PDF 解析工具一个 run 端到端；第三方解析库全部在容器内 **【行内标注 DI-1 回填，superseded-by [DI-0-P34-PREMISE-REVISION-ADR.md](DI-0-P34-PREMISE-REVISION-ADR.md) §2.1：判据 2「第三方解析库全部在容器内」废止——NATIVE-FIRST 策略（§1:11/§12:255-262）+ RT-0.5 实测 15 项宿主能力 available 推翻前提 A；判据 1「PDF 解析工具一个 run 端到端」保留为 DI-1 判据；解锁改绑 DI 批次链（DI-0 §4.1），原文照录不改写历史裁定】** | 【并行】依赖 P3-1（自研可走 P2-5，引入第三方库建议等 P2-6 后走 VM，按信任级裁定） **【行内标注 DI-1 回填：「按信任级走 VM」前提 B 修订为 distro-package-verifiable + input-risk-routed 输入风险档位路由（DI-0 §2.2/§4.2），可信低风险输入走受限原生，原文照录】** |
 | P3-5 | Source Analysis Pack：Git 元数据、代码搜索、依赖清单、静态检查 | 对本仓库（research-platform）跑一次只读代码搜索 run 成功 | 【并行】依赖 P3-1 与 P2-5 |
 | P3-6 | Mobile Analysis Pack：APK 元数据、Manifest、权限静态分析 | 一个测试 APK 的元数据 run 端到端 | 【并行】依赖 P3-1（Java 生态依赖重，建议 P2-6 后走 VM 通道） |
 | P3-7 | T12 TPscan 许可证裁决与登记（若准入）：必须落 VM 内容器（ADR §3.1 提前触发条件 1） | 许可证核实结论落盘；准入则按 §4.3 三项验证后登记，拒绝则记录淘汰 | 【串行】依赖 P2-6 与许可证核实 |

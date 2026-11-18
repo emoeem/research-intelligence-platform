@@ -50,7 +50,7 @@ planned 登记的载体是本表与 P3-6 验收报告，不进 tool 表：tool �
 | Core Utilities | 文件元数据、哈希、压缩、格式转换、JSON/YAML/CSV | 本阶段交付（端到端） | 零网络、现成 CLI、信任面最小 |
 | Web Research | HTTP、TLS、页面抓取、静态资源提取 | 本阶段交付（端到端，首工具 rip.http.inspect） | T1 只读 GET 面在宿主 rootless 可表达 |
 | Source Analysis | Git、代码搜索、依赖清单、静态检查 | planned | 依赖轻、可走 podman_host，但数量让位于可靠（计划 §14:784）；解锁：本阶段验收通过后的下一批次预算 |
-| Document | PDF、Office、Markdown、OCR/文本抽取 | planned | 第三方解析库按 ROADMAP P3-4 原文建议按信任级走 VM 通道；VM 面挂起中（§3.1） |
+| Document | PDF、Office、Markdown、OCR/文本抽取 | planned | 第三方解析库按 ROADMAP P3-4 原文建议按信任级走 VM 通道；VM 面挂起中（§3.1） **【行内标注 DI-1 回填，superseded-by [DI-0-P34-PREMISE-REVISION-ADR.md](../phase0/DI-0-P34-PREMISE-REVISION-ADR.md) §2.2：本行 planned 理由（第三方解析库整体按信任级走 VM）修订为 distro-package-verifiable + input-risk-routed——发行版包 pacman 可核实 + 输入风险档位路由，可信低风险输入走受限原生（DI-1 三通道端到端已实测）；存根 manifests/packs/planned/document.json 已按 DI-0 §4.2 修订；本行原文照录不改写历史裁定】** |
 | Mobile Analysis | APK 元数据、Manifest、权限和基础静态分析 | planned | Java 生态依赖重，ROADMAP P3-6 原文建议 P2-6 后走 VM 通道；VM 面挂起中（§3.1） |
 
 八族空白（TOOL-INVENTORY §7：Web/HTTP、DNS/Domain、Network、Web Analysis、Source Code、Mobile/APK、Binary/Reverse、Browser Automation）中的 Web/HTTP 由 Web Research Pack 覆盖，Source Code 与 Mobile/APK 随三包 planned，DNS/Domain、Network、Binary/Reverse 本阶段不动（ROADMAP §4.5 风险 3 口径：以五 Pack 最小集为边界，不设数量 KPI）。

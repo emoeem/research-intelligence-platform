@@ -1148,6 +1148,190 @@ fn native_rust_wrapper_double_pin_dispatch() {
     let _ = std::fs::remove_dir_all(&ws_root);
 }
 
+// ---------------------------------------------------------------------------
+// DI-1 S2：result_mode=file 双模（DI-1 ADR D4）正负例；frame 模式 17/17
+// 既有测试全绿为双模增量前的零回归门。
+// ---------------------------------------------------------------------------
+
+/// file 模式 manifest（base_manifest + runtime.result_mode = "file"）。
+fn file_mode_manifest(fixture: &Path, sha: &str) -> Value {
+    let mut m = base_manifest(fixture, sha);
+    m["runtime"]["result_mode"] = json!("file");
+    m["output_schema"] = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["exit_code", "stdout_bytes", "stdout_capped", "artifacts"],
+        "properties": {
+            "exit_code": {"type": "integer"},
+            "stdout_bytes": {"type": "integer", "minimum": 0},
+            "stdout_capped": {"type": "boolean"},
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "size_bytes", "sha256"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "size_bytes": {"type": "integer", "minimum": 0},
+                        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                    }
+                }
+            }
+        }
+    });
+    m
+}
+
+/// DI-1 判据 D4：file 模式 exit 0 → Succeeded，data = 产物收集面（无帧解析），
+/// data.artifacts 与信封 Artifact 行 sha256 对账齐；stdout 留档 out/stdout.log。
+#[test]
+fn native_rust_file_mode_succeeds_with_artifact_listing() {
+    let fixture = checked_fixture();
+    let manifest = file_mode_manifest(&fixture, FIXTURE_SHA256);
+    let engine = fresh_engine(&manifest);
+    let ws_root = workspace_root("file-ok");
+    let adapter = adapter_for(&ws_root);
+    submit(
+        &engine,
+        "rn-rt1-file-ok",
+        json!({"subcommand": "echo", "input_path": "probe.txt"}),
+        30,
+        1_048_576,
+    );
+    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+        engine: &engine,
+        run_id: "rn-rt1-file-ok",
+        adapter: &adapter,
+        manifest: &manifest,
+        capability: None,
+    })
+    .expect("drive ok");
+    assert_unified_envelope(&engine, "rn-rt1-file-ok", &outcome);
+    assert_eq!(outcome.envelope.status, ToolRunStatus::Succeeded);
+    let data = outcome.envelope.result.as_ref().expect("file-mode data");
+    assert_eq!(data["exit_code"], json!(0));
+    assert_eq!(data["stdout_capped"], json!(false));
+    let stdout_bytes = data["stdout_bytes"].as_u64().expect("stdout_bytes");
+    assert!(stdout_bytes > 0, "fixture echo emits a stdout line");
+    // stdout 留档对账：data.stdout_bytes == out/stdout.log 实测字节数。
+    let stdout_log = ws_root.join("rn-rt1-file-ok/out/stdout.log");
+    let logged = std::fs::read(&stdout_log).expect("stdout.log written");
+    assert_eq!(
+        stdout_bytes,
+        logged.len() as u64,
+        "stdout_bytes == stdout.log"
+    );
+    // data.artifacts 含 stdout.log 且 sha256 与信封 Artifact 行对账齐。
+    let listed = data["artifacts"].as_array().expect("artifacts array");
+    let entry = listed
+        .iter()
+        .find(|a| a["name"] == json!("stdout.log"))
+        .expect("stdout.log listed in data.artifacts");
+    assert_eq!(entry["size_bytes"], json!(logged.len() as u64));
+    let env_artifacts = outcome.envelope.artifacts.as_slice();
+    let row = env_artifacts
+        .iter()
+        .find(|a| a.uri.ends_with("/out/stdout.log"))
+        .expect("stdout.log registered as Artifact row");
+    assert_eq!(entry["sha256"], json!(row.sha256), "data ↔ Artifact 对账");
+    assert_eq!(entry["size_bytes"], json!(row.size_bytes));
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// DI-1 判据 6（file 模式）：stdout 超读帽 → NATIVE_OUTPUT_CAP_EXCEEDED
+/// FAILED（不静默丢字节——file 模式无帧可截断交付，超帽部分已丢弃即失败）。
+#[test]
+fn native_rust_file_mode_cap_hit_fails_without_silent_loss() {
+    let fixture = checked_fixture();
+    let manifest = file_mode_manifest(&fixture, FIXTURE_SHA256);
+    let engine = fresh_engine(&manifest);
+    let ws_root = workspace_root("file-cap");
+    let adapter = adapter_for(&ws_root);
+    // budget.max_output_bytes = 1024 → 读帽 = 1024 + 64 KiB 容差；fixture
+    // "big" 产出 ~200 KB 帧超读帽 → 看门狗进程组击杀 → FAILED。
+    submit(
+        &engine,
+        "rn-rt1-file-cap",
+        json!({"subcommand": "big", "input_path": "probe.txt"}),
+        30,
+        1_024,
+    );
+    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+        engine: &engine,
+        run_id: "rn-rt1-file-cap",
+        adapter: &adapter,
+        manifest: &manifest,
+        capability: None,
+    })
+    .expect("drive ok");
+    assert_unified_envelope(&engine, "rn-rt1-file-cap", &outcome);
+    assert_eq!(outcome.envelope.status, ToolRunStatus::Failed);
+    let err = outcome.envelope.error.as_ref().expect("file-cap error");
+    assert_eq!(err.category, "EXECUTION");
+    assert_eq!(err.code, json!("NATIVE_OUTPUT_CAP_EXCEEDED"));
+    assert!(err.message.contains("file mode"));
+    // 残档留证：stdout.log 为帽内部分（kept ≤ read_cap），不承载完整输出。
+    let stdout_log = ws_root.join("rn-rt1-file-cap/out/stdout.log");
+    let logged = std::fs::read(&stdout_log).unwrap_or_default();
+    assert!(
+        (logged.len() as u64) <= 1_024 + 64 * 1024,
+        "stdout.log carries at most the kept bytes"
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// DI-1 ADR D4：非法 result_mode 字面量 → PREPARING 拒绝（POLICY_DENIED，
+/// 零子进程拉起、零工作区创建——parse_allowlist 在 prepare 链最前段）。
+/// 登记面已先行拒绝非法字面量（sk3 负例），本测以「登记合法件 + 派发面
+/// 篡改 runtime」形态验证执行面纵深防线（防登记面校验被绕过或形状漂移）。
+#[test]
+fn native_rust_file_mode_invalid_literal_rejected_in_preparing() {
+    let fixture = checked_fixture();
+    let manifest = file_mode_manifest(&fixture, FIXTURE_SHA256);
+    let engine = fresh_engine(&manifest);
+    let mut tampered = manifest.clone();
+    tampered["runtime"]["result_mode"] = json!("stdout");
+    let ws_root = workspace_root("file-bad");
+    let adapter = adapter_for(&ws_root);
+    submit(
+        &engine,
+        "rn-rt1-file-bad",
+        json!({"subcommand": "echo", "input_path": "probe.txt"}),
+        30,
+        1_048_576,
+    );
+    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+        engine: &engine,
+        run_id: "rn-rt1-file-bad",
+        adapter: &adapter,
+        manifest: &tampered,
+        capability: None,
+    })
+    .expect("drive ok");
+    assert_unified_envelope(&engine, "rn-rt1-file-bad", &outcome);
+    assert_eq!(outcome.envelope.status, ToolRunStatus::Failed);
+    assert_eq!(
+        outcome.transcript,
+        vec![
+            ToolRunStatus::Queued,
+            ToolRunStatus::Preparing,
+            ToolRunStatus::Failed
+        ]
+    );
+    let err = outcome.envelope.error.as_ref().expect("reject error");
+    assert_eq!(err.category, "POLICY_DENIED");
+    assert_eq!(err.code, json!("NATIVE_RESULT_MODE_INVALID"),
+        "专属码（评审修订 2026-11-19：不再借 NATIVE_ARGV_TEMPLATE_DENIED——问题在 result_mode 枚举值非 argv 模板）");
+    assert!(err.message.contains("result_mode"));
+    // 零 spawn 结构佐证：拒绝发生在工作区创建前，任务目录不存在。
+    assert!(
+        !ws_root.join("rn-rt1-file-bad").exists(),
+        "PREPARING rejection happens before workspace creation"
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
 /// 共享锁防并发测试的 /proc 断言窗口交错（workspace/capability 面各自
 /// 独立临时目录，此锁仅为超时/取消路径的观测稳定）。
 #[allow(dead_code)]

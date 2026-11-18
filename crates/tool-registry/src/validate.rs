@@ -786,6 +786,20 @@ fn rule4_runtime(
             if binary.is_empty() {
                 return Err(err4("runtime.binary must be non-empty".to_string()));
             }
+            // DI-1 ADR D4：结果面双模 additive 校验（可选字段，缺省 frame，
+            // 词表零新增信封 category）。两种 runtime 形态（旧两字段 / allowlist
+            // 钉值）在场均可声明；执行面同规则由 NativeRustAdapter::parse_allowlist
+            // PREPARING 强制（非法字面量拒绝派发）。
+            if let Some(v) = runtime.get("result_mode") {
+                let s = v
+                    .as_str()
+                    .ok_or_else(|| err4("runtime.result_mode must be a string".to_string()))?;
+                if !matches!(s, "frame" | "file") {
+                    return Err(err4(format!(
+                        "runtime.result_mode {s:?} not in frame|file (DI-1 ADR D4 result-mode dual)"
+                    )));
+                }
+            }
             const NATIVE_ALLOWLIST_FIELDS: [&str; 5] = [
                 "binary_sha256",
                 "binary_target_sha256",

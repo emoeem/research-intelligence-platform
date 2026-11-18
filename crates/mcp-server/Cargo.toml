@@ -27,6 +27,9 @@ rmcp = { workspace = true }
 tokio = { workspace = true }
 database = { workspace = true }
 domain = { workspace = true }
+# DI-1 S5：native_rust 派发分支消费面（Router 编排 + 通道表装载；workspace
+# 既有成员，零新外部包）。
+document-router = { workspace = true }
 tool-registry = { workspace = true }
 tool-engine = { workspace = true }
 runtime-gateway = { workspace = true }

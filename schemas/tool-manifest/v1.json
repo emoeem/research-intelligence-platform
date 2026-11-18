@@ -165,6 +165,7 @@
               "binary_target_sha256": { "description": "wrapper 形态（file 类型为脚本）的 exec 目标身份钉值，64 位小写 hex；指纹必须同时覆盖 wrapper 与 exec 目标（RT-0.5-C §5.1:270）。", "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "subcommands": { "description": "子命令/旗标白名单（非空字符串数组，逐项全匹配）。生效时 input.subcommand（经 input_schema 校验）为唯一子命令来源，越白名单 PREPARING 拒绝（RT-1 ADR D3 形态 B）。", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
               "argv_template": { "description": "参数模板（字符串数组，与 cli_adapter 同形状）。{{slot}} 槽位只由 input_schema 校验后参数填充；{{input_path}} 槽位值必须落在任务 in/ 目录前缀内；{{out_dir}}/{{tmp_dir}} 为 Adapter 保留槽位（RT-1 ADR D8.3）。", "type": "array", "items": { "type": "string" } },
+              "result_mode": { "description": "结果面双模（DI-1 ADR D4 additive 可选，缺省 \"frame\"）：frame = stdout 首行 JSON 结果帧（RT-1 D-TC-03 既有，行为零改动）；file = raw CLI 形态（exit 0 → Succeeded，data = {exit_code, stdout_bytes, stdout_capped, artifacts} 产物收集面，不做帧解析；stdout 读侧帽语义不变，超帽 NATIVE_OUTPUT_CAP_EXCEEDED FAILED 不静默丢字节）。词表零新增信封 category。", "type": "string", "enum": ["frame", "file"], "default": "frame" },
               "capability_ref": { "description": "Capability 目录引用（domain.name 两段，段内 [a-z0-9_-]，段首允许数字——与 RT-0.5-F §2 CapabilityId 实现口径一致：C 目录权威数据 archive.7z/7za/7zr 为段首数字 id）。派发前查目录（status=available 且 fresh），missing/stale 拒绝派发（RT-0.5-F §6）。", "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*(\\.[a-z0-9][a-z0-9_-]*){1}$" }
             }
           }

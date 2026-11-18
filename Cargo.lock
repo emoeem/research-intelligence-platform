@@ -601,6 +601,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "document-router"
+version = "0.2.0"
+dependencies = [
+ "database",
+ "domain",
+ "serde",
+ "serde_json",
+ "tool-engine",
+ "tool-registry",
+]
+
+[[package]]
 name = "domain"
 version = "0.2.0"
 
@@ -1513,6 +1525,7 @@ version = "0.2.0"
 dependencies = [
  "agent-engine",
  "database",
+ "document-router",
  "domain",
  "rmcp",
  "runtime-gateway",

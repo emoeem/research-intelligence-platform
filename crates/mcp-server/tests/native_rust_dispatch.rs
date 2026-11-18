@@ -1,0 +1,391 @@
+//! DI-1 判据 10：mcp-server native_rust 派发分支端到端（RT-1 批次报告 G
+//! 遗留 #2 消费）。真实 run_tool 通道（与 bin 同一 RunChannel 装配路径）：
+//! PDF 通道链派发（两条真实 run，trace_id = run_id 自锚定 → tool_run 表
+//! 可反查 /api/traces 面）+ 嗅探门前置拒绝（无 run 行）+ 输入 64 MiB 帽
+//! stat 前置拒绝（评审修订：fs::read 全量读入前判帽，D7 口径）+ `other`
+//! 拒绝面不回归（mcp_client runtime → 承载范围外拒绝）。
+//!
+//! 纪律：临时库自建（生产 platform*.db / rip-data 零触碰）；fixture 来自
+//! 入库 crates/document-router/tests/fixtures/（评审修订：原 rip-data/
+//! parse-smoke/in/ 不入库，CI fresh checkout 缺样本；钉值见
+//! document-router tests/fixture_pins.rs）；能力缺失按目录 status +
+//! executable_path 存在性二道检测 SKIP（红线 3，评审修订补 stat 面）。
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use database::{migrate, DbPath, Pool, PoolConfig};
+use mcp_server::dispatch::RunChannel;
+use serde_json::{json, Value};
+use tool_engine::capability::CapabilityProvider;
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root")
+}
+
+static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+struct Fixture {
+    run_db: PathBuf,
+    document_input_root: PathBuf,
+    workspaces_root: PathBuf,
+    manifest_dirs: Vec<PathBuf>,
+    capability_seed: PathBuf,
+    artifacts_dir: PathBuf,
+    extra_manifest_dir: PathBuf,
+}
+
+fn fixture(tag: &str) -> Fixture {
+    let dir = std::env::temp_dir().join(format!(
+        "di1-dispatch-{tag}-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc_root = dir.join("documents");
+    std::fs::create_dir_all(&doc_root).unwrap();
+    let ws = dir.join("workspaces");
+    std::fs::create_dir_all(&ws).unwrap();
+    // fixture：入库样本（document-router tests/fixtures/，sha256 钉值见
+    // fixture_pins.rs）复制进受信文档根（零下载）。
+    for name in ["sample.pdf", "evil.zip"] {
+        std::fs::copy(
+            repo_root().join(format!("crates/document-router/tests/fixtures/{name}")),
+            doc_root.join(name),
+        )
+        .unwrap();
+    }
+    let extra = dir.join("manifests");
+    std::fs::create_dir_all(&extra).unwrap();
+    Fixture {
+        run_db: dir.join("run.db"),
+        document_input_root: doc_root,
+        workspaces_root: ws,
+        manifest_dirs: vec![repo_root().join("manifests/tools"), extra.clone()],
+        capability_seed: repo_root().join("manifests/capabilities/host-catalog-seed.json"),
+        artifacts_dir: dir.join("artifacts"),
+        extra_manifest_dir: extra,
+    }
+}
+
+impl Fixture {
+    fn channel(&self) -> RunChannel {
+        RunChannel {
+            run_db: self.run_db.clone(),
+            migrations_dir: repo_root().join("migrations"),
+            manifest_dirs: self.manifest_dirs.clone(),
+            artifacts_dir: self.artifacts_dir.clone(),
+            workspaces_root: self.workspaces_root.clone(),
+            runtime_node_id: "host-di1-dispatch-test".to_string(),
+            working_dir: Some(repo_root()),
+            document_input_root: self.document_input_root.clone(),
+            capability_seed_path: self.capability_seed.clone(),
+        }
+    }
+}
+
+/// 四份 DI-1 Manifest 登记进运行库（run_tool 受理面 D-TC-05 Registry 查询
+/// 来源；rp-tool register --db 同款库面，不触生产库）。
+fn register_di1_manifests(fix: &Fixture) {
+    let pool = Pool::open(PoolConfig {
+        path: DbPath::File(fix.run_db.clone()),
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .unwrap();
+    migrate(&pool, &repo_root().join("migrations")).unwrap();
+    let registry = tool_registry::Registry::open(pool);
+    for id in [
+        "rip.doc.pdf.info",
+        "rip.doc.pdf.text",
+        "rip.doc.office.to_pdf",
+        "rip.doc.image.meta",
+    ] {
+        let text = std::fs::read_to_string(repo_root().join(format!("manifests/tools/{id}.json")))
+            .unwrap();
+        registry
+            .register(&serde_json::from_str(&text).unwrap())
+            .unwrap_or_else(|e| panic!("register {id}: {e}"));
+    }
+}
+
+/// 测试私有 Manifest 落 extra 目录（manifest_for 文件面）+ 运行库登记。
+fn register_probe_manifest(fix: &Fixture, doc: &Value) {
+    let id = doc["id"].as_str().unwrap().replace('.', "-");
+    std::fs::write(
+        fix.extra_manifest_dir.join(format!("{id}.json")),
+        serde_json::to_string_pretty(doc).unwrap(),
+    )
+    .unwrap();
+    let pool = Pool::open(PoolConfig {
+        path: DbPath::File(fix.run_db.clone()),
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .unwrap();
+    migrate(&pool, &repo_root().join("migrations")).unwrap();
+    tool_registry::Registry::open(pool)
+        .register(doc)
+        .expect("probe manifest registers");
+}
+
+/// 运行库直连断言面。
+fn run_pool(fix: &Fixture) -> Pool {
+    Pool::open(PoolConfig {
+        path: DbPath::File(fix.run_db.clone()),
+        readonly: true,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .unwrap()
+}
+
+/// 能力可用守卫（红线 3：缺失 SKIP + 显式标注，不伪造失败）。格式
+/// `SKIP <test>: capability <id> status=<status>`（任务书 §6）；二道检测
+/// 同 three_channel_e2e::require_capability——status=available 但
+/// executable_path 缺席（异机）同样 SKIP，静态种子不做存活检测。
+fn capability_available(test: &str) -> bool {
+    let provider = tool_engine::capability::StaticCatalogProvider::load(
+        &repo_root().join("manifests/capabilities/host-catalog-seed.json"),
+    )
+    .unwrap();
+    for id in ["pdf.pdfinfo", "pdf.pdftotext"] {
+        match provider.get(&tool_engine::capability::CapabilityId::new(id).unwrap()) {
+            Some(e) if e.entry.status.as_str() == "available" => match &e.entry.executable_path {
+                Some(path) if path.exists() => {}
+                Some(path) => {
+                    println!(
+                        "SKIP {test}: capability {id} status=available-but-executable-missing ({})",
+                        path.display()
+                    );
+                    return false;
+                }
+                None => {
+                    println!(
+                        "SKIP {test}: capability {id} status=available-but-executable-path-absent"
+                    );
+                    return false;
+                }
+            },
+            Some(e) => {
+                println!(
+                    "SKIP {test}: capability {id} status={}",
+                    e.entry.status.as_str()
+                );
+                return false;
+            }
+            None => {
+                println!("SKIP {test}: capability {id} status=absent-from-catalog");
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// 判据 10：native_rust 分支派发 PDF 通道链（run_tool 全链：受理 → Router
+/// 编排 → 统一信封载荷），两条子 run trace_id = run_id 自锚定可反查。
+#[test]
+fn native_rust_dispatch_runs_pdf_chain_with_self_anchored_traces() {
+    if !capability_available("native_rust_dispatch_runs_pdf_chain_with_self_anchored_traces") {
+        return;
+    }
+    let fix = fixture("pdf");
+    register_di1_manifests(&fix);
+    let channel = fix.channel();
+    let payload = channel
+        .run_tool(&json!({
+            "tool_id": "rip.doc.pdf.info",
+            "input": {"input_path": "sample.pdf"},
+        }))
+        .expect("native_rust dispatch succeeds");
+    assert_eq!(payload["ok"], json!(true));
+    assert_eq!(payload["router"], json!("document-router"));
+    assert_eq!(payload["channel"], json!("pdf"));
+    let unified = &payload["result"];
+    assert_eq!(unified["channel"], json!("pdf"));
+    assert_eq!(unified["source"]["name"], json!("sample.pdf"));
+    assert_eq!(unified["metadata"]["pages"], json!(2));
+    let runs = payload["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        2,
+        "pdfinfo + pdftotext 两条子 run（真实 run_tool 派发）"
+    );
+    // trace_id = run_id 自锚定（REST /api/traces 可反查的承载面）。
+    let pool = run_pool(&fix);
+    for run in runs {
+        let run_id = run["run_id"].as_str().unwrap();
+        let (status, trace): (String, Option<String>) = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT status, trace_id FROM tool_run WHERE run_id = ?1",
+                    [run_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+            })
+            .unwrap();
+        assert_eq!(status, "SUCCEEDED", "子 run {run_id} 真实终态");
+        assert_eq!(
+            trace.as_deref(),
+            Some(run_id),
+            "trace_id = run_id 自锚定（判据 10 /api/traces 反查面）"
+        );
+    }
+}
+
+/// 嗅探门前置拒绝（evil.zip → zip_other → INPUT ROUTER_UNSUPPORTED_TYPE，
+/// 无 run 行；D7 前置门语义）。
+#[test]
+fn native_rust_dispatch_gate_rejects_zip_other_without_rows() {
+    let fix = fixture("gate");
+    let channel = fix.channel();
+    let err = channel
+        .run_tool(&json!({
+            "tool_id": "rip.doc.pdf.info",
+            "input": {"input_path": "evil.zip"},
+        }))
+        .expect_err("zip_other rejected at sniff gate");
+    assert_eq!(err["ok"], json!(false));
+    assert_eq!(err["error"]["category"], json!("INPUT"));
+    assert_eq!(err["error"]["code"], json!("ROUTER_UNSUPPORTED_TYPE"));
+    // 无 run 行（前置门先于任何提交）。
+    let pool = run_pool(&fix);
+    let count: i64 = pool
+        .with_conn(|c| c.query_row("SELECT count(*) FROM tool_run", [], |r| r.get::<_, i64>(0)))
+        .unwrap();
+    assert_eq!(count, 0, "嗅探门拒绝零 run 行");
+}
+
+/// 评审修订 2026-11-19：输入 64 MiB 帽 stat 前置——fs::read 全量读入之前
+/// 判帽（D7「Router 嗅探前 stat 检查」的派发面承载点；此前实现先
+/// `std::fs::read` 再由 route() 对 bytes_len 判帽，帽生效前全量内存读入
+/// 已完成，构成受信输入根内的内存放大缝）。超帽不读入、零 run 行；码/
+/// 帽值与 route() 门同源（RouterReject::input_too_large +
+/// channel::MAX_INPUT_FILE_BYTES）。稀疏文件（set_len）不实际写盘，帽在
+/// stat 判定即拒绝——本测同时证明读面从未触达。
+#[test]
+fn native_rust_dispatch_input_too_large_rejected_before_read() {
+    let fix = fixture("toobig");
+    let big = fix.document_input_root.join("huge.pdf");
+    let f = std::fs::File::create(&big).unwrap();
+    f.set_len(document_router::channel::MAX_INPUT_FILE_BYTES + 1)
+        .unwrap();
+    drop(f);
+    let channel = fix.channel();
+    let err = channel
+        .run_tool(&json!({
+            "tool_id": "rip.doc.pdf.info",
+            "input": {"input_path": "huge.pdf"},
+        }))
+        .expect_err("over-cap input rejected at dispatch stat gate");
+    assert_eq!(err["ok"], json!(false));
+    assert_eq!(err["error"]["category"], json!("INPUT"));
+    assert_eq!(err["error"]["code"], json!("ROUTER_INPUT_TOO_LARGE"));
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exceeds cap"),
+        "帽语义如实入消息：{}",
+        err["error"]["message"]
+    );
+    let pool = run_pool(&fix);
+    let count: i64 = pool
+        .with_conn(|c| c.query_row("SELECT count(*) FROM tool_run", [], |r| r.get::<_, i64>(0)))
+        .unwrap();
+    assert_eq!(count, 0, "stat 帽拒绝零 run 行（读面未触达）");
+}
+
+/// `other` 拒绝面不回归：mcp_client runtime 工具落承载范围外拒绝（既有
+/// other => 分支保持词表扩展后的原语义——native_rust 已入词表）。
+#[test]
+fn dispatch_other_rejection_surface_unchanged() {
+    let fix = fixture("other");
+    // 登记 mcp_client runtime 的非 DI-1 工具（登记面合法形态 + manifest_for
+    // 文件面）。
+    register_probe_manifest(
+        &fix,
+        &json!({
+            "schema_version": "1",
+            "id": "rip.dispatch.otherface",
+            "name": "Dispatch Other-Face Probe",
+            "version": "0.1.0",
+            "kind": "tool",
+            "family": "utility",
+            "description": "other 拒绝面回归探针（mcp_client runtime 不在派发承载范围）",
+            "runtime": {"type": "mcp_client", "endpoint": "stdio:/bin/true", "tool_name": "probe"},
+            "input_schema": {"type": "object"},
+            "output_schema": {"type": "object"},
+            "resources": {"cpu": "1", "memory": "256Mi", "timeout_seconds": 10},
+            "network": {"mode": "none"},
+            "secrets": [],
+            "permission_level": "T0",
+            "idempotent": false,
+            "health": {"probe": {"type": "none"}, "on_run_recover": false},
+            "provenance": {"origin": "rip-native", "license": "repo-internal", "dependencies": [], "tested": "dispatch other-face"}
+        }),
+    );
+    let channel = fix.channel();
+    let err = channel
+        .run_tool(&json!({
+            "tool_id": "rip.dispatch.otherface",
+            "input": {},
+        }))
+        .expect_err("mcp_client runtime stays outside dispatch scope");
+    let message = err["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("不在本面承载范围"),
+        "other 拒绝面语义保持：{message}"
+    );
+}
+
+/// 通道表外 native_rust 工具（非 DI-1 四工具 id）→ 承载范围守卫拒绝。
+#[test]
+fn native_rust_tool_outside_channel_table_rejected() {
+    let fix = fixture("scope");
+    register_probe_manifest(
+        &fix,
+        &json!({
+            "schema_version": "1",
+            "id": "rip.dispatch.nonchannel",
+            "name": "Native Rust Outside Channel Table",
+            "version": "0.1.0",
+            "kind": "tool",
+            "family": "utility",
+            "description": "DI-1 通道表承载范围守卫探针",
+            "runtime": {
+                "type": "native_rust",
+                "binary": "/usr/bin/true",
+                "subcommand": "true",
+                "result_mode": "frame"
+            },
+            "input_schema": {"type": "object"},
+            "output_schema": {"type": "object"},
+            "resources": {"cpu": "1", "memory": "256Mi", "timeout_seconds": 10},
+            "network": {"mode": "none"},
+            "secrets": [],
+            "permission_level": "T0",
+            "idempotent": false,
+            "health": {"probe": {"type": "none"}, "on_run_recover": false},
+            "provenance": {"origin": "rip-native", "license": "repo-internal", "dependencies": [], "tested": "dispatch scope guard"}
+        }),
+    );
+    let channel = fix.channel();
+    let err = channel
+        .run_tool(&json!({
+            "tool_id": "rip.dispatch.nonchannel",
+            "input": {},
+        }))
+        .expect_err("non-channel-table native tool rejected");
+    let message = err["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("outside the DI-1 document channel table"),
+        "承载范围守卫语义：{message}"
+    );
+}

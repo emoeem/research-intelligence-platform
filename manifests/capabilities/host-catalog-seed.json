@@ -6,7 +6,10 @@
       "capability_id": "media.ffmpeg",
       "provider": "FFmpeg（ffmpeg-full 项目构建）",
       "executable_path": "/usr/bin/ffmpeg",
-      "version": { "normalized": "9.0.2", "raw": "ffmpeg version 9.0.2" },
+      "version": {
+        "normalized": "9.0.2",
+        "raw": "ffmpeg version 9.0.2"
+      },
       "binary_identity": {
         "sha256_prefix": "09190fb791fb0db8",
         "sha256_full": null,
@@ -14,32 +17,110 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "ffmpeg-full", "version": "9.0.2-3.46" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "ffmpeg-full",
+          "version": "9.0.2-3.46"
+        }
+      },
       "capabilities": [
-        { "kind": "encoder", "name": "libx264", "flags": [] },
-        { "kind": "encoder", "name": "libx265", "flags": [] },
-        { "kind": "encoder", "name": "libopenh264", "flags": [] },
-        { "kind": "encoder", "name": "h264_nvenc", "flags": [] },
-        { "kind": "encoder", "name": "h264_vaapi", "flags": [] },
-        { "kind": "encoder", "name": "aac", "flags": [] },
-        { "kind": "encoder", "name": "libfdk_aac", "flags": [] },
-        { "kind": "encoder", "name": "flac", "flags": [] },
-        { "kind": "encoder", "name": "opus", "flags": ["experimental"] },
-        { "kind": "encoder", "name": "vorbis", "flags": ["experimental"] },
-        { "kind": "encoder", "name": "libopus", "flags": [] },
-        { "kind": "encoder", "name": "libvorbis", "flags": [] },
-        { "kind": "muxer", "name": "mp4", "flags": [] },
-        { "kind": "muxer", "name": "matroska", "flags": [] },
-        { "kind": "muxer", "name": "webm", "flags": [] }
+        {
+          "kind": "encoder",
+          "name": "libx264",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "libx265",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "libopenh264",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "h264_nvenc",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "h264_vaapi",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "aac",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "libfdk_aac",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "flac",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "opus",
+          "flags": [
+            "experimental"
+          ]
+        },
+        {
+          "kind": "encoder",
+          "name": "vorbis",
+          "flags": [
+            "experimental"
+          ]
+        },
+        {
+          "kind": "encoder",
+          "name": "libopus",
+          "flags": []
+        },
+        {
+          "kind": "encoder",
+          "name": "libvorbis",
+          "flags": []
+        },
+        {
+          "kind": "muxer",
+          "name": "mp4",
+          "flags": []
+        },
+        {
+          "kind": "muxer",
+          "name": "matroska",
+          "flags": []
+        },
+        {
+          "kind": "muxer",
+          "name": "webm",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "experimental_encoder", "detail": "原生 opus/vorbis encoder 为 experimental（A..X.D），生产编码必须用 libopus/libvorbis（C §3.1:42）" },
-        { "code": "probe_scope_partial", "detail": "248 encoders 仅关键命中转录；demuxer 全量面未清点，按需 L2 重探（C §3.1:42）" }
+        {
+          "code": "experimental_encoder",
+          "detail": "原生 opus/vorbis encoder 为 experimental（A..X.D），生产编码必须用 libopus/libvorbis（C §3.1:42）"
+        },
+        {
+          "code": "probe_scope_partial",
+          "detail": "248 encoders 仅关键命中转录；demuxer 全量面未清点，按需 L2 重探（C §3.1:42）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "可信低风险媒体输入可受限原生子进程；不可信媒体输入走隔离（RT-0.5-E §1 档位路由）",
@@ -52,7 +133,10 @@
       "capability_id": "media.ffprobe",
       "provider": "FFmpeg（ffmpeg-full）",
       "executable_path": "/usr/bin/ffprobe",
-      "version": { "normalized": "9.0.2", "raw": "ffprobe version 9.0.2 … libavformat 63.1.102" },
+      "version": {
+        "normalized": "9.0.2",
+        "raw": "ffprobe version 9.0.2 … libavformat 63.1.102"
+      },
       "binary_identity": {
         "sha256_prefix": "a2ae3d0209aec739",
         "sha256_full": null,
@@ -60,17 +144,32 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "ffmpeg-full", "version": "9.0.2-3.46" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "ffmpeg-full",
+          "version": "9.0.2-3.46"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "media-stream-probe", "flags": [] }
+        {
+          "kind": "format",
+          "name": "media-stream-probe",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "version_coupled", "detail": "与 media.ffmpeg 同包同版本演进，指纹联动失效（C §3.2:55）" }
+        {
+          "code": "version_coupled",
+          "detail": "与 media.ffmpeg 同包同版本演进，指纹联动失效（C §3.2:55）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "ffprobe 为只读探测面，输入风险容忍度高于 ffmpeg 转码面，仍按媒体输入风险路由（C §3.2:56）"
@@ -82,7 +181,10 @@
       "capability_id": "ocr.tesseract",
       "provider": "Tesseract OCR（tesseract 项目；leptonica 后端）",
       "executable_path": "/usr/bin/tesseract",
-      "version": { "normalized": "5.5.4", "raw": "tesseract 5.5.4 (leptonica-1.87.0, OpenMP 202111)" },
+      "version": {
+        "normalized": "5.5.4",
+        "raw": "tesseract 5.5.4 (leptonica-1.87.0, OpenMP 202111)"
+      },
       "binary_identity": {
         "sha256_prefix": "44e4c41d9986e8b2",
         "sha256_full": null,
@@ -90,19 +192,42 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "tesseract", "version": "5.5.4-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "tesseract",
+          "version": "5.5.4-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "language", "name": "chi_sim", "flags": [] },
-        { "kind": "language", "name": "eng", "flags": [] },
-        { "kind": "language", "name": "osd", "flags": [] }
+        {
+          "kind": "language",
+          "name": "chi_sim",
+          "flags": []
+        },
+        {
+          "kind": "language",
+          "name": "eng",
+          "flags": []
+        },
+        {
+          "kind": "language",
+          "name": "osd",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "language_missing", "detail": "chi_tra 语言包缺失须显式报告，禁止静默降级为 chi_sim 兜底（C §3.3:68，设计 §3.4）；tessdata=/usr/share/tessdata/" }
+        {
+          "code": "language_missing",
+          "detail": "chi_tra 语言包缺失须显式报告，禁止静默降级为 chi_sim 兜底（C §3.3:68，设计 §3.4）；tessdata=/usr/share/tessdata/"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "输入为图像/PDF 渲染页 → 受限原生仅限可信低风险输入；像素数/页数/时长限额（OCR 内存随像素放大，C §3.3:69）",
@@ -114,41 +239,78 @@
     {
       "capability_id": "document.libreoffice",
       "provider": "LibreOffice（The Document Foundation；Arch 包 libreoffice-fresh）",
-      "executable_path": "/usr/lib/libreoffice/program/soffice",
-      "version": { "normalized": "26.8.2.2", "raw": "LibreOffice 26.8.2.2 680(Build:2)" },
+      "executable_path": "/usr/bin/soffice",
+      "version": {
+        "normalized": "26.8.2.2",
+        "raw": "LibreOffice 26.8.2.2 680(Build:2)"
+      },
       "binary_identity": {
         "sha256_prefix": "3d585422d7cdddf9",
-        "sha256_full": null,
+        "sha256_full": "3d585422d7cdddf9bcc954e7064da24c7e44d43508a5abaeb11de9d918d24f13",
         "file_type": "shell-script",
         "owner_mode": "root:root 755",
         "wrapper_target": {
           "executable_path": "/usr/lib/libreoffice/program/soffice.bin",
           "sha256_prefix": "baa182393db76be0",
-          "sha256_full": null,
+          "sha256_full": "baa182393db76be02cdf0ee22f3654177b00e3b945036927cfe54d4d2cbee2ad",
           "file_type": "elf-pie",
           "owner_mode": "root:root 755"
         }
       },
-      "package_provenance": { "pacman": { "name": "libreoffice-fresh", "version": "26.8.2-3" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "libreoffice-fresh",
+          "version": "26.8.2-3"
+        }
+      },
       "capabilities": [
-        { "kind": "component", "name": "writer", "flags": [] },
-        { "kind": "component", "name": "calc", "flags": [] },
-        { "kind": "component", "name": "impress", "flags": [] },
-        { "kind": "format", "name": "headless-convert", "flags": [] }
+        {
+          "kind": "component",
+          "name": "writer",
+          "flags": []
+        },
+        {
+          "kind": "component",
+          "name": "calc",
+          "flags": []
+        },
+        {
+          "kind": "component",
+          "name": "impress",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "headless-convert",
+          "flags": []
+        }
       ],
       "status": "available",
-      "probe_timestamp": "2026-11-18",
+      "probe_timestamp": "2026-11-19",
       "constraints": [
-        { "code": "profile_isolation_required", "detail": "禁止并发共享同一用户 profile，运行时必须用隔离临时 profile（C §3.4:81，设计 §3.4）" },
-        { "code": "wrapper_fingerprint", "detail": "sh wrapper（soffice）与真实二进制（soffice.bin）指纹必须同时覆盖；审计以 soffice.bin 为准（C §3.4:81）" },
-        { "code": "probe_scope_partial", "detail": "headless 判定仅来自 --help，L3 smoke test 留待工具首次启用（C §3.4:81）" }
+        {
+          "code": "profile_isolation_required",
+          "detail": "禁止并发共享同一用户 profile，运行时必须用隔离临时 profile（C §3.4:81，设计 §3.4）"
+        },
+        {
+          "code": "wrapper_fingerprint",
+          "detail": "sh wrapper（soffice）与真实二进制（soffice.bin）指纹必须同时覆盖；审计以 soffice.bin 为准（C §3.4:81）"
+        },
+        {
+          "code": "probe_scope_partial",
+          "detail": "headless 判定仅来自 --help，L3 smoke test 留待工具首次启用（C §3.4:81）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "可信低风险 Office 文档可受限原生（隔离临时 profile + 非特权身份，C §3.4:82）",
-          "不明来源 Office 文档（宏/嵌入对象/ODF 漏洞面）优先 Podman 隔离；禁暴露宿主家目录/凭据"
+          "不明来源 Office 文档（宏/嵌入对象/ODF 漏洞面）优先 Podman 隔离；禁暴露宿主家目录/凭据",
+          "DI-1 裁决 B：派发面 binary=/usr/bin/soffice（同一物理文件符号链接，hash 不变；PATH=/usr/bin 为 wrapper 脚本核心工具链可用面，实测 exit 0 writer_pdf_Export）；wrapper_target 双钉由目录侧承载（本条 wrapper_target 前缀 + sha256_full），变量形态 exec 目标解析升级属 RT-4 前处理台账"
         ]
       },
       "search_name": null
@@ -157,7 +319,10 @@
       "capability_id": "convert.pandoc",
       "provider": "Pandoc（pandoc-cli，GHC 构建）",
       "executable_path": "/usr/bin/pandoc",
-      "version": { "normalized": "3.11", "raw": "pandoc 3.11 (Features: +server +lua, Lua 5.4)" },
+      "version": {
+        "normalized": "3.11",
+        "raw": "pandoc 3.11 (Features: +server +lua, Lua 5.4)"
+      },
       "binary_identity": {
         "sha256_prefix": "effb83b40a825d86",
         "sha256_full": null,
@@ -165,20 +330,47 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "pandoc-cli", "version": "3.11-87" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "pandoc-cli",
+          "version": "3.11-87"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "docx", "flags": [] },
-        { "kind": "format", "name": "html", "flags": [] },
-        { "kind": "format", "name": "latex", "flags": [] },
-        { "kind": "format", "name": "markdown", "flags": [] }
+        {
+          "kind": "format",
+          "name": "docx",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "html",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "latex",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "markdown",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "input_format_scope", "detail": "文本类转换为主，不承担 PDF 输入解析（PDF 输入走 poppler，C §3.5:94）；Lua 过滤器面默认不启用" }
+        {
+          "code": "input_format_scope",
+          "detail": "文本类转换为主，不承担 PDF 输入解析（PDF 输入走 poppler，C §3.5:94）；Lua 过滤器面默认不启用"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "可信/低风险文本输入可受限原生；HTML 输入注意资源与脚本面（--lua-filter 默认禁用，C §3.5:95）",
@@ -191,25 +383,43 @@
       "capability_id": "pdf.pdftotext",
       "provider": "Poppler（The Poppler Developers）",
       "executable_path": "/usr/bin/pdftotext",
-      "version": { "normalized": "26.11.0", "raw": "pdftotext version 26.11.0" },
+      "version": {
+        "normalized": "26.11.0",
+        "raw": "pdftotext version 26.11.0"
+      },
       "binary_identity": {
         "sha256_prefix": "f85872f94fb67433",
-        "sha256_full": null,
+        "sha256_full": "f85872f94fb67433d6fa411ea3a10c263205eada4622b48ccc700442ad29b13c",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "poppler", "version": "26.11.0-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "poppler",
+          "version": "26.11.0-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "pdf-text-extraction", "flags": [] }
+        {
+          "kind": "format",
+          "name": "pdf-text-extraction",
+          "flags": []
+        }
       ],
       "status": "available",
-      "probe_timestamp": "2026-11-18",
+      "probe_timestamp": "2026-11-19",
       "constraints": [
-        { "code": "version_coupled", "detail": "与 pdf.pdfinfo/pdf.pdftoppm 同包同版本，指纹联动失效；PDF 解析器漏洞暴露面随版本更新（C §3.6:107）" }
+        {
+          "code": "version_coupled",
+          "detail": "与 pdf.pdfinfo/pdf.pdftoppm 同包同版本，指纹联动失效；PDF 解析器漏洞暴露面随版本更新（C §3.6:107）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "可信低风险 PDF 受限原生（页数/时长/输出上限，C §3.6:108）",
@@ -222,25 +432,43 @@
       "capability_id": "pdf.pdfinfo",
       "provider": "Poppler",
       "executable_path": "/usr/bin/pdfinfo",
-      "version": { "normalized": "26.11.0", "raw": "pdfinfo version 26.11.0" },
+      "version": {
+        "normalized": "26.11.0",
+        "raw": "pdfinfo version 26.11.0"
+      },
       "binary_identity": {
         "sha256_prefix": "3bdf68a79b9a3c22",
-        "sha256_full": null,
+        "sha256_full": "3bdf68a79b9a3c221959c6278aa6f5db757e5b9a6c99fb39c3182d0ff1651ac3",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "poppler", "version": "26.11.0-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "poppler",
+          "version": "26.11.0-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "pdf-metadata-probe", "flags": [] }
+        {
+          "kind": "format",
+          "name": "pdf-metadata-probe",
+          "flags": []
+        }
       ],
       "status": "available",
-      "probe_timestamp": "2026-11-18",
+      "probe_timestamp": "2026-11-19",
       "constraints": [
-        { "code": "version_coupled", "detail": "同包联动（同 pdf.pdftotext，C §3.7:120）" }
+        {
+          "code": "version_coupled",
+          "detail": "同包联动（同 pdf.pdftotext，C §3.7:120）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "只读探测面；可信 PDF 受限原生，不明来源 PDF 仍按隔离路由（解析面与 pdftotext 同源，C §3.7:121）"
@@ -252,7 +480,10 @@
       "capability_id": "pdf.pdftoppm",
       "provider": "Poppler",
       "executable_path": "/usr/bin/pdftoppm",
-      "version": { "normalized": "26.11.0", "raw": "pdftoppm version 26.11.0" },
+      "version": {
+        "normalized": "26.11.0",
+        "raw": "pdftoppm version 26.11.0"
+      },
       "binary_identity": {
         "sha256_prefix": "ab0ef92375b618b8",
         "sha256_full": null,
@@ -260,17 +491,32 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "poppler", "version": "26.11.0-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "poppler",
+          "version": "26.11.0-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "pdf-page-render", "flags": [] }
+        {
+          "kind": "format",
+          "name": "pdf-page-render",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "version_coupled", "detail": "渲染像素/页数必须由调用方限额（分辨率×页数即内存放大器）；同包联动（C §3.8:133）" }
+        {
+          "code": "version_coupled",
+          "detail": "渲染像素/页数必须由调用方限额（分辨率×页数即内存放大器）；同包联动（C §3.8:133）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "渲染输出写入独立工作区，非特权身份（C §3.8:134）"
@@ -289,7 +535,10 @@
       "status": "missing",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "replacement_ruled", "detail": "缺失项；成熟替代已裁决——文本抽取 pdf.pdftotext、元数据 pdf.pdfinfo、渲染 pdf.pdftoppm + gs 10.08.0（RT-0.5-D §4.1:67-74，C §3.9:146）" }
+        {
+          "code": "replacement_ruled",
+          "detail": "缺失项；成熟替代已裁决——文本抽取 pdf.pdftotext、元数据 pdf.pdfinfo、渲染 pdf.pdftoppm + gs 10.08.0（RT-0.5-D §4.1:67-74，C §3.9:146）"
+        }
       ],
       "security_profile": {
         "allowed_call_modes": [],
@@ -304,34 +553,86 @@
       "capability_id": "image.magick",
       "provider": "ImageMagick Studio LLC",
       "executable_path": "/usr/bin/magick",
-      "version": { "normalized": "7.1.2-35", "raw": "ImageMagick 7.1.2-35 Q16-HDRI x86_64" },
+      "version": {
+        "normalized": "7.1.2-35",
+        "raw": "ImageMagick 7.1.2-35 Q16-HDRI x86_64"
+      },
       "binary_identity": {
         "sha256_prefix": "ff050139cbc6dbd9",
-        "sha256_full": null,
+        "sha256_full": "ff050139cbc6dbd93a5a50980c60693f8be0bbe49a0497ebdaf5a56595452a40",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "imagemagick", "version": "7.1.2.35-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "imagemagick",
+          "version": "7.1.2.35-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "policy", "name": "hdri", "flags": [] },
-        { "kind": "policy", "name": "openmp", "flags": [] },
-        { "kind": "delegate", "name": "gs", "flags": [] },
-        { "kind": "delegate", "name": "libreoffice", "flags": [] },
-        { "kind": "format", "name": "png", "flags": [] },
-        { "kind": "format", "name": "jpeg", "flags": [] },
-        { "kind": "format", "name": "webp", "flags": [] },
-        { "kind": "format", "name": "tiff", "flags": [] }
+        {
+          "kind": "policy",
+          "name": "hdri",
+          "flags": []
+        },
+        {
+          "kind": "policy",
+          "name": "openmp",
+          "flags": []
+        },
+        {
+          "kind": "delegate",
+          "name": "gs",
+          "flags": []
+        },
+        {
+          "kind": "delegate",
+          "name": "libreoffice",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "png",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "jpeg",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "webp",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "tiff",
+          "flags": []
+        }
       ],
       "status": "available",
-      "probe_timestamp": "2026-11-18",
+      "probe_timestamp": "2026-11-19",
       "constraints": [
-        { "code": "policy_empty_shell", "detail": "policy.xml 空壳（唯一生效 Undefined:none），PDF/PS/URL/MSL/MVG 高危面默认开放（C §3.10:159）" },
-        { "code": "alias_deprecated", "detail": "convert 别名带 IM7 deprecation WARNING 且本机无 IM6，Adapter 层统一走 magick（C §3.10:159）" },
-        { "code": "delegate_injection", "detail": "delegate 表含 curl/c2patool/darktable-cli 注入面（C §3.10:159）" }
+        {
+          "code": "policy_empty_shell",
+          "detail": "policy.xml 空壳（唯一生效 Undefined:none），PDF/PS/URL/MSL/MVG 高危面默认开放（C §3.10:159）"
+        },
+        {
+          "code": "alias_deprecated",
+          "detail": "convert 别名带 IM7 deprecation WARNING 且本机无 IM6，Adapter 层统一走 magick（C §3.10:159）"
+        },
+        {
+          "code": "delegate_injection",
+          "detail": "delegate 表含 curl/c2patool/darktable-cli 注入面（C §3.10:159）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "不可信图像/PDF 禁走宿主 magick 直连（无 policy 兜底），走 Podman/VM 隔离（C §3.10:160）",
@@ -344,7 +645,10 @@
       "capability_id": "archive.7z",
       "provider": "7-Zip（Igor Pavlov 官方 Linux 移植；p7zip 虚拟依赖解析到同包）",
       "executable_path": "/usr/bin/7z",
-      "version": { "normalized": "26.06", "raw": "7-Zip 26.06 (x64) : Copyright (c) 1999-2026 Igor Pavlov" },
+      "version": {
+        "normalized": "26.06",
+        "raw": "7-Zip 26.06 (x64) : Copyright (c) 1999-2026 Igor Pavlov"
+      },
       "binary_identity": {
         "sha256_prefix": "f802383f13b8331a",
         "sha256_full": "f802383f13b8331aabaf779def00a356c8d2b8148255170b75b03028f4d23ad4",
@@ -358,24 +662,67 @@
           "owner_mode": "root:root 755"
         }
       },
-      "package_provenance": { "pacman": { "name": "7zip", "version": "26.06-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "7zip",
+          "version": "26.06-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "7z", "flags": [] },
-        { "kind": "format", "name": "zip", "flags": [] },
-        { "kind": "format", "name": "tar", "flags": [] },
-        { "kind": "format", "name": "rar", "flags": [] },
-        { "kind": "format", "name": "gzip", "flags": [] },
-        { "kind": "format", "name": "xz", "flags": [] },
-        { "kind": "format", "name": "bzip2", "flags": [] },
-        { "kind": "format", "name": "zstd", "flags": [] }
+        {
+          "kind": "format",
+          "name": "7z",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "zip",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "tar",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "rar",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "gzip",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "xz",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "bzip2",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "zstd",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "wrapper_fingerprint", "detail": "唯一具备 Rar/Rar5 解码的 7-Zip 入口（经 7z.so 外挂库）；wrapper 哈希不等于真实 ELF 哈希，指纹必须覆盖两者（C §3.11:172）；列目录与解包分开授权" }
+        {
+          "code": "wrapper_fingerprint",
+          "detail": "唯一具备 Rar/Rar5 解码的 7-Zip 入口（经 7z.so 外挂库）；wrapper 哈希不等于真实 ELF 哈希，指纹必须覆盖两者（C §3.11:172）；列目录与解包分开授权"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "不明来源归档禁在宿主直解——路径穿越/符号链接/压缩炸弹独立防护后仍按隔离优先（C §3.11:173）",
@@ -388,7 +735,10 @@
       "capability_id": "archive.7za",
       "provider": "7-Zip（独立静态构建）",
       "executable_path": "/usr/bin/7za",
-      "version": { "normalized": "26.06", "raw": "7-Zip (a) 26.06 (x64)" },
+      "version": {
+        "normalized": "26.06",
+        "raw": "7-Zip (a) 26.06 (x64)"
+      },
       "binary_identity": {
         "sha256_prefix": "4566c6e82f8147dc",
         "sha256_full": null,
@@ -402,21 +752,51 @@
           "owner_mode": "root:root 755"
         }
       },
-      "package_provenance": { "pacman": { "name": "7zip", "version": "26.06-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "7zip",
+          "version": "26.06-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "7z", "flags": [] },
-        { "kind": "format", "name": "zip", "flags": [] },
-        { "kind": "format", "name": "gzip", "flags": [] },
-        { "kind": "format", "name": "xz", "flags": [] }
+        {
+          "kind": "format",
+          "name": "7z",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "zip",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "gzip",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "xz",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "format_subset", "detail": "Rar 不可用（选 7za 时 Rar 输入必须显式失败并路由到 archive.7z 或拒绝，不静默降级，C §3.12:185）" },
-        { "code": "wrapper_fingerprint", "detail": "sh wrapper → /usr/lib/7zip/7za；exec 目标前缀本批未取证（不编造），指纹覆盖留完整探测面（C §3.12:181）" }
+        {
+          "code": "format_subset",
+          "detail": "Rar 不可用（选 7za 时 Rar 输入必须显式失败并路由到 archive.7z 或拒绝，不静默降级，C §3.12:185）"
+        },
+        {
+          "code": "wrapper_fingerprint",
+          "detail": "sh wrapper → /usr/lib/7zip/7za；exec 目标前缀本批未取证（不编造），指纹覆盖留完整探测面（C §3.12:181）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "同 archive.7z；格式子集更窄，适合低风险常规归档（C §3.12:186）"
@@ -428,7 +808,10 @@
       "capability_id": "archive.7zr",
       "provider": "7-Zip（精简版，Public domain）",
       "executable_path": "/usr/bin/7zr",
-      "version": { "normalized": "26.06", "raw": "7-Zip (r) 26.06 (x64)" },
+      "version": {
+        "normalized": "26.06",
+        "raw": "7-Zip (r) 26.06 (x64)"
+      },
       "binary_identity": {
         "sha256_prefix": "1c5de14f5ac7ac74",
         "sha256_full": null,
@@ -442,19 +825,41 @@
           "owner_mode": "root:root 755"
         }
       },
-      "package_provenance": { "pacman": { "name": "7zip", "version": "26.06-1.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "7zip",
+          "version": "26.06-1.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "7z", "flags": [] },
-        { "kind": "format", "name": "xz", "flags": [] }
+        {
+          "kind": "format",
+          "name": "7z",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "xz",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "format_subset", "detail": "无 zip/tar/rar 面（C §3.13:198）" },
-        { "code": "wrapper_fingerprint", "detail": "sh wrapper → /usr/lib/7zip/7zr；exec 目标前缀本批未取证（不编造），指纹覆盖留完整探测面（C §3.13:195）" }
+        {
+          "code": "format_subset",
+          "detail": "无 zip/tar/rar 面（C §3.13:198）"
+        },
+        {
+          "code": "wrapper_fingerprint",
+          "detail": "sh wrapper → /usr/lib/7zip/7zr；exec 目标前缀本批未取证（不编造），指纹覆盖留完整探测面（C §3.13:195）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "同 archive.7z；仅 7z 原生格式场景（C §3.13:199）"
@@ -466,7 +871,10 @@
       "capability_id": "archive.bsdtar",
       "provider": "libarchive 项目（bsdtar 前端）",
       "executable_path": "/usr/bin/bsdtar",
-      "version": { "normalized": "3.8.11", "raw": "bsdtar 3.8.11 - libarchive 3.8.11" },
+      "version": {
+        "normalized": "3.8.11",
+        "raw": "bsdtar 3.8.11 - libarchive 3.8.11"
+      },
       "binary_identity": {
         "sha256_prefix": "0081c8f3e9820eae",
         "sha256_full": null,
@@ -474,19 +882,42 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "libarchive", "version": "3.8.11-2.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "libarchive",
+          "version": "3.8.11-2.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "tar", "flags": [] },
-        { "kind": "format", "name": "cpio", "flags": [] },
-        { "kind": "format", "name": "pax", "flags": [] }
+        {
+          "kind": "format",
+          "name": "tar",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "cpio",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "pax",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "probe_scope_partial", "detail": "L2 格式探测对 bsdtar 不适用（Option --formats is not supported, exit 1）；能力声明以 libarchive 版本行承载（C §3.14:211）" }
+        {
+          "code": "probe_scope_partial",
+          "detail": "L2 格式探测对 bsdtar 不适用（Option --formats is not supported, exit 1）；能力声明以 libarchive 版本行承载（C §3.14:211）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "tar 家族的路径穿越/符号链接防护是第一风险（pax 扩展头可携带绝对路径/链接目标，C §3.14:212）"
@@ -498,7 +929,10 @@
       "capability_id": "archive.unzip",
       "provider": "Info-ZIP",
       "executable_path": "/usr/bin/unzip",
-      "version": { "normalized": "6.00", "raw": "UnZip 6.00 of 20 April 2009, by Info-ZIP." },
+      "version": {
+        "normalized": "6.00",
+        "raw": "UnZip 6.00 of 20 April 2009, by Info-ZIP."
+      },
       "binary_identity": {
         "sha256_prefix": "15f733fefed8de50",
         "sha256_full": null,
@@ -506,17 +940,32 @@
         "owner_mode": "root:root 755",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "unzip", "version": "6.0-23.1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "unzip",
+          "version": "6.0-23.1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "zip", "flags": [] }
+        {
+          "kind": "format",
+          "name": "zip",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "legacy_implementation", "detail": "2009 年发布的旧实现；zip64/新压缩方法支持面未知，未见 L2 清单；与 archive.7z 的 zip 面功能重叠（C §3.15:224）" }
+        {
+          "code": "legacy_implementation",
+          "detail": "2009 年发布的旧实现；zip64/新压缩方法支持面未知，未见 L2 清单；与 archive.7z 的 zip 面功能重叠（C §3.15:224）"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "zip 路径穿越（../ 条目）与炸弹防护必须独立实现；上量场景优先 archive.7z（C §3.15:225）"
@@ -528,7 +977,10 @@
       "capability_id": "meta.exiftool",
       "provider": "ExifTool（Phil Harvey；perl-image-exiftool 包）",
       "executable_path": "/usr/bin/vendor_perl/exiftool",
-      "version": { "normalized": "13.55", "raw": "13.55" },
+      "version": {
+        "normalized": "13.55",
+        "raw": "13.55"
+      },
       "binary_identity": {
         "sha256_prefix": "80e0018c48f93244",
         "sha256_full": null,
@@ -536,19 +988,42 @@
         "owner_mode": "root:root 555",
         "wrapper_target": null
       },
-      "package_provenance": { "pacman": { "name": "perl-image-exiftool", "version": "13.55-1" } },
+      "package_provenance": {
+        "pacman": {
+          "name": "perl-image-exiftool",
+          "version": "13.55-1"
+        }
+      },
       "capabilities": [
-        { "kind": "format", "name": "image-metadata", "flags": [] },
-        { "kind": "format", "name": "av-metadata", "flags": [] },
-        { "kind": "format", "name": "document-metadata", "flags": [] }
+        {
+          "kind": "format",
+          "name": "image-metadata",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "av-metadata",
+          "flags": []
+        },
+        {
+          "kind": "format",
+          "name": "document-metadata",
+          "flags": []
+        }
       ],
       "status": "available",
       "probe_timestamp": "2026-11-18",
       "constraints": [
-        { "code": "trust_prefix_exclusion", "detail": "所在目录 /usr/bin/vendor_perl 不在受信前缀集合（PATH 审计 candidateTrust=NO；目录本身 root 属主 755 不可写，C §3.16:237）；调用必须固定绝对路径 + 包归属校验，禁止裸 PATH 解析" }
+        {
+          "code": "trust_prefix_exclusion",
+          "detail": "所在目录 /usr/bin/vendor_perl 不在受信前缀集合（PATH 审计 candidateTrust=NO；目录本身 root 属主 755 不可写，C §3.16:237）；调用必须固定绝对路径 + 包归属校验，禁止裸 PATH 解析"
+        }
       ],
       "security_profile": {
-        "allowed_call_modes": ["restricted_native_subprocess", "isolated_container"],
+        "allowed_call_modes": [
+          "restricted_native_subprocess",
+          "isolated_container"
+        ],
         "max_input_risk": "trusted_low_risk",
         "notes": [
           "Perl 脚本形态，指纹审计覆盖脚本文件本体（C §3.16:237）",

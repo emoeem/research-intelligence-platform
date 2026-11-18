@@ -1,0 +1,120 @@
+{
+  "schema_version": "1",
+  "id": "rip.doc.pdf.info",
+  "name": "PDF Info Probe (native)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "PDF 元数据/页数/页尺寸探测（DI-1 ADR D3 PDF 通道首步）：pdfinfo 报告文本解析 Pages/Page size/PDF version/Producer；本机 poppler 26.11.0 无 -json 旗标（-h 实测零命中），Router 以行解析承载（D3 否决项 JSON 假设）。result_mode=file：raw CLI 无帧可发（DI-1 ADR D4），exit 0 → 产物收集 data，stdout 留档 out/stdout.log 为 Router 规范化取材面。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/pdfinfo",
+    "binary_sha256": "3bdf68a79b9a3c221959c6278aa6f5db757e5b9a6c99fb39c3182d0ff1651ac3",
+    "capability_ref": "pdf.pdfinfo",
+    "argv_template": [
+      "{{input_path}}"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3 防任意文件读取）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "sample.pdf"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/pdfinfo",
+    "license": "GPL-2.0-only OR GPL-3.0-only",
+    "dependencies": [
+      "poppler 26.11.0-1.1 sha256_prefix 3bdf68a79b9a3c22（pdfinfo）"
+    ],
+    "tested": "DI-1 e2e：sample.pdf 子 run SUCCEEDED（Pages: 2 页锚 2 段），crates/document-router/tests/",
+    "known_limits": [
+      "报告文本行解析（本机无 -json 旗标，D3 否决项）",
+      "页数帽 2000 页 Router 门内承载（D7 #7）；超帽链中止并如实报错",
+      "不明来源 PDF 按输入风险档位路由隔离（RT-0.5-E §1，本 Manifest 仅承载可信低风险档）"
+    ]
+  }
+}

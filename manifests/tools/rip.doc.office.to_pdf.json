@@ -1,0 +1,147 @@
+{
+  "schema_version": "1",
+  "id": "rip.doc.office.to_pdf",
+  "name": "Office Convert To PDF (native)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "Office→PDF 转换（DI-1 ADR D3 Office 通道首步）：soffice --headless 隔离临时 profile --convert-to pdf（本机实测唯一不挂死面；--convert-to txt:Text 与 --cat 三形态挂死 exit 124/143 禁登过滤器，D3 否决项）。wrapper 双钉：soffice（sh wrapper）与 soffice.bin（真实二进制）指纹同时覆盖（C §5.1:270）；隔离临时 profile 由 {{profile_uri}} 槽位承载——Router 结构化构造 file:/// 本 run tmp/ 派生 URI（profile 位于 tmp/ 由 adapter cleanup_tmp 用后即焚，E §4.2 禁共享 profile 结构成立）。转换产物 out/<staged stem>.pdf 由 Router 确定性回读并级联 PDF 通道两子 run。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/soffice",
+    "binary_sha256": "3d585422d7cdddf9bcc954e7064da24c7e44d43508a5abaeb11de9d918d24f13",
+    "capability_ref": "document.libreoffice",
+    "argv_template": [
+      "--headless",
+      "--norestore",
+      "{{profile_uri}}",
+      "--convert-to",
+      "{{out_format}}",
+      "--outdir",
+      "{{out_dir}}",
+      "{{input_path}}"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path",
+      "profile_uri",
+      "out_format"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      },
+      "profile_uri": {
+        "type": "string",
+        "pattern": "^file:///",
+        "description": "隔离临时 profile URI（file:/// 本 run tmp/ 派生；每 run 唯一，E §4.2 禁共享 profile）"
+      },
+      "out_format": {
+        "type": "string",
+        "enum": [
+          "pdf"
+        ],
+        "description": "转换目标格式（pdf 唯一合法值：txt/cat 过滤器本机挂死禁登，D3 否决项）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "16Gi",
+    "timeout_seconds": 120,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "sample.docx",
+        "profile_uri": "file:///home/u/rip-runtime/workspaces/rn-x/tmp/lo-profile",
+        "out_format": "pdf"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/soffice",
+    "license": "MPL-2.0",
+    "dependencies": [
+      "libreoffice-fresh 26.8.2-3 wrapper sha256_prefix 3d585422d7cdddf9（/usr/bin/soffice 发行版符号链接 → 同一物理文件）；exec 目标（soffice.bin）钉值由 Capability Catalog 目录侧承载：document.libreoffice wrapper_target sha256_prefix baa182393db76be0 + sha256_full 回填（DI-1 偏差裁决 B：RT-1 verify_wrapper_target 仅识别静态 exec 形态，变量形态 $sd_prog/oosplash 在场即 fail-closed——Manifest 钉 wrapper hash 传递性钉死 exec 行为 + 目录钉 resolved target 分层承载）"
+    ],
+    "tested": "DI-1 e2e：sample.docx soffice 子 run SUCCEEDED（writer_pdf_Export，out/sample.pdf 产物登记），crates/document-router/tests/",
+    "known_limits": [
+      "D3 调和裁决 B：runtime.binary=/usr/bin/soffice（PATH=/usr/bin 使 wrapper 脚本核心工具链可用，实测 exit 0 writer_pdf_Export）；binary_target_sha256 不入 Manifest（RT-1 解析器静态形态限界），双钉 = Manifest 钉 wrapper hash + Catalog 目录钉 resolved target（seed document.libreoffice wrapper_target）",
+      "内存帽实测定值 16Gi（D7 表 512Mi 为 RLIMIT_AS 实测推翻）：本机 LibreOffice 26.8.2.2 分配器与 RLIMIT_AS 结构性敏感——512Mi bad_alloc / 1Gi-4Gi segv / 8Gi abort / 16Gi exit 0 全阶梯 2026-11-19 实测；adapter Auto 档 prlimit 兜底（RT-1 G 遗留 1）即按此帽强制 --as=16Gi；systemd-run MemoryMax 缝恢复更紧帽时按届时实测收紧",
+      "每 run 隔离临时 profile（run_id 派生），禁共享 profile、禁常驻 soffice 实例复用（E §4.2）；office 通道测试 --test-threads=1",
+      "env 白名单最小集（PATH/TMPDIR/LANG）本机实测通过，无需 HOME/XDG 追加（RT-1 D4 + D3 特化实测）",
+      "转换损失如实呈现：Router 统一输出 warnings 携带 office→pdf 转换面声明，不伪装直抽",
+      "时长帽 120s（D7 #6：fresh profile 初始化 4.4s 实测 ×20 余量）；内存帽口径见上一条 16Gi 实测定值（D7 调和裁决，512Mi 已被 RLIMIT_AS 实测推翻）",
+      "不明来源 Office 文档（宏/嵌入对象）按输入风险档位路由隔离（RT-0.5-E §1；C §3.4:82）"
+    ]
+  }
+}

@@ -48,11 +48,17 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tool_engine::adapter::{
-    execute_container_via_engine, execute_via_engine, AdapterCall, ContainerCall, NetworkPlan,
-    PodmanHostAdapter, PodmanHostConfig, PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
+    execute_container_via_engine, execute_via_engine, AdapterCall, ContainerCall,
+    NativeRustAdapter, NativeRustConfig, NetworkPlan, PodmanHostAdapter, PodmanHostConfig,
+    PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };
+use tool_engine::capability::StaticCatalogProvider;
 use tool_engine::{DriveOutcome, Engine, EngineError};
 use tool_registry::Registry;
+
+// DI-1 S5：native_rust 派发分支消费面（D2：Router 是文档域编排层，派发链
+// 复用同一引擎受理/状态机/信封，不建第二事实源）。
+use document_router::{RouteStatus, Router, RouterConfig, RouterManifests};
 
 /// run_tool 入参词表外的键一律拒绝（D-TC-06 同款 fail-closed，不静默忽略）。
 const RUN_TOOL_ARG_KEYS: [&str; 7] = [
@@ -87,6 +93,15 @@ pub struct RunChannel {
     /// python worker 进程 working_dir（rp-workflow 同款：bin 缺省当前目录，
     /// 即仓库根执行纪律；测试注入仓库根）。
     pub working_dir: Option<PathBuf>,
+    /// DI-1 native_rust 分支受信文档输入根（`input.input_path` 相对名在其内
+    /// 解析；宿主路径不入 ToolCallRequest——D-TC-06 请求键面不变，根由
+    /// RunChannel 配置承载，与 adapter 同信任位，DI-1 ADR D5）。bin 层
+    /// RP_DOC_INPUT_ROOT，缺省 rip-data/documents。
+    pub document_input_root: PathBuf,
+    /// Capability 目录种子路径（native_rust 分支 StaticCatalogProvider::load
+    /// 来源；bin 层 RP_CAPABILITY_SEED，缺省 manifests/capabilities/
+    /// host-catalog-seed.json）。
+    pub capability_seed_path: PathBuf,
 }
 
 impl RunChannel {
@@ -101,7 +116,8 @@ impl RunChannel {
         .map_err(|e| format!("run db open failed: {e}"))?;
         // WAL 显式开启（RIP3 P1-1，R2 §6.9）：运行库为高频写面；只读面
         // （open_pool_readonly）与生产 platform*.db 不受影响。
-        pool.enable_wal().map_err(|e| format!("run db wal failed: {e}"))?;
+        pool.enable_wal()
+            .map_err(|e| format!("run db wal failed: {e}"))?;
         database::migrate(&pool, &self.migrations_dir)
             .map_err(|e| format!("run db migrate failed: {e}"))?;
         Ok(pool)
@@ -142,11 +158,9 @@ impl RunChannel {
                     continue;
                 };
                 let parsed: Result<Value, String> = if text.trim_start().starts_with('{') {
-                    serde_json::from_str::<Value>(&text)
-                        .map_err(|e| e.to_string())
+                    serde_json::from_str::<Value>(&text).map_err(|e| e.to_string())
                 } else {
-                    serde_yaml_ng::from_str::<Value>(&text)
-                        .map_err(|e| e.to_string())
+                    serde_yaml_ng::from_str::<Value>(&text).map_err(|e| e.to_string())
                 };
                 let Ok(value) = parsed else { continue };
                 if value.get("id").and_then(Value::as_str) == Some(tool_id) {
@@ -163,9 +177,9 @@ impl RunChannel {
     /// rip.run_tool：受理 + 派发 + 登记（返回 MCP tools/call 载荷；
     /// Err 载荷 = isError=true 的结构化结果，不伪造成功）。
     pub fn run_tool(&self, args: &Value) -> Result<Value, Value> {
-        let obj = args.as_object().ok_or_else(|| {
-            err_payload("run_tool arguments must be a JSON object", "VALIDATION")
-        })?;
+        let obj = args
+            .as_object()
+            .ok_or_else(|| err_payload("run_tool arguments must be a JSON object", "VALIDATION"))?;
         for key in obj.keys() {
             if !RUN_TOOL_ARG_KEYS.contains(&key.as_str()) {
                 return Err(err_payload(
@@ -178,9 +192,15 @@ impl RunChannel {
             return Err(err_payload("run_tool 需要 tool_id", "VALIDATION"));
         };
         let Some(input) = obj.get("input").filter(|v| v.is_object()) else {
-            return Err(err_payload("run_tool 需要 object 形态的 input", "VALIDATION"));
+            return Err(err_payload(
+                "run_tool 需要 object 形态的 input",
+                "VALIDATION",
+            ));
         };
-        let task_id = obj.get("task_id").and_then(Value::as_str).map(str::to_string);
+        let task_id = obj
+            .get("task_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let authorization_ref = obj
             .get("authorization_ref")
             .and_then(Value::as_str)
@@ -198,9 +218,9 @@ impl RunChannel {
 
         let pool = self.open_pool().map_err(|e| err_payload(&e, "INFRA"))?;
         let engine = Engine::open(pool.clone(), Registry::open(pool.clone()));
-        let manifest = self.manifest_for(tool_id).map_err(|e| {
-            err_payload(&e, "VALIDATION")
-        })?;
+        let manifest = self
+            .manifest_for(tool_id)
+            .map_err(|e| err_payload(&e, "VALIDATION"))?;
         let runtime_type = manifest
             .get("runtime")
             .and_then(|r| r.get("type"))
@@ -245,7 +265,9 @@ impl RunChannel {
             "podman_host" | "podman_vm" => {
                 let gateway = self.container_gateway(&engine, &pool)?;
                 let dispatched = gateway.dispatch(&request).map_err(|e| match e {
-                    runtime_gateway::GatewayError::Engine(engine_err) => rejection_payload(engine_err),
+                    runtime_gateway::GatewayError::Engine(engine_err) => {
+                        rejection_payload(engine_err)
+                    }
                     other => err_payload(&format!("gateway dispatch failed: {other}"), "INFRA"),
                 })?;
                 match dispatched {
@@ -270,10 +292,134 @@ impl RunChannel {
                     }
                 }
             }
+            "native_rust" => {
+                // DI-1 S5 native_rust 派发分支（RT-1 批次报告 G 遗留 #2 消费；
+                // DI-1 ADR D2/D7/D8）：承载范围 = DI-1 通道表四工具。路由以
+                // 嗅探签名权威（D6，tool_id 为链入口不覆写嗅探——判据 9）；
+                // 前置门 INPUT 拒绝无 run 行（D7）；链级失败以错误载荷 + 子
+                // run 行留证（D8）；子 run 经 submit_correlated trace_id =
+                // run_id 自锚定（REST /api/traces 可反查，判据 10）。外层无
+                // facade run（D7：避免发明第二个状态机路径，审计锚升级属
+                // DI-3），故不走 terminal_payload 单 run 信封投影。
+                let router_manifests = RouterManifests::from_dirs(&self.manifest_dirs)
+                    .map_err(|e| err_payload(&e, "INFRA"))?;
+                if !router_manifests.contains(tool_id) {
+                    return Err(err_payload(
+                        &format!(
+                            "tool {tool_id} is a native_rust tool outside the DI-1 document channel table (D3: rip.doc.pdf.info / rip.doc.pdf.text / rip.doc.office.to_pdf / rip.doc.image.meta); dedicated dispatch comes with its own batch"
+                        ),
+                        "VALIDATION",
+                    ));
+                }
+                let rel = input
+                    .get("input_path")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        err_payload(
+                            "native_rust document dispatch requires input.input_path (relative name inside the configured document input root; host paths never enter ToolCallRequest, D-TC-06)",
+                            "VALIDATION",
+                        )
+                    })?;
+                let source = resolve_document_input(&self.document_input_root, rel)
+                    .map_err(|e| err_payload(&e, "VALIDATION"))?;
+                // D7 #7 输入 64 MiB 帽 stat 前置（评审修订 2026-11-19）：帽在
+                // fs::read 全量读入之前判定——D7「Router 嗅探前 stat 检查」
+                // 的派发面承载点。此前实现先 read 全量再由 route() 对
+                // bytes_len 判帽，帽生效前全量内存读入已完成，受信输入根内
+                // 超大文件构成内存放大缝；stat 超帽不读入（码/帽值与 route()
+                // 门同源：RouterReject::input_too_large +
+                // channel::MAX_INPUT_FILE_BYTES）。
+                let input_len = std::fs::metadata(&source)
+                    .map_err(|e| {
+                        err_payload(
+                            &format!("document input {} stat failed: {e}", source.display()),
+                            "VALIDATION",
+                        )
+                    })?
+                    .len();
+                if input_len > document_router::channel::MAX_INPUT_FILE_BYTES {
+                    return Err(document_router::error::RouterReject::input_too_large(
+                        input_len,
+                        document_router::channel::MAX_INPUT_FILE_BYTES,
+                    )
+                    .to_payload());
+                }
+                let bytes = std::fs::read(&source).map_err(|e| {
+                    err_payload(
+                        &format!("document input {} read failed: {e}", source.display()),
+                        "VALIDATION",
+                    )
+                })?;
+                let name = source
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("document")
+                    .to_string();
+                let ext = source
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                let provider =
+                    StaticCatalogProvider::load(&self.capability_seed_path).map_err(|e| {
+                        err_payload(&format!("capability seed load failed: {e}"), "INFRA")
+                    })?;
+                let adapter = NativeRustAdapter::new(NativeRustConfig {
+                    workspace_root: self.workspaces_root.clone(),
+                    node_id: self.runtime_node_id.clone(),
+                    ..NativeRustConfig::default()
+                });
+                let router = Router::new(
+                    RouterConfig {
+                        workspace_root: self.workspaces_root.clone(),
+                    },
+                    router_manifests,
+                );
+                let outcome = router
+                    .route(&engine, &adapter, Some(&provider), &bytes, &name, &ext)
+                    .map_err(|reject| reject.to_payload())?;
+                let run_summaries: Vec<Value> = outcome
+                    .runs
+                    .iter()
+                    .map(|r| {
+                        json!({
+                            "run_id": r.run_id,
+                            "tool_id": r.tool_id,
+                            "status": r.outcome.envelope.status.as_str(),
+                        })
+                    })
+                    .collect();
+                match outcome.status {
+                    RouteStatus::Failed => {
+                        let reject = outcome.reject.expect("Failed carries D8 reject");
+                        return Err(json!({
+                            "ok": false,
+                            "error": {
+                                "category": reject.category,
+                                "code": reject.code,
+                                "message": reject.message,
+                                "retryable": reject.retryable,
+                            },
+                            "runs": run_summaries,
+                            "note": "链级失败（D8）：子 run 行已在库保持真实终态（rip.get_run_status 可查）；外层 facade run 审计锚属 DI-3（D7）"
+                        }));
+                    }
+                    RouteStatus::Succeeded => {
+                        return Ok(json!({
+                        "ok": true,
+                        "router": "document-router",
+                        "channel": unified_channel(&outcome),
+                        "result": outcome.unified.expect("Succeeded carries D3 unified output"),
+                        "runs": run_summaries,
+                        "trace_note": "子 run trace_id = run_id 自锚定（REST /api/traces 可反查，判据 10）"
+                        }));
+                    }
+                }
+            }
             other => {
                 return Err(err_payload(
                     &format!(
-                        "tool {tool_id} runtime type {other:?} 不在本面承载范围（python_worker / podman_host / podman_vm）"
+                        "tool {tool_id} runtime type {other:?} 不在本面承载范围（python_worker / podman_host / podman_vm / native_rust）"
                     ),
                     "VALIDATION",
                 ));
@@ -286,9 +432,9 @@ impl RunChannel {
     /// rip.get_run_status：运行库只读投影（run 行在场即真实状态；不经过
     /// 引擎状态机，纯读面，rp_server /api/runs 同款只读语义）。
     pub fn run_status(&self, run_id: &str) -> Result<Value, Value> {
-        let pool = self.open_pool_readonly().map_err(|e| {
-            err_payload(&e, "INFRA")
-        })?;
+        let pool = self
+            .open_pool_readonly()
+            .map_err(|e| err_payload(&e, "INFRA"))?;
         let conn = pool
             .with_conn(|c| {
                 let mut stmt = c.prepare(
@@ -321,7 +467,10 @@ impl RunChannel {
             })
             .map_err(|e| err_payload(&format!("run db read failed: {e}"), "INFRA"))?;
         let Some(mut row) = conn else {
-            return Err(err_payload(&format!("run {run_id:?} not found"), "VALIDATION"));
+            return Err(err_payload(
+                &format!("run {run_id:?} not found"),
+                "VALIDATION",
+            ));
         };
         // Artifact / Evidence 引用计数与 id 列表（引用面，供外部 AI 持引用取件）。
         let conn = pool.with_conn(|c| {
@@ -353,12 +502,11 @@ impl RunChannel {
             Ok::<(Vec<Value>, Vec<Value>), database::rusqlite::Error>((list, ev_list))
         }).map_err(|e| err_payload(&format!("run db read failed: {e}"), "INFRA"))?;
         row["artifacts"] = json!(conn.0);
-        row["evidence_refs"] = json!(
-            conn.1
-                .iter()
-                .map(|e| e["evidence_id"].clone())
-                .collect::<Vec<_>>()
-        );
+        row["evidence_refs"] = json!(conn
+            .1
+            .iter()
+            .map(|e| e["evidence_id"].clone())
+            .collect::<Vec<_>>());
         row["evidence"] = json!(conn.1);
         Ok(row)
     }
@@ -526,7 +674,12 @@ impl RunChannel {
                 // 传播，/api/traces 经 evidence 探针也可反查本 run）。
                 trace_id: Some(envelope.run_id.clone()),
             })
-            .map_err(|e| err_payload(&format!("artifact/evidence registration failed: {e}"), "INFRA"))?;
+            .map_err(|e| {
+                err_payload(
+                    &format!("artifact/evidence registration failed: {e}"),
+                    "INFRA",
+                )
+            })?;
         envelope.evidence_refs = vec![registered.evidence_id.clone()];
 
         let succeeded = envelope.status == domain::ToolRunStatus::Succeeded;
@@ -615,9 +768,72 @@ fn new_run_id() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
-    hasher.write(format!("{nanos}|{salt_a:x}{salt_b:x}|{seq}|{}|mcp-server", std::process::id()).as_bytes());
+    hasher.write(
+        format!(
+            "{nanos}|{salt_a:x}{salt_b:x}|{seq}|{}|mcp-server",
+            std::process::id()
+        )
+        .as_bytes(),
+    );
     let digest = hasher.finish();
     format!("rn-{digest:016x}{seq:08x}")
+}
+
+/// 统一输出 channel 读面（Succeeded 信封必在位）。
+fn unified_channel(outcome: &document_router::RouteOutcome) -> Value {
+    outcome
+        .unified
+        .as_ref()
+        .and_then(|u| u.get("channel").cloned())
+        .unwrap_or(Value::Null)
+}
+
+/// 受信文档输入根内相对名解析（词法归一 + 前缀强制；adapter
+/// resolve_input_path 同规则——穿越/绝对注入拒绝，D5/D8.3 边界不放松）。
+fn resolve_document_input(root: &std::path::Path, rel: &str) -> Result<PathBuf, String> {
+    if rel.is_empty() {
+        return Err("document input name is empty".to_string());
+    }
+    if rel.contains('\0') || rel.contains('\n') || rel.contains('\r') {
+        return Err(format!(
+            "document input name {rel:?} carries NUL/newline (rejected)"
+        ));
+    }
+    let root_canon = root.canonicalize().map_err(|e| {
+        format!(
+            "document input root {} canonicalize failed: {e}",
+            root.display()
+        )
+    })?;
+    let joined = root.join(rel);
+    let resolved = if joined.exists() {
+        joined
+            .canonicalize()
+            .map_err(|e| format!("document input {rel:?} canonicalize failed: {e}"))?
+    } else {
+        lexical_normalize(&joined)
+    };
+    if !resolved.starts_with(&root_canon) {
+        return Err(format!(
+            "document input {rel:?} resolves outside the configured document input root (path traversal denied)"
+        ));
+    }
+    Ok(resolved)
+}
+
+/// 词法路径归一（消解 `.`/`..`，不触文件系统；adapter 同款）。
+fn lexical_normalize(path: &std::path::Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// python_worker 适配器装配（worker_name / command 取自 Manifest runtime
@@ -690,9 +906,8 @@ impl RunChannel {
             .open_pool_readonly()
             .map_err(|e| format!("run db open failed: {e}"))?;
         pool.with_conn(|c| {
-            let mut stmt = c.prepare(
-                "SELECT input_schema, output_schema FROM tool WHERE tool_id = ?1",
-            )?;
+            let mut stmt =
+                c.prepare("SELECT input_schema, output_schema FROM tool WHERE tool_id = ?1")?;
             let mut rows = stmt.query_map([tool_id], |r| {
                 Ok((
                     r.get::<_, Option<String>>(0)?,

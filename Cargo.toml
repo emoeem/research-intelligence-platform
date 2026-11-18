@@ -24,6 +24,7 @@ members = [
     "crates/wsw-message",
     "crates/wsw-runtime",
     "crates/wsw-poc",
+    "crates/document-router",
     "tests",
 ]
 
@@ -95,6 +96,9 @@ unified-search = { path = "crates/unified-search" }
 quality-engine = { path = "crates/quality-engine" }
 tool-registry = { path = "crates/tool-registry" }
 tool-engine = { path = "crates/tool-engine" }
+# DI-1 ADR D1：文档域编排层（Router 只消费两 crate 公开面，不进 tool-engine
+# 内模块——层次倒挂否决项见 D1；成员条目进 lock 是常态事实，wsw-message 同款）。
+document-router = { path = "crates/document-router" }
 runtime-gateway = { path = "crates/runtime-gateway" }
 context-broker = { path = "crates/context-broker" }
 plugin-registry = { path = "crates/plugin-registry" }

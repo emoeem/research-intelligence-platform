@@ -68,6 +68,41 @@ const KILL_GRACE_TIMEOUT: Duration = Duration::from_secs(2);
 /// killpg 优雅窗口：取消路径 3s（D6）。
 const KILL_GRACE_CANCEL: Duration = Duration::from_secs(3);
 
+/// 结果面双模（DI-1-ADR D4，唯一 additive 增量）：`frame` = RT-1 既有帧协议
+/// （stdout 首行 `{"status":"result",...}`，缺省，行为零改动）；`file` =
+/// raw CLI 形态（pdftotext/pdfinfo/soffice/magick 无一可发帧）：exit 0 →
+/// Succeeded，data = 产物收集面（exit_code/stdout_bytes/stdout_capped/artifacts），
+/// 不做帧解析；stdout 读侧帽语义不变（超帽 → `NATIVE_OUTPUT_CAP_EXCEEDED`
+/// FAILED，不静默丢字节——与帧模式同语义）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResultMode {
+    /// stdout 首行 JSON 结果帧（RT-1 D-TC-03 既有；缺省）。
+    #[default]
+    Frame,
+    /// exit 0 + 产物收集 data（DI-1 ADR D4；stdout 留档 out/stdout.log）。
+    File,
+}
+
+impl ResultMode {
+    /// Manifest 字面量解析（缺省 frame；非法字面量 PREPARING 拒绝）。专属码
+    /// `NATIVE_RESULT_MODE_INVALID`（评审修订 2026-11-19：此前借
+    /// NATIVE_ARGV_TEMPLATE_DENIED——问题在 result_mode 枚举值非 argv 模板，
+    /// 码表内借码污染按 code 检索的审计面；信封 error.code 为自由面，
+    /// category 仍 POLICY_DENIED，schema/validate 词表零影响）。
+    fn parse(value: Option<&str>) -> Result<Self, PreparingReject> {
+        match value {
+            None | Some("frame") => Ok(Self::Frame),
+            Some("file") => Ok(Self::File),
+            Some(other) => Err(PreparingReject::policy(
+                "NATIVE_RESULT_MODE_INVALID",
+                format!(
+                    "runtime.result_mode {other:?} must be \"frame\" or \"file\" (DI-1 ADR D4)"
+                ),
+            )),
+        }
+    }
+}
+
 /// 资源强制机制（D8.4：systemd-run 优先 → prlimit 兜底 → 两机制不可用即
 /// 拒绝派发不裸跑）。探测与派发同环境口径（D4 清环境最小集，见
 /// [`NativeRustAdapter::probe_exec`]）。`Off` 仅限测试载具显式声明（生产默认
@@ -200,6 +235,8 @@ pub struct NativeAllowlist {
     pub capability_ref: Option<CapabilityId>,
     /// Manifest runtime.env 显式登记（键值字符串；D4 白名单追加面）。
     pub env: Vec<(String, String)>,
+    /// 结果面双模（DI-1 ADR D4；缺省 frame，既有工具零改动）。
+    pub result_mode: ResultMode,
 }
 
 /// argv 构造产物（type_complexity 拆分面）。
@@ -479,6 +516,7 @@ impl NativeRustAdapter {
                 out
             }
         };
+        let result_mode = ResultMode::parse(runtime.get("result_mode").and_then(Value::as_str))?;
         Ok(NativeAllowlist {
             binary: PathBuf::from(binary),
             binary_sha256: binary_sha256.to_string(),
@@ -488,6 +526,7 @@ impl NativeRustAdapter {
             argv_template,
             capability_ref,
             env,
+            result_mode,
         })
     }
 
@@ -1066,6 +1105,7 @@ impl NativeRustAdapter {
     }
 
     /// 原生执行核心（RUNNING 期）：spawn + 看门狗（超时/取消/读帽）→ 中性终局。
+    /// `result_mode` 为 DI-1 ADR D4 双模（frame 既有零改动 | file 产物收集）。
     #[allow(clippy::too_many_arguments)]
     fn execute(
         &self,
@@ -1082,6 +1122,7 @@ impl NativeRustAdapter {
         max_output_bytes: u64,
         manifest_env: &[(String, String)],
         wrapper: ResolvedWrapper,
+        result_mode: ResultMode,
     ) -> Result<AdapterOutcome, AdapterFailure> {
         if let Some((path, content)) = &staged {
             std::fs::write(path, content)
@@ -1222,6 +1263,36 @@ impl NativeRustAdapter {
 
         let cap_hit = cap_flag.load(Ordering::SeqCst);
         match status {
+            WatchdogExit::Exited(exit) if exit.success() && result_mode == ResultMode::File => {
+                // DI-1 ADR D4 file 模式：exit 0 → Succeeded，data = 产物收集面，
+                // 不做帧解析。stdout 留档 out/stdout.log（上方已写）；读帽触顶
+                // 时不静默丢字节：kept 只有 read_cap 字节、超出部分读线程已
+                // 丢弃，FILE 模式无帧可截断交付 → 与帧模式 :1248-1255 同语义
+                // FAILED（NATIVE_OUTPUT_CAP_EXCEEDED）。
+                if cap_hit {
+                    return Ok(AdapterOutcome::Failed {
+                        category: "EXECUTION".to_string(),
+                        code: json!("NATIVE_OUTPUT_CAP_EXCEEDED"),
+                        message: format!(
+                            "stdout exceeded read cap {read_cap} bytes (file mode); {stdout_total} bytes total, partial stdout.log retained for audit, bytes beyond cap not delivered (D8.2a / DI-1 ADR D4)"
+                        ),
+                        retryable: false,
+                    });
+                }
+                Ok(AdapterOutcome::Succeeded {
+                    data: json!({
+                        "exit_code": 0,
+                        "stdout_bytes": stdout_total,
+                        "stdout_capped": false,
+                        "artifacts": out_listing(&ws.out_dir),
+                    }),
+                    cached: false,
+                    usage: Some(json!({
+                        "output_bytes": stdout_total,
+                        "stdout_capped": false,
+                    })),
+                })
+            }
             WatchdogExit::Exited(exit) if exit.success() => {
                 let text = String::from_utf8_lossy(&stdout_bytes);
                 let first_line = text.lines().next().unwrap_or("");
@@ -1274,6 +1345,18 @@ impl NativeRustAdapter {
             WatchdogExit::CapHit => {
                 // 读帽触顶：若首行帧已完整则按截断语义交付（结果侧
                 // envelope::truncate 承接）；否则失败语义交付。
+                // DI-1 ADR D4 file 模式：无帧可完整交付（kept 超 read_cap 部分已
+                // 丢弃），不静默丢字节 → 一律 FAILED（与帧模式 Err 分支同语义）。
+                if result_mode == ResultMode::File {
+                    return Ok(AdapterOutcome::Failed {
+                        category: "EXECUTION".to_string(),
+                        code: json!("NATIVE_OUTPUT_CAP_EXCEEDED"),
+                        message: format!(
+                            "stdout exceeded read cap {read_cap} bytes before completion (file mode); process group terminated (D8.2a), {stdout_total} bytes total"
+                        ),
+                        retryable: false,
+                    });
+                }
                 let text = String::from_utf8_lossy(&stdout_bytes);
                 let first_line = text.lines().next().unwrap_or("");
                 match serde_json::from_str::<Value>(first_line) {
@@ -1370,6 +1453,34 @@ fn tail(text: &str, max: usize) -> String {
     } else {
         trimmed[trimmed.len() - max..].to_string()
     }
+}
+
+/// out/ 产物收集 data 列表（DI-1 ADR D4 file 模式；不登记 DB 行——
+/// Artifact 行由 execute_native_rust_via_engine 既有 collect_out_artifacts
+/// 统一登记，本函数只产出随 Succeeded data 交付的对账面：name/size/sha256，
+/// 供调用方与 envelope artifacts 逐条对账）。
+fn out_listing(out_dir: &Path) -> Vec<Value> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(out_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_file())
+                .collect()
+        })
+        .unwrap_or_default();
+    entries.sort();
+    entries
+        .iter()
+        .filter_map(|path| {
+            let bytes = std::fs::read(path).ok()?;
+            let name = path.file_name()?.to_str()?.to_string();
+            Some(json!({
+                "name": name,
+                "size_bytes": bytes.len() as u64,
+                "sha256": sha256_hex(&bytes),
+            }))
+        })
+        .collect()
 }
 
 /// out/ 产物收集与登记（podman_host collect_out_artifacts 同形态；stderr.log
@@ -1519,6 +1630,7 @@ pub fn execute_native_rust_via_engine(
         budget.max_output_bytes,
         &prepared.allowlist.env,
         prepared.wrapper,
+        prepared.allowlist.result_mode,
     );
 
     // tmp 清理（四路径统一）。

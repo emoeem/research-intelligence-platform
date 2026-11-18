@@ -129,6 +129,18 @@ fn main() {
                     .filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| "host-local".to_string()),
                 working_dir: std::env::current_dir().ok(),
+                // DI-1 native_rust 分支配置（受信文档输入根 + capability 种子；
+                // env 覆盖与 RP_MANIFEST_DIRS 同口径）。
+                document_input_root: std::env::var("RP_DOC_INPUT_ROOT")
+                    .ok()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("rip-data/documents")),
+                capability_seed_path: std::env::var("RP_CAPABILITY_SEED")
+                    .ok()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        PathBuf::from("manifests/capabilities/host-catalog-seed.json")
+                    }),
             })
         }
     };

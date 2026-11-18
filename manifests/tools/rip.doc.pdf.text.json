@@ -1,0 +1,121 @@
+{
+  "schema_version": "1",
+  "id": "rip.doc.pdf.text",
+  "name": "PDF Text Extract (native)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "PDF 文本抽取（DI-1 ADR D3 PDF 通道次步）：pdftotext stdout 形态（`-` = stdout，本机 exit 0 实测），页锚 = \\f（0x0C）分隔切分由 Router 规范化承载（sample.pdf 实测 2 页 = 2 个 \\f）。result_mode=file（DI-1 ADR D4）：stdout 留档 out/stdout.log，读侧帽语义不变（超帽 NATIVE_OUTPUT_CAP_EXCEEDED FAILED，不静默丢字节）。本工具兑现 ROADMAP:260 判据 1 保留版「PDF 解析工具一个 run 端到端」（DI-0 §2.1）。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/pdftotext",
+    "binary_sha256": "f85872f94fb67433d6fa411ea3a10c263205eada4622b48ccc700442ad29b13c",
+    "capability_ref": "pdf.pdftotext",
+    "argv_template": [
+      "{{input_path}}",
+      "-"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "sample.pdf"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/pdftotext",
+    "license": "GPL-2.0-only OR GPL-3.0-only",
+    "dependencies": [
+      "poppler 26.11.0-1.1 sha256_prefix f85872f94fb67433（pdftotext）"
+    ],
+    "tested": "DI-1 e2e：sample.pdf 子 run SUCCEEDED（UTF-8 中文正文 + 页锚 2 段），crates/document-router/tests/",
+    "known_limits": [
+      "输出经 stdout 留档承载（result_mode=file），信封帽由 envelope::truncate 降级 + usage.truncated（D7 #10）",
+      "页数帽 2000 页由 pdfinfo 前步 Router 门承载（D7 #7）",
+      "不明来源 PDF 按输入风险档位路由隔离（RT-0.5-E §1）；PDF 远程对象引用面由嗅探前置 + network:none 双闸阻断（红线 2）"
+    ]
+  }
+}

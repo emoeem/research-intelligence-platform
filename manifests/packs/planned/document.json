@@ -11,12 +11,13 @@
     "OCR 文本抽取"
   ],
   "trust_ruling": {
-    "level": "third-party-license-unverified",
-    "rationale": "PDF/Office/OCR 依赖第三方解析库（PyMuPDF/python-docx/Tesseract 等），许可证未核实；ROADMAP P3-4 原行建议「引入第三方库建议等 P2-6 后走 VM，按信任级裁定」，VM 通道 S1 到 S4 挂起中（PHASE2-DESIGN §5.2.5），ADR §3.2 禁未核实依赖上宿主过渡通道"
+    "level": "distro-package-verifiable + input-risk-routed",
+    "rationale": "修订自「third-party-license-unverified」（DI-0-P34-PREMISE-REVISION-ADR.md §4.2 指派）：宿主解析 CLI 逐条落了 package_provenance（pacman 包归属 poppler 26.11.0-1.1、libreoffice-fresh 26.8.2-3、tesseract 5.5.4-1.1，RT-0.5-C §3.6/3.4/3.3 实测），发行版包来源 pacman 可核实，「许可证未核」前提对发行版包路径不再成立（DI-0 §2.1）；信任路由修订为按输入风险档位——可信低风险输入走受限原生（RT-1 Native CLI Adapter 准入面），不明来源输入走 Podman，高风险档（PS/EPS、宏 Office 等）落 VM（未就绪即拒绝派发，DI-0 §2.2，RT-0.5-E §1:14-17）"
   },
   "exit_conditions": [
-    "S1 到 S4 解锁（podman_vm 通道可用，PHASE2-DESIGN §3.2 两类条件任一命中）",
-    "第三方解析库许可证核实通过并入 provenance"
+    "S1 到 S4 解锁（podman_vm 通道可用，PHASE2-DESIGN §3.2 两类条件任一命中；高风险档位仍承接本条件）",
+    "第三方解析库许可证核实通过并入 provenance",
+    "DI-1 完成（PDF 文本抽取 native 工具端到端）即解锁 PDF 抽取面；Office/OCR 面按 DI-2/DI-3 逐面解锁（DI-0-P34-PREMISE-REVISION-ADR.md §4.2 冻结文本）"
   ],
   "not_runnable": {
     "no_manifest": true,

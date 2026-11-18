@@ -362,6 +362,57 @@ fn sk3_native_rust_allowlist_negative_matrix() {
 }
 
 #[test]
+fn sk3_native_rust_result_mode_dual_accepts_and_rejects() {
+    // DI-1 ADR D4 result_mode additive：两合法值登记接受（file 为 DI-1
+    // 四 Manifest 所载形态；frame 为既有缺省显式形态）。
+    for mode in ["frame", "file"] {
+        let mut doc = native_rust_doc();
+        doc["runtime"] = serde_json::json!({
+            "type": "native_rust",
+            "binary": "/usr/bin/pdftotext",
+            "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+            "argv_template": ["{{input_path}}", "-"],
+            "result_mode": mode
+        });
+        validate_static(&doc, &Options::default())
+            .unwrap_or_else(|e| panic!("result_mode {mode:?} rejected: {e}"));
+    }
+
+    // 非法字面量 / 非字符串形状 → 登记拒绝（词表零新增值）。
+    for (bad, bad_json) in [
+        ("stdout", serde_json::json!("stdout")),
+        ("jsonl", serde_json::json!("jsonl")),
+        ("<int>", serde_json::json!(42)),
+    ] {
+        let _ = bad;
+        let mut doc = native_rust_doc();
+        doc["runtime"] = serde_json::json!({
+            "type": "native_rust",
+            "binary": "/usr/bin/pdftotext",
+            "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+            "argv_template": ["{{input_path}}"],
+            "result_mode": bad_json
+        });
+        let err = validate_static(&doc, &Options::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("result_mode"),
+            "result_mode {bad_json} must be rejected: {err}"
+        );
+    }
+
+    // 缺省（字段缺席）仍合法 = 既有帧协议工具零迁移。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/pdftotext",
+        "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+        "argv_template": ["{{input_path}}"]
+    });
+    validate_static(&doc, &Options::default())
+        .unwrap_or_else(|e| panic!("absent result_mode must stay valid: {e}"));
+}
+
+#[test]
 fn sk3_native_rust_allowlist_registers_end_to_end() {
     // 新形状正例走完整登记链（fresh DB，version comparable 无冲突）。
     let mut doc = native_rust_doc();

@@ -33,6 +33,9 @@
 | RT-1 Native Adapter 设计裁决（D1-D8：allowlist/env 白名单/进程组 kill/五态映射） | [phase0/RT-1-ADR-NATIVE-ADAPTER.md](phase0/RT-1-ADR-NATIVE-ADAPTER.md) |
 | RT-1 批次验收报告（NativeRustAdapter + Capability Provider 最小接线落地；八项判据实测对照、门禁命令原文、实现口径裁决 17 条——含评审修订 6 条全 applied 与门禁复测记录、DI-1 前置登记） | [phase0/RT-1-BATCH-REPORT.md](phase0/RT-1-BATCH-REPORT.md) |
 | DI-0 P3-4 前提修订（Document Pack planned 裁定前提被 NATIVE-FIRST 与 RT-0.5 实测推翻；DI-1/2/3 入口） | [phase0/DI-0-P34-PREMISE-REVISION-ADR.md](phase0/DI-0-P34-PREMISE-REVISION-ADR.md) |
+| DI-1 Document Router 任务书（S0→S8、十项判据、十条红线） | [phase0/DI-1-TASK.md](phase0/DI-1-TASK.md) |
+| DI-1 设计裁决（D1-D8：新 crate 落位/通道表/手写嗅探/帽值表/错误映射；含 D3 调和裁决条目） | [phase0/DI-1-ADR-DOC-ROUTER.md](phase0/DI-1-ADR-DOC-ROUTER.md) |
+| DI-1 批次验收报告（document-router 新成员三通道原生端到端落地：嗅探/通道表/帽门/编排/规范化 + adapter result_mode 双模 + dispatch native_rust 分支 + 四 Manifest 登记；十项判据实测对照、门禁命令原文、偏差记账 6 条——含 D3 调和裁决 B 与 office 内存帽 16Gi 实测定值、DI-2 前置条件登记） | [phase0/DI-1-BATCH-REPORT.md](phase0/DI-1-BATCH-REPORT.md) |
 | 工具协议         | [phase0/TOOL-CONTRACT-DRAFT.md](phase0/TOOL-CONTRACT-DRAFT.md)         |
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |
