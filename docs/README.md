@@ -29,6 +29,10 @@
 | 工具执行隔离拓扑 | [phase0/TOOL-RUNTIME-ADR.md](phase0/TOOL-RUNTIME-ADR.md)               |
 | Runtime 原生优先与混合隔离策略（当前生效；历史 ADR 保留） | [phase0/NATIVE-FIRST-HYBRID-RUNTIME-STRATEGY.md](phase0/NATIVE-FIRST-HYBRID-RUNTIME-STRATEGY.md) |
 | RT-0.5 宿主软件能力发现与目录设计 | [phase0/RT-0.5-HOST-CAPABILITY-DISCOVERY.md](phase0/RT-0.5-HOST-CAPABILITY-DISCOVERY.md) |
+| RT-1 Native Rust Adapter 任务书（S1→S8、八项判据、八条红线） | [phase0/RT-1-TASK.md](phase0/RT-1-TASK.md) |
+| RT-1 Native Adapter 设计裁决（D1-D8：allowlist/env 白名单/进程组 kill/五态映射） | [phase0/RT-1-ADR-NATIVE-ADAPTER.md](phase0/RT-1-ADR-NATIVE-ADAPTER.md) |
+| RT-1 批次验收报告（NativeRustAdapter + Capability Provider 最小接线落地；八项判据实测对照、门禁命令原文、实现口径裁决 14 条、DI-1 前置登记） | [phase0/RT-1-BATCH-REPORT.md](phase0/RT-1-BATCH-REPORT.md) |
+| DI-0 P3-4 前提修订（Document Pack planned 裁定前提被 NATIVE-FIRST 与 RT-0.5 实测推翻；DI-1/2/3 入口） | [phase0/DI-0-P34-PREMISE-REVISION-ADR.md](phase0/DI-0-P34-PREMISE-REVISION-ADR.md) |
 | 工具协议         | [phase0/TOOL-CONTRACT-DRAFT.md](phase0/TOOL-CONTRACT-DRAFT.md)         |
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |
