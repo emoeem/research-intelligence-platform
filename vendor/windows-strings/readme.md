@@ -1,16 +1,16 @@
-## Windows string types
+## windows-strings
 
-The [windows-strings](https://crates.io/crates/windows-strings) crate provides common Windows string types used by various Windows APIs.
+The [windows-strings](https://crates.io/crates/windows-strings) crate provides Windows string types
+and literals.
 
-* [Getting started](https://kennykerr.ca/rust-getting-started/)
-* [Samples](https://github.com/microsoft/windows-rs/tree/master/crates/samples)
-* [Releases](https://github.com/microsoft/windows-rs/releases)
+* [Getting
+  started](https://github.com/microsoft/windows-rs/blob/master/docs/crates/windows-strings.md)
 
 Start by adding the following to your Cargo.toml file:
 
 ```toml
 [dependencies.windows-strings]
-version = "0.5"
+version = "0.100"
 ```
 
 Use the Windows string types as needed:

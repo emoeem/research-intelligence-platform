@@ -1,20 +1,18 @@
 use super::*;
+use alloc::vec::Vec;
 use core::ops::Deref;
 
-/// A BSTR string ([BSTR](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/automat/string-manipulation-functions))
-/// is a length-prefixed wide string.
+/// A length-prefixed wide string.
 #[repr(transparent)]
 pub struct BSTR(*const u16);
 
 impl BSTR {
-    /// Create an empty `BSTR`.
-    ///
-    /// This function does not allocate memory.
+    /// Creates an empty `BSTR` without allocating.
     pub const fn new() -> Self {
         Self(core::ptr::null_mut())
     }
 
-    /// Create a `BSTR` from a slice of 16 bit characters (wchars).
+    /// Creates a `BSTR` from UTF-16 code units.
     pub fn from_wide(value: &[u16]) -> Self {
         if value.is_empty() {
             return Self::new();
@@ -27,23 +25,30 @@ impl BSTR {
             ))
         };
 
-        if result.is_empty() {
-            panic!("allocation failed");
-        }
+        assert!(!result.is_empty(), "allocation failed");
 
         result
     }
 
+    /// Returns a display adapter for the string.
+    pub fn display(&self) -> impl core::fmt::Display + '_ {
+        Decode(move || core::char::decode_utf16(self.iter().copied()))
+    }
+
     /// # Safety
+    ///
+    /// `raw` must be null or an owned `BSTR` pointer. The returned value takes ownership and
+    /// frees the string when dropped.
     #[doc(hidden)]
     pub unsafe fn from_raw(raw: *const u16) -> Self {
         Self(raw)
     }
 
-    /// # Safety
+    /// Consumes the `BSTR`, transferring ownership of the underlying pointer to the caller.
+    /// The caller is responsible for freeing the returned pointer.
     #[doc(hidden)]
     pub fn into_raw(self) -> *const u16 {
-        unsafe { core::mem::transmute(self) }
+        core::mem::ManuallyDrop::new(self).0
     }
 }
 
@@ -60,8 +65,7 @@ impl Deref for BSTR {
         if len > 0 {
             unsafe { core::slice::from_raw_parts(self.0, len) }
         } else {
-            // This ensures that if `as_ptr` is called on the slice that the resulting pointer
-            // will still refer to a null-terminated string.
+            // Keep `as_ptr` on the empty slice null-terminated.
             const EMPTY: [u16; 1] = [0];
             &EMPTY[..0]
         }
@@ -76,7 +80,7 @@ impl Clone for BSTR {
 
 impl From<&str> for BSTR {
     fn from(value: &str) -> Self {
-        let value: alloc::vec::Vec<u16> = value.encode_utf16().collect();
+        let value: Vec<u16> = value.encode_utf16().collect();
         Self::from_wide(&value)
     }
 }
@@ -96,7 +100,7 @@ impl From<&String> for BSTR {
 impl TryFrom<&BSTR> for String {
     type Error = alloc::string::FromUtf16Error;
 
-    fn try_from(value: &BSTR) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: &BSTR) -> Result<Self, Self::Error> {
         Self::from_utf16(value)
     }
 }
@@ -104,7 +108,7 @@ impl TryFrom<&BSTR> for String {
 impl TryFrom<BSTR> for String {
     type Error = alloc::string::FromUtf16Error;
 
-    fn try_from(value: BSTR) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: BSTR) -> Result<Self, Self::Error> {
         Self::try_from(&value)
     }
 }
@@ -115,19 +119,9 @@ impl Default for BSTR {
     }
 }
 
-impl core::fmt::Display for BSTR {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        core::write!(
-            f,
-            "{}",
-            Decode(|| core::char::decode_utf16(self.iter().cloned()))
-        )
-    }
-}
-
 impl core::fmt::Debug for BSTR {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        core::write!(f, "{self}")
+        core::write!(f, "{}", self.display())
     }
 }
 

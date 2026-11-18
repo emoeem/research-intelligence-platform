@@ -734,19 +734,15 @@ Scan Center 是 Research 工作区中的专门功能页，不另建独立扫描�
 
 沿用现有 Workflow DSL、Schema、Checkpoint、版本、暂停、恢复和失败重试语义。循环节点必须有最大迭代、超时和预算限制。
 
-### 4.10 HTTP History / Repeater / Fuzzer 的借鉴范围
+### 4.10 HTTP History / Repeater / Fuzzer 与完整 Web Security Workbench 的边界
 
-参考 Yakit 的交互方式，但按 RIP 当前架构分批实现。
+Phase 5 当前批次只按本计划既定范围交付已有请求记录、请求响应查看、Repeater 式单次验证和受控 Fuzzer 闭环。它们不等于完整的 Burp / Yakit 风格抓包工作台。
 
-建议先做的能力：
+用户后续明确提出完整产品目标：需要独立 Proxy / MITM 抓包与拦截界面、HTTP History、独立 Repeater、多位置 Web Fuzzer / Intruder，以及 WebSocket、Decoder、Comparer、Passive Audit、插件和证据能力。完整范围、界面规格、Rust-First 架构、协议边界、安全要求和分批验收统一见：
 
-- HTTP History：保存和查看已有工具执行或用户导入的请求记录。
-- Request / Response Viewer：请求响应分栏或上下对照。
-- Repeater：把已有请求复制成一个可编辑的单次验证任务。
-- 简单 Fuzzer：对指定参数生成受控变体，结果按响应码、长度、文本相似度等可解释指标对比。
-- 将验证结果关联到 ResearchTask、Evidence 和 Finding。
+- [RIP3 Web Security Workbench 扩展规划](WEB-SECURITY-WORKBENCH-PLAN.md)
 
-本阶段不要求实现完整 MITM 证书安装、透明代理、系统级流量劫持、Yaklang 兼容层或全部 Fuzztag 语法。先证明现有工具和 Artifact 能形成 HTTP History 到验证任务的闭环，再评估是否需要独立代理能力。
+该扩展规划是后续独立工作流，不改变当前 P5-8 / P5-9 顺序，不得提前打断 Phase 5。不得将当前 Phase 5 的轻量 History / Repeater / Fuzzer 交付描述为已实现完整 MITM。
 
 ---
 

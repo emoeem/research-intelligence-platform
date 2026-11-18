@@ -2,12 +2,9 @@ use super::*;
 use core::ffi::c_void;
 use core::ptr::null_mut;
 
-/// Parent interface for all WinRT interfaces.
+/// The base interface for WinRT classes, interfaces, and boxed values.
 ///
-/// A WinRT object that may be used as a polymorphic stand-in for any WinRT class, interface, or boxed value.
-/// [`IInspectable`] represents the
-/// [IInspectable](https://docs.microsoft.com/en-us/windows/win32/api/inspectable/nn-inspectable-iinspectable)
-/// interface.
+/// See [IInspectable](https://learn.microsoft.com/windows/win32/api/inspectable/).
 #[repr(transparent)]
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct IInspectable(pub IUnknown);
@@ -16,11 +13,10 @@ interface_hierarchy!(IInspectable, IUnknown);
 
 impl IInspectable {
     /// Returns the canonical type name for the underlying object.
-    #[cfg(windows)]
     pub fn GetRuntimeClassName(&self) -> Result<HSTRING> {
         unsafe {
             let mut abi = null_mut();
-            (self.vtable().GetRuntimeClassName)(core::mem::transmute_copy(self), &mut abi).ok()?;
+            (self.vtable().GetRuntimeClassName)(self.as_raw(), &mut abi).ok()?;
             Ok(core::mem::transmute::<*mut c_void, HSTRING>(abi))
         }
     }
@@ -29,7 +25,7 @@ impl IInspectable {
     pub fn GetTrustLevel(&self) -> Result<i32> {
         unsafe {
             let mut value = 0;
-            (self.vtable().GetTrustLevel)(core::mem::transmute_copy(self), &mut value).ok()?;
+            (self.vtable().GetTrustLevel)(self.as_raw(), &mut value).ok()?;
             Ok(value)
         }
     }
@@ -56,6 +52,7 @@ unsafe impl Interface for IInspectable {
 
 impl RuntimeType for IInspectable {
     const SIGNATURE: imp::ConstBuffer = imp::ConstBuffer::from_slice(b"cinterface(IInspectable)");
+    const NAME: imp::ConstBuffer = imp::ConstBuffer::from_slice(b"Object");
 }
 
 impl RuntimeName for IInspectable {}
@@ -71,9 +68,7 @@ impl IInspectable_Vtbl {
                 if count.is_null() || values.is_null() {
                     return imp::E_POINTER;
                 }
-                // Note: even if we end up implementing this in future, it still doesn't need a this pointer
-                // since the data to be returned is type- not instance-specific so can be shared for all
-                // interfaces.
+                // Interface IDs are type-specific, so this does not need an instance pointer.
                 *count = 0;
                 *values = null_mut();
                 HRESULT(0)
@@ -88,15 +83,9 @@ impl IInspectable_Vtbl {
                     return imp::E_POINTER;
                 }
 
-                #[cfg(windows)]
-                {
-                    *value = core::mem::transmute::<HSTRING, *mut c_void>(T::NAME.into());
-                }
-
-                #[cfg(not(windows))]
-                {
-                    *value = core::ptr::null_mut();
-                }
+                let name = T::RUNTIME_CLASS_NAME;
+                let name_str = core::str::from_utf8_unchecked(name.as_slice());
+                *value = core::mem::transmute::<HSTRING, *mut c_void>(name_str.into());
 
                 HRESULT(0)
             }

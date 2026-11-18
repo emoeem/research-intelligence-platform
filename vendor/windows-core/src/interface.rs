@@ -2,15 +2,33 @@ use super::*;
 use core::any::Any;
 use core::ffi::c_void;
 use core::marker::PhantomData;
-use core::mem::{forget, transmute_copy, MaybeUninit};
+use core::mem::{MaybeUninit, forget, transmute_copy};
 use core::ptr::NonNull;
 
-/// Provides low-level access to an interface vtable.
-///
-/// This trait is automatically implemented by the generated bindings and should not be
-/// implemented manually.
+/// Debug-only diagnostic helper: reports a `cast` whose `QueryInterface` returned the
+/// same interface pointer it started from - i.e. the source already exposes the target
+/// interface, so the cast is redundant (use `Deref` or `.into()` instead). Compiled in
+/// only in debug builds when `RUSTFLAGS=--cfg windows_cast_diagnostics` is set.
+#[cfg(all(debug_assertions, windows_cast_diagnostics))]
+#[cold]
+#[inline(never)]
+fn warn_redundant_cast<T: Interface>(location: &core::panic::Location<'_>) {
+    extern crate std;
+
+    std::eprintln!(
+        "windows-core: cast::<{}> at {} returned the same interface pointer; the source \
+         already exposes this interface (use Deref or .into() instead of .cast())",
+        core::any::type_name::<T>(),
+        location,
+    );
+}
+
+/// Provides low-level access to a COM interface vtable.
 ///
 /// # Safety
+///
+/// Implementors must be transparent wrappers over an owned COM interface pointer. `Vtable` and
+/// `IID` must describe that interface, and cloning the wrapper must retain the COM reference.
 pub unsafe trait Interface: Sized + Clone {
     #[doc(hidden)]
     type Vtable;
@@ -21,7 +39,7 @@ pub unsafe trait Interface: Sized + Clone {
     #[doc(hidden)]
     const UNKNOWN: bool = true;
 
-    /// A reference to the interface's vtable
+    /// Returns the interface vtable.
     #[doc(hidden)]
     #[inline(always)]
     fn vtable(&self) -> &Self::Vtable {
@@ -29,7 +47,7 @@ pub unsafe trait Interface: Sized + Clone {
         unsafe { self.assume_vtable::<Self>() }
     }
 
-    /// Cast this interface as a reference to the supplied interfaces `Vtable`
+    /// Views this interface through a compatible vtable.
     ///
     /// # Safety
     ///
@@ -41,38 +59,36 @@ pub unsafe trait Interface: Sized + Clone {
         unsafe { &**(self.as_raw() as *mut *mut T::Vtable) }
     }
 
-    /// Returns the raw COM interface pointer. The resulting pointer continues to be owned by the `Interface` implementation.
+    /// Returns the borrowed COM interface pointer.
     #[inline(always)]
     fn as_raw(&self) -> *mut c_void {
-        // SAFETY: implementors of this trait must guarantee that the implementing type has a pointer in-memory representation
+        // SAFETY: implementors guarantee a pointer representation.
         unsafe { transmute_copy(self) }
     }
 
-    /// Returns the raw COM interface pointer and releases ownership. It the caller's responsibility to release the COM interface pointer.
+    /// Transfers ownership of the COM interface pointer to the caller.
     #[inline(always)]
     fn into_raw(self) -> *mut c_void {
-        // SAFETY: implementors of this trait must guarantee that the implementing type has a pointer in-memory representation
+        // SAFETY: implementors guarantee a pointer representation.
         let raw = self.as_raw();
         forget(self);
         raw
     }
 
-    /// Creates an `Interface` by taking ownership of the `raw` COM interface pointer.
+    /// Takes ownership of a COM interface pointer.
     ///
     /// # Safety
     ///
-    /// The `raw` pointer must be owned by the caller and represent a valid COM interface pointer. In other words,
-    /// it must point to a vtable beginning with the `IUnknown` function pointers and match the vtable of `Interface`.
+    /// `raw` must be owned and point to the vtable for `Self`, beginning with `IUnknown`.
     unsafe fn from_raw(raw: *mut c_void) -> Self {
         unsafe { transmute_copy(&raw) }
     }
 
-    /// Creates an `Interface` that is valid so long as the `raw` COM interface pointer is valid.
+    /// Borrows a COM interface pointer.
     ///
     /// # Safety
     ///
-    /// The `raw` pointer must be a valid COM interface pointer. In other words, it must point to a vtable
-    /// beginning with the `IUnknown` function pointers and match the vtable of `Interface`.
+    /// `raw` must remain valid and point to the vtable for `Self`, beginning with `IUnknown`.
     #[inline(always)]
     unsafe fn from_raw_borrowed(raw: &*mut c_void) -> Option<&Self> {
         unsafe {
@@ -84,28 +100,27 @@ pub unsafe trait Interface: Sized + Clone {
         }
     }
 
-    /// Attempts to cast the current interface to another interface using `QueryInterface`.
-    ///
-    /// The name `cast` is preferred to `query` because there is a WinRT method named query but not one
-    /// named cast.
+    /// Queries the object for another interface.
+    #[cfg_attr(all(debug_assertions, windows_cast_diagnostics), track_caller)]
     #[inline(always)]
     fn cast<T: Interface>(&self) -> Result<T> {
-        // SAFETY: `result` is valid for writing an interface pointer and it is safe
-        // to cast the `result` pointer as `T` on success because we are using the `IID` tied
-        // to `T` which the implementor of `Interface` has guaranteed is correct
+        // SAFETY: `result` is valid for writing an interface pointer, and casting the result
+        // pointer as `T` on success is safe because we use the `IID` tied to `T`, which the
+        // implementor of `Interface` has guaranteed is correct.
         unsafe {
-            // If query() returns a failure code then we propagate that failure code to the caller.
-            // In that case, we ignore the contents of 'result' (which will _not_ be dropped,
-            // because MaybeUninit intentionally does not drop its contents).
-            //
-            // This guards against implementations of COM interfaces which may store non-null values
-            // in 'result' but still return E_NOINTERFACE.
+            // If `query()` fails, propagate the failure to the caller and ignore the contents
+            // of `result` (which will _not_ be dropped, because `MaybeUninit` intentionally
+            // does not drop its contents). This guards against COM implementations that store
+            // non-null values in `result` but still return `E_NOINTERFACE`.
             let mut result = MaybeUninit::<Option<T>>::zeroed();
             self.query(&T::IID, result.as_mut_ptr() as _).ok()?;
 
-            // If we get here, then query() has succeeded, but we still need to double-check
-            // that the output pointer is non-null.
+            // `query()` succeeded; still double-check that the output pointer is non-null.
             if let Some(obj) = result.assume_init() {
+                #[cfg(all(debug_assertions, windows_cast_diagnostics))]
+                if core::ptr::eq(self.as_raw(), obj.as_raw()) {
+                    warn_redundant_cast::<T>(core::panic::Location::caller());
+                }
                 Ok(obj)
             } else {
                 Err(imp::E_POINTER.into())
@@ -113,39 +128,23 @@ pub unsafe trait Interface: Sized + Clone {
         }
     }
 
-    /// This casts the given COM interface to [`&dyn Any`].
+    /// Returns the generated outer Rust implementation as [`&dyn Any`].
     ///
-    /// Applications should generally _not_ call this method directly. Instead, use the
-    /// [`Interface::cast_object_ref`] or [`Interface::cast_object`] methods.
+    /// Applications should use
+    /// [`Interface::cast_object_ref`] or [`Interface::cast_object`] instead.
     ///
-    /// `T` must be a type that has been annotated with `#[implement]`; this is checked at
-    /// compile-time by the generic constraints of this method. However, note that the
-    /// returned `&dyn Any` refers to the _outer_ implementation object that was generated by
-    /// `#[implement]`, i.e. the `MyApp_Impl` type, not the inner `MyApp` type.
+    /// The reference points to the generated outer type, such as `MyApp_Impl`, not `MyApp`.
     ///
-    /// If the given object is not a Rust object, or is a Rust object but not `T`, or is a Rust
-    /// object that contains non-static lifetimes, then this function will return `Err(E_NOINTERFACE)`.
+    /// Returns `Err(E_NOINTERFACE)` if the object is not a Rust object, not `T`, or contains
+    /// non-static lifetimes.
     ///
     /// # Safety
     ///
-    /// **IMPORTANT!!**  This uses a non-standard protocol for QueryInterface!  The `DYNAMIC_CAST_IID`
-    /// IID identifies this protocol, but there is no `IDynamicCast` interface. Instead, objects
-    /// that recognize `DYNAMIC_CAST_IID` simply store their `&dyn Any` directly at the interface
-    /// pointer that was passed to `QueryInterface. This means that the returned value has a
-    /// size that is twice as large (`size_of::<&dyn Any>() == 2 * size_of::<*const c_void>()`).
+    /// This uses a private `QueryInterface` protocol identified by `DYNAMIC_CAST_IID`. The
+    /// implementation writes a two-pointer `&dyn Any`, not a COM interface pointer, to the output.
     ///
-    /// This means that callers that use this protocol cannot simply pass `&mut ptr` for
-    /// an ordinary single-pointer-sized pointer. Only this method understands this protocol.
-    ///
-    /// Another part of this protocol is that the implementation of `QueryInterface` _does not_
-    /// AddRef the object. The caller must guarantee the liveness of the COM object. In Rust,
-    /// this means tying the lifetime of the IUnknown* that we used for the QueryInterface
-    /// call to the lifetime of the returned `&dyn Any` value.
-    ///
-    /// This method preserves type safety and relies on these invariants:
-    ///
-    /// * All `QueryInterface` implementations that recognize `DYNAMIC_CAST_IID` are generated by
-    ///   the `#[implement]` macro and respect the rules described here.
+    /// The protocol does not call `AddRef`. The returned reference must not outlive `self`, and
+    /// only `#[implement]`-generated objects may recognize this IID.
     #[inline(always)]
     fn cast_to_any<T>(&self) -> Result<&dyn Any>
     where
@@ -165,11 +164,8 @@ pub unsafe trait Interface: Sized + Clone {
 
     /// Returns `true` if the given COM interface refers to an implementation of `T`.
     ///
-    /// `T` must be a type that has been annotated with `#[implement]`; this is checked at
-    /// compile-time by the generic constraints of this method.
-    ///
-    /// If the given object is not a Rust object, or is a Rust object but not `T`, or is a Rust
-    /// object that contains non-static lifetimes, then this function will return `false`.
+    /// Returns `false` if the object is not a Rust object, not `T`, or contains non-static
+    /// lifetimes.
     #[inline(always)]
     fn is_object<T>(&self) -> bool
     where
@@ -183,19 +179,13 @@ pub unsafe trait Interface: Sized + Clone {
         }
     }
 
-    /// This casts the given COM interface to [`&dyn Any`]. It returns a reference to the "outer"
-    /// object, e.g. `&MyApp_Impl`, not the inner `&MyApp` object.
+    /// Returns a borrowed reference to the generated outer Rust implementation.
     ///
-    /// `T` must be a type that has been annotated with `#[implement]`; this is checked at
-    /// compile-time by the generic constraints of this method. However, note that the
-    /// returned `&dyn Any` refers to the _outer_ implementation object that was generated by
-    /// `#[implement]`, i.e. the `MyApp_Impl` type, not the inner `MyApp` type.
+    /// Returns `Err(E_NOINTERFACE)` if the object is not a Rust object, not `T`, or contains
+    /// non-static lifetimes.
     ///
-    /// If the given object is not a Rust object, or is a Rust object but not `T`, or is a Rust
-    /// object that contains non-static lifetimes, then this function will return `Err(E_NOINTERFACE)`.
-    ///
-    /// The returned value is borrowed. If you need an owned (counted) reference, then use
-    /// [`Interface::cast_object`].
+    /// The returned value is borrowed; use [`Interface::cast_object`] for an owned (counted)
+    /// reference.
     #[inline(always)]
     fn cast_object_ref<T>(&self) -> Result<&T::Outer>
     where
@@ -210,20 +200,14 @@ pub unsafe trait Interface: Sized + Clone {
         }
     }
 
-    /// This casts the given COM interface to [`&dyn Any`]. It returns a reference to the "outer"
-    /// object, e.g. `MyApp_Impl`, not the inner `MyApp` object.
+    /// Returns an owned reference to the generated outer Rust implementation.
     ///
-    /// `T` must be a type that has been annotated with `#[implement]`; this is checked at
-    /// compile-time by the generic constraints of this method. However, note that the
-    /// returned `&dyn Any` refers to the _outer_ implementation object that was generated by
-    /// `#[implement]`, i.e. the `MyApp_Impl` type, not the inner `MyApp` type.
+    /// Returns `Err(E_NOINTERFACE)` if the object is not a Rust object, not `T`, or contains
+    /// non-static lifetimes.
     ///
-    /// If the given object is not a Rust object, or is a Rust object but not `T`, or is a Rust
-    /// object that contains non-static lifetimes, then this function will return `Err(E_NOINTERFACE)`.
-    ///
-    /// The returned value is an owned (counted) reference; this function calls `AddRef` on the
-    /// underlying COM object. If you do not need an owned reference, then you can use the
-    /// [`Interface::cast_object_ref`] method instead, and avoid the cost of `AddRef` / `Release`.
+    /// The returned value is an owned (counted) reference: this function calls `AddRef`. Use
+    /// [`Interface::cast_object_ref`] to avoid `AddRef` / `Release` overhead if you do not need
+    /// ownership.
     #[inline(always)]
     fn cast_object<T>(&self) -> Result<ComObject<T>>
     where
@@ -240,7 +224,7 @@ pub unsafe trait Interface: Sized + Clone {
             .map(|source| Weak::downgrade(&source))
     }
 
-    /// Call `QueryInterface` on this interface
+    /// Calls `QueryInterface`.
     ///
     /// # Safety
     ///
@@ -256,17 +240,15 @@ pub unsafe trait Interface: Sized + Clone {
         }
     }
 
-    /// Creates an `InterfaceRef` for this reference. The `InterfaceRef` tracks lifetimes statically,
-    /// and eliminates the need for dynamic reference count adjustments (AddRef/Release).
+    /// Borrows this interface without changing its reference count.
     fn to_ref(&self) -> InterfaceRef<'_, Self> {
         InterfaceRef::from_interface(self)
     }
 }
 
-/// This has the same memory representation as `IFoo`, but represents a borrowed interface pointer.
+/// A borrowed COM interface pointer with the same representation as `I`.
 ///
-/// This type has no `Drop` impl; it does not AddRef/Release the given interface. However, because
-/// it has a lifetime parameter, it always represents a non-null pointer to an interface.
+/// This type does not adjust the reference count.
 #[repr(transparent)]
 pub struct InterfaceRef<'a, I>(NonNull<c_void>, PhantomData<&'a I>);
 
@@ -285,31 +267,26 @@ impl<I: core::fmt::Debug + Interface> core::fmt::Debug for InterfaceRef<'_, I> {
 }
 
 impl<I: Interface> InterfaceRef<'_, I> {
-    /// Creates an `InterfaceRef` from a raw pointer. _This is extremely dangerous, since there
-    /// is no lifetime tracking at all!_
+    /// Borrows an interface from a raw pointer without changing its reference count.
     ///
     /// # Safety
-    /// The caller must guarantee that the `'a` lifetime parameter is bound by context to a correct
-    /// lifetime.
+    ///
+    /// `ptr` must point to a valid `I` that remains alive for the inferred lifetime.
     #[inline(always)]
     pub unsafe fn from_raw(ptr: NonNull<c_void>) -> Self {
         Self(ptr, PhantomData)
     }
 
-    /// Creates an `InterfaceRef` from an interface reference. This safely associates the lifetime
-    /// of the interface reference with the `'a` parameter of `InterfaceRef`. This allows for
-    /// lifetime checking _without_ calling AddRef/Release on the underlying lifetime, which can
-    /// improve efficiency.
+    /// Borrows an interface without calling `AddRef`.
     #[inline(always)]
     pub fn from_interface(interface: &I) -> Self {
         unsafe {
-            // SAFETY: new_unchecked() should be valid because Interface::as_raw should always
-            // return a non-null pointer.
+            // SAFETY: `Interface::as_raw` returns a non-null interface pointer.
             Self(NonNull::new_unchecked(interface.as_raw()), PhantomData)
         }
     }
 
-    /// Calls AddRef on the underlying COM interface and returns an "owned" (counted) reference.
+    /// Calls `AddRef` and returns an owned interface.
     #[inline(always)]
     pub fn to_owned(self) -> I {
         (*self).clone()

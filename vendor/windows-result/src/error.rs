@@ -4,34 +4,15 @@ use core::num::NonZeroI32;
 #[expect(unused_imports)]
 use core::mem::size_of;
 
-/// An error object consists of both an error code and optional detailed error information for debugging.
+/// A Windows error code with optional COM error information.
 ///
-/// # Extended error info and the `windows_slim_errors` configuration option
+/// # Extended error information
 ///
-/// `Error` contains an [`HRESULT`] value that describes the error, as well as an optional
-/// `IErrorInfo` COM object. The `IErrorInfo` object is a COM object that can provide detailed information
-/// about an error, such as a text string, a `ProgID` of the originator, etc. If the error object
-/// was originated in an WinRT component, then additional information such as a stack track may be
-/// captured.
+/// By default, `Error` retains an `IErrorInfo` object when available. This may include a message,
+/// source, and WinRT stack trace.
 ///
-/// However, many systems based on COM do not use `IErrorInfo`. For these systems, the optional error
-/// info within `Error` has no benefits, but has substantial costs because it increases the size of
-/// the `Error` object, which also increases the size of `Result<T>`.
-///
-/// This error information can be disabled at compile time by setting `RUSTFLAGS=--cfg=windows_slim_errors`.
-/// This removes the `IErrorInfo` support within the [`Error`] type, which has these benefits:
-///
-/// * It reduces the size of [`Error`] to 4 bytes (the size of [`HRESULT`]).
-///
-/// * It reduces the size of `Result<(), Error>` to 4 bytes, allowing it to be returned in a single
-///   machine register.
-///
-/// * The `Error` (and `Result<T, Error>`) types no longer have a [`Drop`] impl. This removes the need
-///   for lifetime checking and running drop code when [`Error`] and [`Result`] go out of scope. This
-///   significantly reduces code size for codebase that make extensive use of [`Error`].
-///
-/// Of course, these benefits come with a cost; you lose extended error information for those
-/// COM objects that support it.
+/// Set `RUSTFLAGS=--cfg=windows_slim_errors` to omit `IErrorInfo`. This reduces `Error` to the
+/// four-byte [`HRESULT`] and removes its `Drop` implementation, but discards extended information.
 ///
 /// This is controlled by a `--cfg` option rather than a Cargo feature because this compilation
 /// option sets a policy that applies to an entire graph of crates. Individual crates that take a
@@ -41,7 +22,9 @@ use core::mem::size_of;
 ///
 /// # References
 ///
-/// * [`IErrorInfo`](https://learn.microsoft.com/en-us/windows/win32/api/oaidl/nn-oaidl-ierrorinfo)
+/// * [`IErrorInfo`][error-info]
+///
+/// [error-info]: https://learn.microsoft.com/windows/win32/api/oaidl/nn-oaidl-ierrorinfo
 #[derive(Clone)]
 pub struct Error {
     /// The `HRESULT` error code, but represented using [`NonZeroI32`]. [`NonZeroI32`] provides
@@ -89,20 +72,12 @@ impl Error {
     /// Creates a new error object, capturing the stack and other information about the
     /// point of failure.
     pub fn new<T: AsRef<str>>(code: HRESULT, message: T) -> Self {
-        #[cfg(windows)]
-        {
-            let message: &str = message.as_ref();
-            if message.is_empty() {
-                Self::from_hresult(code)
-            } else {
-                ErrorInfo::originate_error(code, message);
-                code.into()
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = message;
+        let message: &str = message.as_ref();
+        if message.is_empty() {
             Self::from_hresult(code)
+        } else {
+            ErrorInfo::originate_error(code, message);
+            code.into()
         }
     }
 
@@ -168,7 +143,18 @@ impl From<HRESULT> for Error {
 #[cfg(feature = "std")]
 impl From<Error> for std::io::Error {
     fn from(from: Error) -> Self {
-        Self::from_raw_os_error(from.code().0)
+        // If the HRESULT wraps a Win32 error (FACILITY_WIN32), unwrap it to the
+        // underlying Win32 error code so that `std::io::Error::kind` can decode
+        // it into a meaningful `ErrorKind`. For HRESULTs from other facilities
+        // (such as COM `E_*` codes or custom facilities), preserve the full
+        // HRESULT value to avoid losing information. This mirrors the behavior
+        // of .NET's `Marshal.GetExceptionForHR` and the conventions used by
+        // Rust's own Win32 error decoding.
+        if let Some(win32) = WIN32_ERROR::from_error(&from) {
+            Self::from_raw_os_error(win32.0 as i32)
+        } else {
+            Self::from_raw_os_error(from.code().0)
+        }
     }
 }
 
@@ -176,7 +162,7 @@ impl From<Error> for std::io::Error {
 impl From<std::io::Error> for Error {
     fn from(from: std::io::Error) -> Self {
         match from.raw_os_error() {
-            Some(status) => HRESULT::from_win32(status as u32).into(),
+            Some(status) => WIN32_ERROR(status as u32).into(),
             None => HRESULT(E_UNEXPECTED).into(),
         }
     }
@@ -184,19 +170,19 @@ impl From<std::io::Error> for Error {
 
 impl From<alloc::string::FromUtf16Error> for Error {
     fn from(_: alloc::string::FromUtf16Error) -> Self {
-        Self::from_hresult(HRESULT::from_win32(ERROR_NO_UNICODE_TRANSLATION))
+        WIN32_ERROR(ERROR_NO_UNICODE_TRANSLATION as u32).into()
     }
 }
 
 impl From<alloc::string::FromUtf8Error> for Error {
     fn from(_: alloc::string::FromUtf8Error) -> Self {
-        Self::from_hresult(HRESULT::from_win32(ERROR_NO_UNICODE_TRANSLATION))
+        WIN32_ERROR(ERROR_NO_UNICODE_TRANSLATION as u32).into()
     }
 }
 
 impl From<core::num::TryFromIntError> for Error {
     fn from(_: core::num::TryFromIntError) -> Self {
-        Self::from_hresult(HRESULT::from_win32(ERROR_INVALID_DATA))
+        WIN32_ERROR(ERROR_INVALID_DATA as u32).into()
     }
 }
 
@@ -260,7 +246,9 @@ mod error_info {
     ///
     /// # References
     ///
-    /// * [`IErrorInfo`](https://learn.microsoft.com/en-us/windows/win32/api/oaidl/nn-oaidl-ierrorinfo)
+    /// * [`IErrorInfo`][error-info]
+    ///
+    /// [error-info]: https://learn.microsoft.com/windows/win32/api/oaidl/nn-oaidl-ierrorinfo
     #[derive(Clone, Default)]
     pub(crate) struct ErrorInfo {
         pub(super) ptr: Option<ComPtr>,
@@ -272,19 +260,17 @@ mod error_info {
         }
 
         pub(crate) fn from_thread() -> Self {
-            unsafe {
-                let mut ptr = core::mem::MaybeUninit::zeroed();
-                crate::bindings::GetErrorInfo(0, ptr.as_mut_ptr() as *mut _);
-                Self {
-                    ptr: ptr.assume_init(),
-                }
+            let mut ptr: *mut core::ffi::c_void = core::ptr::null_mut();
+            unsafe { GetErrorInfo(0, &mut ptr) };
+            Self {
+                ptr: core::ptr::NonNull::new(ptr).map(ComPtr),
             }
         }
 
         pub(crate) fn into_thread(self) {
             if let Some(ptr) = self.ptr {
                 unsafe {
-                    crate::bindings::SetErrorInfo(0, ptr.as_raw());
+                    SetErrorInfo(0, ptr.as_raw());
                 }
             }
         }
@@ -321,7 +307,7 @@ mod error_info {
                 }
 
                 if message.is_empty() {
-                    message = fallback
+                    message = fallback;
                 };
             }
 
@@ -360,7 +346,7 @@ mod error_info {
     #[derive(Clone, Default)]
     pub(crate) struct EmptyErrorInfo;
 
-    pub(crate) use EmptyErrorInfo as ErrorInfo;
+    pub(crate) use self::EmptyErrorInfo as ErrorInfo;
 
     impl EmptyErrorInfo {
         pub(crate) const fn empty() -> Self {
@@ -373,7 +359,6 @@ mod error_info {
 
         pub(crate) fn into_thread(self) {}
 
-        #[cfg(windows)]
         pub(crate) fn originate_error(_code: HRESULT, _message: &str) {}
 
         pub(crate) fn message(&self) -> Option<String> {

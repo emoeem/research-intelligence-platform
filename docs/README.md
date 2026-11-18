@@ -31,6 +31,7 @@
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |
 | 安全知识源接入计划 | [RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md](RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md) |
+| Burp / Yakit 风格 Web 安全工作台扩展 | [rip3/WEB-SECURITY-WORKBENCH-PLAN.md](rip3/WEB-SECURITY-WORKBENCH-PLAN.md)（Proxy / MITM、HTTP History、Repeater、Web Fuzzer、WebSocket、插件与 Rust-First 规划） |
 | SK-1 摄取接线裁决 | [adr/SK1-INGEST-ADR.md](adr/SK1-INGEST-ADR.md)（指针：[phase6/SK1-INGEST-ADR.md](phase6/SK1-INGEST-ADR.md)） |
 | 现状架构盘点     | [phase0/CURRENT-ARCHITECTURE-INVENTORY.md](phase0/CURRENT-ARCHITECTURE-INVENTORY.md) |
 | 可登记工具清单   | [phase0/TOOL-INVENTORY.md](phase0/TOOL-INVENTORY.md)                   |

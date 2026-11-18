@@ -3,7 +3,6 @@
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 #![cfg_attr(not(windows), expect(unused_imports))]
 #![expect(
-    dead_code,
     non_upper_case_globals,
     non_snake_case,
     non_camel_case_types,
@@ -14,6 +13,10 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 
+#[expect(
+    dead_code,
+    reason = "IErrorInfo's generated IID accompanies the vtable but is not needed"
+)]
 mod bindings;
 use bindings::*;
 
@@ -36,6 +39,15 @@ pub use hresult::HRESULT;
 
 mod bool;
 pub use bool::BOOL;
+
+mod win32_error;
+pub use win32_error::WIN32_ERROR;
+
+mod ntstatus;
+pub use ntstatus::NTSTATUS;
+
+mod rpc_status;
+pub use rpc_status::RPC_STATUS;
 
 /// A specialized [`Result`] type that provides Windows error information.
 pub type Result<T> = core::result::Result<T, Error>;

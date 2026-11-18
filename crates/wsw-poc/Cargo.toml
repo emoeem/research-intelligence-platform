@@ -1,0 +1,38 @@
+[package]
+name = "wsw-poc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+
+# WSW-2 POC（docs/rip3/wsw/01-LIBRARY-EVALUATION.md §6.1 第一选落地验证）：
+# hudsucker 0.25.0 最小化 feature 集 —— default-features=false（去 native-tls
+# 与 decoder/zstd），只取 rcgen-ca（动态证书 CA）+ rustls-client（上游 TLS）
+# + http2（ALPN 面）。
+[dependencies]
+hudsucker = { version = "=0.25.0", default-features = false, features = [
+    "rcgen-ca",
+    "rustls-client",
+    "http2",
+] }
+# CA 根证书生成（rcgen 版本随 hudsucker 底座 0.14.10；crypto+ring 供
+# KeyPair::generate，pem 供根证书落盘供 curl --cacert 置信）。
+rcgen = { version = "=0.14.10", default-features = false, features = [
+    "crypto",
+    "ring",
+    "pem",
+] }
+# Body 聚合读（hudsucker::Body 无 read_all helper，经 BodyExt::collect）。
+http-body-util = "0.1"
+# 自定义上游 connector（webpki-roots + --upstream-ca 追加信任面；feature 面
+# 与 hudsucker 自带声明一致，版本已在 lock，零 vendor 新增）。
+hyper-rustls = { version = "0.27", default-features = false, features = [
+    "http1",
+    "logging",
+    "tls12",
+    "webpki-tokio",
+] }
+webpki-roots = "1.0"
+# tokio：workspace 底座缺 net（MITM 监听必需，additive 增补，见评估文档 §4.2）。
+tokio = { workspace = true, features = ["net"] }

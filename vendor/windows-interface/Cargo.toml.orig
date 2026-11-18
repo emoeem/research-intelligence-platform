@@ -1,8 +1,8 @@
 [package]
 name = "windows-interface"
-version = "0.59.3"
-edition = "2021"
-rust-version = "1.74"
+version = "0.100.0"
+edition = "2024"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 description = "The interface macro for the Windows crates"
 repository = "https://github.com/microsoft/windows-rs"
@@ -21,7 +21,6 @@ windows-core = { path = "../core" }
 workspace = true
 
 [package.metadata.docs.rs]
-default-target = "x86_64-pc-windows-msvc"
 targets = []
 
 [lib]

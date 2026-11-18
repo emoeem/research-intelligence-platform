@@ -21,6 +21,7 @@ members = [
     "crates/mcp-server",
     "crates/rp-mcp-parity",
     "crates/intel-db",
+    "crates/wsw-poc",
     "tests",
 ]
 

@@ -1,5 +1,5 @@
 use super::*;
-use core::{iter::once, mem::transmute_copy};
+use core::iter::once;
 use std::sync::{Arc, RwLock};
 
 /// A type that you can use to declare and implement an event of a specified delegate type.
@@ -89,7 +89,6 @@ impl<T: Interface> Event<T> {
                 // No delegates to call.
                 return;
             }
-            // <-- lock is released here
         };
 
         for delegate in delegates.iter() {
@@ -126,11 +125,9 @@ impl<T: Interface> Delegate<T> {
 
     /// Returns an encoded token to identify the delegate.
     fn to_token(&self) -> i64 {
-        unsafe {
-            match self {
-                Self::Direct(delegate) => imp::EncodePointer(transmute_copy(delegate)) as i64,
-                Self::Indirect(delegate) => imp::EncodePointer(transmute_copy(delegate)) as i64,
-            }
+        match self {
+            Self::Direct(delegate) => imp::encode_pointer(delegate.as_raw()),
+            Self::Indirect(delegate) => imp::encode_pointer(delegate.as_raw()),
         }
     }
 

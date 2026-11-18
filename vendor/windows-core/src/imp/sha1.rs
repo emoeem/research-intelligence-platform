@@ -292,10 +292,10 @@ const fn digest(mut state: [u32; 5], len: u64, blocks: Blocks) -> Digest {
         data
     }
 
-    const fn clone_slice_128(mut data: [u8; 128], slice: &[u8], _offset: usize) -> [u8; 128] {
+    const fn clone_slice_128(mut data: [u8; 128], slice: &[u8], offset: usize) -> [u8; 128] {
         let mut i = 0;
         while i < slice.len() {
-            data[_offset + i] = slice[i];
+            data[offset + i] = slice[i];
             i += 1;
         }
         data
@@ -343,8 +343,8 @@ const fn digest(mut state: [u32; 5], len: u64, blocks: Blocks) -> Digest {
     Digest { data: state }
 }
 
-const fn rol(value: u32, bits: usize) -> u32 {
-    (value << bits) | (value >> (32 - bits))
+const fn rol(value: u32, bits: u32) -> u32 {
+    value.rotate_left(bits)
 }
 
 const fn blk(block: &[u32], i: usize) -> u32 {
@@ -479,7 +479,7 @@ impl Digest {
 
 impl core::fmt::Display for Digest {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        for i in self.data.iter() {
+        for i in &self.data {
             write!(f, "{i:08x}")?;
         }
         Ok(())

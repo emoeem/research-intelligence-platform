@@ -1,19 +1,47 @@
 #[cfg(windows)]
 include!("windows.rs");
 
+use alloc::boxed::Box;
+
+mod agile;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod bindings;
 mod can_into;
-mod com_bindings;
+mod delegate_box;
 mod ref_count;
 mod sha1;
 mod weak_ref_count;
 
-pub(crate) use bindings::*;
+pub use crate::r#type::{
+    AbiType, CloneType, CopyType, InterfaceType, Type, TypeKind, ref_as_default,
+};
+pub use agile::*;
+pub use bindings::*;
 pub use can_into::*;
-pub use com_bindings::*;
+pub use delegate_box::*;
 pub use ref_count::*;
 pub use sha1::*;
 pub use weak_ref_count::*;
+
+/// Returns an opaque, process-specific encoding of a pointer suitable for use
+/// as a delegate token. On Windows this calls `EncodePointer` so tokens cannot
+/// be forged from raw pointer values; on non-Windows targets the raw pointer
+/// value is returned as-is because there is no equivalent OS primitive and the
+/// token is already opaque to callers and only meaningful within this process.
+///
+/// The pointer is treated as an opaque value and is never dereferenced.
+#[inline]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn encode_pointer(ptr: *const core::ffi::c_void) -> i64 {
+    #[cfg(windows)]
+    unsafe {
+        EncodePointer(ptr) as i64
+    }
+    #[cfg(not(windows))]
+    {
+        ptr as i64
+    }
+}
 
 #[doc(hidden)]
 #[macro_export]
@@ -94,5 +122,23 @@ macro_rules! define_interface {
 #[doc(hidden)]
 pub use define_interface;
 
+// These helpers let generated code use `windows_core::imp::box_new` etc. without
+// depending on `Box` being in scope at the call site.
+
+#[inline(always)]
 #[doc(hidden)]
-pub use alloc::boxed::Box;
+pub fn box_new<T>(value: T) -> Box<T> {
+    Box::new(value)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub unsafe fn box_from_raw<T>(raw: *mut T) -> Box<T> {
+    unsafe { Box::from_raw(raw) }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn box_into_raw<T>(b: Box<T>) -> *mut T {
+    Box::into_raw(b)
+}

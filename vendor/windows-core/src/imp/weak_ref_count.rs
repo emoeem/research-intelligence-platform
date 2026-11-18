@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IUnknown, IUnknown_Vtbl, Interface, GUID, HRESULT};
+use crate::{GUID, HRESULT, IUnknown, IUnknown_Vtbl, Interface};
 use core::ffi::c_void;
 use core::mem::{transmute, transmute_copy};
 use core::ptr::null_mut;
@@ -16,11 +16,13 @@ impl WeakRefCount {
 
     pub fn add_ref(&self) -> u32 {
         self.0
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count_or_pointer| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |count_or_pointer| {
                 bool::then_some(!is_weak_ref(count_or_pointer), count_or_pointer + 1)
             })
-            .map(|u| u as u32 + 1)
-            .unwrap_or_else(|pointer| unsafe { TearOff::decode(pointer).strong_count.add_ref() })
+            .map_or_else(
+                |pointer| unsafe { TearOff::decode(pointer).strong_count.add_ref() },
+                |u| u as u32 + 1,
+            )
     }
 
     #[inline(always)]
@@ -30,25 +32,29 @@ impl WeakRefCount {
 
     pub fn release(&self) -> u32 {
         self.0
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |count_or_pointer| {
+            .try_update(Ordering::Release, Ordering::Relaxed, |count_or_pointer| {
                 bool::then_some(!is_weak_ref(count_or_pointer), count_or_pointer - 1)
             })
-            .map(|u| u as u32 - 1)
-            .unwrap_or_else(|pointer| unsafe {
-                let tear_off = TearOff::decode(pointer);
-                let remaining = tear_off.strong_count.release();
+            .map_or_else(
+                |pointer| unsafe {
+                    let tear_off = TearOff::decode(pointer);
+                    let remaining = tear_off.strong_count.release();
 
-                // If this is the last strong reference, we can release the weak reference implied by the strong reference.
-                // There may still be weak references, so the WeakRelease is called to handle such possibilities.
-                if remaining == 0 {
-                    TearOff::WeakRelease(&mut tear_off.weak_vtable as *mut _ as _);
-                }
+                    // The last strong reference also releases its implied weak reference.
+                    if remaining == 0 {
+                        TearOff::WeakRelease(&mut tear_off.weak_vtable as *mut _ as _);
+                    }
 
-                remaining
-            })
+                    remaining
+                },
+                |u| u as u32 - 1,
+            )
     }
 
     /// # Safety
+    ///
+    /// `object` must be the COM identity pointer associated with this reference count and remain
+    /// valid while the strong count is nonzero.
     pub unsafe fn query(&self, iid: &GUID, object: *mut c_void) -> *mut c_void {
         unsafe {
             if iid != &IWeakReferenceSource::IID {
@@ -180,15 +186,15 @@ impl TearOff {
                 return E_POINTER;
             }
 
-            // Only directly respond to queries for the the tear-off's strong interface. This is
-            // effectively a self-query.
+            // Only directly respond to queries for the tear-off's strong interface. This is
+            // a self-query.
             if *iid == IWeakReferenceSource::IID {
                 *interface = ptr;
                 this.strong_count.add_ref();
                 return HRESULT(0);
             }
 
-            // As the tear-off is sharing the identity of the object, simply delegate any remaining
+            // As the tear-off is sharing the identity of the object, delegate any remaining
             // queries to the object.
             this.query_interface(iid, interface)
         }
@@ -206,9 +212,8 @@ impl TearOff {
                 return E_POINTER;
             }
 
-            // While the weak vtable is packed into the same allocation as the strong vtable and
-            // tear-off, it represents a distinct COM identity and thus does not share or delegate to
-            // the object.
+            // The weak interface has a distinct COM identity even though its vtable shares the
+            // tear-off allocation, so it does not delegate queries to the object.
 
             *interface = if *iid == IWeakReference::IID
                 || *iid == IUnknown::IID
@@ -305,23 +310,21 @@ impl TearOff {
 
             this.strong_count
                 .0
-                .fetch_update(Ordering::Acquire, Ordering::Relaxed, |count| {
-                    // Attempt to acquire a strong reference count to stabilize the object for the duration
-                    // of the `QueryInterface` call.
+                .try_update(Ordering::Acquire, Ordering::Relaxed, |count| {
+                    // Stabilize the object for the duration of the `QueryInterface` call.
                     bool::then_some(count != 0, count + 1)
                 })
-                .map(|_| {
-                    // Let the object respond to the upgrade query.
-                    let result = this.query_interface(iid, interface);
-                    // Decrement the temporary reference account used to stabilize the object.
-                    this.strong_count.0.fetch_sub(1, Ordering::Relaxed);
-                    // Return the result of the query.
-                    result
-                })
-                .unwrap_or_else(|_| {
-                    *interface = null_mut();
-                    HRESULT(0)
-                })
+                .map_or_else(
+                    |_| {
+                        *interface = null_mut();
+                        HRESULT(0)
+                    },
+                    |_| {
+                        let result = this.query_interface(iid, interface);
+                        this.strong_count.0.fetch_sub(1, Ordering::Relaxed);
+                        result
+                    },
+                )
         }
     }
 }

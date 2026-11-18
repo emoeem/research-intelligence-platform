@@ -22,6 +22,15 @@ allow = [
   "Apache-2.0",
   "Unicode-3.0",
   "Zlib",
+  # WSW-0 POC 批 vendor 增量补录（2026-11-18 评审修订）：cargo deny check licenses
+  # 实测 9 error——ISC（aws-lc-rs/aws-lc-sys/rustls-webpki/untrusted 组合表达式）、
+  # BSD-2-Clause（hyper-tungstenite）、BSD-3-Clause（ring/subtle 组合表达式）、
+  # CDLA-Permissive-2.0（webpki-roots 0.26.11/1.0.12，Mozilla 根证书库数据许可）。
+  # 实录见 docs/rip3/wsw/04-ADR.md §四.3。
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "CDLA-Permissive-2.0",
 ]
 # 信任 crates.io 元数据（vendor/ 内 Cargo.toml 的 license 字段与 crates.io
 # 一致，manifest 逐包人工抽样核对记录在 DEPENDENCIES-RUST.md）。

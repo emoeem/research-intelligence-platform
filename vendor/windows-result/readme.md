@@ -1,16 +1,16 @@
-## Windows error handling
+## windows-result
 
-The [windows-result](https://crates.io/crates/windows-result) crate provides efficient Windows error handling and propagation with support for Win32, COM, and WinRT APIs.
+The [windows-result](https://crates.io/crates/windows-result) crate provides Windows error types for
+Win32, COM, and WinRT APIs.
 
-* [Getting started](https://kennykerr.ca/rust-getting-started/)
-* [Samples](https://github.com/microsoft/windows-rs/tree/master/crates/samples)
-* [Releases](https://github.com/microsoft/windows-rs/releases)
+* [Getting
+  started](https://github.com/microsoft/windows-rs/blob/master/docs/crates/windows-result.md)
 
 Start by adding the following to your Cargo.toml file:
 
 ```toml
 [dependencies.windows-result]
-version = "0.4"
+version = "0.100"
 ```
 
 Use the `HRESULT`, `Error`, and specialized `Result` types as needed:
@@ -19,8 +19,8 @@ Use the `HRESULT`, `Error`, and specialized `Result` types as needed:
 use windows_result::*;
 
 const S_OK: HRESULT = HRESULT(0);
-const ERROR_CANCELLED: u32 = 1223;
-const E_CANCELLED: HRESULT = HRESULT::from_win32(ERROR_CANCELLED);
+const ERROR_CANCELLED: WIN32_ERROR = WIN32_ERROR(1223);
+const E_CANCELLED: HRESULT = ERROR_CANCELLED.to_hresult();
 
 fn main() -> Result<()> {
     S_OK.ok()?;

@@ -1,10 +1,8 @@
 //! Implement COM interfaces for Rust types.
 //!
-//! Take a look at [macro@implement] for an example.
-//!
-//! Learn more about Rust for Windows here: <https://github.com/microsoft/windows-rs>
+//! See [`implement`] for an example.
 
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 
 mod r#gen;
 use r#gen::gen_all;
@@ -14,8 +12,7 @@ mod tests;
 
 /// Implements one or more COM interfaces.
 ///
-/// # Example
-/// ```rust,no_run
+/// ```
 /// use windows_core::*;
 ///
 /// #[interface("094d70d6-5202-44b8-abb8-43860da5aca2")]
@@ -28,13 +25,12 @@ mod tests;
 ///
 /// impl IValue_Impl for Value_Impl {
 ///     unsafe fn GetValue(&self, value: *mut i32) -> HRESULT {
-///         *value = self.0;
+///         unsafe { *value = self.0 };
 ///         HRESULT(0)
 ///     }
 /// }
 ///
-/// let object: IValue = Value(123).into();
-/// // Call interface methods...
+/// let _: IValue = Value(123).into();
 /// ```
 #[proc_macro_attribute]
 pub fn implement(
@@ -48,11 +44,15 @@ fn implement_core(
     attributes: proc_macro2::TokenStream,
     item_tokens: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
-    let attributes = syn::parse2::<ImplementAttributes>(attributes).unwrap();
-    let original_type = syn::parse2::<syn::ItemStruct>(item_tokens).unwrap();
+    let attributes = match syn::parse2::<ImplementAttributes>(attributes) {
+        Ok(a) => a,
+        Err(e) => return e.into_compile_error(),
+    };
+    let original_type = match syn::parse2::<syn::ItemStruct>(item_tokens) {
+        Ok(t) => t,
+        Err(e) => return e.into_compile_error(),
+    };
 
-    // Do a little thinking and assemble ImplementInputs.  We pass ImplementInputs to
-    // all of our gen_* function.
     let inputs = ImplementInputs {
         original_ident: original_type.ident.clone(),
         interface_chains: convert_implements_to_interface_chains(attributes.implement),
@@ -70,6 +70,26 @@ fn implement_core(
             let mut params = quote! {};
             original_type.generics.params.to_tokens(&mut params);
             quote! { <#params> }
+        } else {
+            quote! { <> }
+        },
+        generics_idents: if !original_type.generics.params.is_empty() {
+            let idents: Vec<_> = original_type
+                .generics
+                .params
+                .iter()
+                .map(|param| {
+                    let mut ident = quote! {};
+                    match param {
+                        syn::GenericParam::Type(ty) => ty.ident.to_tokens(&mut ident),
+                        syn::GenericParam::Lifetime(lt) => lt.lifetime.to_tokens(&mut ident),
+                        syn::GenericParam::Const(cnst) => cnst.ident.to_tokens(&mut ident),
+                    };
+
+                    ident
+                })
+                .collect();
+            quote! { <#(#idents),*> }
         } else {
             quote! { <> }
         },
@@ -113,6 +133,10 @@ struct ImplementInputs {
     /// If there are no generics, this contains `<>`.
     generics: proc_macro2::TokenStream,
 
+    /// The list of generic parameters without any bounds, e.g. `<T, 'a, THING>`.
+    /// Used when applying the parameters to the generated type.
+    generics_idents: proc_macro2::TokenStream,
+
     /// True if the user type has any generic parameters.
     is_generic: bool,
 }
@@ -131,7 +155,7 @@ struct InterfaceChain {
 
 struct ImplementType {
     type_name: String,
-    generics: Vec<ImplementType>,
+    generics: Vec<Self>,
 
     /// The best span for diagnostics.
     span: proc_macro2::Span,
@@ -357,13 +381,7 @@ fn convert_implements_to_interface_chains(implements: Vec<ImplementType>) -> Vec
     let mut chains = Vec::with_capacity(implements.len());
 
     for (i, implement) in implements.into_iter().enumerate() {
-        // Create an identifier for this interface chain.
-        // We only use this for naming fields; it is never visible to the developer.
-        // This helps with debugging.
-        //
-        // We use i + 1 so that it matches the numbering of our interface offsets. Interface 0
-        // is the "identity" interface.
-
+        // Field/const naming uses `i + 1` because interface 0 is the identity interface.
         let mut ident_string = format!("interface{}", i + 1);
 
         let suffix = get_interface_ident_suffix(&implement.type_name);

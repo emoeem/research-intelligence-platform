@@ -1,9 +1,6 @@
 use super::*;
 
-/// An [HSTRING] builder that supports preallocating the `HSTRING` to avoid extra allocations and copies.
-///
-/// This is similar to the `WindowsPreallocateStringBuffer` function but implemented directly in Rust for efficiency.
-/// It is implemented as a separate type since [HSTRING] values are immutable.
+/// Builder for preallocating immutable [`HSTRING`] values.
 pub struct HStringBuilder(*mut HStringHeader);
 
 impl HStringBuilder {
@@ -20,23 +17,21 @@ impl HStringBuilder {
 
     /// Shortens the string by removing any trailing 0 characters.
     pub fn trim_end(&mut self) {
-        if let Some(header) = self.as_header_mut() {
-            while header.len > 0
-                && unsafe { header.data.offset(header.len as isize - 1).read() == 0 }
-            {
-                header.len -= 1;
+        let mut new_len = self.len();
+        while new_len > 0 && self[new_len - 1] == 0 {
+            new_len -= 1;
+        }
+        if new_len == 0 {
+            unsafe {
+                HStringHeader::free(self.0);
             }
-
-            if header.len == 0 {
-                unsafe {
-                    HStringHeader::free(self.0);
-                }
-                self.0 = core::ptr::null_mut();
-            }
+            self.0 = core::ptr::null_mut();
+        } else if let Some(header) = self.as_header_mut() {
+            header.len = new_len as u32;
         }
     }
 
-    /// Allows the `HSTRING` to be constructed from bytes.
+    /// Returns the mutable UTF-16 buffer as bytes.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         if let Some(header) = self.as_header() {
             unsafe {
@@ -104,7 +99,7 @@ impl core::fmt::Debug for HStringBuilder {
         write!(
             f,
             "\"{}\"",
-            Decode(|| core::char::decode_utf16(self.iter().cloned()))
+            Decode(|| core::char::decode_utf16(self.iter().copied()))
         )
     }
 }

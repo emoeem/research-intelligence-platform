@@ -1,9 +1,10 @@
-//! These tests are just a way to quickly run the `#[implement]` macro and see its output.
-//! They don't check the output in any way.
+//! Tests for the `#[implement]` macro that verify the generated code structure.
 //!
-//! This exists because of some difficulties of running `cargo expand` against the `#[implement]`
-//! macro. It's also just really convenient. You can see the output by using `--nocapture` and
-//! you'll probably want to restrict the output to a single thread:
+//! These tests call `implement_core` directly and check that the formatted output contains
+//! the expected declarations and trait implementations. The assertions detect removal or
+//! renaming of key generated items.
+//!
+//! To inspect the full formatted output of a test, run with `--nocapture`:
 //!
 //! ```text
 //! cargo test -p windows-implement --lib -- --nocapture --test-threads=1
@@ -22,8 +23,17 @@ fn implement(attributes: TokenStream, item_tokens: TokenStream) -> String {
     let out_string = rustfmt(&tokens_string);
     println!("// output of #[implement] :");
     println!();
-    println!("{}", out_string);
+    println!("{out_string}");
     out_string
+}
+
+fn check(output: &str, expected_items: &[&str]) {
+    for item in expected_items {
+        assert!(
+            output.contains(item),
+            "output does not contain expected item:\n  expected: {item}\n\nfull output:\n{output}"
+        );
+    }
 }
 
 fn rustfmt(input: &str) -> String {
@@ -43,14 +53,12 @@ fn rustfmt(input: &str) -> String {
 
     let mut stdout = child.stdout.take().unwrap();
 
-    // spawn thread to read stdout
     let stdout_thread = std::thread::spawn(move || {
         let mut buf = String::new();
         stdout.read_to_string(&mut buf).unwrap();
         buf
     });
 
-    // write unformatted into stdin
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(input.as_bytes()).unwrap();
     drop(stdin);
@@ -68,7 +76,7 @@ fn rustfmt(input: &str) -> String {
 
 #[test]
 fn simple_type() {
-    implement(
+    let output = implement(
         quote!(IFoo),
         quote! {
             struct Foo {
@@ -76,45 +84,106 @@ fn simple_type() {
             }
         },
     );
+    check(
+        &output,
+        &[
+            "struct Foo_Impl",
+            "impl ::core::ops::Deref for Foo_Impl",
+            "impl ::windows_core::IUnknownImpl for Foo_Impl",
+            "impl ::windows_core::ComObjectInner for Foo",
+            "impl ::core::convert::From<Foo> for ::windows_core::IUnknown",
+            "impl ::core::convert::From<Foo> for ::windows_core::IInspectable",
+            "impl ::core::convert::From<Foo> for IFoo",
+            "impl ::windows_core::ComObjectInterface<IFoo> for Foo_Impl",
+            "impl ::windows_core::AsImpl<Foo> for IFoo",
+        ],
+    );
 }
 
 #[test]
 fn zero_sized_type() {
-    implement(
+    let output = implement(
         quote!(IFoo),
         quote! {
             struct Foo;
         },
     );
+    check(
+        &output,
+        &[
+            "struct Foo_Impl",
+            "impl ::windows_core::IUnknownImpl for Foo_Impl",
+            "impl ::windows_core::ComObjectInner for Foo",
+            "impl ::core::convert::From<Foo> for IFoo",
+            "impl ::windows_core::AsImpl<Foo> for IFoo",
+        ],
+    );
 }
 
 #[test]
 fn no_interfaces() {
-    implement(
+    let output = implement(
         quote!(),
         quote! {
             struct Foo {}
         },
     );
+    check(
+        &output,
+        &[
+            "struct Foo_Impl",
+            "impl ::windows_core::IUnknownImpl for Foo_Impl",
+            "impl ::windows_core::ComObjectInner for Foo",
+            "impl ::core::convert::From<Foo> for ::windows_core::IUnknown",
+        ],
+    );
+    // No interface-specific items should be present.
+    assert!(
+        !output.contains("impl ::core::convert::From<Foo> for IFoo"),
+        "no_interfaces output unexpectedly contains From<Foo> for IFoo"
+    );
+    assert!(
+        !output.contains("impl ::windows_core::AsImpl<Foo>"),
+        "no_interfaces output unexpectedly contains AsImpl<Foo>"
+    );
 }
 
 #[test]
 fn generic_no_lifetime() {
-    implement(
+    let output = implement(
         quote!(IAsyncOperationWithProgress<T, P>, IAsyncInfo),
         quote! {
-            struct OperationWithProgress<T, P>(SyncState<IAsyncOperationWithProgress<T, P>>)
+            struct OperationWithProgress<T: RuntimeType + 'static, P>(SyncState<IAsyncOperationWithProgress<T, P>>)
             where
-                T: RuntimeType + 'static,
                 P: RuntimeType + 'static;
 
         },
+    );
+    check(
+        &output,
+        &[
+            "struct OperationWithProgress_Impl",
+            "impl",
+            "::windows_core::IUnknownImpl for OperationWithProgress_Impl",
+            "impl",
+            "::windows_core::ComObjectInner for OperationWithProgress",
+            "impl",
+            "::core::convert::From<OperationWithProgress",
+            "impl",
+            "::windows_core::AsImpl<OperationWithProgress",
+            "for IAsyncInfo",
+        ],
+    );
+    // Generic types cannot have into_static.
+    assert!(
+        !output.contains("into_static"),
+        "generic_no_lifetime output unexpectedly contains into_static"
     );
 }
 
 #[test]
 fn generic_with_lifetime() {
-    implement(
+    let output = implement(
         quote!(),
         quote! {
             pub struct Foo<'a> {
@@ -122,14 +191,94 @@ fn generic_with_lifetime() {
             }
         },
     );
+    check(
+        &output,
+        &[
+            "struct Foo_Impl",
+            "impl",
+            "::windows_core::IUnknownImpl for Foo_Impl",
+            "impl",
+            "::windows_core::ComObjectInner for Foo",
+        ],
+    );
+    // Lifetime generics should also suppress into_static.
+    assert!(
+        !output.contains("into_static"),
+        "generic_with_lifetime output unexpectedly contains into_static"
+    );
 }
 
 #[test]
 fn tuple_type() {
-    implement(
+    let output = implement(
         quote!(IFoo),
         quote! {
             struct Foo(pub i32);
         },
+    );
+    check(
+        &output,
+        &[
+            "struct Foo_Impl",
+            "impl ::windows_core::IUnknownImpl for Foo_Impl",
+            "impl ::windows_core::ComObjectInner for Foo",
+            "impl ::core::convert::From<Foo> for IFoo",
+            "impl ::windows_core::AsImpl<Foo> for IFoo",
+        ],
+    );
+}
+
+#[test]
+fn two_interfaces() {
+    let output = implement(
+        quote!(IFoo, IBar),
+        quote! {
+            struct Baz;
+        },
+    );
+    check(
+        &output,
+        &[
+            "struct Baz_Impl",
+            "impl ::windows_core::IUnknownImpl for Baz_Impl",
+            "impl ::core::convert::From<Baz> for IFoo",
+            "impl ::core::convert::From<Baz> for IBar",
+            "impl ::windows_core::ComObjectInterface<IFoo> for Baz_Impl",
+            "impl ::windows_core::ComObjectInterface<IBar> for Baz_Impl",
+            "impl ::windows_core::AsImpl<Baz> for IFoo",
+            "impl ::windows_core::AsImpl<Baz> for IBar",
+        ],
+    );
+}
+
+#[test]
+fn not_agile() {
+    let output = implement(
+        quote!(IFoo, Agile = false),
+        quote! {
+            struct Foo;
+        },
+    );
+    // When Agile=false, IAgileObject should NOT appear in QueryInterface.
+    assert!(
+        !output.contains("IAgileObject"),
+        "not_agile output unexpectedly contains IAgileObject"
+    );
+}
+
+#[test]
+fn namespaced_interface() {
+    let output = implement(
+        quote!(Windows::Win32::IFoo),
+        quote! {
+            struct Foo;
+        },
+    );
+    check(
+        &output,
+        &[
+            "struct Foo_Impl",
+            "impl ::windows_core::AsImpl<Foo> for Windows::Win32::IFoo",
+        ],
     );
 }

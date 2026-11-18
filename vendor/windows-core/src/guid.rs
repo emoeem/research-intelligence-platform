@@ -1,20 +1,23 @@
 use super::*;
 
-/// A globally unique identifier ([GUID](https://docs.microsoft.com/en-us/windows/win32/api/guiddef/ns-guiddef-guid))
-/// used to identify COM and WinRT interfaces.
+/// A globally unique identifier (GUID).
+///
+/// See the [GUID structure] documentation.
+///
+/// [GUID structure]: https://learn.microsoft.com/windows/win32/api/guiddef/ns-guiddef-guid
 #[repr(C)]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct GUID {
-    /// Specifies the first 8 hexadecimal digits.
+    /// The first eight hexadecimal digits.
     pub data1: u32,
 
-    /// Specifies the first group of 4 hexadecimal digits.
+    /// The second group of four hexadecimal digits.
     pub data2: u16,
 
-    /// Specifies the second group of 4 hexadecimal digits.
+    /// The third group of four hexadecimal digits.
     pub data3: u16,
 
-    /// The first 2 bytes contain the third group of 4 hexadecimal digits. The remaining 6 bytes contain the final 12 hexadecimal digits.
+    /// The final two groups of four and twelve hexadecimal digits.
     pub data4: [u8; 8],
 }
 
@@ -22,12 +25,21 @@ impl GUID {
     /// Creates a unique `GUID` value.
     pub fn new() -> Result<Self> {
         let mut guid = Self::zeroed();
-        let result = unsafe { imp::UuidCreate(&mut guid as *mut _ as _) };
 
-        if matches!(result, 0 | imp::RPC_S_UUID_LOCAL_ONLY) {
+        // `UuidCreate` returns a plain RPC status code. RPC_S_OK (0) is success;
+        // RPC_S_UUID_LOCAL_ONLY (1824) indicates a locally-generated UUID, which
+        // is fine for our purposes.
+        let status = unsafe { imp::UuidCreate(&mut guid as *mut _ as _) }.0;
+        if status == 0 || status == 1824 {
             Ok(guid)
         } else {
-            Err(Error::from_hresult(HRESULT::from_win32(result as u32)))
+            // Map the Win32/RPC error code to an HRESULT (HRESULT_FROM_WIN32).
+            let hresult = if status <= 0 {
+                status
+            } else {
+                ((status as u32 & 0x0000_FFFF) | 0x8007_0000) as i32
+            };
+            Err(Error::from_hresult(HRESULT(hresult)))
         }
     }
 
@@ -99,6 +111,7 @@ impl GUID {
 
 impl RuntimeType for GUID {
     const SIGNATURE: imp::ConstBuffer = imp::ConstBuffer::from_slice(b"g16");
+    const NAME: imp::ConstBuffer = imp::ConstBuffer::from_slice(b"Guid");
 }
 
 impl TypeKind for GUID {

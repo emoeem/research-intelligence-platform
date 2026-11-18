@@ -1,11 +1,11 @@
-use core::sync::atomic::{fence, AtomicI32, Ordering};
+use core::sync::atomic::{AtomicI32, Ordering, fence};
 
 #[repr(transparent)]
 #[derive(Default)]
 pub struct RefCount(pub(crate) AtomicI32);
 
 impl RefCount {
-    /// Creates a new `RefCount` with an initial value of `1`.
+    /// Creates a new `RefCount` with the given initial value.
     pub const fn new(count: u32) -> Self {
         Self(AtomicI32::new(count as i32))
     }

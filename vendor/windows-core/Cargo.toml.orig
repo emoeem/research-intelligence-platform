@@ -1,8 +1,8 @@
 [package]
 name = "windows-core"
-version = "0.62.2"
-edition = "2021"
-rust-version = "1.82"
+version = "0.100.0"
+edition = "2024"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 description = "Core type support for COM and Windows"
 repository = "https://github.com/microsoft/windows-rs"
@@ -10,15 +10,16 @@ categories = ["os::windows-apis"]
 readme = "readme.md"
 
 [dependencies]
-windows-implement = { workspace = true }
-windows-interface = { workspace = true }
+windows-implement = { workspace = true, optional = true }
+windows-interface = { workspace = true, optional = true }
 windows-link = { workspace = true }
 windows-result = { workspace = true }
 windows-strings = { workspace = true }
 
 [features]
-default = ["std"]
+default = ["std", "proc-macros"]
 std = ["windows-result/std", "windows-strings/std"]
+proc-macros = ["dep:windows-implement", "dep:windows-interface"]
 
 [lints]
 workspace = true
