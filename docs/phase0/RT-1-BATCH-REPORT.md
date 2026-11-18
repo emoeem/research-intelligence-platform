@@ -244,10 +244,16 @@ S1/S7 的批次会话实测（定向 15/15、workspace 888、scoped fmt 全清�
 
 ## E2. CI（E2）
 
-**待 watch 回填。**
+**CI 终态回填（2026-11-19 修复批会话实测）。**
 
-- 本批 4 个提交（`9c76f6f9`→`1571a227`）在本地 main，**领先 origin/main 4 提交未 push**（`git branch -vv` 本会话实测）→ 无 CI run，`gh run watch` 语义不适用，终态**未验证**。
-- 批次零依赖面变化（lock 399/vendor 375 零增量实测）→ 既有 CI 门禁集（cargo test/clippy/deny、web build/selftest、Python worker）无新增需求，无需本批新增 CI 项；push 后沿用既有 watch 流程回填本节（红则修复批）。
+- 首次 push（收口提交 `ae21a0a8`，含批次 5 提交）：CI run [44363607817](https://github.com/emoeem/research-intelligence-platform/actions/runs/44363607817) 终态 **failure**（2026-11-18T17:57:21Z）。四 jobs 三绿一红：Web 工作台（构建与 vitest）/协议一致性载具（REST vs MCP 双通道）/Python worker 测试 success；Rust workspace（测试与 clippy 零警告）failure——`-p tool-engine --test capability_catalog` 8 passed 3 failed exit 101：
+  - `probe_l0_measures_full_sha256_and_fingerprint`（capability_catalog.rs:169）：`Missing { searched_roots: ["/usr/bin/pdftotext"] }`——CI runner（ubuntu-latest）无 poppler；
+  - `refresh_after_probe_returns_fresh_entry`（:463）：`Missing { searched_roots: ["/usr/bin/pdfinfo"] }`——同因；
+  - `probe_l0_wrapper_double_pin_measured`（:208）：`ProbeFailed { detail: "sha256 prefix mismatch at /usr/bin/7z: expected f802383f13b8331a, measured 60fc00b4e1ed3766 …" }`——CI runner 的 7z 与 RT-0.5-A 本机实测钉值不同构建。
+- 性质判定：三个测试将 RT-0.5-A 本机 Arch 实测钉值（宿主真实二进制路径 + sha256 前缀）硬编码为断言前提，跨环境不可移植；本机同代码复跑 capability_catalog 11 passed 0 failed（0.03s），CI 同代码 3 红——宿主绑定测试缺陷，非 Adapter/Provider 逻辑回归（native_rust_e2e 17/17、sk3 6/6、clippy 在 CI 亦绿，失败仅限 capability_catalog 三测）。
+- **CI 修复批**：capability_catalog.rs 三测试前置 `host_pin_guard`（测试内 helper：`std::fs::read` + `sha256_hex` 前缀对照种子钉值——pdftotext f85872f94fb67433 / pdfinfo 3bdf68a79b9a3c22 / 7z 双钉 f802383f13b8331a + target d48e622e9009acdb），守卫不满足（二进制不在位或前缀不符）时 eprintln SKIP 并 return，与 selftest V-9 playwright SKIP 口径一致；不降级断言、不伪造绿面，守卫触发即环境不满足，宿主完整性由 probe 的 stale/missing 语义本身承载。本机守卫全过 11/11 绿 + clippy `-p tool-engine --all-targets -D warnings` 零告警 + rustfmt --edition 2021 --check clean；守卫分支负向验证（不存在路径 → SKIP；前缀不符 → SKIP）。
+- 修复批 commit push 后 CI run 终态随本次 watch 回填（占位：**待 watch**）。
+- 批次零依赖面变化（lock 399/vendor 375 零增量实测）→ 既有 CI 门禁集无新增需求，无需本批新增 CI 项。
 
 ## F. 性能
 
@@ -315,5 +321,5 @@ S1/S7 的批次会话实测（定向 15/15、workspace 888、scoped fmt 全清�
 2. **两份存量 native_rust Manifest 实际不可执行**：rp-plugin/rp-knowledge-fetch 为名称形态零钉值，执行面 fail-closed 下派发必拒（与升级前等价，但「登记在案」与「可执行」的差距显性化）——钉值补录属 RT-4，迁移前这两份工具不可用（G 节遗留 3）。
 3. **全仓 fmt 漂移 661 处为 HEAD 既有红**（批次会话 stash 后实测，本会话未复跑计数）：本批 scoped fmt 处置，整仓统一格式化未做（不属本批落点，独立卫生批遗留）。
 4. **性能面无数字**：无吞吐基线、无 adapter 派发延迟基准、systemd-run scope 创建耗时未计量、Auto 全链真实 systemd-run 路径本机未跑通——全部如实标"未验证"（F 节）。
-5. **CI 终态未回填**：本批 4 提交未 push（main 领先 origin/main 4），无 CI run，E2 节待 watch（未验证）。
+5. **CI 首跑红面已回填并修复**：收口提交 `ae21a0a8` push 后 CI run 44363607817 failure——capability_catalog 三测试宿主绑定钉值在 CI runner（ubuntu-latest）不成立（无 poppler ×2、7z 异构构建 ×1）；修复批以 `host_pin_guard` SKIP 语义前置（E2 节），本机 11/11 绿，修复批 run 终态见 E2（随修复批 push watch）。宿主绑定测试的教训：跨环境测试面不得把单机实测快照当断言前提，钉值前提要么前置守卫要么下沉 fixture。
 6. **评审 medium#1 初稿缺陷如实**：D8.4 探测/派发环境不对称使 Auto 全链从未端到端跑通（测试载具全部 Off 档）且缺陷未入初稿遗留清单——评审暴露后 F1 修正 + Auto 正例补测，属初稿质量问题如实登记。
