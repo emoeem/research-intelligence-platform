@@ -178,6 +178,19 @@ fn sk3_native_rust_allowlist_shapes_accept() {
     });
     validate_static(&a, &Options::default()).unwrap_or_else(|e| panic!("shape A rejected: {e}"));
 
+    // 形态 A 段首数字 capability_ref：C 目录权威 id archive.7z（段首数字与
+    // validate.rs capability_ref_ok / capability.rs CapabilityId::new /
+    // schemas/tool-manifest/v1.json pattern 三面同规则，评审修订补测）。
+    let mut d = native_rust_doc();
+    d["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/7z",
+        "binary_sha256": "f802383f13b8331aabaf779def00a356c8d2b8148255170b75b03028f4d23ad4",
+        "capability_ref": "archive.7z"
+    });
+    validate_static(&d, &Options::default())
+        .unwrap_or_else(|e| panic!("digit-start capability_ref (archive.7z) rejected: {e}"));
+
     // 形态 B：subcommands 白名单 + argv_template（D3 形状）。
     let mut b = native_rust_doc();
     b["runtime"] = serde_json::json!({
@@ -305,6 +318,37 @@ fn sk3_native_rust_allowlist_negative_matrix() {
             .contains("two-segment lowercase capability id"),
         "bad capability_ref must be rejected: {err}"
     );
+
+    // 段首数字 capability_ref 正例（C 目录权威 id archive.7z；评审修订补测：
+    // 与 v1.json pattern / validate.rs / capability.rs 三面同规则）。
+    let mut doc = native_rust_doc();
+    doc["runtime"] = serde_json::json!({
+        "type": "native_rust",
+        "binary": "/usr/bin/7z",
+        "binary_sha256": "f802383f13b8331aabaf779def00a356c8d2b8148255170b75b03028f4d23ad4",
+        "subcommands": ["l"],
+        "capability_ref": "archive.7z"
+    });
+    validate_static(&doc, &Options::default())
+        .unwrap_or_else(|e| panic!("digit-start capability_ref (archive.7z) rejected: {e}"));
+
+    // D4 env 登记卫生（评审修订）：动态链接器注入类键（LD_PRELOAD/
+    // LD_LIBRARY_PATH）登记拒绝——派发面 env_clear 白名单外结构性禁入面。
+    for bad_key in ["LD_PRELOAD", "LD_LIBRARY_PATH"] {
+        let mut doc = native_rust_doc();
+        doc["runtime"] = serde_json::json!({
+            "type": "native_rust",
+            "binary": "/usr/bin/pdftotext",
+            "binary_sha256": "f85872f94fb67433a1b2c3d4e5f60112233445566778899aabbccddeeff00112",
+            "subcommands": ["-layout"],
+            "env": {bad_key: "/tmp/evil.so"}
+        });
+        let err = validate_static(&doc, &Options::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("dynamic-linker injection"),
+            "env {bad_key} must be rejected at registration: {err}"
+        );
+    }
 
     // 旧形状收紧不破：无钉值时 subcommand 仍必填（缺省拒绝）。
     let mut doc = native_rust_doc();

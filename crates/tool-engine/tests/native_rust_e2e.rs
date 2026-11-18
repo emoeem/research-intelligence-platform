@@ -28,8 +28,8 @@ use tool_engine::adapter::{
     execute_native_rust_via_engine, NativeRustAdapter, NativeRustConfig, ResourceEnforcement,
 };
 use tool_engine::capability::{
-    CapabilityId, CapabilityProvider, ProbeBudget, ProbeLevel, ProbeOutcome, SeedDocument,
-    StaticCatalogProvider,
+    CapabilityId, CapabilityProvider, InvalidationEvent, ProbeBudget, ProbeLevel, ProbeOutcome,
+    SeedDocument, StaticCatalogProvider,
 };
 use tool_engine::envelope;
 use tool_engine::Engine;
@@ -785,7 +785,7 @@ fn native_rust_capability_ref_gate_positive_and_missing() {
         }]
     }))
     .unwrap();
-    let provider = StaticCatalogProvider::from_seed_document(doc).unwrap();
+    let mut provider = StaticCatalogProvider::from_seed_document(doc).unwrap();
     let id = CapabilityId::new("test.fixturebin").unwrap();
     // 先探（provider.get 需要 fresh+available；probe 实测全量 sha）。
     match provider
@@ -853,9 +853,48 @@ fn native_rust_capability_ref_gate_positive_and_missing() {
     assert_eq!(err.category, "DEPENDENCY");
     assert_eq!(err.code, json!("NATIVE_CAPABILITY_MISSING"));
     let _ = std::fs::remove_dir_all(&ws_root);
+
+    // 负例（评审修订补测）：目录条目 stale（手动失效事件后）→ POLICY_DENIED
+    // NATIVE_CAPABILITY_STALE——实现为 stale 早拒（fail-closed），与 F §6:227
+    // 「refresh 后重判」的偏差登记见批次报告 §4。
+    let stale_count = provider.invalidate(&InvalidationEvent::ManualInvalidate {
+        capability_id: Some(id.clone()),
+    });
+    assert_eq!(stale_count, 1, "失效事件恰好标记 test.fixturebin 一条");
+    let manifest_stale = base_manifest(&fixture, FIXTURE_SHA256);
+    let mut manifest_stale = manifest_stale;
+    manifest_stale["runtime"]["capability_ref"] = json!("test.fixturebin");
+    let engine = fresh_engine(&manifest_stale);
+    let ws_root = workspace_root("cap-stale");
+    let adapter = adapter_for(&ws_root);
+    submit(
+        &engine,
+        "rn-rt1-cap-stale",
+        json!({"subcommand": "env", "input_path": "probe.txt"}),
+        30,
+        1_048_576,
+    );
+    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+        engine: &engine,
+        run_id: "rn-rt1-cap-stale",
+        adapter: &adapter,
+        manifest: &manifest_stale,
+        capability: Some(&provider),
+    })
+    .expect("drive ok");
+    assert_unified_envelope(&engine, "rn-rt1-cap-stale", &outcome);
+    assert_eq!(outcome.envelope.status, ToolRunStatus::Failed);
+    let err = outcome.envelope.error.as_ref().unwrap();
+    assert_eq!(err.category, "POLICY_DENIED");
+    assert_eq!(err.code, json!("NATIVE_CAPABILITY_STALE"));
+    assert!(err.message.contains("stale"), "stale 原因入 message");
+    assert!(outcome.transcript.len() == 3, "Q→P→FAILED，无 RUNNING");
+    let _ = std::fs::remove_dir_all(&ws_root);
 }
 
-/// D4：Manifest secrets 非空 → 派发拒绝（native 档不支持 secret 注入）。
+/// D4：Manifest secrets 非空 → 派发拒绝（native 档不支持 secret 注入）；
+/// 非数组形状（对象/字符串）同拒——纵深兜底 fail-closed，无 fail-open 分支
+/// （评审修订：原 `as_array().unwrap_or(true)` 把非数组形状当空集放行）。
 #[test]
 fn native_rust_rejects_manifest_with_secrets() {
     // 登记面先行拦截（rule 7 平台 secrets store 校验），派发面为纵深兜底：
@@ -863,31 +902,43 @@ fn native_rust_rejects_manifest_with_secrets() {
     let fixture = checked_fixture();
     let manifest = base_manifest(&fixture, FIXTURE_SHA256);
     let engine = fresh_engine(&manifest);
-    let mut dispatch_manifest = manifest.clone();
-    dispatch_manifest["secrets"] =
-        json!([{"name": "API_TOKEN", "inject_as": "env", "required": true}]);
-    let ws_root = workspace_root("secrets");
-    let adapter = adapter_for(&ws_root);
-    submit(
-        &engine,
-        "rn-rt1-secrets",
-        json!({"subcommand": "env", "input_path": "probe.txt"}),
-        30,
-        1_048_576,
-    );
-    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
-        engine: &engine,
-        run_id: "rn-rt1-secrets",
-        adapter: &adapter,
-        manifest: &dispatch_manifest,
-        capability: None,
-    })
-    .expect("drive ok");
-    assert_unified_envelope(&engine, "rn-rt1-secrets", &outcome);
-    let err = outcome.envelope.error.as_ref().unwrap();
-    assert_eq!(err.category, "POLICY_DENIED");
-    assert_eq!(err.code, json!("NATIVE_SECRETS_UNSUPPORTED"));
-    let _ = std::fs::remove_dir_all(&ws_root);
+
+    // 数组形态非空 + 非数组形状（对象 / 字符串）三类污染面逐一拒绝。
+    let polluted = [
+        json!([{"name": "API_TOKEN", "inject_as": "env", "required": true}]),
+        json!({"API_TOKEN": "leak"}),
+        json!("API_TOKEN=leak"),
+    ];
+    for (idx, secrets) in polluted.into_iter().enumerate() {
+        let mut dispatch_manifest = manifest.clone();
+        dispatch_manifest["secrets"] = secrets;
+        let tag = format!("secrets-{idx}");
+        let ws_root = workspace_root(&tag);
+        let adapter = adapter_for(&ws_root);
+        let run_id = format!("rn-rt1-secrets-{idx}");
+        submit(
+            &engine,
+            &run_id,
+            json!({"subcommand": "env", "input_path": "probe.txt"}),
+            30,
+            1_048_576,
+        );
+        let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+            engine: &engine,
+            run_id: &run_id,
+            adapter: &adapter,
+            manifest: &dispatch_manifest,
+            capability: None,
+        })
+        .expect("drive ok");
+        assert_unified_envelope(&engine, &run_id, &outcome);
+        let err = outcome.envelope.error.as_ref().unwrap();
+        assert_eq!(err.category, "POLICY_DENIED");
+        assert_eq!(err.code, json!("NATIVE_SECRETS_UNSUPPORTED"));
+        // 零子进程拉起：PREPARING 拒绝即 FAILED，工作区不推进到 RUNNING。
+        assert!(outcome.transcript.len() == 3, "Q→P→FAILED，无 RUNNING");
+        let _ = std::fs::remove_dir_all(&ws_root);
+    }
 }
 
 /// D8.4：资源强制 fail-closed——Auto 下两机制不可用（探测面注入不存在
@@ -926,6 +977,89 @@ fn native_rust_resource_enforcement_unavailable_rejects_dispatch() {
     assert_eq!(err.category, "INFRA", "机制不可用 = 平台面（retryable）");
     assert!(err.retryable);
     assert!(err.message.contains("refusing to dispatch unconfined"));
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// D4 保留键语义（评审修订）：Manifest runtime.env 覆盖 PATH/TMPDIR/LANG
+/// 保留白名单键 → PREPARING 拒绝（NATIVE_ENV_RESERVED_CONFLICT），
+/// {"PATH": ...} 不能撞穿「PATH=钉值二进制所在目录最小集」结构性保证。
+#[test]
+fn native_rust_rejects_reserved_env_key_conflict() {
+    let fixture = checked_fixture();
+    let manifest = base_manifest(&fixture, FIXTURE_SHA256);
+    let engine = fresh_engine(&manifest);
+    let mut dispatch_manifest = manifest.clone();
+    dispatch_manifest["runtime"]["env"] = json!({"PATH": "/tmp/attacker/bin"});
+    let ws_root = workspace_root("reserved-env");
+    let adapter = adapter_for(&ws_root);
+    submit(
+        &engine,
+        "rn-rt1-reserved-env",
+        json!({"subcommand": "env", "input_path": "probe.txt"}),
+        30,
+        1_048_576,
+    );
+    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+        engine: &engine,
+        run_id: "rn-rt1-reserved-env",
+        adapter: &adapter,
+        manifest: &dispatch_manifest,
+        capability: None,
+    })
+    .expect("drive ok");
+    assert_unified_envelope(&engine, "rn-rt1-reserved-env", &outcome);
+    let err = outcome.envelope.error.as_ref().unwrap();
+    assert_eq!(err.category, "POLICY_DENIED");
+    assert_eq!(err.code, json!("NATIVE_ENV_RESERVED_CONFLICT"));
+    assert!(outcome.transcript.len() == 3, "Q→P→FAILED，无 RUNNING");
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// D8.4 Auto 全链正例（真实机制端到端，评审缺口补测——批次报告 §5 自认
+/// Auto 全链此前从未端到端跑通，测试载具全部 Off）：生产默认 Auto + 真实
+/// 探测面（默认 /usr/bin/systemd-run 与 /usr/bin/prlimit）→ 按与派发一致的
+/// 清环境口径探测定案机制 → 包裹派发成功。本机（systemd 262 会话宿主）
+/// systemd-run 探测因派发面 env 无 XDG_RUNTIME_DIR 失败 → 自然落 prlimit
+/// 兜底（RLIMIT_CPU/RLIMIT_AS 包裹 bash fixture）；在 systemd-run 可用的
+/// 宿主上同测试直接覆盖首选机制路径。断言机制无关：探测与派发同口径下
+/// whichever mechanism wins，Auto 全链必须派发成功且信封统一。
+#[test]
+fn native_rust_auto_enforcement_real_chain_dispatches() {
+    let fixture = checked_fixture();
+    let manifest = base_manifest(&fixture, FIXTURE_SHA256);
+    let engine = fresh_engine(&manifest);
+    let ws_root = workspace_root("res-auto");
+    let adapter = NativeRustAdapter::new(NativeRustConfig {
+        workspace_root: ws_root.clone(),
+        resource_enforcement: ResourceEnforcement::Auto,
+        ..NativeRustConfig::default()
+    });
+    submit(
+        &engine,
+        "rn-rt1-res-auto",
+        json!({"subcommand": "env", "input_path": "probe.txt", "input_content": "via-auto"}),
+        30,
+        1_048_576,
+    );
+    let outcome = execute_native_rust_via_engine(tool_engine::adapter::NativeRustCall {
+        engine: &engine,
+        run_id: "rn-rt1-res-auto",
+        adapter: &adapter,
+        manifest: &manifest,
+        capability: None,
+    })
+    .expect("drive ok");
+    assert_unified_envelope(&engine, "rn-rt1-res-auto", &outcome);
+    assert_eq!(
+        outcome.envelope.status,
+        ToolRunStatus::Succeeded,
+        "Auto 真实机制全链必须派发成功（fail-closed 仅对双机制不可用）: {:?}",
+        outcome.envelope.error
+    );
+    assert_eq!(
+        outcome.envelope.result.as_ref().unwrap()["input_file_head"],
+        json!("via-auto")
+    );
     let _ = std::fs::remove_dir_all(&ws_root);
 }
 

@@ -63,7 +63,7 @@
 
 **论据**：
 - NATIVE-FIRST §3.1:69：「Manifest 固定工具身份、可执行文件身份、允许的子命令和参数 Schema；不得接收任意可执行路径或任意 Shell 字符串」，binary_sha256 钉值即「可执行文件身份」的执行面形态，与 podman_host 镜像 digest 二道校验（podman_host.rs:265-277 image_ref_ok）同构。
-- RT-0.5-F §6:235：「原生路径用 entry.executable_path 绝对派发（allowlist 校验 binary_identity.fingerprint）」，capability_ref 可选引用使钉值与目录指纹互为二道校验；目录条目 stale/missing 时拒绝派发（F §6:226-228）。
+- RT-0.5-F §6:235：「原生路径用 entry.executable_path 绝对派发（allowlist 校验 binary_identity.fingerprint）」，capability_ref 可选引用使钉值与目录指纹互为二道校验。条目处置（实现口径，偏差登记见批次报告 §4）：fresh+available 放行（F §6:226 契约原文）、missing 拒绝派发（F §6:228 契约原文）、stale 直接拒绝派发（RT-1 实现裁决 fail-closed；F §6:227 原文为 stale → refresh 后重判，refresh 语义留 DI-1 完整探测面接入后评估）。
 - C §5.1:270：wrapper 形态（7z/7za/7zr、soffice）指纹必须同时覆盖 wrapper 与 exec 目标，binary_target_sha256 字段承接该实测结论。
 - 现状反例即论据：validate.rs:744-751 现分支只查两字段非空，`binary: "rp-plugin"` 名称形态无任何身份校验；`binary_sha256` 钉值是把「来源可信且哈希固定」（§3.1:68）落到机器可判。
 
@@ -76,8 +76,8 @@
 
 **裁决**：子进程环境用 `Command::env_clear()` 后注入显式白名单，零继承：
 
-- 默认白名单：`PATH`（钉值二进制所在目录最小集）、`TMPDIR`（任务 tmp 目录）、`LANG=C.UTF-8`。
-- 追加变量唯一来源 = Manifest `runtime.env` 显式登记（键值均为字符串；validate.rs:703-709 已校验值为字符串的规则全类型生效）。
+- 默认白名单：`PATH`（钉值二进制所在目录最小集）、`TMPDIR`（任务 tmp 目录）、`LANG=C.UTF-8`。三者是 Adapter 结构性设置值（保留键）：Manifest `runtime.env` 不得覆盖，保留键冲突在派发前置 PREPARING 拒绝（`NATIVE_ENV_RESERVED_CONFLICT`，native_rust.rs parse_allowlist）——否则 `{"PATH": ...}` 可使工具按名解析任意目录下的辅助二进制，撞穿钉值二进制最小集保证；动态链接器注入类键（`LD_PRELOAD`/`LD_LIBRARY_PATH`）在登记面（validate.rs native_rust 分支）即拒绝。
+- 追加变量唯一来源 = Manifest `runtime.env` 显式登记（键值均为字符串；native_rust 分支登记校验见 validate.rs，podman 分支 739-746 行为容器侧同形规则）。
 - 凭据零落子进程：Manifest `secrets` 非空即派发拒绝（native 路径本批不支持 secret 注入）；SSH Agent（`SSH_AUTH_SOCK`）/浏览器 Profile/数据库路径/Podman Socket 类变量因 env_clear 结构性不存在（NATIVE-FIRST §3.1:71「默认不继承不必要的凭据……」；E §2 条目 3/13）。
 - 测试断言锚：fixture 工具回显自身环境，断言环境键集 = 白名单 ∪ Manifest env（任务书 §5 判据 4）。
 
@@ -130,7 +130,7 @@
 1. **帧协议**：stdin 一行 JSON 请求（run_id 不透传工具）、stdout 一行 JSON 结果帧（`{"status":"result","data":{...}}`，D-TC-03 同款；podman_host.rs:449-459、519-530 先例）；stderr 只采尾部 400 字节入错误消息（podman_host.rs:640-647 tail 先例），全量 stderr 走 Artifact（role=log）。
 2. **输出帽双层**：(a) 读侧流式帽，stdout 读取线程按块计数，超 `max_output_bytes` 即停止读取并 killpg（防大输出整读 OOM，podman_host.rs:461-481 P4-4 管道死锁修复的教训要求读线程与轮询并发）；(b) 结果侧帽，帧 data 经 `envelope::truncate`（envelope.rs:296-327）降级 + 原始字节落 Artifact + `usage.truncated=true`（podman_host.rs:902-917 同款）。
 3. **工作区三目录**：`<workspace_root>/<run_id>/{in,out,tmp}`（podman_host.rs:279-303 同形状）；输入文件由引擎落 in/ 后以绝对路径传入 argv 的 `{{input_path}}` 槽位，**槽位值必须落在本 run 的 in/ 目录前缀内**（前缀校验防任意文件读取）；out/ 产物收集走 podman_host.rs:651-696 同形态（sha256/size 登记 Artifact 表）；tmp/ 用后即焚（四路径统一）。
-4. **原生档 CPU/内存强制**：优先 `systemd-run --user --scope -p CPUQuota= -p MemoryMax=` 包裹派发，systemd 用户会话不可用退 prlimit（RLIMIT_CPU/RLIMIT_AS），两机制均不可用即拒绝派发不裸跑（E §2 注 A:50 原文行为裁决；2026-11-18 本机核验 systemd-run 在位）。
+4. **原生档 CPU/内存强制**：优先 `systemd-run --user --scope -p CPUQuota= -p MemoryMax=` 包裹派发，systemd 用户会话不可用退 prlimit（RLIMIT_CPU/RLIMIT_AS），两机制均不可用即拒绝派发不裸跑（E §2 注 A:50 原文行为裁决）。**探测与派发同环境口径**（评审修订 2026-11-19）：探测命令以 D4 清环境最小集（env_clear + PATH/TMPDIR/LANG）派发——`systemd-run --user --scope` 依赖 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS 连接用户会话总线，而派发面 env_clear 白名单不含会话变量；若探测继承父进程全量 env，会话宿主上「探测恒过、派发恒败」（2026-11-19 本机 systemd 262 实测复现：继承 env exit=0 / 清环境 exit=1 "Failed to connect to user scope bus"）。同口径后清环境下 systemd-run 探测不可用，Auto 确定性落 prlimit 兜底（fail-closed 且一致）；wrapper 侧会话变量单独放行（--machine 传输本机实测 Permission denied、--set-env 本机 systemd 262 不支持）留续作评估（批次报告 §6 登记）。
 
 **论据**：E §2 条目 1/2/10/14 逐条对应（只读输入、独立输出目录、输出上限、状态统一）；§3.1:70「明确工作目录、环境变量白名单、stdin/stdout/stderr、超时、取消、进程组回收和输出上限」是准入条件原文，D8 逐项兑现。
 

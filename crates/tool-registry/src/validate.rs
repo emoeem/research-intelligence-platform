@@ -880,6 +880,28 @@ fn rule4_runtime(
                     }
                 }
             }
+            // D4 env 登记卫生（评审修订）：值为字符串 + 动态链接器注入类键
+            //（LD_PRELOAD/LD_LIBRARY_PATH）登记拒绝——派发面 env_clear 白名单
+            // 外经 Manifest env 注入此类键可指向任意库，属结构性禁入面；其余
+            // 链接器变量词表扩展归 RT-3 Runtime Policy Resolver。PATH/TMPDIR/
+            // LANG 保留键冲突由派发面 PREPARING 拒绝（native_rust.rs
+            // parse_allowlist，NATIVE_ENV_RESERVED_CONFLICT）。
+            if let Some(env) = runtime.get("env") {
+                let e = env
+                    .as_object()
+                    .ok_or_else(|| err4("runtime.env must be an object".to_string()))?;
+                if e.values().any(|v| !v.is_string()) {
+                    return Err(err4("runtime.env values must be strings".to_string()));
+                }
+                const DENIED_ENV_KEYS: [&str; 2] = ["LD_PRELOAD", "LD_LIBRARY_PATH"];
+                for key in e.keys() {
+                    if DENIED_ENV_KEYS.contains(&key.as_str()) {
+                        return Err(err4(format!(
+                            "runtime.env key {key:?} is a dynamic-linker injection vector and is rejected at registration (RT-1 ADR D4 env whitelist)"
+                        )));
+                    }
+                }
+            }
         }
         "mcp_client" => {
             if req_str(runtime, "endpoint").map_err(err4)?.is_empty() {

@@ -69,11 +69,14 @@ const KILL_GRACE_TIMEOUT: Duration = Duration::from_secs(2);
 const KILL_GRACE_CANCEL: Duration = Duration::from_secs(3);
 
 /// 资源强制机制（D8.4：systemd-run 优先 → prlimit 兜底 → 两机制不可用即
-/// 拒绝派发不裸跑）。`Off` 仅限测试载具显式声明（生产默认 [`ResourceEnforcement::Auto`]，
-/// 显式 Off 属配置审查面，不改变"机制不可用即拒绝"的 Auto 行为）。
+/// 拒绝派发不裸跑）。探测与派发同环境口径（D4 清环境最小集，见
+/// [`NativeRustAdapter::probe_exec`]）。`Off` 仅限测试载具显式声明（生产默认
+/// [`ResourceEnforcement::Auto`]，显式 Off 属配置审查面，不改变"机制不可用
+/// 即拒绝"的 Auto 行为）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceEnforcement {
-    /// 探测 systemd 用户会话可用则包裹派发，否则探测 prlimit，均不可用拒绝。
+    /// 清环境口径下探测 systemd 用户会话可用则包裹派发，否则探测 prlimit，
+    /// 均不可用拒绝（会话宿主上派发面 env 无会话变量时自然落 prlimit 兜底）。
     Auto,
     /// 强制 systemd-run --user --scope 包裹（不可用即拒绝）。
     SystemdRun,
@@ -451,6 +454,11 @@ impl NativeRustAdapter {
                     )
                 })?;
                 let mut out = Vec::with_capacity(obj.len());
+                // D4 保留键语义（评审修订）：PATH/TMPDIR/LANG 是 Adapter 结构性
+                // 白名单（PATH=钉值二进制所在目录最小集），Manifest env 不得覆盖
+                // ——否则 {"PATH": ...} 可使工具按名解析任意目录下的辅助二进制，
+                // 撞穿 D4 的结构性保证。冲突一律 PREPARING 拒绝（fail-closed）。
+                const RESERVED_ENV_KEYS: [&str; 3] = ["PATH", "TMPDIR", "LANG"];
                 for (k, val) in obj {
                     let s = val.as_str().ok_or_else(|| {
                         PreparingReject::policy(
@@ -458,6 +466,14 @@ impl NativeRustAdapter {
                             format!("runtime.env[{k:?}] value must be a string"),
                         )
                     })?;
+                    if RESERVED_ENV_KEYS.contains(&k.as_str()) {
+                        return Err(PreparingReject::policy(
+                            "NATIVE_ENV_RESERVED_CONFLICT",
+                            format!(
+                                "runtime.env key {k:?} conflicts with the D4 reserved whitelist (PATH/TMPDIR/LANG are Adapter-set structural values); reserved keys cannot be overridden via Manifest env"
+                            ),
+                        ));
+                    }
                     out.push((k.clone(), s.to_string()));
                 }
                 out
@@ -772,15 +788,18 @@ impl NativeRustAdapter {
         capability: Option<&dyn CapabilityProvider>,
     ) -> Result<PreparedDispatch, PreparingReject> {
         // D4：native 档本批不支持 secret 注入，Manifest secrets 非空即拒绝。
-        let secrets_empty = manifest
-            .get("secrets")
-            .and_then(Value::as_array)
-            .map(|a| a.is_empty())
-            .unwrap_or(true);
-        if !secrets_empty {
+        // 纵深兜底 fail-closed：仅 None / 空数组放行；非数组形状（对象/字符串
+        // 等污染面）一律拒绝，不走 `as_array().unwrap_or(true)` 的 fail-open
+        // 分支（登记面 validate.rs 强制数组，此处防派发面形状漂移）。
+        let secrets_ok = match manifest.get("secrets") {
+            None => true,
+            Some(Value::Array(a)) => a.is_empty(),
+            Some(_) => false,
+        };
+        if !secrets_ok {
             return Err(PreparingReject::policy(
                 "NATIVE_SECRETS_UNSUPPORTED",
-                "manifest declares secrets; native_rust dispatch does not support secret injection (env whitelist only, D4)",
+                "manifest declares secrets (non-empty array or non-array shape); native_rust dispatch does not support secret injection (env whitelist only, D4)",
             ));
         }
         let runtime = manifest.get("runtime").ok_or_else(|| {
@@ -878,13 +897,28 @@ impl NativeRustAdapter {
     // -----------------------------------------------------------------
 
     /// 短探测：spawn 固定参数 + 2s 有界等待（探测命令固定、无 Shell）。
+    ///
+    /// 探测环境与真派发同口径（D8.4 对称性）：`env_clear()` 后注入与
+    /// [`Self::execute`] 派发一致的 D4 最小集（PATH=被探机制二进制所在目录 /
+    /// TMPDIR / LANG=C.UTF-8）。否则探测继承父进程全量 env（含
+    /// XDG_RUNTIME_DIR）而真派发是清环境——`systemd-run --user --scope` 依赖
+    /// XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS 连接用户会话总线，会话宿主上
+    /// 探测恒过、派发恒败（本机 2026-11-19 实测：继承 env exit=0 / 清环境
+    /// exit=1 "Failed to connect to user scope bus"），首选机制不可达且失败
+    /// 被误归为工具 EXECUTION。Manifest env 不入探测（机制可用性是平台事实
+    /// 而非 Manifest 属性；探测只可能误判保守方向 → 兜底机制，不会反向失败）。
     fn probe_exec(bin: &str, args: &[&str]) -> bool {
-        let Ok(mut child) = Command::new(bin)
-            .args(args)
+        let mut cmd = Command::new(bin);
+        cmd.args(args)
+            .env_clear()
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        else {
+            .stderr(Stdio::null());
+        if let Some(parent) = Path::new(bin).parent() {
+            cmd.env("PATH", parent.display().to_string());
+        }
+        cmd.env("TMPDIR", std::env::temp_dir().display().to_string());
+        cmd.env("LANG", "C.UTF-8");
+        let Ok(mut child) = cmd.spawn() else {
             return false;
         };
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -1059,6 +1093,8 @@ impl NativeRustAdapter {
         // D4：env_clear 后显式白名单（PATH=钉值二进制所在目录最小集 /
         // TMPDIR=任务 tmp / LANG=C.UTF-8 / Manifest env）。凭据类变量
         // （SSH_AUTH_SOCK/HTTP_PROXY/数据库路径/浏览器 Profile）结构性不存在。
+        // 保留键不可覆盖：parse_allowlist 对 PATH/TMPDIR/LANG 冲突 PREPARING
+        // 即拒（NATIVE_ENV_RESERVED_CONFLICT），此循环不可能改写白名单键。
         cmd.env_clear();
         if let Some(parent) = argv.first().and_then(|b| Path::new(b).parent()) {
             cmd.env("PATH", parent.display().to_string());
