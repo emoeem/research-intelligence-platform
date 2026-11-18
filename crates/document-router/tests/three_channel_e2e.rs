@@ -598,8 +598,8 @@ fn unsupported_types_rejected_at_gate_with_zero_rows() {
 fn missing_capability_explicit_dependency_rejection() {
     let provider = provider();
     // harness 注入（pdf.mutool 种子条目形态：executable_path null / status
-    // missing）：pdfinfo 二进制在位（identity 校验过）但 capability_ref 指向
-    // 目录 missing 条目 → PREPARING 拒绝 DEPENDENCY 显式信封（F §6 二道校验）。
+    // missing）：identity 校验过（钉值自持 stub）但 capability_ref 指向目录
+    // missing 条目 → PREPARING 拒绝 DEPENDENCY 显式信封（F §6 二道校验）。
     let mut doc: Value = serde_json::from_str(
         &std::fs::read_to_string(repo_root().join("manifests/tools/rip.doc.pdf.info.json"))
             .unwrap(),
@@ -608,8 +608,26 @@ fn missing_capability_explicit_dependency_rejection() {
     doc["runtime"]["capability_ref"] = json!("pdf.mutool");
     doc["id"] = json!("rip.doc.pdf.info.missingcap");
     doc["name"] = json!("PDF Info Probe (missingcap harness)");
-    let engine = fresh_engine(std::slice::from_ref(&doc));
     let ws_root = workspace_root("missingcap");
+    // 钉值自持 identity stub（CI 修复批教训落实：钉值前提不得依赖宿主单机
+    // 快照——原 harness 沿用 Manifest 的 /usr/bin/pdfinfo 钉值，CI runner
+    // 无 poppler 时 identity 钉值校验先拒 NATIVE_BINARY_MISSING（message
+    // "pinned binary … not present on host"，不含 missing），capability
+    // missing 路径在异构宿主永远测不到）：测试内造最小可执行脚本（/bin/sh
+    // 解释器跨宿主稳定在位）并实时 sha256 写入 harness Manifest，identity
+    // 校验对照实测钉值恒过 → 二道校验按本测意图触发 capability missing
+    // 显式 DEPENDENCY。宿主完整性由 probe stale/missing 语义承载。
+    let stub = ws_root.join("missingcap-identity-stub.sh");
+    std::fs::write(&stub, "#!/bin/sh\nexit 0\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    doc["runtime"]["binary"] = json!(stub.to_str().unwrap());
+    doc["runtime"]["binary_sha256"] = json!(tool_registry::hash::sha256_hex(
+        &std::fs::read(&stub).unwrap()
+    ));
+    let engine = fresh_engine(std::slice::from_ref(&doc));
     let adapter = adapter_for(&ws_root);
     let run_id = "rn-missingcap-di1";
     // 预写面照常（Router 驱动形态同 D5；PREPARING 拒绝发生在 identity 之后）。

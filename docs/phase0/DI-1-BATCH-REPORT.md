@@ -199,11 +199,11 @@ Router 层（document-router，本批新建）
 
 四份 Manifest validate + register 回执（初批记录）：rip.doc.pdf.info `45185f19…` / pdf.text `b5ecf53b…` / office.to_pdf `cfeb559e…` / image.meta `fc06d1b1…` 全 ok。本会话抽验：office Manifest `binary=/usr/bin/soffice`（:11）、`result_mode:"file"`（:24）、`memory:"16Gi"`（:104）、`timeout_seconds:120`（:105）、`binary_target_sha256` 字段零命中（grep 实测，D3 调和裁决 B）；pdf.info `binary_sha256=3bdf68a7…`（:12）；seed 四条 sha256_full 与上会话实测钉值逐一吻合（python3 抽取实测）。
 
-## E2. CI（待 watch 回填）
+## E2. CI（首次 push watch 回填 + CI 修复批账目）
 
-- **现状**：本批全部改动在工作树未 commit/push；origin/main = 12258e86（RT-1 CI 修复）。**CI 从未执行本批，fresh-checkout 行为未验证**（如实：结论仅来自静态证据）。
-- 静态证据：ci.yml rust job = `cargo test --offline --workspace`（.github/workflows/ci.yml:52）+ clippy --workspace（:55）；fixture 已入 crate 内（porcelain `??` 在册 + check-ignore 零命中，不受 `.gitignore:47` `rip-data/` 全路径级忽略影响），CI 不再依赖本机运行时数据；capability 守卫带二道 stat 检测，异机 CLI 缺席路径 = `SKIP <test>: capability <id> status=<status>`（任务书 §6 格式，评审 3）而非失败。
-- **回填义务**：push 后 watch rust job；failure 按 RT-1 12258e86 先例回填账目并修订本节。回填前本节为空账。
+- **首次 push（收口提交 `659ed1e8`）**：CI run [44393220433](https://github.com/emoeem/research-intelligence-platform/actions/runs/44393220433) 终态 **failure**（Rust workspace job，四 jobs 三绿）。红面单点：`three_channel_e2e` 12 passed 1 failed exit 101——`missing_capability_explicit_dependency_rejection`（three_channel_e2e.rs:648）断言 `error.message` 含 "missing" 失败，实际 message = `pinned binary /usr/bin/pdfinfo not present on host`。性质：harness 沿用 Manifest 的 `/usr/bin/pdfinfo` 单机钉值作 identity 前提，CI runner（ubuntu-latest）无 poppler → identity 钉值校验先拒 NATIVE_BINARY_MISSING（DEPENDENCY 类，fail-closed 行为本身正确），capability missing 二道路径在异构宿主永远测不到——宿主绑定 harness 缺陷，非 Router/adapter 逻辑回归（本机同代码 13/13 绿；其余 12 e2e + channel_gate/sniff_boundary/fixture_pins/dispatch/tool-engine/registry/context-broker 在 CI 全绿，异机守卫面按设计生效）。
+- **CI 修复批**：harness 改钉值自持 identity stub——测试内造最小可执行脚本（`#!/bin/sh\nexit 0`，/bin/sh 解释器跨宿主稳定在位）+ chmod 0o755 + 实时 `sha256_hex` 写入 harness Manifest 的 `runtime.binary`/`runtime.binary_sha256`，identity 校验对照实测钉值恒过 → 二道校验按测试意图触发 capability missing 显式 DEPENDENCY。钉值前提不依赖宿主单机快照（RT-1 12258e86 修复批同款教训落实：要么前置守卫要么实时自持），覆盖点不丢（capability missing 路径任意宿主可测）。本机复跑：`three_channel_e2e` --test-threads=1 13 passed 0 failed（36.78s）+ rustfmt --edition 2021 --check clean + clippy `-p document-router --all-targets -D warnings` 零告警。
+- **CI 修复批 commit push 后 run 终态随本次 watch 回填（占位：待 watch）**。
 
 ## F. 性能（单文件延迟面；无吞吐基线，如实）
 
