@@ -15,6 +15,7 @@
 #![deny(missing_docs)]
 
 pub mod adapter;
+pub mod capability;
 pub mod document_fetch;
 pub mod envelope;
 pub mod image_ledger;

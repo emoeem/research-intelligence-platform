@@ -262,15 +262,18 @@ fn argv_token_violation(item: &str) -> Option<&'static str> {
     }
 }
 
-/// capability_ref 形状：`domain.name` 两段小写（RT-0.5-F §2 CapabilityId）。
+/// capability_ref 形状：`domain.name` 两段（RT-0.5-F §2 CapabilityId）。
+/// 段首允许数字与 C 目录权威对齐（archive.7z/7za/7zr 为目录实测 id）。
 fn capability_ref_ok(s: &str) -> bool {
+    let seg_ok = |seg: &str| {
+        !seg.is_empty()
+            && seg.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && seg
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    };
     let segs: Vec<&str> = s.split('.').collect();
-    segs.len() == 2
-        && segs.iter().all(|s| {
-            !s.is_empty()
-                && s.starts_with(|c: char| c.is_ascii_lowercase())
-                && is_lower_seg_chars(s)
-        })
+    segs.len() == 2 && segs.iter().all(|s| seg_ok(s))
 }
 
 // ---------------------------------------------------------------------------
