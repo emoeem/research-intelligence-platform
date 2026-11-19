@@ -70,11 +70,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
 import posixpath
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -110,6 +112,20 @@ DOC_BIN = (os.environ.get("RP_DOC_BIN") or "target/debug/rp-doc").strip()
 # 面；python 侧零直接 DB 依赖，进程边界即数据边界，rp-doc 惯例同款）。
 VERIFY_BIN = (os.environ.get("RP_VERIFY_BIN") or "target/debug/rp-verify").strip()
 DOC_SUBPROCESS_TIMEOUT_S = int(os.environ.get("RP_DOC_TIMEOUT_S") or 120)
+# RIP3 WSW-2 代理/CA/拦截面（WSW-2-TASK §二；W2-D3/D8）：rp-wsw 子进程
+# （Rust-First；rcgen CA 与 listener 只在 Rust 侧），本文件只做进程编排与
+# 状态文件读取。WSW DB 默认开发库副本 dev-b1（platform*.db 生产库零触碰）；
+# 状态心跳文件由 listener 每隔 2s 原子写（rip-data/wsw-state/，gitignore 覆盖）。
+RP_WSW_BIN = (os.environ.get("RP_WSW_BIN") or "target/debug/rp-wsw").strip()
+WSW_DB_PATH = os.environ.get("RP_WSW_DB") or os.path.join(REPO_ROOT, "migrations", "dev-b1.db")
+WSW_CA_DIR = os.environ.get("RP_WSW_CA_DIR") or os.path.join(REPO_ROOT, "rip-data", "wsw-ca")
+WSW_STATE_DIR = os.environ.get("RP_WSW_STATE_DIR") or os.path.join(REPO_ROOT, "rip-data", "wsw-state")
+WSW_DEFAULT_RULES = {"include": ["127.0.0.1"], "allow_private_targets": True}
+WSW_LISTENER_BIND = os.environ.get("RP_WSW_BIND") or "127.0.0.1:3128"
+WSW_LISTENER_LOG = os.path.join(WSW_STATE_DIR, "listener.log")
+WSW_STATUS_FILE = os.path.join(WSW_STATE_DIR, "listener-status.json")
+WSW_PID_FILE = os.path.join(WSW_STATE_DIR, "listener.pid")
+WSW_EXPORT_PEM = os.path.join(WSW_STATE_DIR, "exported-ca.pem")
 # 导入体上限（原始字节；base64 后 ~4/3；13-SECURITY 单文件帽 512MiB 的 P1 缺省收紧档）。
 DOC_IMPORT_MAX_BYTES = int(os.environ.get("RP_DOC_IMPORT_MAX_BYTES") or 67_108_864)
 WORKFLOW_LOG_DIR = os.environ.get("RP_WORKFLOW_LOG_DIR", "/tmp/rp-workflow-run-logs")
@@ -3078,7 +3094,216 @@ def documents_import_post(body: dict) -> dict:
                 pass
 
 
+# ---------------------------------------------------------------------------
+# WSW-2 端点（W2-D8）：GET 只读三项 + POST 显式动作（export/regenerate 必带
+# confirm=True；start/stop 为进程编排动作）。禁任何系统代理/信任库写调用
+#（DESIGN §4.6：本文件全文无 networksetup/gsettings/注册表写面）。
+# ---------------------------------------------------------------------------
+
+def _wsw_status_file() -> dict:
+    """listener 状态心跳读取（缺失 = stopped 态投影，不猜运行状态）。"""
+    try:
+        with open(WSW_STATUS_FILE, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        return {"state": "stopped", "listener_id": None, "bind": WSW_LISTENER_BIND,
+                "note": "状态文件不存在（listener 未启动或未写心跳）"}
+    except (json.JSONDecodeError, OSError) as exc:
+        return {"state": "unknown", "error": f"状态文件读取失败：{exc}"}
+
+
+def handle_wsw_proxy_status(_conn, _params) -> dict:
+    return _wsw_status_file()
+
+
+def _wsw_ca_fingerprint_from_pem(pem_text: str) -> str:
+    """PEM → DER（base64 体）→ SHA-256 小写 hex（005 迁移 :86 口径，
+    与 Rust WswAuthority sha256(证书 DER) 同值）。"""
+    import base64 as _b64
+    body = "".join(
+        line for line in pem_text.splitlines()
+        if line and not line.startswith("-----")
+    )
+    der = _b64.b64decode(body)
+    return hashlib.sha256(der).hexdigest()
+
+
+def handle_wsw_ca_status(_conn, _params) -> dict:
+    cert_path = os.path.join(WSW_CA_DIR, "ca.cert.pem")
+    key_path = os.path.join(WSW_CA_DIR, "ca.key.pem")
+    if not os.path.isfile(cert_path):
+        return {"exists": False, "ca_dir": WSW_CA_DIR,
+                "note": "CA 未生成（listener 首次启动时生成；regenerate 为显式动作）"}
+    with open(cert_path, "r", encoding="utf-8") as fh:
+        pem_text = fh.read()
+    meta_path = os.path.join(WSW_CA_DIR, "ca.meta.json")
+    meta = {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        meta = {"not_before": "unknown", "not_after": "unknown", "cn": "unknown"}
+    key_mode = oct(os.stat(key_path).st_mode & 0o777) if os.path.isfile(key_path) else None
+    return {
+        "exists": True,
+        "ca_dir": WSW_CA_DIR,
+        "cn": meta.get("cn"),
+        "not_before": meta.get("not_before"),
+        "not_after": meta.get("not_after"),
+        "fingerprint": meta.get("fingerprint") or _wsw_ca_fingerprint_from_pem(pem_text),
+        "key_mode": key_mode,
+        "trust_install": "用户显式动作（导出 PEM 后手动导入信任库；本服务不静默安装、不改系统代理）",
+    }
+
+
+def handle_wsw_intercept_queue(_conn, _params) -> dict:
+    """拦截队列只读摘要（024 三表；库为 WSW_DB_PATH 开发库副本/专用库）。"""
+    if not os.path.isfile(WSW_DB_PATH):
+        return {"db": WSW_DB_PATH, "exists": False, "rows": [], "counts": {}}
+    conn = sqlite3.connect(f"file:{WSW_DB_PATH}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    conn.row_factory = sqlite3.Row
+    try:
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='wsw_intercept'")}
+        if "wsw_intercept" not in names:
+            return {"db": WSW_DB_PATH, "exists": True, "rows": [], "counts": {},
+                    "note": "024 迁移未应用（user_version<24）"}
+        rows = [dict(r) for r in conn.execute(
+            "SELECT intercept_id, event_id, direction, state, host, method, path, "
+            "queued_at, expires_at, resolved_at, reason FROM wsw_intercept "
+            "ORDER BY queued_at DESC LIMIT 50")]
+        counts = {r[0]: r[1] for r in conn.execute(
+            "SELECT state, COUNT(*) FROM wsw_intercept GROUP BY state")}
+        return {"db": WSW_DB_PATH, "exists": True, "rows": rows, "counts": counts}
+    finally:
+        conn.close()
+
+
+def _wsw_listener_alive(pid: int) -> bool:
+    """pid 存活且非 zombie（Popen 子进程退出后父进程未 wait 时 /proc 呈 Z 态，
+    os.kill(pid,0) 会误判为运行中——读 /proc/<pid>/stat 的进程状态字段判定）。"""
+    try:
+        with open(f"/proc/{pid}/stat", "r", encoding="utf-8") as fh:
+            rest = fh.read().rsplit(") ", 1)[1]
+        state = rest.split()[0]
+        return state not in ("Z", "X")
+    except (OSError, IndexError, ValueError):
+        return False
+
+
+def _wsw_confirm_or_400(body: dict, action: str) -> None:
+    if body.get("confirm") is not True:
+        raise ApiError(400, "confirm_required",
+                       f"WSW {action} 为显式用户动作：请求体必须带 confirm=true")
+
+
+def wsw_write(action: str, body: dict) -> dict:
+    if action == "ca/export":
+        _wsw_confirm_or_400(body, "CA 导出")
+        cert_path = os.path.join(WSW_CA_DIR, "ca.cert.pem")
+        if not os.path.isfile(cert_path):
+            raise ApiError(404, "ca_missing", "CA 未生成（先启动 listener 或 ca regenerate）")
+        with open(cert_path, "r", encoding="utf-8") as fh:
+            pem_text = fh.read()
+        os.makedirs(WSW_STATE_DIR, exist_ok=True)
+        with open(WSW_EXPORT_PEM, "w", encoding="utf-8") as fh:
+            fh.write(pem_text)
+        os.chmod(WSW_EXPORT_PEM, 0o644)
+        return {"exported": True, "path": WSW_EXPORT_PEM,
+                "fingerprint": _wsw_ca_fingerprint_from_pem(pem_text),
+                "pem": pem_text,
+                "note": "信任安装仍为用户显式动作（curl --cacert / 浏览器手动导入）"}
+    if action == "ca/regenerate":
+        _wsw_confirm_or_400(body, "CA 重生成")
+        if not os.path.isfile(RP_WSW_BIN):
+            raise ApiError(503, "rp_wsw_bin_missing",
+                           f"rp-wsw 二进制不存在：{RP_WSW_BIN}（cargo build -p wsw-runtime --bin rp-wsw）")
+        proc = subprocess.run([RP_WSW_BIN, "ca", "regenerate", "--ca-dir", WSW_CA_DIR],
+                              capture_output=True, text=True, timeout=60, cwd=REPO_ROOT)
+        if proc.returncode != 0:
+            raise ApiError(500, "ca_regenerate_failed", proc.stderr.strip() or proc.stdout.strip())
+        return {"regenerated": True, "output": proc.stdout.strip()}
+    if action == "listener/start":
+        _wsw_confirm_or_400(body, "listener 启动")
+        if not os.path.isfile(RP_WSW_BIN):
+            raise ApiError(503, "rp_wsw_bin_missing",
+                           f"rp-wsw 二进制不存在：{RP_WSW_BIN}（cargo build -p wsw-runtime --bin rp-wsw）")
+        os.makedirs(WSW_STATE_DIR, exist_ok=True)
+        # 已运行防呆：pid 文件存活 → 409（不重复拉起）。
+        try:
+            with open(WSW_PID_FILE, "r", encoding="utf-8") as fh:
+                old_pid = int(fh.read().strip())
+            if _wsw_listener_alive(old_pid):
+                raise ApiError(409, "listener_already_running",
+                               f"listener 已在运行（pid {old_pid}）")
+            # 残留 pid 文件（进程已退）清掉再启动。
+            try:
+                os.unlink(WSW_PID_FILE)
+            except OSError:
+                pass
+        except (FileNotFoundError, ProcessLookupError, ValueError):
+            pass
+        include = body.get("include") or WSW_DEFAULT_RULES["include"]
+        allow_private = bool(body.get("allow_private_targets", WSW_DEFAULT_RULES["allow_private_targets"]))
+        rules = {"include": list(include), "allow_private_targets": allow_private}
+        db_path = body.get("db") or WSW_DB_PATH
+        intercept = bool(body.get("intercept", False))
+        queue_ttl = int(body.get("queue_ttl_seconds") or 120)
+        upstream_cas = [str(p) for p in (body.get("upstream_ca_paths") or [])]
+        with open(WSW_LISTENER_LOG, "ab") as log:
+            proc = subprocess.Popen(
+                [RP_WSW_BIN, "listener",
+                 "--bind", WSW_LISTENER_BIND,
+                 "--db", str(db_path),
+                 "--ca-dir", WSW_CA_DIR,
+                 "--rules-json", json.dumps(rules),
+                 "--queue-ttl", str(queue_ttl),
+                 "--status-file", WSW_STATUS_FILE,
+                 "--pid-file", WSW_PID_FILE]
+                + (["--intercept"] if intercept else [])
+                + [x for ca in upstream_cas for x in ("--upstream-ca", ca)],
+                stdout=log, stderr=log, cwd=REPO_ROOT,
+                start_new_session=True)
+        return {"started": True, "pid": proc.pid, "bind": WSW_LISTENER_BIND,
+                "rules": rules, "db": str(db_path),
+                "upstream_ca_paths": upstream_cas,
+                "status_file": WSW_STATUS_FILE,
+                "note": "scope 闸后端强制（include 空即 default deny）"}
+    if action == "listener/stop":
+        _wsw_confirm_or_400(body, "listener 停止")
+        try:
+            with open(WSW_PID_FILE, "r", encoding="utf-8") as fh:
+                pid = int(fh.read().strip())
+        except (FileNotFoundError, ValueError):
+            return {"stopped": True, "note": "pid 文件不存在（未在运行）"}
+        try:
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(50):
+                if not _wsw_listener_alive(pid):
+                    break
+                time.sleep(0.1)
+            else:
+                os.kill(pid, signal.SIGKILL)
+            try:
+                os.unlink(WSW_PID_FILE)
+            except OSError:
+                pass
+            return {"stopped": True, "pid": pid,
+                    "note": "SIGTERM 优雅停机：拦截队列全 EXPIRED 后退出"}
+        except ProcessLookupError:
+            try:
+                os.unlink(WSW_PID_FILE)
+            except OSError:
+                pass
+            return {"stopped": True, "pid": pid, "note": "进程已不存在"}
+    raise ApiError(404, "no_route", f"未知 WSW 写操作：{action}")
+
+
 API_ROUTES = {
+    "/api/wsw/proxy-status": handle_wsw_proxy_status,
+    "/api/wsw/ca-status": handle_wsw_ca_status,
+    "/api/wsw/intercept-queue": handle_wsw_intercept_queue,
     "/api/plugins": handle_plugins_list,
     "/api/plugins/trust-policy": handle_plugin_trust_policy,
     "/api/knowledge_sources": handle_knowledge_sources,
@@ -3298,6 +3523,16 @@ class RpHandler(BaseHTTPRequestHandler):
         t0 = time.monotonic()
         try:
             check_rate_limit()
+            # RIP3 WSW-2 写面：CA 导出/重生成（confirm）+ listener start/stop。
+            if parsed.path.startswith("/api/wsw/"):
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "WSW 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                action = unquote(parsed.path[len("/api/wsw/"):]).strip("/")
+                body = self._read_json_body()
+                self.send_json(wsw_write(action, body))
+                return
             # RIP3 P1-2 文档导入写面：base64 内容经 rp-doc 子进程
             # （magic bytes + CAS + 单事务落对象/来源/文档/版本），本进程零直连 PG。
             if parsed.path == "/api/documents/import":

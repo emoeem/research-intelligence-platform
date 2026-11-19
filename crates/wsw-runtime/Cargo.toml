@@ -5,5 +5,80 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 publish = false
+
+# WSW-2 Proxy / MITM Runtime（docs/rip3/wsw/WSW-2-TASK.md；WSW-2-ADR W2-D1）：
+# 本批在既有 Safe primitives 基础上原地扩展五模块（listener/authority/scope/
+# persist + listener::handler），不新建 crate（W2-D1 否决 wsw-proxy 独立 crate）。
+#
+# 依赖红线（WSW-2-TASK §五.2 零新外部包）：下列外部依赖全部已在 Cargo.lock /
+# vendor（WSW-0 POC 批次随 hudsucker 栈进入，[[package]] 总数 400 不变），
+# 等号钉既有版本——传递依赖转正直接声明口径同 WSW-1 sha2/base64 先例。
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
+# MITM 代理栈（ADR-0004 D1 钉版面；POC 先例 crates/wsw-poc/Cargo.toml:14-18）：
+# default-features=false（去 native-tls 与 decoder/zstd），只取 rcgen-ca（动态
+# 证书 CA）+ rustls-client（上游 TLS）+ http2（ALPN 面）。
+hudsucker = { version = "=0.25.0", default-features = false, features = [
+    "rcgen-ca",
+    "rustls-client",
+    "http2",
+] }
+# CA 根证书/叶证书签发（版本随 hudsucker 底座 0.14.10；hudsucker::rcgen 已
+# 再导出，直接声明取 crypto+ring（KeyPair::generate）与 pem（根证书 PEM 落盘
+# 供 curl --cacert 置信）；POC 先例 crates/wsw-poc/Cargo.toml:20-24）。
+rcgen = { version = "=0.14.10", default-features = false, features = [
+    "crypto",
+    "ring",
+    "pem",
+    # 加载复用 CA 需要 Issuer::from_ca_cert_pem（rcgen lib.rs:230 要求
+    # pem+x509-parser；x509-parser 已由 hudsucker 硬依赖进入 lock，此处显式
+    # 声明仅为自身 feature 面自持，不新增包）。
+    "x509-parser",
+] }
+# 证书 ServerConfig 缓存（W2-D2：cap=1000，条目 TTL=证书有效期半程；POC
+# main.rs:224 同值；hudsucker rcgen-ca 传递依赖转正直接声明）。
+moka = { version = "=0.12.16", features = ["future"] }
+# 证书 not_before/not_after（vendor rcgen_authority.rs:24 同款；rcgen-ca
+# 传递依赖转正直接声明）。
+time = { version = "=0.3.55" }
+# 证书序列号随机源（vendor hudsucker rcgen_authority.rs:24 `RngExt` API 面 =
+# rand 0.10.x，lock 实值 hudsucker 依赖 rand 0.10.4；传递依赖转正直接声明）。
+rand = { version = "=0.10.4" }
+# 结构化运行日志（W2-D7 五态 + D9 捕获计数；hudsucker 传递依赖转正直接声明）。
+tracing = { version = "=0.1.44" }
+# 日志可见面订阅器（拒绝记录必须可见，PLAN :528；rp-wsw bin 初始化用；
+# hudsucker dev-dep 已在 lock/vendor，传递依赖转正直接声明）。
+tracing-subscriber = { version = "=0.3.23" }
+# 自定义上游 connector（webpki-roots + 追加信任面；feature 面与 hudsucker
+# 自带声明一致 + http2 供上游 h2-only 实测；POC 先例
+# crates/wsw-poc/Cargo.toml:30-35）。
+hyper-rustls = { version = "=0.27.10", default-features = false, features = [
+    "http1",
+    "http2",
+    "logging",
+    "tls12",
+    "webpki-tokio",
+] }
+webpki-roots = { version = "=1.0.12" }
+# TLS 夹具服务端（tests/mitm_loopback.rs h2-only/TLS 端点；hudsucker 传递依赖
+# 转正直接声明）。
+tokio-rustls = { version = "=0.26.6", features = ["logging", "tls12"] }
+# 上游 IP 审计自定义 connector（W2-D5 查点 C）需要实现 tower Service<Uri>
+# （hyper-util legacy Connect = tower Service 别名，vendor
+# hyper-util/src/client/legacy/connect/mod.rs:335-353 blanket impl）；tower-service
+# 为 hyper/hyper-rustls 既有传递依赖，转正直接声明。
+tower-service = { version = "=0.3.3" }
+# Body 聚合读（hudsucker::Body 无 read_all helper，经 BodyExt::collect；POC 先例）。
+http-body-util = { workspace = true }
+# 流式 tee 捕获面的 Stream/TryStream trait（hudsucker Body::from_stream 入参；
+# hudsucker 传递依赖转正直接声明）。
+futures = { version = "=0.3.34" }
+# tokio：workspace 底座缺 net（MITM 监听必需，additive 增补本批明文允许，
+# WSW-2-TASK §五.3；先例 POC crates/wsw-poc/Cargo.toml:37-38 原注释）。
+tokio = { workspace = true, features = ["net"] }
+# 持久化（024 三表）：rusqlite 经 database 重导出，不直连（wsw-message
+# store.rs 先例注释「迁移执行器唯一为 database::migrate」）。
+database = { workspace = true }
+# 消息面：CAS 正文（wsw_body_blob 登记）+ 脱敏（日志投影）+ Exchange ID 形状。
+wsw-message = { path = "../wsw-message" }

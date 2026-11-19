@@ -92,6 +92,12 @@ const WorkflowsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./routes/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const WswProxyPage = lazy(() =>
+  import("./routes/WswProxyPage").then((m) => ({ default: m.WswProxyPage })),
+);
+const WswCertPage = lazy(() =>
+  import("./routes/WswCertPage").then((m) => ({ default: m.WswCertPage })),
+);
 
 function lazyElement(node: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
@@ -150,6 +156,9 @@ export function App() {
             <Route path="agents" element={lazyElement(<AgentsPage />)} />
             <Route path="workflows" element={lazyElement(<WorkflowsPage />)} />
             <Route path="settings" element={lazyElement(<SettingsPage />)} />
+            {/* WSW-2 最小 UI 面（W2-D8）：代理状态页 + 证书状态页。 */}
+            <Route path="settings/wsw-proxy" element={lazyElement(<WswProxyPage />)} />
+            <Route path="settings/wsw-cert" element={lazyElement(<WswCertPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

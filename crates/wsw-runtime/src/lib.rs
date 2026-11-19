@@ -1,5 +1,26 @@
-//! Safe WSW runtime primitives only; no socket IO, forwarding, TLS termination,
-//! or system proxy/trust-store mutation.
+//! WSW runtime（WSW-2 Proxy / MITM Runtime，`docs/rip3/wsw/WSW-2-TASK.md`；
+//! WSW-2-ADR W2-D1「原地扩展五模块」）。
+//!
+//! - 根（本文件）：既有 Safe primitives 原样保留——`ListenerConfig`/
+//!   `ListenerState`/`InterceptState`/`PendingQueue`/`is_loopback_peer`。
+//! - [`listener`]：socket 运行时（bind 守卫 + hudsucker Proxy 组装 +
+//!   六态生命周期 + [`listener::handler`] 处理器与错误五态）。
+//! - [`authority`]：WswAuthority（自实现 CertificateAuthority trait，IP SAN
+//!   + 证书缓存 + CA 持久化 0600；ADR-0004 D4）。
+//! - [`scope`]：Scope 闸（include/exclude/端口/路径 + 私网审计 + 云元数据
+//!   deny-never-allow；W2-D5）。
+//! - [`persist`]：024 三表 store（listener/session 登记 + intercept
+//!   enqueue/resolve/重启对账；W2-D4/D6）。
+//!
+//! 红线：本 crate 不做任何系统代理设置或信任库写面调用（CA 信任安装
+//! 全为用户显式动作，PLAN §7.1 :516-517）。
+#![forbid(unsafe_code)]
+
+pub mod authority;
+pub mod listener;
+pub mod persist;
+pub mod scope;
+
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

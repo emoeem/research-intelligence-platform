@@ -63,7 +63,7 @@ STOPPING → FAILED（强制超时兜底）
 
 | 跃迁 | 触发 | 入口位 |
 |---|---|---|
-| STOPPED→STARTING | UI/API start | `crates/wsw-proxy`（WSW-2 新建，Listener 生命周期面）；loopback 校验失败即进 FAILED（守卫逻辑参照 `crates/wsw-poc/src/main.rs:195-203`） |
+| STOPPED→STARTING | UI/API start | `crates/wsw-runtime::listener`（W2-D1 原地扩展，不新建 wsw-proxy crate；Listener 生命周期面）；loopback 校验失败即进 FAILED（守卫逻辑参照 `crates/wsw-poc/src/main.rs:195-203`） |
 | STARTING→RUNNING | bind+CA ready | WSW-2；CA 面挂 WswAuthority（ADR-0004 D4） |
 | RUNNING→DEGRADED | 证书缓存异常/TLS 错误率阈 | WSW-2；可诊断错误清单 PLAN §7.5 :555 |
 | RUNNING→STOPPING→STOPPED | stop 请求；拦截队列未处理项必须先收口（§2.2 EXPIRED） | WSW-2；PLAN §7.5 :553 |

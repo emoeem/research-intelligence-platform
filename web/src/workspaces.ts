@@ -292,7 +292,7 @@ export const WORKSPACES: readonly Workspace[] = [
     label: "Settings",
     icon: "settings",
     entry: "/settings",
-    hint: "设置（占位）",
+    hint: "设置（含 WSW 代理/证书状态）",
     tabs: [
       {
         order: 1,
@@ -300,6 +300,20 @@ export const WORKSPACES: readonly Workspace[] = [
         label: "设置",
         icon: "settings",
         hint: "界面偏好与系统设置（后续批次填充）",
+      },
+      {
+        order: 2,
+        to: "/settings/wsw-proxy",
+        label: "代理状态",
+        icon: "serverCog",
+        hint: "WSW-2 Listener 六态/计数/拦截队列摘要（W2-D8）",
+      },
+      {
+        order: 3,
+        to: "/settings/wsw-cert",
+        label: "证书状态",
+        icon: "shieldCheck",
+        hint: "WSW-2 CA 指纹/有效期/显式导出与重生成（W2-D8）",
       },
     ],
   },

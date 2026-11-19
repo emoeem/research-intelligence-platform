@@ -3833,7 +3833,24 @@ dependencies = [
 name = "wsw-runtime"
 version = "0.2.0"
 dependencies = [
+ "database",
+ "futures",
+ "http-body-util",
+ "hudsucker",
+ "hyper-rustls",
+ "moka",
+ "rand 0.10.4",
+ "rcgen",
  "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tower-service",
+ "tracing",
+ "tracing-subscriber",
+ "webpki-roots 1.0.12",
+ "wsw-message",
 ]
 
 [[package]]

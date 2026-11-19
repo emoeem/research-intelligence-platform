@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
+publish = false
 description = "Document Router：文档域编排层（DI-1 ADR D1）——手写魔数嗅探（D6）→ 通道表编排（D3）→ 能力/帽前置门（D7）→ 规范化（D3 统一输出 Schema）。执行链复用 tool-engine 公开 API（D2：零 std::process::Command，不建第二事实源）。"
 
 [dependencies]

@@ -80,14 +80,17 @@
 
 ## 5. GitHub CI 状态
 
-本次没有创建 commit 或 push，因此没有新的 GitHub Actions run 可供核验。当前只能确认本地离线检查通过，**不能声称 GitHub CI 已通过**。后续由用户授权提交/推送后，再以实际 CI run 作为远端验收依据。
+（WSW-2 批次终态回填 2026-11-19：本节收口时"未 commit 未触发 CI"的状态已由后续批次兑现，按实际 CI run 改写。）
+
+- WSW-1 收口批已提交：commit `077a8dd4`（"WSW-1 message model and WSW-2 runtime foundation"），对应 GitHub Actions run **44293771053 conclusion=success**（headSha=077a8dd422e00b4a411bffeb27a0b83f96cade9c，`gh run view 44293771053` 实核）。
+- DI-1 后续 CI 修复批 `2cef9439`（"CI 修复：DI-1 missing_capability … + 批次报告 E2 回填"）对应 run **44394568183 conclusion=success**（headSha=2cef943998efd6a7c4038c77b47346363f7d8cd5，`gh run view 44394568183` 实核）。
+- 即：本批 GitHub CI 已绿，原先"不能声称 GitHub CI 已通过"的保留状态解除。
 
 ## 6. 工作树与后续边界
 
-- 基线 HEAD 仍为 `4e7b4c693762`；本次未移动 HEAD。
-- WSW-1 代码、迁移与文档留在当前工作树，尚未提交。
-- 用户先前的 WSW-1 未提交内容（Cargo.toml、Cargo.lock、`crates/wsw-message/`、migration 023）均保留。
-- 与 WSW-1 无关的 Runtime 策略、RT-0/RT-0.5 文档，以及先前其他测试文件格式差异均未纳入本批提交，也未擅自清理。
-- WSW-2 不自动开批；必须按总路线另行授权和验收。
+（WSW-2 批次终态回填 2026-11-19，仅更新事实态，不改本节其余裁决语义。）
 
-**结论：** WSW-1 的本地代码与迁移验收完成，工作区 850 项测试零失败，Workspace Clippy/Check、格式与许可证检查通过。仍需保留两个明确状态：GitHub CI 尚未运行；工作区 advisory 扫描存在既有依赖安全遗留。
+- 本批内容已随收口批 `077a8dd4` 提交入库（WSW-1 代码、Cargo.toml/lock、`crates/wsw-message/`、migration 023 与本报告），CI 终态绿（§5）。
+- WSW-2 已按总路线授权开批并实施：Listener 运行时（`crates/wsw-runtime` 原地扩展）+ WswAuthority IP SAN + 024 拦截队列持久化 + Scope 闸 + CA 管理面，验收见 `docs/rip3/batches/WSW-2-BATCH-REPORT.md`。
+
+**结论（回填后）：** WSW-1 的本地代码与迁移验收完成且已入库，GitHub CI（run 44293771053）绿；工作区 advisory 扫描的既有依赖安全遗留记录保留原状。
