@@ -3,7 +3,9 @@
 //! 夹具全部本机 loopback（禁外联）：明文 marker 服务 + 自签 TLS 端点 +
 //! h2-only 上游夹具 + 真实 curl/openssl 子进程（loopback 目标）。
 //! 纪律：`--test-threads=1` + tokio::time::timeout 保护（容器派发并发挂死
-//! 先例）；curl 缺失时如实 skip（不冒充 PASS）。
+//! 先例）；curl 缺失时如实 skip——三处 curl 子进程用例打 `[SKIP]` 标记后
+//! 空跑返回（不冒充 PASS；无 curl 环境实拍矩阵缩水为 0 断言，环境前提 =
+//! 本机有 curl，见批次报告 E 节测试账目注记）。
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -15,14 +17,16 @@ use hudsucker::rcgen::{
     Issuer, KeyPair, KeyUsagePurpose, SanType,
 };
 use hudsucker::rustls::crypto::aws_lc_rs;
-use hudsucker::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
+use hudsucker::rustls::pki_types::{
+    pem::PemObject, CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer,
+};
 use hudsucker::rustls::ServerConfig;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 use wsw_runtime::authority::WswAuthority;
+use wsw_runtime::listener::handler::InterceptMatcher;
 use wsw_runtime::listener::{ListenerError, RuntimeOptions, WswListener};
 use wsw_runtime::scope::ScopeRules;
-use wsw_runtime::listener::handler::InterceptMatcher;
 
 const MARKER: &str = "RIP3-P59C-LOCAL-RANGE-MARKER";
 const H2_ALPN_RECORDED: &str = "mitm_loopback_h2_alpn";
@@ -44,6 +48,15 @@ fn have_curl() -> bool {
         .unwrap_or(false)
 }
 
+/// curl 缓跳：[SKIP] 标记落 stderr（--nocapture 可见；无 curl 环境该用例
+/// 0 断言空跑，测试账目须注明环境前提——修订批 F7 口径）。
+fn skip_curl_missing(test: &str) {
+    eprintln!(
+        "[SKIP] curl missing — {test} not executed (requires curl; \
+         matrix runs on curl-present host only, see WSW-2-BATCH-REPORT.md §E)"
+    );
+}
+
 /// 空闲 loopback 端口（bind :0 → 读实际端口 → 释放；单线程测试无竞争窗口）。
 fn free_port() -> u16 {
     let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind :0");
@@ -56,34 +69,49 @@ async fn serve_plain_http(listener: TcpListener, routes: Arc<MarkerRoutes>) {
     let builder = hudsucker::hyper_util::server::conn::auto::Builder::new(
         hudsucker::hyper_util::rt::TokioExecutor::new(),
     );
-    let service = hudsucker::hyper::service::service_fn(move |req: Request<hudsucker::hyper::body::Incoming>| {
-        let _routes = Arc::clone(&routes);
-        async move {
-            let path = req.uri().path().to_string();
-            let (status, ctype, body): (u16, &str, Vec<u8>) = if path == "/p59c-marker" {
-                (200, "text/plain; charset=utf-8", MARKER.as_bytes().to_vec())
-            } else if path == "/redirect-out-of-scope" {
-                (302, "text/plain; charset=utf-8", b"see other".to_vec())
-            } else if path == "/" {
-                (200, "text/html; charset=utf-8", b"<h1>RIP3 local range</h1>".to_vec())
-            } else {
-                (404, "text/plain; charset=utf-8", b"not found".to_vec())
-            };
-            let mut resp = Response::builder().status(status).header("content-type", ctype);
-            if path == "/redirect-out-of-scope" {
-                // 越界重定向目标：scope 外 host（第二跳经代理复走查点 A 拒）。
-                resp = resp.header("location", "http://out-of-range.example.invalid:80/nope");
+    let service = hudsucker::hyper::service::service_fn(
+        move |req: Request<hudsucker::hyper::body::Incoming>| {
+            let _routes = Arc::clone(&routes);
+            async move {
+                let path = req.uri().path().to_string();
+                let (status, ctype, body): (u16, &str, Vec<u8>) = if path == "/p59c-marker" {
+                    (200, "text/plain; charset=utf-8", MARKER.as_bytes().to_vec())
+                } else if path == "/redirect-out-of-scope" {
+                    (302, "text/plain; charset=utf-8", b"see other".to_vec())
+                } else if path == "/" {
+                    (
+                        200,
+                        "text/html; charset=utf-8",
+                        b"<h1>RIP3 local range</h1>".to_vec(),
+                    )
+                } else {
+                    (404, "text/plain; charset=utf-8", b"not found".to_vec())
+                };
+                let mut resp = Response::builder()
+                    .status(status)
+                    .header("content-type", ctype);
+                if path == "/redirect-out-of-scope" {
+                    // 越界重定向目标：scope 外 host（第二跳经代理复走查点 A 拒）。
+                    resp = resp.header("location", "http://out-of-range.example.invalid:80/nope");
+                }
+                Ok::<_, std::convert::Infallible>(
+                    resp.body(hudsucker::Body::from(body)).expect("resp"),
+                )
             }
-            Ok::<_, std::convert::Infallible>(resp.body(hudsucker::Body::from(body)).expect("resp"))
-        }
-    });
+        },
+    );
     loop {
-        let Ok((stream, _)) = listener.accept().await else { continue };
+        let Ok((stream, _)) = listener.accept().await else {
+            continue;
+        };
         let builder = builder.clone();
         let service = service.clone();
         tokio::spawn(async move {
             let _ = builder
-                .serve_connection_with_upgrades(hudsucker::hyper_util::rt::TokioIo::new(stream), service)
+                .serve_connection_with_upgrades(
+                    hudsucker::hyper_util::rt::TokioIo::new(stream),
+                    service,
+                )
                 .await;
         });
     }
@@ -108,7 +136,10 @@ fn fixture_tls_files(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
     dn.push(DnType::CommonName, "WSW2-FIXTURE-CA");
     ca_params.distinguished_name = dn;
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    ca_params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyCertSign];
+    ca_params.key_usages = vec![
+        KeyUsagePurpose::DigitalSignature,
+        KeyUsagePurpose::KeyCertSign,
+    ];
     let ca_cert = ca_params.self_signed(&ca_key).expect("ca cert");
 
     let server_key = KeyPair::generate().expect("server key");
@@ -118,9 +149,7 @@ fn fixture_tls_files(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
     leaf_params.distinguished_name = leaf_dn;
     leaf_params.subject_alt_names = vec![
         SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
-        SanType::DnsName(
-            hudsucker::rcgen::string::Ia5String::try_from("localhost").expect("ia5"),
-        ),
+        SanType::DnsName(hudsucker::rcgen::string::Ia5String::try_from("localhost").expect("ia5")),
     ];
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
@@ -166,22 +195,28 @@ async fn spawn_tls_server(
     } else {
         tls_acceptor(cert_pem, key_pem, None).await
     };
-    let service = hudsucker::hyper::service::service_fn(|_req: Request<hudsucker::hyper::body::Incoming>| async move {
-        Ok::<_, std::convert::Infallible>(
-            Response::builder()
-                .status(200)
-                .header("content-type", "text/plain; charset=utf-8")
-                .body(hudsucker::Body::from(MARKER.as_bytes().to_vec()))
-                .expect("resp"),
-        )
-    });
+    let service = hudsucker::hyper::service::service_fn(
+        |_req: Request<hudsucker::hyper::body::Incoming>| async move {
+            Ok::<_, std::convert::Infallible>(
+                Response::builder()
+                    .status(200)
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(hudsucker::Body::from(MARKER.as_bytes().to_vec()))
+                    .expect("resp"),
+            )
+        },
+    );
     let handle = tokio::spawn(async move {
         loop {
-            let Ok((stream, _)) = listener.accept().await else { continue };
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
             let acceptor = acceptor.clone();
             let record = Arc::clone(&alpn_record);
             tokio::spawn(async move {
-                let Ok(tls) = acceptor.accept(stream).await else { return };
+                let Ok(tls) = acceptor.accept(stream).await else {
+                    return;
+                };
                 if let Some(alpn) = tls.get_ref().1.alpn_protocol() {
                     *record.lock().expect("alpn mutex") =
                         Some(String::from_utf8_lossy(alpn).to_string());
@@ -287,15 +322,21 @@ fn rules_for_range() -> ScopeRules {
 async fn plaintext_and_connect_and_scope_matrix() {
     tokio::time::timeout(std::time::Duration::from_secs(120), async {
         if !have_curl() {
-            eprintln!("curl missing — e2e skipped (recorded honestly)");
+            skip_curl_missing("plaintext_and_connect_and_scope_matrix");
             return;
         }
         let root = temp_root("matrix");
         let (marker_port, marker_task) = spawn_marker_server().await;
         let (fixture_ca, tls_cert, tls_key) = fixture_tls_files(&root);
         let alpn_record = Arc::new(std::sync::Mutex::new(None));
-        let (tls_port, tls_task) =
-            spawn_tls_server(false, Arc::clone(&alpn_record), &fixture_ca, &tls_cert, &tls_key).await;
+        let (tls_port, tls_task) = spawn_tls_server(
+            false,
+            Arc::clone(&alpn_record),
+            &fixture_ca,
+            &tls_cert,
+            &tls_key,
+        )
+        .await;
         let db = root.join("e2e.db");
         let artifacts = root.join("artifacts");
         let (listener, proxy_port, ca_dir_actual) = start_listener(
@@ -377,7 +418,10 @@ async fn plaintext_and_connect_and_scope_matrix() {
             body3.trim_end().ends_with("403"),
             "metadata endpoint must be denied even with allow_private, got: {body3}"
         );
-        assert!(body3.contains("metadata_endpoint"), "reason must be metadata_endpoint");
+        assert!(
+            body3.contains("metadata_endpoint"),
+            "reason must be metadata_endpoint"
+        );
 
         // 重定向越界拒：靶场 302 → scope 外 host，第二跳经代理 403。
         let (code4, body4, _) = curl(curl_args(&[
@@ -398,17 +442,31 @@ async fn plaintext_and_connect_and_scope_matrix() {
         // 捕获事实面（D9）：wsw_body_blob 行 + CAS 文件。
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         let store = wsw_runtime::persist::PersistStore::open_file(&db).expect("db open");
-        let _ = store.run_migrations(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations"));
+        let _ =
+            store.run_migrations(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations"));
         let blob_count = store
             .with_conn(|conn| {
-                conn.query_row("SELECT COUNT(*) FROM wsw_body_blob", [], |r| r.get::<_, i64>(0))
+                conn.query_row("SELECT COUNT(*) FROM wsw_body_blob", [], |r| {
+                    r.get::<_, i64>(0)
+                })
             })
             .expect("blob count");
-        assert!(blob_count >= 2, "plaintext+https response bodies captured, got {blob_count}");
+        assert!(
+            blob_count >= 2,
+            "plaintext+https response bodies captured, got {blob_count}"
+        );
 
         let status = listener.status();
-        assert!(status.requests_total >= 5, "requests counted: {}", status.requests_total);
-        assert!(status.scope_blocked_total >= 3, "blocked counted: {}", status.scope_blocked_total);
+        assert!(
+            status.requests_total >= 5,
+            "requests counted: {}",
+            status.requests_total
+        );
+        assert!(
+            status.scope_blocked_total >= 3,
+            "blocked counted: {}",
+            status.scope_blocked_total
+        );
         assert_eq!(status.state, "running");
 
         listener.stop().await.expect("stop");
@@ -433,7 +491,10 @@ async fn non_loopback_bind_refused() {
         Ok(_) => panic!("must refuse non-loopback bind"),
     };
     assert!(
-        matches!(err, ListenerError::Config(wsw_runtime::ConfigError::NonLoopback)),
+        matches!(
+            err,
+            ListenerError::Config(wsw_runtime::ConfigError::NonLoopback)
+        ),
         "expected NonLoopback, got {err:?}"
     );
     // :: 非回环地址同理。
@@ -443,14 +504,17 @@ async fn non_loopback_bind_refused() {
         Err(e) => e,
         Ok(_) => panic!("must refuse non-loopback v6 bind"),
     };
-    assert!(matches!(err, ListenerError::Config(wsw_runtime::ConfigError::NonLoopback)));
+    assert!(matches!(
+        err,
+        ListenerError::Config(wsw_runtime::ConfigError::NonLoopback)
+    ));
 }
 
 #[tokio::test]
 async fn intercept_queue_ttl_flow_via_live_proxy() {
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         if !have_curl() {
-            eprintln!("curl missing — intercept e2e skipped");
+            skip_curl_missing("intercept_queue_ttl_flow_via_live_proxy");
             return;
         }
         let root = temp_root("intercept");
@@ -476,13 +540,20 @@ async fn intercept_queue_ttl_flow_via_live_proxy() {
         ]))
         .await;
         assert_eq!(code, 0);
-        assert_eq!(out.trim(), MARKER, "intercepted request auto-forwarded after TTL");
+        assert_eq!(
+            out.trim(),
+            MARKER,
+            "intercepted request auto-forwarded after TTL"
+        );
 
         // 终态面：persist 行 EXPIRED（TTL 到期路径）。
         let store = wsw_runtime::persist::PersistStore::open_file(&db).expect("db open");
-        let _ = store.run_migrations(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations"));
+        let _ =
+            store.run_migrations(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations"));
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let rows = store.list_intercepts_state("expired").expect("expired rows");
+        let rows = store
+            .list_intercepts_state("expired")
+            .expect("expired rows");
         assert!(
             rows.iter().any(|r| r.host.as_deref() == Some("127.0.0.1")),
             "expired intercept row must be visible: {rows:?}"
@@ -503,14 +574,20 @@ async fn intercept_queue_ttl_flow_via_live_proxy() {
 async fn h2_only_upstream_fixture() {
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         if !have_curl() {
-            eprintln!("curl missing — h2-only e2e skipped");
+            skip_curl_missing("h2_only_upstream_fixture");
             return;
         }
         let root = temp_root("h2only");
         let (fixture_ca, tls_cert, tls_key) = fixture_tls_files(&root);
         let alpn_record = Arc::new(std::sync::Mutex::new(None));
-        let (h2_port, h2_task) =
-            spawn_tls_server(true, Arc::clone(&alpn_record), &fixture_ca, &tls_cert, &tls_key).await;
+        let (h2_port, h2_task) = spawn_tls_server(
+            true,
+            Arc::clone(&alpn_record),
+            &fixture_ca,
+            &tls_cert,
+            &tls_key,
+        )
+        .await;
         let artifacts = root.join("artifacts");
         let (listener, proxy_port, ca_dir_actual) = start_listener(
             "h2only",
@@ -524,7 +601,8 @@ async fn h2_only_upstream_fixture() {
         .await;
 
         // 导出 WSW CA 供下游信任。
-        let authority = WswAuthority::open(&ca_dir_actual, aws_lc_rs::default_provider()).expect("ca");
+        let authority =
+            WswAuthority::open(&ca_dir_actual, aws_lc_rs::default_provider()).expect("ca");
         let ca_pem = root.join("wsw-ca.pem");
         std::fs::write(&ca_pem, authority.cert_pem()).expect("ca pem");
         let (code, out, err) = curl(curl_args(&[
@@ -563,7 +641,11 @@ async fn ca_regenerate_changes_fingerprint() {
         std::fs::remove_file(root.join(f)).expect("remove");
     }
     let ca2 = WswAuthority::open(&root, aws_lc_rs::default_provider()).expect("regen");
-    assert_ne!(fp1, ca2.meta().fingerprint, "regenerate must change fingerprint");
+    assert_ne!(
+        fp1,
+        ca2.meta().fingerprint,
+        "regenerate must change fingerprint"
+    );
 }
 
 /// 敏感面（任务书 §五.12）：日志投影零头值/体值——单测代理面 grep 语义由
@@ -591,13 +673,9 @@ async fn oversized_capture_is_truncated_without_cas_row() {
     ));
     let meta = wsw_runtime::listener::handler::__test_capture_meta("wsw-1-0-0001");
     // 100 字节 > cap 64 → truncated 路径不落 CAS。
-    wsw_runtime::listener::handler::__test_capture_finish(
-        &shared,
-        &meta,
-        &[b'x'; 100],
-        true,
-        64,
-    );
-    let dir_ok = std::fs::read_dir(&artifacts).map(|mut d| d.next().is_none()).unwrap_or(true);
+    wsw_runtime::listener::handler::__test_capture_finish(&shared, &meta, &[b'x'; 100], true, 64);
+    let dir_ok = std::fs::read_dir(&artifacts)
+        .map(|mut d| d.next().is_none())
+        .unwrap_or(true);
     assert!(dir_ok, "truncated capture must not write CAS files");
 }

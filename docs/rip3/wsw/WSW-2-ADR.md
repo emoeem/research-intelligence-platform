@@ -56,7 +56,7 @@ crates/wsw-runtime/src/
 | rcgen | 0.14.10（经 `hudsucker::rcgen` 再导出，POC 先例 `main.rs:21-24`） | CA 与动态证书 |
 | moka | 0.12.16 | 证书缓存（直接依赖声明，传递依赖转正口径同 WSW-1 sha2/base64 先例 `Cargo.toml:81-86`） |
 | time | 0.3.55 | 证书 not_before/not_after（vendor `rcgen_authority.rs:24` 同款） |
-| rand | 0.9.5（lock 双版本 0.9.5/0.10.4，取 hudsucker 0.25.0 所用 API 面 `RngExt` = 0.9） | 证书序列号（或以 std hasher 派生则不声明，实施时二选一） |
+| rand | 0.10.4（lock 双版本 0.9.5/0.10.4 中 hudsucker 0.25.0 依赖链实值 = 0.10.4，`Cargo.lock` 可 grep；vendor `rcgen_authority.rs:24` `RngExt` API 面 = 0.10.x） | 证书序列号（rand 0.10 `Rng` 面 `rng().random::<u64>()`；实现 `crates/wsw-runtime/Cargo.toml` `=0.10.4` 等号钉） |
 | hyper-rustls | 0.27.10 | 上游 connector（POC 先例 `crates/wsw-poc/Cargo.toml:30-35`） |
 | webpki-roots | 1.0.12（POC 用 1.0 req 面命中 1.0.12） | 上游公共根 |
 | http-body-util | 0.1.5 | 流式 body 处理 |
@@ -140,7 +140,7 @@ wsw_intercept(
 | 查点 | 时机 | 拒绝动作 |
 |---|---|---|
 | 查点 A：连接前 | CONNECT host / 明文请求 authority，在**建立上游连接之前** | out_of_scope_policy=blocked（默认）→ 403 + `scope_decision=out_of_scope_blocked` 行记录；passive_forward → 放行不拦截改写 + `out_of_scope_passive` 记录 |
-| 查点 B：重定向后 | 每跳 Location 目标（协议+host+port+path 逐跳），`max_redirects` 帽（`document_fetch.rs:63-71` FetchPolicy 先例） | 同查点 A；越界重定向必须可见（PLAN :524/:528） |
+| 查点 B：重定向后 | 每跳 Location 目标（协议+host+port+path 逐跳）。`max_redirects` 帽（`document_fetch.rs:63-71` FetchPolicy 先例）**帽语义（逐跳计数接线）留 WSW-3**：本批保障 = 每一跳经代理即新请求复走查点 A（handler 每请求入口闸，重定向第二跳不豁免），`check_redirect_hop` 帽入口已落 `scope.rs` 但仅单测级消费、运行时路径不接线（修订批口径，与批次报告 G 节遗留项对齐，防裁决文档与实现漂移） | 同查点 A；越界重定向必须可见（PLAN :524/:528） |
 | 查点 C：解析 IP 审计 | 上游 DNS 解析完成、TCP 连接前，实际 IP 过 `audit_resolved`（`document_fetch.rs:460-514` 全地址复核移植）；Pinned-IP 连接（解析一次按 IP 连接、Host 头保持域名） | 私网/回环/链路本地/multicast/mapped/NAT64 命中 → 拒 + remote_ip 落行（DNS rebinding：域名串过闸≠IP 过闸，PLAN :525） |
 
 **闸序**：scheme → host（include/exclude，exclude 优先）→ port → path → IP 审计；`document_fetch.rs:553-563` "私网闸先于 allowlist"语义沿用的前提修正为：**用户显式 `allow_private_targets=true` 且该目标命中 include 规则时放行私网/回环/链路本地并逐条留痕（本机靶场 127.0.0.1:8443 靠此面通过）**；**云元数据段（169.254.169.254/::ffff:169.254.169.254、metadata.google.internal、169.254.170.2 等）deny-never-allow，任何 allow_private/include 组合不可放行**（DESIGN §4.3 词表项原文）。规则源：`wsw_session.scope_rules_json`（PLAN :521"复用 ResearchTask 目标与工具执行边界"的导入位，过渡期未配置 = default deny，DESIGN §4.1 原文）。

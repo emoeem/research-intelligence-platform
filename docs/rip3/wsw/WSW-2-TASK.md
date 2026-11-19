@@ -13,7 +13,7 @@
 1. **Listener socket 运行时**：hudsucker 0.25.0 组装进 `crates/wsw-runtime`（本 ADR D1 五模块），只听 loopback（非 loopback 拒绑 exit 级拒绝 + accept 源二次校验），驱动既有 `ListenerState` 六态；HTTP 明文面与 HTTPS CONNECT MITM 双面可用（本机靶场实测）。
 2. **WswAuthority 补 IP SAN**（ADR-0004 D4 必做）：自实现 `CertificateAuthority` trait，IP 直连目标动态证书含 `SanType::IpAddress`；CA 持久化复用；证书缓存（moka cap=1000，TTL=有效期半程）；CA 私钥/证书落 `rip-data/wsw-ca/`（0600/0700），指纹展示、导出 PEM、重生成全为用户显式动作；**禁静默安装、禁默认改系统代理**。
 3. **拦截队列持久化**：024 增量迁移三表（wsw_listener/wsw_session/wsw_intercept），SQLite 链头 023→024；内存 `PendingQueue`（既有原语）+ 持久层双面；TTL/队满/停机全部强制 EXPIRED 终态；Forward / Drop / Modified-Forward 三动作。
-4. **Scope 闸后端强制**：include/exclude、重定向逐跳二次校验、DNS rebinding 防护（解析 IP 过闸 + Pinned-IP）、私网/回环/链路本地/云元数据拒绝（云元数据 deny-never-allow）；无规则 default deny；拒绝记录可见。
+4. **Scope 闸后端强制**：include/exclude、重定向逐跳二次校验（帽接线留 WSW-3，W2-D5 查点 B 修订批口径——本批保障 = 每跳经代理即新请求复走查点 A）、DNS rebinding 防护（解析 IP 过闸 + Pinned-IP，集成级负例 = 解析桩注入，§四.2）、私网/回环/链路本地/云元数据拒绝（云元数据 deny-never-allow）；无规则 default deny；拒绝记录可见。
 5. **本机实验台实拍**：真实 chromium 经代理访问 `scripts/local_range.py --port 8443` 靶场，截图 ≥4 张入库 `docs/rip3/batches/browser-e2e/wsw-2/`；HTTPS CONNECT curl + openssl s_client 实证 issuer 与 IP SAN；`ss -tlnp` 实证仅绑 loopback。
 6. **W0 遗留两项验收**：上游纯 h2-only 本地夹具实测（禁外联）+ 容器内 aws-lc-sys 构建（podman builder 层，失败回退增补 cmake 如实记录）。
 7. **UI 最小面**：两页——代理状态页 + 证书状态页（本 ADR D8）；History/拦截编辑器/Repeater/Fuzzer UI 全部留 W3+（明文边界）。
@@ -24,7 +24,7 @@
 
 | 文件 | 动作 | 内容 |
 |---|---|---|
-| `crates/wsw-runtime/Cargo.toml` | 修改 | 依赖增补（全部 lock 已有，等号钉既有版本）：hudsucker `=0.25.0`（features 同 POC）、rcgen 0.14.10 经 hudsucker 再导出、`moka = "=0.12.16"`、`time = "=0.3.55"`、（可选）`rand = "=0.9.5"`、hyper-rustls 0.27、webpki-roots 1.0、http-body-util、database、domain、wsw-message、serde/serde_json；`tokio = { workspace = true, features = ["net"] }`（POC 先例 `crates/wsw-poc/Cargo.toml:37-38`） |
+| `crates/wsw-runtime/Cargo.toml` | 修改 | 依赖增补（全部 lock 已有，等号钉既有版本）：hudsucker `=0.25.0`（features 同 POC）、rcgen 0.14.10 经 hudsucker 再导出、`moka = "=0.12.16"`、`time = "=0.3.55"`、`rand = "=0.10.4"`（lock 实值 hudsucker 0.25.0 依赖链，修订批按实现修正 0.9.5→0.10.4）、hyper-rustls 0.27、webpki-roots 1.0、http-body-util、database、domain、wsw-message、serde/serde_json；`tokio = { workspace = true, features = ["net"] }`（POC 先例 `crates/wsw-poc/Cargo.toml:37-38`） |
 | `Cargo.lock` | 修改（仅 wsw-runtime 依赖清单行） | **`[[package]]` 总数 400 不变**；vendor 零变更；registry package 375 不变 |
 | `crates/wsw-runtime/src/lib.rs` | 修改 | 模块声明 + crate doc 更新（现"no socket IO"声明作废，`src/lib.rs:1-2`）；既有根原语不动 |
 | `crates/wsw-runtime/src/authority.rs` | 新建 | WswAuthority：CertificateAuthority trait 实现 + IP SAN/DNS SAN 分支 + moka 缓存 + CA 持久化读写（0600 no-clobber）+ 指纹（本 ADR D2/D3） |
@@ -83,7 +83,7 @@ git status --porcelain web | grep -q . && { npm --prefix web run build && npm --
 | include 命中放行 | 配置 include 127.0.0.1:8443 + allow_private → 200 + 留痕行 |
 | exclude 优先 | include *.example + exclude host → exclude 命中拒 |
 | 重定向越界拒 | 靶场重定向到 scope 外 host → 第二跳拦截 + 记录 |
-| DNS rebinding 拒 | 域名解析指向私网 IP（本地 hosts 面模拟）→ 解析 IP 过闸拒 + remote_ip 落行 |
+| DNS rebinding 拒（集成级） | 域名解析指向私网 IP → 解析 IP 过闸拒 + remote_ip 落行。集成级实现 = 解析桩注入（`DnsResolver` trait 可注入面，免改 /etc/hosts）：`AuditedConnector::call` 拒 → `ConnectorError::ScopeRejected` 携带 remote_ip（经 `source()` 链入下溯链）→ `respond_to_scope_reject`（`handle_error` 查点 C 决策同一实现）403 + `x-wsw-scope-decision` 头——`tests/scope_gate.rs` 尾部两例真实执行；`audit_resolved` 本体单测级另在册 |
 | 云元数据 deny-never-allow | allow_private=true + include 169.254.169.254 → 仍拒（reason=metadata_endpoint） |
 | mapped 归一 | ::ffff:127.0.0.1 目标 → 按 V4 私网判定 |
 | CA 不静默安装 | 全代码面 grep 无 networksetup/gsettings/注册表调用；导出/重生成端点无 confirm 拒绝执行 |

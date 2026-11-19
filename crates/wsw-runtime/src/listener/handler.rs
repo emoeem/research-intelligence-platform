@@ -16,17 +16,19 @@
 //!   `wsw_message::redact` 命中的头名列表（**任何头值/体值不落日志**，
 //!   DESIGN §4.5 / PLAN §7.5 :555）。
 
-use crate::scope::{self, ScopeRules, ScopeTarget};
 use crate::persist::{self, InterceptDirection, InterceptRow, PersistStore};
+use crate::scope::{self, ScopeRules, ScopeTarget};
 use crate::{
-    InterceptState, ListenerState, ListenerConfig, PendingQueue, QueueError, is_loopback_peer,
+    is_loopback_peer, InterceptState, ListenerConfig, ListenerState, PendingQueue, QueueError,
 };
+use http_body_util::BodyExt;
 use hudsucker::hyper::body::{Body as HttpBody, Bytes};
 use hudsucker::hyper::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use hudsucker::hyper::{Request, Response, StatusCode};
 use hudsucker::tokio_tungstenite::tungstenite::Message;
-use hudsucker::{Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler};
-use http_body_util::BodyExt;
+use hudsucker::{
+    Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
@@ -96,11 +98,58 @@ pub struct ScopeRejectRecord {
 
 impl fmt::Display for ScopeRejectRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "host={} remote_ip={} reason={}", self.host, self.ip, self.reason)
+        write!(
+            f,
+            "host={} remote_ip={} reason={}",
+            self.host, self.ip, self.reason
+        )
     }
 }
 
 impl StdError for ScopeRejectRecord {}
+
+/// connector 错误链 → 查点 C scope 拒绝响应（downcast 找 [`ScopeRejectRecord`]
+/// → 403 + `x-wsw-scope-decision`/`x-wsw-reason` 头 + 计数与日志；返回 None =
+/// 非 scope 面，交调用方继续分类）。
+///
+/// `handle_error`（hyper-util legacy::Error 无公共构造器）与集成测试
+/// `tests/scope_gate.rs`（包装错误链直喂）走同一实现——查点 C
+/// `AuditedConnector::call` 拒 → 连接面错误 → 本函数 403 的 glue 全链路
+/// 由测试真实执行（WSW-2-TASK §四.2 DNS rebinding 行集成级口径）。
+pub fn respond_to_scope_reject(
+    shared: &Arc<ListenerShared>,
+    err: &(dyn StdError + 'static),
+) -> Option<Response<Body>> {
+    let mut scope_record: Option<ScopeRejectRecord> = None;
+    let mut src: Option<&(dyn StdError + 'static)> = Some(err);
+    while let Some(e) = src {
+        if let Some(r) = e.downcast_ref::<ScopeRejectRecord>() {
+            scope_record = Some(r.clone());
+        }
+        src = e.source();
+    }
+    let record = scope_record?;
+    shared
+        .counters
+        .scope_blocked_total
+        .fetch_add(1, Ordering::Relaxed);
+    shared.counters.bump_error(ProxyErrorClass::ScopeBlocked);
+    tracing_error!(
+        class = "scope_blocked",
+        point = "connect_audit",
+        scope_decision = "out_of_scope_blocked",
+        host = %record.host,
+        remote_ip = %record.ip,
+        reason = %record.reason,
+        cause_chain = %cause_chain_summary(err),
+        "upstream connect rejected by scope IP audit (403)"
+    );
+    Some(reject_response(
+        StatusCode::FORBIDDEN,
+        "out_of_scope_blocked",
+        &record.reason,
+    ))
+}
 
 /// 运行配置（组合复用既有 `ListenerConfig` 根原语，不触碰其定义）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,9 +231,12 @@ impl InterceptMatcher {
                 host_l == p || host_l.starts_with(&p)
             });
         let method_hit = self.methods.is_empty()
-            || self.methods.iter().any(|p| method_u == p.to_ascii_uppercase());
-        let path_hit = self.path_prefixes.is_empty()
-            || self.path_prefixes.iter().any(|p| path.starts_with(p));
+            || self
+                .methods
+                .iter()
+                .any(|p| method_u == p.to_ascii_uppercase());
+        let path_hit =
+            self.path_prefixes.is_empty() || self.path_prefixes.iter().any(|p| path.starts_with(p));
         host_hit && method_hit && path_hit
     }
 }
@@ -487,9 +539,7 @@ impl InterceptCoordinator {
             let _ = tx.send(action.clone());
         }
         if let Some(store) = &self.persist {
-            if let Err(e) =
-                store.resolve_intercept(id, state, now_iso_str, Some(action.reason()))
-            {
+            if let Err(e) = store.resolve_intercept(id, state, now_iso_str, Some(action.reason())) {
                 tracing_error!(
                     class = "parse_framing",
                     error_code = "persist_resolve_failed",
@@ -514,7 +564,12 @@ impl InterceptCoordinator {
         self.deadlines.lock().expect("deadlines mutex").remove(id);
         self.waiters.lock().expect("waiters mutex").remove(id);
         if let Some(store) = &self.persist {
-            let _ = store.resolve_intercept(id, InterceptState::Expired, now_iso_str, Some("ttl_expired"));
+            let _ = store.resolve_intercept(
+                id,
+                InterceptState::Expired,
+                now_iso_str,
+                Some("ttl_expired"),
+            );
         }
         tracing::warn!(
             class = "scope_trace",
@@ -693,7 +748,10 @@ fn capture_finish(
                     );
                 }
             }
-            shared.counters.captures_total.fetch_add(1, Ordering::Relaxed);
+            shared
+                .counters
+                .captures_total
+                .fetch_add(1, Ordering::Relaxed);
             tracing::info!(
                 class = "capture",
                 exchange_id = %meta.exchange_id,
@@ -732,7 +790,11 @@ fn extract_target(req: &Request<Body>) -> (String, String, u16, String) {
         })
         .unwrap_or_default();
     let (host, port) = split_authority(&authority, uri.port_u16(), &scheme);
-    let path = if uri.path().is_empty() { "/" } else { uri.path() };
+    let path = if uri.path().is_empty() {
+        "/"
+    } else {
+        uri.path()
+    };
     (method, host, port, path.to_string())
 }
 
@@ -830,15 +892,20 @@ impl HttpHandler for WswHandler {
     /// 闸与查点 C IP 审计（hudsucker internal.rs:310 直连 TcpStream）——
     /// 一律拦截使每个 CONNECT 后的解密请求都过闸（安全默认；WS 帧仍经
     /// WebSocketHandler 透传挂载）。
-    async fn should_intercept_connect(
-        &mut self,
-        _ctx: &HttpContext,
-        req: &Request<Body>,
-    ) -> bool {
+    async fn should_intercept_connect(&mut self, _ctx: &HttpContext, req: &Request<Body>) -> bool {
+        // 日志只落归一 host:port（split_authority 剥 userinfo——absolute-form
+        // `user:pass@host:443` 形态不把凭据落日志，任务书 §五.12 零例外口径；
+        // scope 闸侧 extract_target 本已剥，此为日志面对齐）。
+        let uri = req.uri();
+        let (host, port) = split_authority(
+            uri.authority().map(|a| a.as_str()).unwrap_or(""),
+            uri.port_u16(),
+            uri.scheme_str().unwrap_or("https"),
+        );
         tracing::info!(
             class = "scope_trace",
             kind = "connect",
-            authority = %req.uri(),
+            authority = format!("{host}:{port}"),
             "CONNECT intercepted (full-MITM posture; blind tunnel would bypass scope gate)"
         );
         true
@@ -847,8 +914,13 @@ impl HttpHandler for WswHandler {
     async fn handle_request(&mut self, ctx: &HttpContext, req: Request<Body>) -> RequestOrResponse {
         // 0) accept 源二次校验（PLAN §7.1 :512-514；fail-closed 403）。
         if !is_loopback_peer(ctx.client_addr.ip()) {
-            self.shared.counters.scope_blocked_total.fetch_add(1, Ordering::Relaxed);
-            self.shared.counters.bump_error(ProxyErrorClass::ScopeBlocked);
+            self.shared
+                .counters
+                .scope_blocked_total
+                .fetch_add(1, Ordering::Relaxed);
+            self.shared
+                .counters
+                .bump_error(ProxyErrorClass::ScopeBlocked);
             tracing_error!(
                 class = "scope_blocked",
                 point = "accept_source",
@@ -862,7 +934,10 @@ impl HttpHandler for WswHandler {
             )
             .into();
         }
-        self.shared.counters.requests_total.fetch_add(1, Ordering::Relaxed);
+        self.shared
+            .counters
+            .requests_total
+            .fetch_add(1, Ordering::Relaxed);
 
         // 1) 目标提取 + 查点 A（连接前闸；重定向第二跳同样走这里）。
         let (method, host, port, path) = extract_target(&req);
@@ -885,7 +960,9 @@ impl HttpHandler for WswHandler {
                 }
             }
             scope::ScopeDecision::Blocked { reason } => {
-                self.shared.counters.bump_error(ProxyErrorClass::ScopeBlocked);
+                self.shared
+                    .counters
+                    .bump_error(ProxyErrorClass::ScopeBlocked);
                 match self.shared.policy {
                     OutOfScopePolicy::Blocked => {
                         self.shared
@@ -948,7 +1025,9 @@ impl HttpHandler for WswHandler {
         }));
 
         if intercepting {
-            return self.handle_request_intercepted(req, exchange_id, content_type).await;
+            return self
+                .handle_request_intercepted(req, exchange_id, content_type)
+                .await;
         }
 
         // 3) 透传路径：流式 tee 捕获（≤cap 缓冲，超帽 truncated 不落 CAS）。
@@ -975,7 +1054,10 @@ impl HttpHandler for WswHandler {
     }
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
-        self.shared.counters.responses_total.fetch_add(1, Ordering::Relaxed);
+        self.shared
+            .counters
+            .responses_total
+            .fetch_add(1, Ordering::Relaxed);
         self.shared.note_success();
         let (mut parts, body) = res.into_parts();
         if !self.shared.options.capture_cas {
@@ -992,7 +1074,11 @@ impl HttpHandler for WswHandler {
                     .unwrap_or(&cur.content_type)
                     .to_string(),
             ),
-            None => (new_exchange_id(), "-".to_string(), "application/octet-stream".to_string()),
+            None => (
+                new_exchange_id(),
+                "-".to_string(),
+                "application/octet-stream".to_string(),
+            ),
         };
         let status = parts.status.as_u16();
         tracing::info!(
@@ -1024,15 +1110,15 @@ impl HttpHandler for WswHandler {
         _ctx: &HttpContext,
         err: hudsucker::hyper_util::client::legacy::Error,
     ) -> Response<Body> {
-        // 下溯错误链找查点 C 拒绝记录（ScopeRejectRecord downcast）。
-        let mut scope_record: Option<ScopeRejectRecord> = None;
+        // 下溯错误链找查点 C 拒绝记录（ScopeRejectRecord downcast → 403；
+        // 决策实现 = [`respond_to_scope_reject`]，集成测试喂同链形错误走同一路径）。
+        if let Some(resp) = respond_to_scope_reject(&self.shared, &err) {
+            return resp;
+        }
         let mut is_tls_error = false;
         {
             let mut src: Option<&(dyn StdError + 'static)> = Some(&err);
             while let Some(e) = src {
-                if let Some(r) = e.downcast_ref::<ScopeRejectRecord>() {
-                    scope_record = Some(r.clone());
-                }
                 let msg = e.to_string().to_ascii_lowercase();
                 if msg.contains("certificate")
                     || msg.contains("tls")
@@ -1043,26 +1129,6 @@ impl HttpHandler for WswHandler {
                 }
                 src = e.source();
             }
-        }
-        if let Some(record) = scope_record {
-            // 查点 C 拒绝 → 403 + 可见记录（W2-D7 scope_blocked 行）。
-            self.shared.counters.scope_blocked_total.fetch_add(1, Ordering::Relaxed);
-            self.shared.counters.bump_error(ProxyErrorClass::ScopeBlocked);
-            tracing_error!(
-                class = "scope_blocked",
-                point = "connect_audit",
-                scope_decision = "out_of_scope_blocked",
-                host = %record.host,
-                remote_ip = %record.ip,
-                reason = %record.reason,
-                cause_chain = %cause_chain_summary(&err),
-                "upstream connect rejected by scope IP audit (403)"
-            );
-            return reject_response(
-                StatusCode::FORBIDDEN,
-                "out_of_scope_blocked",
-                &record.reason,
-            );
         }
         let class = if is_tls_error {
             ProxyErrorClass::UpstreamTls
@@ -1093,10 +1159,16 @@ impl WswHandler {
     ) -> RequestOrResponse {
         let cap = self.shared.options.config.max_body_bytes;
         // CL 前检（头帽/体帽 → parse_framing 400）。
-        if let Some(cl) = req.headers().get(CONTENT_LENGTH).and_then(|v| v.to_str().ok()) {
+        if let Some(cl) = req
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+        {
             if let Ok(n) = cl.parse::<u64>() {
                 if n > cap as u64 {
-                    self.shared.counters.bump_error(ProxyErrorClass::ParseFraming);
+                    self.shared
+                        .counters
+                        .bump_error(ProxyErrorClass::ParseFraming);
                     tracing_error!(
                         class = "parse_framing",
                         error_code = "body_cap_exceeded",
@@ -1118,7 +1190,9 @@ impl WswHandler {
             Ok(c) => {
                 let b: Bytes = c.to_bytes();
                 if b.len() > cap {
-                    self.shared.counters.bump_error(ProxyErrorClass::ParseFraming);
+                    self.shared
+                        .counters
+                        .bump_error(ProxyErrorClass::ParseFraming);
                     tracing_error!(
                         class = "parse_framing",
                         error_code = "body_cap_exceeded",
@@ -1136,7 +1210,9 @@ impl WswHandler {
                 b.to_vec()
             }
             Err(e) => {
-                self.shared.counters.bump_error(ProxyErrorClass::ParseFraming);
+                self.shared
+                    .counters
+                    .bump_error(ProxyErrorClass::ParseFraming);
                 tracing_error!(
                     class = "parse_framing",
                     error_code = "body_collect_failed",
@@ -1155,7 +1231,8 @@ impl WswHandler {
         // 脱敏日志投影：redact 命中的头名列表（值不落日志）。
         let outcome = wsw_message::parse::parse_request(&bytes);
         if let Some(msg) = &outcome.message {
-            let redacted = wsw_message::redact::redact(msg, &wsw_message::redact::RedactRules::default());
+            let redacted =
+                wsw_message::redact::redact(msg, &wsw_message::redact::RedactRules::default());
             tracing::info!(
                 class = "intercept",
                 exchange_id = %exchange_id,
@@ -1196,7 +1273,10 @@ impl WswHandler {
         );
         let (intercept_id, rx) = match enqueue {
             Ok(pair) => {
-                self.shared.counters.intercept_total.fetch_add(1, Ordering::Relaxed);
+                self.shared
+                    .counters
+                    .intercept_total
+                    .fetch_add(1, Ordering::Relaxed);
                 tracing::info!(
                     class = "intercept",
                     exchange_id = %exchange_id,
@@ -1244,10 +1324,11 @@ impl WswHandler {
 
         match resolution {
             Some(InterceptResolution::Forward) => {
-                let _ = self
-                    .shared
-                    .coordinator
-                    .resolve(&intercept_id, InterceptResolution::Forward, &persist::now_iso());
+                let _ = self.shared.coordinator.resolve(
+                    &intercept_id,
+                    InterceptResolution::Forward,
+                    &persist::now_iso(),
+                );
                 Request::from_parts(parts, Body::from(bytes)).into()
             }
             Some(InterceptResolution::Drop) => {
@@ -1268,9 +1349,16 @@ impl WswHandler {
                     port: port2,
                     path: &path2,
                 };
-                if let scope::ScopeDecision::Blocked { reason } = scope::check(&self.shared.rules, &target) {
-                    self.shared.counters.scope_blocked_total.fetch_add(1, Ordering::Relaxed);
-                    self.shared.counters.bump_error(ProxyErrorClass::ScopeBlocked);
+                if let scope::ScopeDecision::Blocked { reason } =
+                    scope::check(&self.shared.rules, &target)
+                {
+                    self.shared
+                        .counters
+                        .scope_blocked_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    self.shared
+                        .counters
+                        .bump_error(ProxyErrorClass::ScopeBlocked);
                     tracing_error!(
                         class = "scope_blocked",
                         point = "modified_forward",
@@ -1314,11 +1402,7 @@ fn port_of(parts: &hudsucker::hyper::http::request::Parts) -> u16 {
 
 impl WebSocketHandler for WswHandler {
     /// WS 帧透传挂载（W5 Workbench 留；本批只证明挂载面，POC 先例 main.rs:131-140）。
-    async fn handle_message(
-        &mut self,
-        ctx: &WebSocketContext,
-        msg: Message,
-    ) -> Option<Message> {
+    async fn handle_message(&mut self, ctx: &WebSocketContext, msg: Message) -> Option<Message> {
         let endpoint = match ctx {
             WebSocketContext::ClientToServer { dst, .. } => dst.to_string(),
             WebSocketContext::ServerToClient { src, .. } => src.to_string(),
@@ -1419,12 +1503,26 @@ mod tests {
         // 容量 1（RuntimeOptions 默认 64 → 用小容量单测 coordinator 直构）。
         let tiny = InterceptCoordinator::new(1, 500, None);
         let (id1, rx1) = tiny
-            .enqueue("127.0.0.1", "GET", "/a", "wsw-1-0-0001", "wsw-lis-t", "wsw-ses-t")
+            .enqueue(
+                "127.0.0.1",
+                "GET",
+                "/a",
+                "wsw-1-0-0001",
+                "wsw-lis-t",
+                "wsw-ses-t",
+            )
             .unwrap();
         assert!(tiny.pending() == 1);
         // 第二条 = 队满。
         assert!(matches!(
-            tiny.enqueue("127.0.0.1", "GET", "/b", "wsw-1-0-0002", "wsw-lis-t", "wsw-ses-t"),
+            tiny.enqueue(
+                "127.0.0.1",
+                "GET",
+                "/b",
+                "wsw-1-0-0002",
+                "wsw-lis-t",
+                "wsw-ses-t"
+            ),
             Err(QueueError::Full)
         ));
         // 裁决 Drop → waiter 收到 + pending 清零。
@@ -1449,7 +1547,14 @@ mod tests {
     async fn coordinator_ttl_expiry_marks_expired() {
         let tiny = InterceptCoordinator::new(2, 30, None);
         let (id, mut rx) = tiny
-            .enqueue("127.0.0.1", "GET", "/", "wsw-2-0-0001", "wsw-lis-t", "wsw-ses-t")
+            .enqueue(
+                "127.0.0.1",
+                "GET",
+                "/",
+                "wsw-2-0-0001",
+                "wsw-lis-t",
+                "wsw-ses-t",
+            )
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         tiny.on_timeout(&id, &persist::now_iso());

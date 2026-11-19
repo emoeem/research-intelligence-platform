@@ -9,7 +9,8 @@
 //!   非 loopback 对端任何请求都不被服务，403 + 五态日志）；
 //! - [`AuditedConnector`]：查点 C 上游 connector——DNS 解析 → 全地址过
 //!   `scope::audit_resolved` → Pinned-IP TCP 连接（SNI/Host 保持原域名；
-//!   PLAN :525 DNS rebinding 面）；
+//!   PLAN :525 DNS rebinding 面；解析面 [`DnsResolver`] 可注入，生产恒
+//!   [`SystemDnsResolver`]）；
 //! - [`WswListener`]：ListenerState 六态生命周期驱动（`ListenerState::transition`
 //!   既有词表）+ 拦截队列停机收口（全 EXPIRED，PLAN §7.5 :553）。
 
@@ -22,11 +23,11 @@ pub use handler::{
     InterceptCoordinator, InterceptResolution, ListenerShared, OutOfScopePolicy, ProxyErrorClass,
     RuntimeOptions,
 };
-use hudsucker::Proxy;
-use hudsucker::rustls::ClientConfig;
 use hudsucker::rustls::crypto::aws_lc_rs;
-use hudsucker::rustls::pki_types::{CertificateDer, pem::PemObject};
+use hudsucker::rustls::pki_types::{pem::PemObject, CertificateDer};
+use hudsucker::rustls::ClientConfig;
 use hudsucker::rustls::RootCertStore;
+use hudsucker::Proxy;
 use std::error::Error as StdError;
 use std::fmt;
 use std::future::Future;
@@ -109,7 +110,60 @@ impl fmt::Display for ConnectorError {
     }
 }
 
-impl StdError for ConnectorError {}
+impl StdError for ConnectorError {
+    /// 变体内部记录挂入 source 链（hyper-util `e!(Connect, src)` 只把
+    /// ConnectorError 本体挂为 legacy::Error 的 source——record 藏在变体内，
+    /// 不链入则 handle_error 侧 `downcast_ref::<ScopeRejectRecord>()` 永远
+    /// 匹配不到，查点 C 拒绝会落成 502 而非 403；scope_gate.rs 集成级负例
+    /// 实测钉住此链形）。
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            ConnectorError::ScopeRejected(r) => Some(r),
+            _ => None,
+        }
+    }
+}
+
+/// DNS 解析面（查点 C 可注入；默认系统解析。集成测试喂解析桩免改
+/// /etc/hosts——WSW-2-TASK §四.2 DNS rebinding 行集成级口径的承接位）。
+pub trait DnsResolver: Send + Sync {
+    /// host → 去重 IP 列表（IP 字面量直取；域名走系统 DNS 全地址）。
+    fn resolve(&self, host: &str, port: u16) -> Result<Vec<IpAddr>, ConnectorError>;
+}
+
+/// 系统解析默认实现（生产路径恒此面）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemDnsResolver;
+
+impl DnsResolver for SystemDnsResolver {
+    fn resolve(&self, host: &str, port: u16) -> Result<Vec<IpAddr>, ConnectorError> {
+        resolve_ips_system(host, port)
+    }
+}
+
+/// 系统 DNS 解析（IP 字面量直取；域名 `(host, port).to_socket_addrs()` 全地址）。
+fn resolve_ips_system(host: &str, port: u16) -> Result<Vec<IpAddr>, ConnectorError> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![ip]);
+    }
+    let addrs: Vec<SocketAddr> = (host, port)
+        .to_socket_addrs()
+        .map_err(ConnectorError::Io)?
+        .collect();
+    if addrs.is_empty() {
+        return Err(ConnectorError::Io(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("dns resolved no addresses for {host}"),
+        )));
+    }
+    let mut ips = Vec::new();
+    for a in addrs {
+        if !ips.contains(&a.ip()) {
+            ips.push(a.ip());
+        }
+    }
+    Ok(ips)
+}
 
 /// 查点 C 审计 connector：DNS 解析完成、TCP 连接前，实际 IP 全地址过闸
 /// （`document_fetch.rs:460-514` 语义；Pinned-IP：按审计通过 IP 直连，
@@ -118,39 +172,22 @@ impl StdError for ConnectorError {}
 pub struct AuditedConnector {
     rules: Arc<ScopeRules>,
     shared: Arc<ListenerShared>,
+    resolver: Arc<dyn DnsResolver>,
 }
 
 impl AuditedConnector {
-    /// 构造（规则与计数面挂共享运行面）。
+    /// 构造（规则与计数面挂共享运行面；解析面 = 系统解析）。
     pub fn new(shared: &Arc<ListenerShared>) -> Self {
+        Self::with_resolver(shared, Arc::new(SystemDnsResolver))
+    }
+
+    /// 注入解析面（集成测试桩；生产恒 [`SystemDnsResolver`]）。
+    pub fn with_resolver(shared: &Arc<ListenerShared>, resolver: Arc<dyn DnsResolver>) -> Self {
         Self {
             rules: Arc::new(shared.rules.clone()),
             shared: Arc::clone(shared),
+            resolver,
         }
-    }
-
-    /// host → 解析 IP 列表（IP 字面量直取；域名走系统 DNS 全地址）。
-    fn resolve_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, ConnectorError> {
-        if let Ok(ip) = host.parse::<IpAddr>() {
-            return Ok(vec![ip]);
-        }
-        let addrs: Vec<SocketAddr> = (host, port)
-            .to_socket_addrs()
-            .map_err(ConnectorError::Io)?
-            .collect();
-        if addrs.is_empty() {
-            return Err(ConnectorError::Io(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("dns resolved no addresses for {host}"),
-            )));
-        }
-        let mut ips = Vec::new();
-        for a in addrs {
-            if !ips.contains(&a.ip()) {
-                ips.push(a.ip());
-            }
-        }
-        Ok(ips)
     }
 }
 
@@ -166,13 +203,14 @@ impl Service<hudsucker::hyper::Uri> for AuditedConnector {
     fn call(&mut self, dst: hudsucker::hyper::Uri) -> Self::Future {
         let rules = Arc::clone(&self.rules);
         let shared = Arc::clone(&self.shared);
+        let resolver = Arc::clone(&self.resolver);
         Box::pin(async move {
             let host = dst.host().ok_or(ConnectorError::BadUri)?.to_string();
             let port = dst.port_u16().unwrap_or(match dst.scheme_str() {
                 Some("https") => 443,
                 _ => 80,
             });
-            let ips = Self::resolve_ips(&host, port)?;
+            let ips = resolver.resolve(&host, port)?;
             // 查点 C：全地址过闸；任一私网/元数据命中即拒（audit_resolved
             // 全有或全无语义），拒绝记录可见（remote_ip 落行 + 计数）。
             let traces = match scope::audit_resolved(&rules, &ips) {
@@ -189,7 +227,10 @@ impl Service<hudsucker::hyper::Uri> for AuditedConnector {
                     traces
                 }
                 Err(rejections) => {
-                    shared.counters.scope_blocked_total.fetch_add(1, Ordering::Relaxed);
+                    shared
+                        .counters
+                        .scope_blocked_total
+                        .fetch_add(1, Ordering::Relaxed);
                     let record = handler::ScopeRejectRecord {
                         host: host.clone(),
                         ip: rejections[0].ip,
@@ -209,9 +250,7 @@ impl Service<hudsucker::hyper::Uri> for AuditedConnector {
             // Pinned-IP 连接：取首个通过审计的解析 IP（Host/SNI 由上层保持）。
             let _ = traces;
             let addr = SocketAddr::new(ips[0], port);
-            let tcp = TcpStream::connect(addr)
-                .await
-                .map_err(ConnectorError::Io)?;
+            let tcp = TcpStream::connect(addr).await.map_err(ConnectorError::Io)?;
             Ok(hudsucker::hyper_util::rt::TokioIo::new(tcp))
         })
     }
@@ -224,9 +263,9 @@ fn build_upstream_roots(extra: &[PathBuf]) -> Result<RootCertStore, ListenerErro
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let mut n = 0;
     for path in extra {
-        for cert in CertificateDer::pem_file_iter(path)
-            .map_err(|e| ListenerError::Internal(format!("read upstream ca {}: {e}", path.display())))?
-        {
+        for cert in CertificateDer::pem_file_iter(path).map_err(|e| {
+            ListenerError::Internal(format!("read upstream ca {}: {e}", path.display()))
+        })? {
             roots
                 .add(cert.map_err(|e| ListenerError::Internal(format!("parse upstream ca: {e}")))?)
                 .map_err(|e| ListenerError::Internal(format!("add upstream ca: {e}")))?;
@@ -313,17 +352,21 @@ impl WswListener {
         })?;
 
         // 2) CA 打开/复用（0600/0700；已存在则加载）
-        let ca_dir = options.ca_dir.clone().unwrap_or_else(crate::authority::resolve_ca_dir);
-        let authority = WswAuthority::open(&ca_dir, aws_lc_rs::default_provider()).map_err(|e| {
-            let _ = state_now.transition(ListenerState::Failed);
-            ListenerError::Ca(e)
-        })?;
+        let ca_dir = options
+            .ca_dir
+            .clone()
+            .unwrap_or_else(crate::authority::resolve_ca_dir);
+        let authority =
+            WswAuthority::open(&ca_dir, aws_lc_rs::default_provider()).map_err(|e| {
+                let _ = state_now.transition(ListenerState::Failed);
+                ListenerError::Ca(e)
+            })?;
 
         // 3) 024 store：打开 + 迁移 + 重启对账（W2-D6）
         let persist = match &options.db_path {
             Some(db) => {
-                let store = crate::persist::PersistStore::open_file(db)
-                    .map_err(ListenerError::Persist)?;
+                let store =
+                    crate::persist::PersistStore::open_file(db).map_err(ListenerError::Persist)?;
                 store
                     .run_migrations(migrations_dir)
                     .map_err(ListenerError::Persist)?;
@@ -350,13 +393,12 @@ impl WswListener {
         // 4) 上游 connector：审计 connector 包入 HttpsConnector（ALPN h2 面）
         let mut roots = build_upstream_roots(&shared.options.upstream_ca_paths)?;
         let _ = &mut roots;
-        let client_config = ClientConfig::builder_with_provider(Arc::new(
-            aws_lc_rs::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .map_err(|e| ListenerError::Internal(format!("tls protocol versions: {e}")))?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+        let client_config =
+            ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+                .with_safe_default_protocol_versions()
+                .map_err(|e| ListenerError::Internal(format!("tls protocol versions: {e}")))?
+                .with_root_certificates(roots)
+                .with_no_client_auth();
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(client_config)
             .https_or_http()
@@ -435,11 +477,14 @@ impl WswListener {
     /// 停止（Running/Degraded→Stopping→Stopped；拦截队列全量 EXPIRED 收口）。
     pub async fn stop(&self) -> Result<(), ListenerError> {
         // Stopping：仅 Running/Degraded 可进（既有 transition 词表）。
-        self.shared.set_state(ListenerState::Stopping).map_err(ListenerError::State)?;
+        self.shared
+            .set_state(ListenerState::Stopping)
+            .map_err(ListenerError::State)?;
         // 拦截队列收口：内存 waiter 清 + 全 EXPIRED（PLAN §7.5 :553）。
         self.shared.coordinator.shutdown(&crate::persist::now_iso());
         if let Some(store) = self.shared.persist() {
-            if let Err(e) = store.expire_all_queued(&crate::persist::now_iso(), "listener_stopped") {
+            if let Err(e) = store.expire_all_queued(&crate::persist::now_iso(), "listener_stopped")
+            {
                 tracing_error!(class = "listener", error = %e, "persist expire_all_queued failed");
             }
             let row = crate::persist::ListenerRow {
@@ -461,7 +506,9 @@ impl WswListener {
         if let Some(task) = task {
             let _ = task.await;
         }
-        self.shared.set_state(ListenerState::Stopped).map_err(ListenerError::State)?;
+        self.shared
+            .set_state(ListenerState::Stopped)
+            .map_err(ListenerError::State)?;
         tracing::info!(
             listener_id = %self.shared.options.listener_id,
             "wsw listener stopped (queue drained, all pending intercepts expired)"
@@ -486,9 +533,7 @@ impl WswListener {
             requests_total: counters.requests_total.load(Ordering::Relaxed),
             responses_total: counters.responses_total.load(Ordering::Relaxed),
             scope_blocked_total: counters.scope_blocked_total.load(Ordering::Relaxed),
-            out_of_scope_passive_total: counters
-                .out_of_scope_passive_total
-                .load(Ordering::Relaxed),
+            out_of_scope_passive_total: counters.out_of_scope_passive_total.load(Ordering::Relaxed),
             queue_pending: self.shared.coordinator.pending(),
             captures_total: counters.captures_total.load(Ordering::Relaxed),
             error_counts: counters.error_counts(),

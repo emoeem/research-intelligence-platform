@@ -3,6 +3,11 @@
 //! 端口不符 / default deny / private 拒与显式 allow_private 过留痕 /
 //! 云元数据 allow_private 也拒 / mapped 归一 / max_redirects 帽 /
 //! DNS rebinding（解析 IP 过闸拒 + remote_ip）/ 规则 JSON 来源面。
+//!
+//! 文件尾部两例为 DNS rebinding **集成级**口径（修订批落）：解析桩注入
+//! `AuditedConnector::call` 拒 → `ConnectorError::ScopeRejected` 携带
+//! remote_ip → `respond_to_scope_reject`（`handle_error` 同一实现）403 +
+//! `x-wsw-scope-decision` 头——查点 C glue 全链真实执行。
 
 use std::net::{IpAddr, Ipv4Addr};
 use wsw_runtime::scope::{
@@ -34,8 +39,14 @@ fn matrix_include_hit_passes_with_trace() {
         panic!("include hit must pass: {d:?}");
     };
     let kinds: Vec<&str> = traces.iter().map(|t| t.kind).collect();
-    assert!(kinds.contains(&"included"), "include trace line: {traces:?}");
-    assert!(kinds.contains(&"private_allowed"), "private trace line: {traces:?}");
+    assert!(
+        kinds.contains(&"included"),
+        "include trace line: {traces:?}"
+    );
+    assert!(
+        kinds.contains(&"private_allowed"),
+        "private trace line: {traces:?}"
+    );
     // IP 字面量 + allow_private → audit_resolved 同样放行 + 留痕。
     let resolved = vec![IpAddr::V4(Ipv4Addr::LOCALHOST)];
     let traces = scope::audit_resolved(&rules, &resolved).expect("connect audit pass");
@@ -107,9 +118,17 @@ fn matrix_private_denied_without_flag_then_allowed_with_trace() {
 #[test]
 fn matrix_metadata_deny_never_allow() {
     // allow_private=true + include 命中 → 仍拒（reason=metadata_endpoint）。
-    let mut rules = rules_with(&["169.254.169.254", "metadata.google.internal", "169.254.170.2"]);
+    let mut rules = rules_with(&[
+        "169.254.169.254",
+        "metadata.google.internal",
+        "169.254.170.2",
+    ]);
     rules.allow_private_targets = true;
-    for host in ["169.254.169.254", "metadata.google.internal", "169.254.170.2"] {
+    for host in [
+        "169.254.169.254",
+        "metadata.google.internal",
+        "169.254.170.2",
+    ] {
         match scope::check(&rules, &target("http", host, 80, "/latest/meta-data/")) {
             ScopeDecision::Blocked { reason } => assert_eq!(reason.code(), "metadata_endpoint"),
             other => panic!("{host} deny-never-allow violated: {other:?}"),
@@ -170,7 +189,11 @@ fn matrix_redirect_cap_and_out_of_range_hop() {
         other => panic!("redirect cap required, got {other:?}"),
     }
     // 越界重定向第二跳（Location 指向 include 外 host）按同闸序拒。
-    match scope::check_redirect_hop(&rules, &target("http", "out-of-range.example", 80, "/nope"), 1) {
+    match scope::check_redirect_hop(
+        &rules,
+        &target("http", "out-of-range.example", 80, "/nope"),
+        1,
+    ) {
         ScopeDecision::Blocked { reason } => assert_eq!(reason.code(), "host_not_included"),
         other => panic!("redirect hop gate required, got {other:?}"),
     }
@@ -244,5 +267,127 @@ fn invalid_host_and_scheme_denied() {
     assert_eq!(
         scope::check(&rules, &target("http", "bad host\r\n", 80, "/")).state_blocked_code(),
         Some("invalid_host".to_string())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DNS rebinding 集成级负例（WSW-2-TASK §四.2 行集成级口径；WSW-2 修订批落）：
+// 查点 C 端到端 glue = AuditedConnector::call（解析桩注入，免改 /etc/hosts）
+// 拒 → ConnectorError::ScopeRejected 携带 remote_ip → respond_to_scope_reject
+// （handle_error 同一实现）403 + x-wsw-scope-decision 头。单测级面
+// matrix_dns_rebinding_* 只覆盖 audit_resolved 本体，不覆盖此 glue。
+// ---------------------------------------------------------------------------
+
+use std::sync::Arc;
+use tower_service::Service as _;
+use wsw_runtime::listener::handler::{respond_to_scope_reject, ListenerShared, RuntimeOptions};
+use wsw_runtime::listener::{AuditedConnector, ConnectorError, DnsResolver};
+
+/// 共享运行面构造（blocked 策略默认；无持久面，不触网络）。
+fn shared_for(rules: ScopeRules) -> Arc<ListenerShared> {
+    let options = RuntimeOptions {
+        scope_rules: rules,
+        ..Default::default()
+    };
+    Arc::new(ListenerShared::new(options, None))
+}
+
+/// 解析桩：域名解析指向私网 IP（DNS rebinding 面；免改 /etc/hosts）。
+struct RebindResolver;
+
+impl DnsResolver for RebindResolver {
+    fn resolve(&self, _host: &str, _port: u16) -> Result<Vec<std::net::IpAddr>, ConnectorError> {
+        Ok(vec![
+            "93.184.216.34".parse().unwrap(),
+            "10.0.0.5".parse().unwrap(),
+        ])
+    }
+}
+
+#[tokio::test]
+async fn connector_call_rejects_resolved_private_ip_carrying_remote_ip() {
+    let shared = shared_for(rules_with(&["rebinding.test"]));
+    let mut connector = AuditedConnector::with_resolver(&shared, Arc::new(RebindResolver));
+    let uri: hudsucker::hyper::Uri = "http://rebinding.test:80/".parse().unwrap();
+    let err = match connector.call(uri).await {
+        Ok(_) => panic!("resolved private ip must be rejected at connector (DNS rebinding)"),
+        Err(e) => e,
+    };
+    let ConnectorError::ScopeRejected(record) = err else {
+        panic!("expected ScopeRejected, got {err:?}");
+    };
+    assert_eq!(record.host, "rebinding.test");
+    // remote_ip 落记录（域名串过闸 ≠ IP 过闸，PLAN :525）。
+    assert_eq!(record.ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)));
+    assert_eq!(record.reason, "rfc1918");
+    assert!(
+        shared
+            .counters
+            .scope_blocked_total
+            .load(std::sync::atomic::Ordering::Relaxed)
+            >= 1,
+        "connector rejection must bump visible counter"
+    );
+}
+
+/// connector 失败包装链（生产形状 = hudsucker→hyper-util 把 connector 错误
+/// 挂为 source 链；legacy::Error 无公共构造器，此处以同链形包装直喂同一
+/// 实现函数 respond_to_scope_reject = handle_error 的查点 C 决策路径）。
+#[derive(Debug)]
+struct ConnectorFailure(ConnectorError);
+
+impl std::fmt::Display for ConnectorFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "connector failure: {}", self.0)
+    }
+}
+
+impl std::error::Error for ConnectorFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+#[tokio::test]
+async fn connector_scope_reject_maps_to_403_with_decision_header() {
+    let shared = shared_for(rules_with(&["rebinding.test"]));
+    let err = ConnectorFailure(ConnectorError::ScopeRejected(
+        wsw_runtime::listener::handler::ScopeRejectRecord {
+            host: "rebinding.test".to_string(),
+            ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)),
+            reason: "rfc1918".to_string(),
+        },
+    ));
+    let resp = respond_to_scope_reject(&shared, &err)
+        .expect("scope reject in error chain must map to 403 response");
+    assert_eq!(resp.status(), hudsucker::hyper::StatusCode::FORBIDDEN);
+    assert_eq!(
+        resp.headers()
+            .get("x-wsw-scope-decision")
+            .and_then(|v| v.to_str().ok()),
+        Some("out_of_scope_blocked")
+    );
+    assert_eq!(
+        resp.headers()
+            .get("x-wsw-reason")
+            .and_then(|v| v.to_str().ok()),
+        Some("rfc1918")
+    );
+    assert_eq!(
+        shared
+            .counters
+            .scope_blocked_total
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "handle_error-path rejection counted exactly once"
+    );
+    // 非 scope 面错误链（纯 IO）不走本函数。
+    let io_err = ConnectorFailure(ConnectorError::Io(std::io::Error::new(
+        std::io::ErrorKind::ConnectionRefused,
+        "upstream refused",
+    )));
+    assert!(
+        respond_to_scope_reject(&shared, &io_err).is_none(),
+        "plain io error must not be treated as scope reject"
     );
 }

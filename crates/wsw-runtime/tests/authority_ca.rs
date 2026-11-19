@@ -72,7 +72,11 @@ async fn ca_persistence_reuse_and_files() {
     let dir = temp_root("persist");
     let (fp, pem, meta1) = {
         let ca = open(&dir);
-        (ca.meta().fingerprint.clone(), ca.cert_pem().to_string(), ca.meta().clone())
+        (
+            ca.meta().fingerprint.clone(),
+            ca.cert_pem().to_string(),
+            ca.meta().clone(),
+        )
     };
     // 重启加载复用（同指纹同 PEM；重启不作废浏览器已导入信任）。
     let ca2 = open(&dir);
@@ -116,7 +120,10 @@ async fn fingerprint_mismatch_refuses_load() {
     )
     .unwrap();
     let err = WswAuthority::open(&dir, aws_lc_rs::default_provider());
-    assert!(matches!(err, Err(authority::AuthorityError::FingerprintMismatch { .. })));
+    assert!(matches!(
+        err,
+        Err(authority::AuthorityError::FingerprintMismatch { .. })
+    ));
 }
 
 #[tokio::test]

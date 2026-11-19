@@ -19,16 +19,16 @@
 use hudsucker::certificate_authority::CertificateAuthority;
 use hudsucker::hyper::http::uri::Authority;
 use hudsucker::rcgen::{
-    BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
-    Issuer, KeyPair, KeyUsagePurpose, SanType, string::Ia5String,
+    string::Ia5String, BasicConstraints, CertificateParams, DistinguishedName, DnType,
+    ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
 };
 use hudsucker::rustls::crypto::CryptoProvider;
 use hudsucker::rustls::pki_types::{
-    CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject,
+    pem::PemObject, CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer,
 };
 use hudsucker::rustls::ServerConfig;
 use moka::future::Cache;
-use rand::{RngExt, rng};
+use rand::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::{OpenOptions, Permissions};
@@ -95,7 +95,10 @@ impl fmt::Display for AuthorityError {
             AuthorityError::Rcgen(e) => write!(f, "rcgen: {e}"),
             AuthorityError::InvalidHost(h) => write!(f, "invalid host: {h:?}"),
             AuthorityError::FingerprintMismatch { expected, actual } => {
-                write!(f, "ca fingerprint mismatch: meta={expected} actual={actual}")
+                write!(
+                    f,
+                    "ca fingerprint mismatch: meta={expected} actual={actual}"
+                )
             }
             AuthorityError::MetaJson(e) => write!(f, "ca meta json: {e}"),
         }
@@ -110,9 +113,9 @@ impl std::error::Error for AuthorityError {}
 pub fn validate_host(host: &str) -> Result<(), AuthorityError> {
     let ok = !host.is_empty()
         && host.len() <= 253
-        && host
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b':' | b'[' | b']' | b'_' | b'*'));
+        && host.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b':' | b'[' | b']' | b'_' | b'*')
+        });
     if ok {
         Ok(())
     } else {
@@ -277,7 +280,9 @@ impl WswAuthority {
             .mode(0o600)
             .open(ca_dir.join(KEY_FILE))
             .map_err(AuthorityError::Io)?;
-        key_file.write_all(key_pem.as_bytes()).map_err(AuthorityError::Io)?;
+        key_file
+            .write_all(key_pem.as_bytes())
+            .map_err(AuthorityError::Io)?;
         drop(key_file);
         write_file_mode(ca_dir.join(CERT_FILE), cert_pem.as_bytes(), 0o644)?;
         let meta = CaMeta {
@@ -358,7 +363,10 @@ impl WswAuthority {
                 .with_safe_default_protocol_versions()
                 .expect("protocol versions")
                 .with_no_client_auth()
-                .with_single_cert(vec![self.root_cert_der.clone()], self.private_key.clone_key())
+                .with_single_cert(
+                    vec![self.root_cert_der.clone()],
+                    self.private_key.clone_key(),
+                )
                 .expect("root cert + matching key"),
         )
     }
@@ -370,7 +378,10 @@ impl CertificateAuthority for WswAuthority {
             return cfg;
         }
         let host = authority.host();
-        let cfg = match leaf_params_for_host(host) {
+        // fail_closed = true 表示本次产出为握手必败条目：不进缓存（测试面
+        // `cache_entry_count()==0` 语义即此；同时防垃圾 authority 占帽位挤掉
+        // 合法域条目）——每次回落即时重建，无签名成本。
+        let (cfg, fail_closed) = match leaf_params_for_host(host) {
             Ok(mut params) => {
                 params.serial_number = Some(rng().random::<u64>().into());
                 let not_before = OffsetDateTime::now_utc() - Duration::seconds(NOT_BEFORE_OFFSET);
@@ -390,7 +401,7 @@ impl CertificateAuthority for WswAuthority {
                                 .expect("leaf cert + matching key");
                         // ALPN 广告 h2 + http/1.1（vendor rcgen_authority.rs:117-121 同形）。
                         server_cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-                        Arc::new(server_cfg)
+                        (Arc::new(server_cfg), false)
                     }
                     Err(e) => {
                         tracing::error!(
@@ -400,7 +411,7 @@ impl CertificateAuthority for WswAuthority {
                             host = %host,
                             "wsw-ca leaf signing failed; fail-closed handshake"
                         );
-                        self.fallback_config()
+                        (self.fallback_config(), true)
                     }
                 }
             }
@@ -411,10 +422,12 @@ impl CertificateAuthority for WswAuthority {
                     cause = %e,
                     "wsw-ca refuses to sign invalid host; fail-closed handshake"
                 );
-                self.fallback_config()
+                (self.fallback_config(), true)
             }
         };
-        self.cache.insert(authority.clone(), Arc::clone(&cfg)).await;
+        if !fail_closed {
+            self.cache.insert(authority.clone(), Arc::clone(&cfg)).await;
+        }
         cfg
     }
 }
@@ -478,8 +491,11 @@ mod tests {
 
     fn open_tmp(tag: &str) -> (WswAuthority, PathBuf) {
         let dir = temp_dir(tag);
-        let ca = WswAuthority::open(&dir, hudsucker::rustls::crypto::aws_lc_rs::default_provider())
-            .expect("open ca");
+        let ca = WswAuthority::open(
+            &dir,
+            hudsucker::rustls::crypto::aws_lc_rs::default_provider(),
+        )
+        .expect("open ca");
         (ca, dir)
     }
 
@@ -491,7 +507,10 @@ mod tests {
             ("127.0.0.1", IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
             ("[::1]", IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)),
             ("2001:db8::1", "2001:db8::1".parse::<IpAddr>().unwrap()),
-            ("::ffff:127.0.0.1", IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            (
+                "::ffff:127.0.0.1",
+                IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            ),
         ] {
             let params = leaf_params_for_host(host).expect("params");
             assert_eq!(params.subject_alt_names.len(), 1, "{host}");
@@ -517,7 +536,10 @@ mod tests {
 
     #[test]
     fn invalid_host_rejected() {
-        assert!(matches!(validate_host(""), Err(AuthorityError::InvalidHost(_))));
+        assert!(matches!(
+            validate_host(""),
+            Err(AuthorityError::InvalidHost(_))
+        ));
         assert!(matches!(
             validate_host("bad host\r\n"),
             Err(AuthorityError::InvalidHost(_))
@@ -527,7 +549,10 @@ mod tests {
             Err(AuthorityError::InvalidHost(_))
         ));
         let long = "x".repeat(254);
-        assert!(matches!(validate_host(&long), Err(AuthorityError::InvalidHost(_))));
+        assert!(matches!(
+            validate_host(&long),
+            Err(AuthorityError::InvalidHost(_))
+        ));
     }
 
     #[tokio::test]
@@ -554,10 +579,16 @@ mod tests {
         let fp1 = ca.meta().fingerprint.clone();
         let pem1 = ca.cert_pem().to_string();
         drop(ca);
-        let ca2 =
-            WswAuthority::open(&dir, hudsucker::rustls::crypto::aws_lc_rs::default_provider())
-                .expect("reopen ca");
-        assert_eq!(ca2.meta().fingerprint, fp1, "restart must reuse the same CA");
+        let ca2 = WswAuthority::open(
+            &dir,
+            hudsucker::rustls::crypto::aws_lc_rs::default_provider(),
+        )
+        .expect("reopen ca");
+        assert_eq!(
+            ca2.meta().fingerprint,
+            fp1,
+            "restart must reuse the same CA"
+        );
         assert_eq!(ca2.cert_pem(), pem1);
         // 私钥/证书文件确实落在目录内。
         assert!(dir.join(KEY_FILE).is_file());
@@ -570,8 +601,11 @@ mod tests {
         let (_ca, dir) = open_tmp("perm");
         let mode = key_file_mode(&dir).expect("stat");
         assert_eq!(mode, 0o600, "ca.key.pem must be 0600, got {mode:o}");
-        let cert_mode =
-            std::fs::metadata(dir.join(CERT_FILE)).unwrap().permissions().mode() & 0o777;
+        let cert_mode = std::fs::metadata(dir.join(CERT_FILE))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(cert_mode, 0o644);
         let dir_mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
         assert_eq!(dir_mode, 0o700);
@@ -596,6 +630,8 @@ mod tests {
         // wsw_message::cas::sha256_hex 口径：64 位小写 hex（005 迁移 :86 同形）。
         let fp = ca.meta().fingerprint.clone();
         assert_eq!(fp.len(), 64);
-        assert!(fp.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+        assert!(fp
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
     }
 }

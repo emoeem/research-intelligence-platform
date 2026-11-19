@@ -13,7 +13,10 @@
 //!   [`audit_resolved`]（查点 C，`document_fetch.rs:460-514` 全地址复核
 //!   移植），命中私网即拒并落 remote_ip；
 //! - `max_redirects` 帽：逐跳校验入口 [`check_redirect_hop`]（查点 B），
-//!   跳数超帽即拒（`document_fetch.rs:63-71` FetchPolicy 先例）。
+//!   跳数超帽即拒（`document_fetch.rs:63-71` FetchPolicy 先例）。**运行时
+//!   跳数接线留 WSW-3**：WSW-2 的重定向保障 = 每一跳经代理即新请求复走
+//!   查点 A（handler 每请求入口闸），本入口当前仅单测级消费（W2-D5 查点 B
+//!   修订批口径）。
 //!
 //! out-of-scope 命中策略（blocked=403 / passive_forward=放行留痕）属
 //! wsw_session 行级配置（W2-D4），由调用面（listener::handler）按
@@ -389,11 +392,7 @@ pub fn check(rules: &ScopeRules, target: &ScopeTarget<'_>) -> ScopeDecision {
 
 /// 查点 B 逐跳帽：`hop` = 该跳之前已跟随的重定向次数（0 = 初始请求）。
 /// `hop > max_redirects` → `RedirectLimit` 拒；否则进入 [`check`] 同闸序。
-pub fn check_redirect_hop(
-    rules: &ScopeRules,
-    target: &ScopeTarget<'_>,
-    hop: u32,
-) -> ScopeDecision {
+pub fn check_redirect_hop(rules: &ScopeRules, target: &ScopeTarget<'_>, hop: u32) -> ScopeDecision {
     if hop > rules.max_redirects {
         return ScopeDecision::Blocked {
             reason: ScopeRejection::RedirectLimit {
@@ -443,7 +442,10 @@ pub fn audit_resolved(
             if rules.allow_private_targets {
                 traces.push(ScopeTrace {
                     kind: "private_allowed",
-                    detail: format!("ip={} reason={} (explicit allow_private_targets)", ip, reason),
+                    detail: format!(
+                        "ip={} reason={} (explicit allow_private_targets)",
+                        ip, reason
+                    ),
                 });
             } else {
                 rejections.push(IpRejection {
@@ -577,11 +579,7 @@ mod tests {
         let rules = rules_with(&["127.0.0.1"]);
         match check(&rules, &target("http", "127.0.0.1", 8443, "/")) {
             ScopeDecision::Blocked {
-                reason:
-                    ScopeRejection::PrivateTarget {
-                        ip,
-                        reason,
-                    },
+                reason: ScopeRejection::PrivateTarget { ip, reason },
             } => {
                 assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
                 assert_eq!(reason, "loopback");
@@ -596,7 +594,11 @@ mod tests {
         //（reason=metadata_endpoint；W2-D5 / DESIGN §4.3 词表项原文）。
         let mut rules = rules_with(&["169.254.169.254", "metadata.google.internal"]);
         rules.allow_private_targets = true;
-        for host in ["169.254.169.254", "metadata.google.internal", "::ffff:169.254.169.254"] {
+        for host in [
+            "169.254.169.254",
+            "metadata.google.internal",
+            "::ffff:169.254.169.254",
+        ] {
             assert!(matches!(
                 check(&rules, &target("http", host, 80, "/latest/meta-data/")),
                 ScopeDecision::Blocked {
@@ -700,7 +702,10 @@ mod tests {
             Some("link_local_mapped")
         );
         assert_eq!(private_reason("::ffff:8.8.8.8".parse().unwrap()), None);
-        assert_eq!(private_reason("64:ff9b::1.2.3.4".parse().unwrap()), Some("nat64"));
+        assert_eq!(
+            private_reason("64:ff9b::1.2.3.4".parse().unwrap()),
+            Some("nat64")
+        );
     }
 
     #[test]

@@ -15,9 +15,9 @@
 
 use hudsucker::rustls::crypto::aws_lc_rs;
 use std::path::PathBuf;
-use wsw_runtime::listener::{RuntimeOptions, handler::InterceptMatcher};
+use wsw_runtime::listener::{handler::InterceptMatcher, RuntimeOptions};
 use wsw_runtime::scope::ScopeRules;
-use wsw_runtime::{ListenerConfig, authority, listener};
+use wsw_runtime::{authority, listener, ListenerConfig};
 
 const TAG: &str = "[rp-wsw]";
 
@@ -82,10 +82,16 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
             "--scope-rules-file" => a.rules_file = Some(take("--scope-rules-file").into()),
             "--intercept" => a.intercept = true,
             "--matcher-hosts" => {
-                a.matcher_hosts = take("--matcher-hosts").split(',').map(String::from).collect()
+                a.matcher_hosts = take("--matcher-hosts")
+                    .split(',')
+                    .map(String::from)
+                    .collect()
             }
             "--matcher-paths" => {
-                a.matcher_paths = take("--matcher-paths").split(',').map(String::from).collect()
+                a.matcher_paths = take("--matcher-paths")
+                    .split(',')
+                    .map(String::from)
+                    .collect()
             }
             "--queue-ttl" => a.queue_ttl = Some(take("--queue-ttl").parse().expect("ttl secs")),
             "--status-file" => a.status_file = Some(take("--status-file").into()),
@@ -103,7 +109,13 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
 }
 
 /// 状态心跳写入（原子 rename；rp_server /api/wsw/proxy-status 数据源）。
-async fn status_heartbeat(status_file: PathBuf, shared: std::sync::Arc<listener::ListenerShared>, listener_id: String, name: String, bind: String) {
+async fn status_heartbeat(
+    status_file: PathBuf,
+    shared: std::sync::Arc<listener::ListenerShared>,
+    listener_id: String,
+    name: String,
+    bind: String,
+) {
     loop {
         let snapshot = listener::ListenerStatus {
             listener_id: listener_id.clone(),
@@ -111,7 +123,10 @@ async fn status_heartbeat(status_file: PathBuf, shared: std::sync::Arc<listener:
             bind: bind.clone(),
             state: wsw_runtime::persist::listener_state_to_db(shared.state()).to_string(),
             intercept_enabled: shared.options.intercept_enabled,
-            requests_total: shared.counters.requests_total.load(std::sync::atomic::Ordering::Relaxed),
+            requests_total: shared
+                .counters
+                .requests_total
+                .load(std::sync::atomic::Ordering::Relaxed),
             responses_total: shared
                 .counters
                 .responses_total
@@ -125,14 +140,23 @@ async fn status_heartbeat(status_file: PathBuf, shared: std::sync::Arc<listener:
                 .out_of_scope_passive_total
                 .load(std::sync::atomic::Ordering::Relaxed),
             queue_pending: shared.coordinator.pending(),
-            captures_total: shared.counters.captures_total.load(std::sync::atomic::Ordering::Relaxed),
+            captures_total: shared
+                .counters
+                .captures_total
+                .load(std::sync::atomic::Ordering::Relaxed),
             error_counts: shared.counters.error_counts(),
             started_at: shared.started_at.clone(),
         };
         let json = serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".into());
         let tmp = status_file.with_extension("json.tmp");
-        if std::fs::write(&tmp, json).and_then(|_| std::fs::rename(&tmp, &status_file)).is_err() {
-            eprintln!("{TAG} status heartbeat write failed: {}", status_file.display());
+        if std::fs::write(&tmp, json)
+            .and_then(|_| std::fs::rename(&tmp, &status_file))
+            .is_err()
+        {
+            eprintln!(
+                "{TAG} status heartbeat write failed: {}",
+                status_file.display()
+            );
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
@@ -205,13 +229,18 @@ async fn run_listener(a: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
         final_status_file = Some(status_file.clone());
         let shared = std::sync::Arc::clone(&handle.shared);
-        tokio::spawn(status_heartbeat(status_file, shared, listener_id, "wsw-2 listener (rp-wsw)".to_string(), bind.to_string()));
+        tokio::spawn(status_heartbeat(
+            status_file,
+            shared,
+            listener_id,
+            "wsw-2 listener (rp-wsw)".to_string(),
+            bind.to_string(),
+        ));
     }
     println!("{TAG} listener running on {bind} (loopback only); SIGTERM/SIGINT to stop");
 
     // 优雅停机：SIGTERM/SIGINT → stop（队列全 EXPIRED）→ 退出。
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     tokio::select! {
         _ = sigterm.recv() => println!("{TAG} SIGTERM received"),
@@ -278,9 +307,8 @@ fn db_migrate(a: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let store = wsw_runtime::persist::PersistStore::open_file(&db)?;
     let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let applied = store.run_migrations(&migrations_dir)?;
-    let version = store.with_conn(
-        |conn| conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)),
-    )?;
+    let version = store
+        .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)))?;
     println!(
         "{TAG} migrations applied to {}: {:?}; user_version={version}",
         db.display(),

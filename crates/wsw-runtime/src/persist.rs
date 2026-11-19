@@ -488,12 +488,16 @@ impl PersistStore {
 
     /// 拦截行计数（状态面）。
     pub fn intercept_count(&self) -> DbResult<u64> {
-        self.pool
-            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM wsw_intercept", [], |r| r.get(0)))
+        self.pool.with_conn(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM wsw_intercept", [], |r| r.get(0))
+        })
     }
 
     /// 连接视图（只读核对面；测试/工具用）。
-    pub fn with_conn<T, E>(&self, f: impl FnOnce(&database::rusqlite::Connection) -> Result<T, E>) -> DbResult<T>
+    pub fn with_conn<T, E>(
+        &self,
+        f: impl FnOnce(&database::rusqlite::Connection) -> Result<T, E>,
+    ) -> DbResult<T>
     where
         DbError: From<E>,
     {
@@ -501,7 +505,9 @@ impl PersistStore {
     }
 }
 
-fn map_intercept_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result<InterceptRow> {
+fn map_intercept_row(
+    row: &database::rusqlite::Row<'_>,
+) -> database::rusqlite::Result<InterceptRow> {
     let state_s: String = row.get(6)?;
     let state = state_from_db(&state_s)
         .map_err(|e| database::rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
@@ -557,7 +563,10 @@ fn validate_session_row(row: &SessionRow) -> Result<(), DbError> {
             row.session_id
         )));
     }
-    if !matches!(row.out_of_scope_policy.as_str(), "blocked" | "passive_forward") {
+    if !matches!(
+        row.out_of_scope_policy.as_str(),
+        "blocked" | "passive_forward"
+    ) {
         return Err(DbError::Validation(format!(
             "invalid out_of_scope_policy: {:?}",
             row.out_of_scope_policy
