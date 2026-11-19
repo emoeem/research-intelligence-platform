@@ -199,7 +199,10 @@ mod tests {
 
         pool.with_conn(|conn| -> Result<(), database::DbError> {
             let level: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-            assert_eq!(level, 23, "内存库迁移水位 23");
+            assert_eq!(
+                level, 24,
+                "内存库迁移水位 24（024_wsw_intercept 入链后链尾）"
+            );
             let sha = "ab".to_string() + &"0".repeat(62);
             register_body_blob(conn, &row(&sha)).expect("登记");
             // CAS 去重：同 sha 幂等，行数不增

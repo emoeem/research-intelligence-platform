@@ -73,7 +73,7 @@ fn migration_013_is_idempotent_on_dev_copy() {
     assert_eq!(
         first.iter().map(|m| m.version).collect::<Vec<_>>(),
         vec![13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
-        "开发副本上第一次迁移应只落 013..024（链尾演进至 023，编号冻结规则顺延；P7-5 trace 关联 015 同链落列，P8-1 workflow 定义版本化 016 同链落表，P8-2 workflow 运行持久化 017 同链落表，P8-3 workflow 控制面与六 ID 关联 018 同链落列，P9-3 REST 对外访问审计 019 同链落表，RIP3 P5-2 研究编排域三表 020 同链落表，RIP3 P5-7 验证证据档 research_evidence 021 同链落表，RIP3 P5-8 覆盖矩阵 dimension 列与 research_hypothesis 022 同链落列落表，WSW-1 CAS 正文表 023，WSW-2 wsw_intercept 拦截队列三表 024）"
+        "开发副本上第一次迁移应只落 013..024（链尾演进至 024，编号冻结规则顺延；P7-5 trace 关联 015 同链落列，P8-1 workflow 定义版本化 016 同链落表，P8-2 workflow 运行持久化 017 同链落表，P8-3 workflow 控制面与六 ID 关联 018 同链落列，P9-3 REST 对外访问审计 019 同链落表，RIP3 P5-2 研究编排域三表 020 同链落表，RIP3 P5-7 验证证据档 research_evidence 021 同链落表，RIP3 P5-8 覆盖矩阵 dimension 列与 research_hypothesis 022 同链落列落表，WSW-1 CAS 正文表 023，WSW-2 wsw_intercept 拦截队列三表 024）"
     );
     let snapshot_after_first = schema_snapshot(&pool);
 

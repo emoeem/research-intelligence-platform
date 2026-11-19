@@ -126,8 +126,8 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version before migration");
     assert_eq!(
-        source_copy_version, 23,
-        "current dev-b1 is already at schema version 023"
+        source_copy_version, 24,
+        "current dev-b1 is already at schema version 024 (chain tail; tool-registry tests recreate it fresh, dev file is gitignored)"
     );
     let existing_table: i64 = pool
         .with_conn(|conn| {
@@ -163,7 +163,10 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
     let version: i64 = pool
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version");
-    assert_eq!(version, 23, "development copy must reach migration 023");
+    assert_eq!(
+        version, 24,
+        "development copy must reach current chain tail 024 (023 re-applied after rollback)"
+    );
     pool.with_conn(|conn| -> Result<(), database::DbError> {
         let table_count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wsw_body_blob'",
@@ -174,7 +177,7 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         Ok(())
     })
     .expect("verify migrated table");
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
     drop(pool);
 
     let source_sha_after = sha256_hex(&fs::read(&source).expect("re-read source DB read-only"));
