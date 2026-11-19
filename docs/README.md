@@ -36,6 +36,9 @@
 | DI-1 Document Router 任务书（S0→S8、十项判据、十条红线） | [phase0/DI-1-TASK.md](phase0/DI-1-TASK.md) |
 | DI-1 设计裁决（D1-D8：新 crate 落位/通道表/手写嗅探/帽值表/错误映射；含 D3 调和裁决条目） | [phase0/DI-1-ADR-DOC-ROUTER.md](phase0/DI-1-ADR-DOC-ROUTER.md) |
 | DI-1 批次验收报告（document-router 新成员三通道原生端到端落地：嗅探/通道表/帽门/编排/规范化 + adapter result_mode 双模 + dispatch native_rust 分支 + 四 Manifest 登记；十项判据实测对照、门禁命令原文、偏差记账 6 条——含 D3 调和裁决 B 与 office 内存帽 16Gi 实测定值、DI-2 前置条件登记） | [phase0/DI-1-BATCH-REPORT.md](phase0/DI-1-BATCH-REPORT.md) |
+| DI-2 任务书（S1→S8、十二项判据、十条红线、fixture 三层策略） | [phase0/DI-2-TASK.md](phase0/DI-2-TASK.md) |
+| DI-2 设计裁决（D1-D8：八签名嗅探/OCR 请求位与语言路由/媒体五门序/归档两阶段四闸/wrapper 双钉；含 S2 内存帽阶梯定值回写注记） | [phase0/DI-2-ADR-CHANNELS.md](phase0/DI-2-ADR-CHANNELS.md) |
+| DI-2 批次验收报告（document-router 三通道扩全：OCR/媒体/归档端到端 + ZipOther 路由变更判据迁移 + dispatch input.ocr 请求位 + 五 Manifest 双钉登记；十二项判据实测对照、内存帽 S2 阶梯定值回写、DI-3 缝登记） | [phase0/DI-2-BATCH-REPORT.md](phase0/DI-2-BATCH-REPORT.md) |
 | 工具协议         | [phase0/TOOL-CONTRACT-DRAFT.md](phase0/TOOL-CONTRACT-DRAFT.md)         |
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |

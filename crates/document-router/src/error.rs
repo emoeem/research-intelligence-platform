@@ -101,6 +101,151 @@ impl RouterReject {
         }
     }
 
+    // -----------------------------------------------------------------
+    // DI-2 ADR D6 新增 code 表（category 全部在九类词表内；code 走信封
+    // error.code 自由面）
+    // -----------------------------------------------------------------
+
+    /// 前置门：OCR 请求语言在 capability 目录 language 集缺失（chi_tra 面
+    /// 等）→ DEPENDENCY `ROUTER_OCR_LANG_MISSING`，**零 run 行**（D7 前置门
+    /// 语义），retryable=false。消息注明：语言包缺失属环境持久事实，补装属
+    /// 用户决策不自动安装；禁静默回退（RT-0.5-C §3.3 constraints 原文）。
+    pub fn ocr_lang_missing(requested: &str, missing: &[String]) -> Self {
+        Self {
+            category: "DEPENDENCY".into(),
+            code: "ROUTER_OCR_LANG_MISSING".into(),
+            message: format!(
+                "requested OCR language {requested:?} maps to language pack(s) {missing:?} absent from the capability catalog (ocr.tesseract language set): language-pack absence is a persistent environment fact, installing it is a user decision and is never performed automatically; silent fallback to other language packs is forbidden (RT-0.5-C 3.3 constraints, DI-2 ADR D2)"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：OCR 门步像素超 50 MP（DI-2 OCR 派生帽，D2/D5 收紧口径）→
+    /// INPUT `ROUTER_PIXEL_BUDGET_EXCEEDED`（码沿用 DI-1，消息注明 OCR 帽）；
+    /// identify 行留证，tesseract 未拉起。
+    pub fn pixel_budget_exceeded_ocr(pixels: u64, cap: u64) -> Self {
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_PIXEL_BUDGET_EXCEEDED".into(),
+            message: format!(
+                "image {pixels} pixels exceeds the OCR decode-path pixel cap {cap} (DI-2 ADR D2/D5: OCR is a full-decode face, cap tightened from the 100 MP metadata -ping path); tesseract never sees over-cap input; chain aborted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：媒体内容时长超 300 s → INPUT `ROUTER_MEDIA_DURATION_EXCEEDED`
+    /// （ffprobe format.duration 解析定案，ffmpeg 派生前；probe 行留证）。
+    pub fn media_duration_exceeded(duration_s: f64, cap_s: f64) -> Self {
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_MEDIA_DURATION_EXCEEDED".into(),
+            message: format!(
+                "media content duration {duration_s} s exceeds cap {cap_s} s (DI-2 ADR D3/D5, ffprobe format.duration resolved before any ffmpeg spawn); chain aborted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：媒体单帧像素超 16 MP → INPUT `ROUTER_MEDIA_PIXEL_BUDGET_
+    /// EXCEEDED`（ffprobe streams[video].width×height 定案；probe 行留证）。
+    pub fn media_pixel_budget_exceeded(pixels: u64, cap: u64) -> Self {
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_MEDIA_PIXEL_BUDGET_EXCEEDED".into(),
+            message: format!(
+                "video frame {pixels} pixels exceeds cap {cap} (DI-2 ADR D3/D5, ffprobe stream dimensions resolved before any ffmpeg spawn); chain aborted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：归档条目路径不安全（`..` 段 / 以 `/` 起头 / 含 `\`）→ INPUT
+    /// `ROUTER_ARCHIVE_ENTRY_INVALID`（闸 1；list 行留证，解包零提交）。
+    pub fn archive_entry_invalid(path: &str, reason: &str) -> Self {
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_ARCHIVE_ENTRY_INVALID".into(),
+            message: format!(
+                "archive entry {path:?} fails path-safety gate: {reason} (DI-2 ADR D4 gate 1; 7z sanitization is a second line of defense, the Router verdict is authoritative); extract phase never submitted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：归档符号链接条目 → INPUT `ROUTER_ARCHIVE_ENTRY_SYMLINK`（闸 2：
+    /// `Symbolic Link = ` 字段非空或 Attributes 含 `l` 权限前缀）。
+    pub fn archive_entry_symlink(path: &str, detail: &str) -> Self {
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_ARCHIVE_ENTRY_SYMLINK".into(),
+            message: format!(
+                "archive entry {path:?} is a symbolic link ({detail}) and is rejected by the link gate before extraction (DI-2 ADR D4 gate 2, RT-0.5-E 4.3); extract phase never submitted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：归档条目数超 512 → INPUT `ROUTER_ARCHIVE_ENTRY_BUDGET_EXCEEDED`
+    /// （闸 3，含目录条目计数）。
+    pub fn archive_entry_budget_exceeded(count: usize, cap: usize) -> Self {
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_ARCHIVE_ENTRY_BUDGET_EXCEEDED".into(),
+            message: format!(
+                "archive lists {count} entries, exceeds entry cap {cap} (DI-2 ADR D4 gate 3); extract phase never submitted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：归档解压总量超 256 MiB 或单条目超 64 MiB → INPUT
+    /// `ROUTER_ARCHIVE_BUDGET_EXCEEDED`（闸 4；压缩炸弹 Size 如实进消息）。
+    pub fn archive_budget_exceeded(
+        total: u64,
+        total_cap: u64,
+        worst: (&str, u64),
+        entry_cap: u64,
+    ) -> Self {
+        let (worst_path, worst_bytes) = worst;
+        Self {
+            category: "INPUT".into(),
+            code: "ROUTER_ARCHIVE_BUDGET_EXCEEDED".into(),
+            message: format!(
+                "archive decompressed total {total} bytes vs total cap {total_cap} bytes; worst entry {worst_path:?} declares {worst_bytes} bytes vs per-entry cap {entry_cap} bytes (DI-2 ADR D4 gate 4, uncompressed-size declarations from the 7z -slt listing); extract phase never submitted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：解包后 out/ 残留符号链接 → POLICY_DENIED
+    /// `ROUTER_ARCHIVE_SYMLINK_SURVIVED`（post-extract 终检，闸 2 之后的
+    /// 第二道防线兜底，D4）。
+    pub fn archive_symlink_survived(paths: &[String]) -> Self {
+        Self {
+            category: "POLICY_DENIED".into(),
+            code: "ROUTER_ARCHIVE_SYMLINK_SURVIVED".into(),
+            message: format!(
+                "post-extract sweep found symbolic links surviving in the run out/ directory: {paths:?} (DI-2 ADR D4 post-extract terminal check, second line of defense after the listing gate); chain aborted"
+            ),
+            retryable: false,
+        }
+    }
+
+    /// 链内：列目成功但清单零条目 / 头块解析失败 → EXECUTION
+    /// `ARCHIVE_LIST_NO_OUTPUT`（OFFICE_CONVERT_NO_OUTPUT 同位语义，D6）。
+    pub fn archive_list_no_output(run_id: &str, detail: &str) -> Self {
+        Self {
+            category: "EXECUTION".into(),
+            code: "ARCHIVE_LIST_NO_OUTPUT".into(),
+            message: format!(
+                "archive listing produced no parseable inventory (run {run_id}): {detail}"
+            ),
+            retryable: false,
+        }
+    }
+
     /// 链内：子 run 失败透传（RT-1 NATIVE_* 码表 / 退出码语义，D8 表既有行）。
     pub fn chain_failed(category: &str, code: &str, message: String, retryable: bool) -> Self {
         Self {
@@ -203,6 +348,59 @@ mod tests {
             let _ = RouterReject::chain_failed("ROUTER", "X", "m".into(), false);
         });
         assert!(result.is_err(), "自定义 category 必须被防线拦截");
+    }
+
+    /// DI-2 ADR D6 新增 code 表：九类词表内 category + D6 表 code/时点逐行。
+    #[test]
+    fn di2_new_codes_match_d6_table() {
+        // OCR 语言缺失：DEPENDENCY + 零静默回退消息 + retryable=false。
+        let r = RouterReject::ocr_lang_missing("zh-Hant", &["chi_tra".to_string()]);
+        assert_eq!(r.category, "DEPENDENCY");
+        assert_eq!(r.code, "ROUTER_OCR_LANG_MISSING");
+        assert!(!r.retryable);
+        assert!(r.message.contains("chi_tra"));
+        assert!(r.message.contains("user decision"), "补装属用户决策");
+        assert!(r.message.contains("silent fallback"), "禁静默回退注明");
+        // OCR 像素帽：码沿用 DI-1，消息注明 OCR 派生帽。
+        let r = RouterReject::pixel_budget_exceeded_ocr(121_000_000, 50_000_000);
+        assert_eq!(r.category, "INPUT");
+        assert_eq!(r.code, "ROUTER_PIXEL_BUDGET_EXCEEDED");
+        assert!(r.message.contains("121000000"));
+        assert!(r.message.contains("OCR decode-path"));
+        // 媒体两门。
+        let r = RouterReject::media_duration_exceeded(400.0, 300.0);
+        assert_eq!(r.category, "INPUT");
+        assert_eq!(r.code, "ROUTER_MEDIA_DURATION_EXCEEDED");
+        assert!(r.message.contains("400"));
+        let r = RouterReject::media_pixel_budget_exceeded(20_000_000, 16_000_000);
+        assert_eq!(r.code, "ROUTER_MEDIA_PIXEL_BUDGET_EXCEEDED");
+        // 归档四闸 + 终检 + 列目空清单。
+        let r = RouterReject::archive_entry_invalid("../escape.txt", "contains a `..` segment");
+        assert_eq!(r.category, "INPUT");
+        assert_eq!(r.code, "ROUTER_ARCHIVE_ENTRY_INVALID");
+        let r = RouterReject::archive_entry_symlink("link", "Attributes lrwxrwxrwx");
+        assert_eq!(r.code, "ROUTER_ARCHIVE_ENTRY_SYMLINK");
+        let r = RouterReject::archive_entry_budget_exceeded(513, 512);
+        assert_eq!(r.code, "ROUTER_ARCHIVE_ENTRY_BUDGET_EXCEEDED");
+        let r = RouterReject::archive_budget_exceeded(
+            67_108_864,
+            256 * 1024 * 1024,
+            ("zeros.bin", 67_108_864),
+            64 * 1024 * 1024,
+        );
+        assert_eq!(r.category, "INPUT");
+        assert_eq!(r.code, "ROUTER_ARCHIVE_BUDGET_EXCEEDED");
+        assert!(
+            r.message.contains("67108864"),
+            "压缩炸弹 Size 如实进消息：{}",
+            r.message
+        );
+        let r = RouterReject::archive_symlink_survived(&["out/link".to_string()]);
+        assert_eq!(r.category, "POLICY_DENIED", "终检越 POLICY_DENIED（D6 表）");
+        assert_eq!(r.code, "ROUTER_ARCHIVE_SYMLINK_SURVIVED");
+        let r = RouterReject::archive_list_no_output("rn-x", "no Type header");
+        assert_eq!(r.category, "EXECUTION");
+        assert_eq!(r.code, "ARCHIVE_LIST_NO_OUTPUT");
     }
 
     #[test]

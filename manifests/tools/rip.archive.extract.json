@@ -1,0 +1,125 @@
+{
+  "schema_version": "1",
+  "id": "rip.archive.extract",
+  "name": "Archive Extraction (7z x -oout)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "归档解包阶段（DI-2 ADR D4 归档通道阶段 2）：仅在列目阶段 Router 四闸（路径安全/符号链接/条目数 512/解压总量 256 MiB + 单条目 64 MiB）全过后提交——两阶段分别授权分别预算（E §4.3.1 原文），闸失败时本工具预算零消耗。-oout 为字面常量：7z 解包输出目录唯一形态 = -o 开关直连路径（-o ex1 空格 exit 7 / -o=ex3 造出字面 =ex3 目录实测一次性否决），{{out_dir}} 槽位组合结构性不可行（混合 token 字面量透传）→ -oout cwd 相对 = <root>/<run_id>/out 本 run 独立输出目录（adapter cwd=ws.root 实锚，行为级 e2e 钉死）。post-extract 符号链接终检由 Router 承载（POLICY_DENIED ROUTER_ARCHIVE_SYMLINK_SURVIVED）。wrapper 双钉与 rip.archive.list 同源。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/7z",
+    "binary_sha256": "f802383f13b8331aabaf779def00a356c8d2b8148255170b75b03028f4d23ad4",
+    "binary_target_sha256": "d48e622e9009acdba4f8e29645ce791fef1ecb2c41bf385e960852a8c902fad9",
+    "capability_ref": "archive.7z",
+    "argv_template": [
+      "x",
+      "-y",
+      "-oout",
+      "{{input_path}}"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "timeout_seconds": 120,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "demo.zip"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/7z",
+    "license": "BSD-3-Clause + LGPL-2.1-unrar restriction",
+    "dependencies": [
+      "7zip 26.06-1.1 sha256_prefix f802383f13b8331a（wrapper /usr/bin/7z）+ exec 目标 /usr/lib/7zip/7z sha256_prefix d48e622e9009acdb（双钉）"
+    ],
+    "tested": "DI-2 e2e：demo.zip/demo.7z 解包产物落本 run out/ 行为级断言（-oout cwd 相对裁决钉死）；evil2.zip 等四闸负例解包阶段零提交，crates/document-router/tests/",
+    "known_limits": [
+      "-oout 字面常量：解包目标唯一 = 本 run out/（cwd=ws.root）；-o{{out_dir}} 槽位组合否决（D4），Adapter cwd 语义任何漂移即 e2e 红",
+      "解包产物经 collect_out_artifacts 登记（sha256/size Artifact 行）；post-extract 符号链接终检兜底闸 2 解析面失察形态",
+      "闸 3/4 保证 out/ 产物有界（≤512 条目 × 单条目 ≤64 MiB、Σ≤256 MiB），Artifact 行数同界",
+      "7z 自身对穿越/绝对路径条目的净化（剥离前导段落位相对路径）为第二道防线非契约；Router 闸 1 是唯一权威"
+    ]
+  }
+}

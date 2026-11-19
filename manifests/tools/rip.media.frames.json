@@ -1,0 +1,133 @@
+{
+  "schema_version": "1",
+  "id": "rip.media.frames",
+  "name": "Media Frame Extraction (ffmpeg restricted)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "媒体受限抽帧（DI-2 ADR D3 媒体通道步 2，条件步）：argv 全常量（fps=2 / -frames:v 32 / -c:v png / out/frame-%03d.png cwd 相对）——帽是 Router 属性不是调用方参数（{{fps}} 类混合 token 槽位否决，D3 否决项）。编码器铁律：-c:v png 显式指定（本机 ffmpeg 9.0.2 不显式指定编码器时自动选型 h264_rkmpp 硬件编码器并在 x86 宿主 MPP init 失败 exit 1 零字节产物，实测铁证）。输出落本 run out/（adapter cwd=ws.root 实锚），collect_out_artifacts 登记面。仅视频流存在且门前五序全过时由 Router 提交。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/ffmpeg",
+    "binary_sha256": "09190fb791fb0db81fb2616a59b9c4a16f8806792b6247e7c1ff1a9dd1708889",
+    "capability_ref": "media.ffmpeg",
+    "argv_template": [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      "{{input_path}}",
+      "-vf",
+      "fps=2",
+      "-frames:v",
+      "32",
+      "-c:v",
+      "png",
+      "out/frame-%03d.png"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "3Gi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "small.mp4"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/ffmpeg",
+    "license": "LGPL-2.1-or-later",
+    "dependencies": [
+      "ffmpeg-full 9.0.2-3.46 sha256_prefix 09190fb791fb0db8（libx264/libopenh264 在列）"
+    ],
+    "tested": "DI-2 e2e：small.mp4（运行时生成）probe+frames 两子 run SUCCEEDED，out/frame-001..004.png 实收（2s@fps2=4 帧 ≤ 32 帽），crates/document-router/tests/",
+    "known_limits": [
+      "内存帽 3Gi 为 S2 阶梯实测定值（DI-2 ADR D5 #5 偏差回写）：ffmpeg 抽帧（同 ffprobe 大量动态库 + h264 解码器 + swscaler 映射）RLIMIT_AS 实测 FAIL@2048Mi 'Failed initializing scaling graph' / OK@3072Mi；ADR 纸面初值 512Mi 不可用。地址空间帽计入全部共享库映射，128x64 抽帧的 3Gi 上界主体是库映射面而非解码工作集",
+      "experimental encoder 禁用于生产面：原生 opus/vorbis（A..X.D）不得出现在任何 ffmpeg 编码步 argv，只允许 libopus/libvorbis/显式无损面（RT-0.5-C §3.1 constraints 原文，Manifest 层登记）",
+      "argv 模板零 {{}} 槽位除 {{input_path}} 外全常量：任何调用方可控速率/帧数参数都会绕开帽表（D3 否决项）",
+      "音频无视频流时 ffmpeg -vf 抽帧 exit 234（Output file does not contain any stream）——Router 视频流分支使该路径结构性不可达（条件步）",
+      "抽帧输出 out/frame-%03d.png cwd 相对依赖 adapter cwd=ws.root 事实，行为级 e2e 钉死（DI-2 ADR D4/D3 同族 cwd 相对裁决）"
+    ]
+  }
+}

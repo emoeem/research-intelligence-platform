@@ -1,0 +1,128 @@
+{
+  "schema_version": "1",
+  "id": "rip.media.probe",
+  "name": "Media Stream Probe (ffprobe JSON)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "媒体流受限探测（DI-2 ADR D3 媒体通道步 1）：ffprobe -print_format json -show_format -show_streams 结构化 JSON（与 pdfinfo/magick identify 无 JSON 旗标被否决的 DI-1 前提相反，本机原生支持）。stdout JSON 为全部媒体门的定案输入（时长 300 s / 单帧 16 MP / 视频流存在性分支），帽在 ffmpeg 派生前定案。嗅探前置（wav/avi/mp4/webm/ogg/flac/mp3 七签名，D1）使媒体 URL 输入结构性不可达 + network:none 双闸。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/ffprobe",
+    "binary_sha256": "a2ae3d0209aec73992d0c9f8baadce19f4929c276bb58a7305e5beb3ec38eff1",
+    "capability_ref": "media.ffprobe",
+    "argv_template": [
+      "-v",
+      "error",
+      "-print_format",
+      "json",
+      "-show_format",
+      "-show_streams",
+      "{{input_path}}"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "1536Mi",
+    "timeout_seconds": 30,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "tone.wav"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/ffprobe",
+    "license": "LGPL-2.1-or-later",
+    "dependencies": [
+      "ffmpeg-full 9.0.2-3.46 sha256_prefix a2ae3d0209aec739（libavformat 63.1.102）"
+    ],
+    "tested": "DI-2 e2e：tone.wav 纯音频 metadata-only 分支与 small.mp4 视频探测子 run SUCCEEDED（format.duration 字符串形态数值化 / streams 投影），crates/document-router/tests/",
+    "known_limits": [
+      "内存帽 1536Mi 为 S2 阶梯实测定值（DI-2 ADR D5 #5 偏差回写）：ffprobe（ffmpeg-full，约两百动态库全映射）RLIMIT_AS 实测 FAIL@1152Mi / OK@1280Mi，取 1.2× 余量 1536Mi；ADR 纸面初值 256Mi 在本机 ffprobe 加载段即 'libSvtJpegxs.so.0: failed to map segment' exit 127",
+      "format.duration/format.bit_rate 为字符串形态（实测 \"0.500000\"/\"128704\"），Router 解析面数值化；width/height/channels 为整数形态（实测）",
+      "duration 缺席（某些流无时长）→ Router warnings 如实记录 + 时长帽不伪装已定案（零静默，D3）",
+      "畸形媒体 exit 1（Invalid data found when processing input）→ EXECUTION 透传（子 run 行留证）",
+      "与 media.ffmpeg 同包同版本演进，指纹联动失效（C §3.2:55 version_coupled）"
+    ]
+  }
+}

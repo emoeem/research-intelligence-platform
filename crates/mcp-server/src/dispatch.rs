@@ -306,7 +306,7 @@ impl RunChannel {
                 if !router_manifests.contains(tool_id) {
                     return Err(err_payload(
                         &format!(
-                            "tool {tool_id} is a native_rust tool outside the DI-1 document channel table (D3: rip.doc.pdf.info / rip.doc.pdf.text / rip.doc.office.to_pdf / rip.doc.image.meta); dedicated dispatch comes with its own batch"
+                            "tool {tool_id} is a native_rust tool outside the DI-1/DI-2 document channel table (D3 + DI-2 ADR D1: rip.doc.pdf.info / rip.doc.pdf.text / rip.doc.office.to_pdf / rip.doc.image.meta / rip.doc.image.ocr / rip.media.probe / rip.media.frames / rip.archive.list / rip.archive.extract); dedicated dispatch comes with its own batch"
                         ),
                         "VALIDATION",
                     ));
@@ -375,9 +375,57 @@ impl RunChannel {
                     },
                     router_manifests,
                 );
-                let outcome = router
-                    .route(&engine, &adapter, Some(&provider), &bytes, &name, &ext)
-                    .map_err(|reject| reject.to_payload())?;
+                let outcome = match input.get("ocr") {
+                    // DI-2 ADR D2 显式 OCR 请求位：input.ocr 在场 → route_ocr
+                    // （图像嗅探签名 + 请求位并存才路由 OCR；无请求位图像走
+                    // DI-1 图像通道，行为零变化）。形态 = object，可选
+                    // language 字符串（缺席/无键 = auto 缺省双语言路由）。
+                    Some(ocr_req) => {
+                        let language = match ocr_req {
+                            Value::Null => None,
+                            Value::Object(map) => match map.get("language") {
+                                None | Some(Value::Null) => None,
+                                Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
+                                Some(Value::String(_)) => {
+                                    return Err(err_payload(
+                                        "input.ocr.language must be a non-empty string when present (empty string rejected, use ocr without language for auto)",
+                                        "VALIDATION",
+                                    ))
+                                }
+                                Some(other) => {
+                                    return Err(err_payload(
+                                        &format!(
+                                            "input.ocr.language must be a string, got {other}"
+                                        ),
+                                        "VALIDATION",
+                                    ))
+                                }
+                            },
+                            other => {
+                                return Err(err_payload(
+                                    &format!(
+                                        "input.ocr must be an object with optional string language (or null), got {other}"
+                                    ),
+                                    "VALIDATION",
+                                ))
+                            }
+                        };
+                        router
+                            .route_ocr(
+                                &engine,
+                                &adapter,
+                                Some(&provider),
+                                &bytes,
+                                &name,
+                                &ext,
+                                language.as_deref(),
+                            )
+                            .map_err(|reject| reject.to_payload())?
+                    }
+                    None => router
+                        .route(&engine, &adapter, Some(&provider), &bytes, &name, &ext)
+                        .map_err(|reject| reject.to_payload())?,
+                };
                 let run_summaries: Vec<Value> = outcome
                     .runs
                     .iter()

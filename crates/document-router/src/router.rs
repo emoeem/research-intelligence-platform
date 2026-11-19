@@ -29,11 +29,18 @@ use tool_engine::{DriveOutcome, Engine, EngineError};
 use tool_registry::hash::sha256_hex;
 
 use crate::channel::{
-    Channel, IDENTIFY_FMT, MAX_INPUT_FILE_BYTES, MAX_PAGES, MAX_PIXELS, OFFICE_OUT_FORMAT,
-    TOOL_IMAGE_META, TOOL_OFFICE_TO_PDF, TOOL_PDF_INFO, TOOL_PDF_TEXT,
+    Channel, ARCHIVE_MAX_ENTRIES, ARCHIVE_MAX_ENTRY_BYTES, ARCHIVE_MAX_TOTAL_BYTES, IDENTIFY_FMT,
+    MAX_INPUT_FILE_BYTES, MAX_PAGES, MAX_PIXELS, MEDIA_DURATION_MAX_SECONDS, MEDIA_FRAMES_MAX,
+    MEDIA_FRAME_FPS, MEDIA_FRAME_PATTERN_NAME, MEDIA_FRAME_PIXELS_MAX, OCR_LANG_DEFAULT_CANDIDATES,
+    OCR_LANG_JOIN, OCR_LANG_ROUTES, OCR_PIXELS_MAX, OFFICE_OUT_FORMAT, TOOL_ARCHIVE_EXTRACT,
+    TOOL_ARCHIVE_LIST, TOOL_IMAGE_META, TOOL_IMAGE_OCR, TOOL_MEDIA_FRAMES, TOOL_MEDIA_PROBE,
+    TOOL_OFFICE_TO_PDF, TOOL_PDF_INFO, TOOL_PDF_TEXT,
 };
 use crate::error::RouterReject;
-use crate::normalize::{build_unified, page_anchors, ImageMeta, PdfinfoMeta, UnifiedDocInput};
+use crate::normalize::{
+    build_unified, page_anchors, ArchiveListMeta, FfprobeMeta, ImageMeta, PdfinfoMeta, TessTsvMeta,
+    UnifiedDocInput, OCR_LOW_CONF_THRESHOLD,
+};
 use crate::sniff::{self, Magic};
 
 /// Router 配置（D5：workspace_root 与 NativeRustConfig 同一配置源）。
@@ -52,21 +59,27 @@ impl Default for RouterConfig {
     }
 }
 
-/// DI-1 通道表四份工具 Manifest（D3；json 扫描 manifests/tools 同源目录——
-/// 登记面单一事实源，装载失败即 Err，通道编排不可半途降级）。
+/// DI-1 四份 + DI-2 五份通道表 Manifest（D3/D2/D3/D4；json 扫描
+/// manifests/tools 同源目录——登记面单一事实源，装载失败即 Err，通道编排
+/// 不可半途降级）。
 #[derive(Debug, Clone)]
 pub struct RouterManifests {
     tools: BTreeMap<String, Value>,
 }
 
 impl RouterManifests {
-    /// 从目录集装载四份 DI-1 Manifest（json 形态；缺一即 Err）。
+    /// 从目录集装载九份通道表 Manifest（json 形态；缺一即 Err）。
     pub fn from_dirs(dirs: &[PathBuf]) -> Result<Self, String> {
-        const REQUIRED: [&str; 4] = [
+        const REQUIRED: [&str; 9] = [
             TOOL_PDF_INFO,
             TOOL_PDF_TEXT,
             TOOL_OFFICE_TO_PDF,
             TOOL_IMAGE_META,
+            TOOL_IMAGE_OCR,
+            TOOL_MEDIA_PROBE,
+            TOOL_MEDIA_FRAMES,
+            TOOL_ARCHIVE_LIST,
+            TOOL_ARCHIVE_EXTRACT,
         ];
         let mut tools: BTreeMap<String, Value> = BTreeMap::new();
         for dir in dirs {
@@ -101,7 +114,7 @@ impl RouterManifests {
             .collect();
         if !missing.is_empty() {
             return Err(format!(
-                "DI-1 channel-table manifests missing: {missing:?} (searched {dirs:?}; registered per S4 in manifests/tools/)"
+                "DI-1/DI-2 channel-table manifests missing: {missing:?} (searched {dirs:?}; registered per S4 in manifests/tools/)"
             ));
         }
         Ok(Self { tools })
@@ -180,7 +193,7 @@ impl Router {
                 Magic::Text => RouterReject::text_not_routed(ext),
                 other => RouterReject::unsupported_type(
                     &other,
-                    "zip_other requires the DI-3 archive two-phase defense (RT-0.5-E 4.3); unknown magic is outside the DI-1 document channel table",
+                    "zip_other and 7z route to the archive channel since DI-2 (ADR D1 two-phase listing gates); tar/gzip/unknown magic stay fail-closed outside the DI-2 channel table (DI-3 scope)",
                 ),
             });
         };
@@ -207,7 +220,7 @@ impl Router {
             capability,
         };
 
-        // ---- D3 通道表编排 ----
+        // ---- D3 通道表编排 + DI-2 D1/D3/D4 三通道扩展 ----
         let outcome = match channel {
             Channel::Pdf => self.route_pdf(&ctx, source_bytes, &base, &mut runs, &mut warnings)?,
             Channel::Office => self.route_office(
@@ -220,6 +233,17 @@ impl Router {
             )?,
             Channel::Image => {
                 self.route_image(&ctx, source_bytes, &base, &mut runs, &mut warnings)?
+            }
+            // DI-2：OCR 通道不经 route()——显式请求位入口 route_ocr（D2；
+            // 嗅探无请求位形态在结构上不可达）。
+            Channel::Ocr => {
+                unreachable!("OCR channel is entered only via route_ocr (explicit request bit, DI-2 ADR D2); routed_channel() never yields Ocr")
+            }
+            Channel::Media => {
+                self.route_media(&ctx, source_bytes, &base, &mut runs, &mut warnings)?
+            }
+            Channel::Archive => {
+                self.route_archive(&ctx, source_bytes, &base, &mut runs, &mut warnings)?
             }
         };
         Ok(RouteOutcome {
@@ -475,6 +499,567 @@ impl Router {
     }
 
     // -----------------------------------------------------------------
+    // DI-2 三通道管线（D2 OCR / D3 媒体 / D4 归档；复用前置门 + drive_step/
+    // read_stdout 既有面，零新子进程类型，红线 7）
+    // -----------------------------------------------------------------
+
+    /// OCR 通道（DI-2 ADR D2）：**显式请求位入口**——dispatch 层 input.ocr
+    /// 在场时调用（`route()` 签名与既有管线零改动，红线 9）。图像嗅探签名
+    /// （Png | Jpeg）+ 请求位并存才路由 OCR；语言路由以 capability 目录
+    /// ocr.tesseract 条目 language 集为唯一权威（chi_tra 缺失前置门显式
+    /// error 零 run 行）；identify 门步 50 MP 像素帽（OCR 全量解码派生帽）
+    /// → tesseract TSV 单 run 承载文本 + 置信度。
+    #[allow(clippy::too_many_arguments)]
+    pub fn route_ocr(
+        &self,
+        engine: &Engine,
+        adapter: &NativeRustAdapter,
+        capability: Option<&dyn CapabilityProvider>,
+        source_bytes: &[u8],
+        source_name: &str,
+        ext: &str,
+        requested_language: Option<&str>,
+    ) -> Result<RouteOutcome, RouterReject> {
+        // ---- D7 前置门（同 route() 门层；64 MiB 输入帽 + 图像签名限定）----
+        let bytes_len = source_bytes.len() as u64;
+        if bytes_len > MAX_INPUT_FILE_BYTES {
+            return Err(RouterReject::input_too_large(
+                bytes_len,
+                MAX_INPUT_FILE_BYTES,
+            ));
+        }
+        let magic = sniff::sniff(source_bytes);
+        if !matches!(magic, Magic::Png | Magic::Jpeg) {
+            return Err(match magic {
+                Magic::Text => RouterReject::text_not_routed(ext),
+                other => RouterReject::unsupported_type(
+                    &other,
+                    "the OCR channel serves image input only (PNG/JPEG sniff signatures + explicit request bit, DI-2 ADR D2); PDF render OCR is DI-3 scope",
+                ),
+            });
+        }
+        // 语言路由（catalog 唯一权威；chi_tra 面前置门拒绝，零 run 行）。
+        let (ocr_lang, requested_label) =
+            Self::resolve_ocr_language(capability, requested_language)?;
+        let mismatch = sniff::mismatch(&magic, ext);
+        let mut warnings: Vec<String> = Vec::new();
+        if mismatch {
+            warnings.push(format!(
+                "sniff magic {:?} disagrees with extension hint {ext:?}: routed by magic (authoritative, D6); extension is a hint only",
+                magic.as_str()
+            ));
+        }
+        let base = UnifiedBase {
+            staged: staged_name(source_name, ext),
+            source_bytes: bytes_len,
+            source_sha256: sha256_hex(source_bytes),
+            sniff_magic: magic.as_str(),
+            ext: ext.to_ascii_lowercase(),
+            mismatch,
+        };
+        let mut runs: Vec<RunRecord> = Vec::new();
+        let ctx = DriveCtx {
+            engine,
+            adapter,
+            capability,
+        };
+        let outcome = self.route_ocr_chain(
+            &ctx,
+            source_bytes,
+            &base,
+            &ocr_lang,
+            &requested_label,
+            &mut runs,
+            &mut warnings,
+        )?;
+        Ok(RouteOutcome {
+            status: outcome.status,
+            unified: (outcome.status == RouteStatus::Succeeded).then_some(outcome.value),
+            reject: outcome.reject,
+            warnings,
+            runs,
+        })
+    }
+
+    /// OCR 通道链本体（identify 门步 → 像素帽 → tesseract TSV → 规范化）。
+    #[allow(clippy::too_many_arguments)]
+    fn route_ocr_chain(
+        &self,
+        ctx: &DriveCtx<'_>,
+        source_bytes: &[u8],
+        base: &UnifiedBase,
+        ocr_lang: &str,
+        requested_label: &str,
+        runs: &mut Vec<RunRecord>,
+        warnings: &mut Vec<String>,
+    ) -> Result<ChainOutcome, RouterReject> {
+        // 门步 1：identify（复用 DI-1 既有 Manifest 零改；-ping 仅头部读，
+        // 50 MP 判定零解码成本——像素内存放大器在 OCR 派生前封死）。
+        let identify = self.drive_step(
+            ctx,
+            TOOL_IMAGE_META,
+            source_bytes,
+            &base.staged,
+            json!({"subcommand": "identify", "identify_fmt": IDENTIFY_FMT}),
+        )?;
+        if let Some(reject) = terminal_reject(&identify) {
+            runs.push(identify);
+            return Ok(ChainOutcome::failed(reject));
+        }
+        let line = self.read_stdout(&identify.run_id)?;
+        runs.push(identify);
+        let meta = ImageMeta::parse(&line);
+        // OCR 派生像素帽（50 MP，D2/D5；码沿用，消息注明 OCR 帽）。
+        if let Some(pixels) = meta.pixel_count() {
+            if pixels > OCR_PIXELS_MAX {
+                return Ok(ChainOutcome::failed(
+                    RouterReject::pixel_budget_exceeded_ocr(pixels, OCR_PIXELS_MAX),
+                ));
+            }
+        } else {
+            warnings.push(
+                "identify output did not parse width/height: metadata partially missing (honest reporting, zero fabrication)"
+                    .to_string(),
+            );
+        }
+
+        // OCR 步 2：tesseract TSV（{{ocr_lang}} 为整 token 槽位，值由路由表
+        // 生成后填 input；Manifest input_schema enum 三值二道收紧）。
+        let ocr_run = self.drive_step(
+            ctx,
+            TOOL_IMAGE_OCR,
+            source_bytes,
+            &base.staged,
+            json!({"ocr_lang": ocr_lang}),
+        )?;
+        if let Some(reject) = terminal_reject(&ocr_run) {
+            runs.push(ocr_run);
+            return Ok(ChainOutcome::failed(reject));
+        }
+        let tsv = self.read_stdout(&ocr_run.run_id)?;
+        runs.push(ocr_run);
+        let tess = TessTsvMeta::parse(&tsv);
+        // 空结果 / 低置信 → warnings 如实记录，不拒绝不静默（D2）。
+        if tess.words == 0 {
+            warnings.push(
+                "no words recognized: empty OCR result reported honestly (zero fabrication)"
+                    .to_string(),
+            );
+        }
+        if let Some(conf) = tess.mean_conf {
+            if conf < OCR_LOW_CONF_THRESHOLD {
+                warnings.push(format!(
+                    "OCR mean confidence {conf} below low-confidence threshold {OCR_LOW_CONF_THRESHOLD}: reported honestly, not rejected, not silenced"
+                ));
+            }
+        }
+        let mut metadata = meta.to_metadata();
+        if let Some(obj) = metadata.as_object_mut() {
+            let mut ocr = serde_json::Map::new();
+            ocr.insert("language".into(), json!(ocr_lang));
+            ocr.insert("requested_language".into(), json!(requested_label));
+            if let Some(conf) = tess.mean_conf {
+                ocr.insert("mean_conf".into(), json!(conf));
+            }
+            ocr.insert("words".into(), json!(tess.words));
+            ocr.insert("low_conf_words".into(), json!(tess.low_conf_words));
+            obj.insert("ocr".into(), Value::Object(ocr));
+        }
+        // 单图单页锚（char 区间 = 重组正文全长）。
+        let char_end = tess.text.chars().count();
+        Ok(ChainOutcome::succeeded(build_unified(UnifiedDocInput {
+            channel: Channel::Ocr.as_str(),
+            source_name: &base.staged,
+            source_bytes: base.source_bytes,
+            source_sha256: &base.source_sha256,
+            sniff_magic: base.sniff_magic,
+            ext: &base.ext,
+            mismatch: base.mismatch,
+            text: tess.text,
+            metadata,
+            page_anchors: vec![json!({
+                "page": 1,
+                "char_start": 0,
+                "char_end": char_end,
+            })],
+            warnings: std::mem::take(warnings),
+            runs: runs.iter().map(|r| r.run_id.clone()).collect(),
+        })))
+    }
+
+    /// OCR 语言路由（D2：请求语言 → tesseract `-l` 值；capability 目录
+    /// language 集为唯一权威）。返回 (tesseract -l 参数, requested_language
+    /// 记录形态)。Err = ROUTER_OCR_LANG_MISSING 前置门拒绝（任何子 run 提交
+    /// 之前，零 run 行）。
+    fn resolve_ocr_language(
+        capability: Option<&dyn CapabilityProvider>,
+        requested: Option<&str>,
+    ) -> Result<(String, String), RouterReject> {
+        let label = requested.unwrap_or("auto").to_string();
+        let candidates: Vec<String> = match label.as_str() {
+            "auto" => OCR_LANG_DEFAULT_CANDIDATES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            other => match OCR_LANG_ROUTES.iter().find(|(k, _)| *k == other) {
+                Some((_, v)) => v.iter().map(|s| s.to_string()).collect(),
+                // 表外形态：请求原值作候选（目录无对应 language → 拒绝）。
+                None => vec![other.to_string()],
+            },
+        };
+        // 目录条目 language 集读取（静态种子纯缓存读；条目缺席 → 语言路由
+        // 唯一权威不可得，fail-closed 拒绝）。
+        let catalog_langs: Option<std::collections::BTreeSet<String>> = capability.and_then(|p| {
+            let id = tool_engine::capability::CapabilityId::new("ocr.tesseract").ok()?;
+            p.get(&id).map(|cached| {
+                cached
+                    .entry
+                    .capabilities
+                    .iter()
+                    .filter(|f| f.kind == tool_engine::capability::FeatureKind::Language)
+                    .map(|f| f.name.clone())
+                    .collect()
+            })
+        });
+        let Some(catalog_langs) = catalog_langs else {
+            return Err(RouterReject::ocr_lang_missing(&label, &candidates));
+        };
+        let missing: Vec<String> = candidates
+            .iter()
+            .filter(|c| !catalog_langs.contains(*c))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            return Err(RouterReject::ocr_lang_missing(&label, &missing));
+        }
+        Ok((candidates.join(&OCR_LANG_JOIN.to_string()), label))
+    }
+
+    /// 媒体通道（DI-2 ADR D3）：ffprobe JSON 常步 → 门序（畸形透传 / 时长
+    /// 300 s / 视频流分支 / 单帧 16 MP / 帧数预算 32）→ ffmpeg 受限抽帧
+    /// 条件步（全常量 argv；纯音频 metadata-only 诚实分支）。
+    fn route_media(
+        &self,
+        ctx: &DriveCtx<'_>,
+        source_bytes: &[u8],
+        base: &UnifiedBase,
+        runs: &mut Vec<RunRecord>,
+        warnings: &mut Vec<String>,
+    ) -> Result<ChainOutcome, RouterReject> {
+        // 步 1：ffprobe（畸形媒体 exit != 0 → EXECUTION 透传，terminal_reject）。
+        let probe =
+            self.drive_step(ctx, TOOL_MEDIA_PROBE, source_bytes, &base.staged, json!({}))?;
+        if let Some(reject) = terminal_reject(&probe) {
+            runs.push(probe);
+            return Ok(ChainOutcome::failed(reject));
+        }
+        let raw = self.read_stdout(&probe.run_id)?;
+        runs.push(probe);
+        let meta = FfprobeMeta::parse(&raw);
+
+        // 门 2：内容时长帽 300 s（ffmpeg 派生前定案；duration 字符串形态
+        // 解析；缺席 → warnings 如实 + 门不伪装已定案）。
+        if let Some(duration) = meta.duration_s {
+            if duration > MEDIA_DURATION_MAX_SECONDS {
+                return Ok(ChainOutcome::failed(RouterReject::media_duration_exceeded(
+                    duration,
+                    MEDIA_DURATION_MAX_SECONDS,
+                )));
+            }
+        } else {
+            warnings.push(
+                "ffprobe output did not parse format.duration: media duration cap left unresolved, chain continues without a duration verdict (honest reporting, zero fabrication)"
+                    .to_string(),
+            );
+        }
+
+        // 门 3：视频流存在性分支（纯音频 → metadata-only + 诚实 warnings，
+        // 抽帧步不提交）。
+        let Some(video) = meta.video_stream() else {
+            warnings.push(
+                "no video stream: frame extraction skipped, metadata-only output (honest branch, DI-2 ADR D3)"
+                    .to_string(),
+            );
+            return Ok(ChainOutcome::succeeded(build_unified(UnifiedDocInput {
+                channel: Channel::Media.as_str(),
+                source_name: &base.staged,
+                source_bytes: base.source_bytes,
+                source_sha256: &base.source_sha256,
+                sniff_magic: base.sniff_magic,
+                ext: &base.ext,
+                mismatch: base.mismatch,
+                text: String::new(),
+                metadata: json!({"media": meta.to_metadata()}),
+                page_anchors: Vec::new(),
+                warnings: std::mem::take(warnings),
+                runs: runs.iter().map(|r| r.run_id.clone()).collect(),
+            })));
+        };
+
+        // 门 4：单帧像素帽 16 MP（streams[video].width×height 整数形态）。
+        if let Some(pixels) = video.pixel_count() {
+            if pixels > MEDIA_FRAME_PIXELS_MAX {
+                return Ok(ChainOutcome::failed(
+                    RouterReject::media_pixel_budget_exceeded(pixels, MEDIA_FRAME_PIXELS_MAX),
+                ));
+            }
+        } else {
+            warnings.push(
+                "ffprobe video stream did not parse width/height: frame pixel cap left unresolved (honest reporting, zero fabrication)"
+                    .to_string(),
+            );
+        }
+
+        // 门 5：帧数预算（前缀采样语义非拒绝，D5）。
+        let expected = meta
+            .duration_s
+            .map(|d| ((MEDIA_FRAME_FPS as f64 * d).ceil() as u64).min(MEDIA_FRAMES_MAX as u64));
+        let capped = meta
+            .duration_s
+            .map(|d| d > MEDIA_FRAMES_MAX as f64 / MEDIA_FRAME_FPS as f64)
+            .unwrap_or(false);
+        if capped {
+            warnings.push(format!(
+                "frame budget capped at {MEDIA_FRAMES_MAX} frames (prefix sampling preview semantics, not a rejection; DI-2 ADR D3/D5)"
+            ));
+        }
+
+        // 步 2：ffmpeg 受限抽帧（全常量 argv：fps=2 / -frames:v 32 / -c:v png
+        // 显式编码器铁律 / out/ cwd 相对落本 run out/）。
+        let frames = self.drive_step(
+            ctx,
+            TOOL_MEDIA_FRAMES,
+            source_bytes,
+            &base.staged,
+            json!({}),
+        )?;
+        if let Some(reject) = terminal_reject(&frames) {
+            runs.push(frames);
+            return Ok(ChainOutcome::failed(reject));
+        }
+        let extracted = count_frame_files(&self.frame_out_dir(&frames.run_id));
+        runs.push(frames);
+        // 实收帧数 vs 预算对账（不一致 → warnings 如实）。
+        if let Some(exp) = expected {
+            if extracted != exp {
+                warnings.push(format!(
+                    "extracted {extracted} frame files disagree with the frame budget {exp}: count follows the actual out/ listing (honest reporting)"
+                ));
+            }
+        }
+        let mut metadata = json!({"media": meta.to_metadata()});
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert(
+                "frames".into(),
+                json!({
+                    "pattern": MEDIA_FRAME_PATTERN_NAME,
+                    "extracted": extracted,
+                    "fps": MEDIA_FRAME_FPS,
+                    "capped": capped,
+                }),
+            );
+        }
+        Ok(ChainOutcome::succeeded(build_unified(UnifiedDocInput {
+            channel: Channel::Media.as_str(),
+            source_name: &base.staged,
+            source_bytes: base.source_bytes,
+            source_sha256: &base.source_sha256,
+            sniff_magic: base.sniff_magic,
+            ext: &base.ext,
+            mismatch: base.mismatch,
+            text: String::new(),
+            metadata,
+            page_anchors: Vec::new(),
+            warnings: std::mem::take(warnings),
+            runs: runs.iter().map(|r| r.run_id.clone()).collect(),
+        })))
+    }
+
+    /// 抽帧 run 的 out/ 目录（cwd 相对 pattern 的绝对落位）。
+    fn frame_out_dir(&self, run_id: &str) -> PathBuf {
+        self.config.workspace_root.join(run_id).join("out")
+    }
+
+    /// 归档通道（DI-2 ADR D4）：7z 两阶段——`l -slt` 列目 → Router 四闸
+    /// （路径安全 / 符号链接 / 条目数 512 / 解压总量 256 MiB + 单条目 64 MiB）
+    /// → `x -y -oout` 解包本 run out/ → post-extract 符号链接终检。四闸任一
+    /// 触发 = 链内 FAILED，解包阶段永不提交（list 行留证）。
+    fn route_archive(
+        &self,
+        ctx: &DriveCtx<'_>,
+        source_bytes: &[u8],
+        base: &UnifiedBase,
+        runs: &mut Vec<RunRecord>,
+        warnings: &mut Vec<String>,
+    ) -> Result<ChainOutcome, RouterReject> {
+        // 阶段 1：列目（畸形归档 exit 2 → EXECUTION 透传，terminal_reject）。
+        let list = self.drive_step(
+            ctx,
+            TOOL_ARCHIVE_LIST,
+            source_bytes,
+            &base.staged,
+            json!({}),
+        )?;
+        if let Some(reject) = terminal_reject(&list) {
+            runs.push(list);
+            return Ok(ChainOutcome::failed(reject));
+        }
+        let raw = self.read_stdout(&list.run_id)?;
+        let list_run_id = list.run_id.clone();
+        runs.push(list);
+        let meta = ArchiveListMeta::parse(&raw);
+
+        // 列目成功但清单零条目 / 头块解析失败 → EXECUTION
+        // ARCHIVE_LIST_NO_OUTPUT（D6 表同位语义）。
+        let format = meta.format.clone();
+        if format.is_none() || meta.entries.is_empty() {
+            let detail = if format.is_none() {
+                "listing did not parse a `Type = ` header (unparsable -slt output)".to_string()
+            } else {
+                "listing reported zero entries".to_string()
+            };
+            return Ok(ChainOutcome::failed(RouterReject::archive_list_no_output(
+                &list_run_id,
+                &detail,
+            )));
+        }
+
+        // 闸 1 路径安全：`..` 段 / 以 `/` 起头 / 含 `\`（保守 fail-closed）。
+        for entry in &meta.entries {
+            let p = entry.path.as_str();
+            let reason = if p.starts_with('/') {
+                Some("absolute path entry")
+            } else if p.contains('\\') {
+                Some("contains a backslash separator (Windows semantics, fail-closed)")
+            } else if p.split('/').any(|seg| seg == "..") {
+                Some("contains a `..` segment")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Ok(ChainOutcome::failed(RouterReject::archive_entry_invalid(
+                    p, reason,
+                )));
+            }
+        }
+        // 闸 2 符号链接：`Symbolic Link = ` 字段非空或 Attributes `l` 前缀。
+        for entry in &meta.entries {
+            if entry.is_symlink() {
+                let detail = entry
+                    .symlink_target
+                    .as_deref()
+                    .map(|t| format!("Symbolic Link = {t}"))
+                    .unwrap_or_else(|| {
+                        format!(
+                            "Attributes = {:?}",
+                            entry.attributes.as_deref().unwrap_or("")
+                        )
+                    });
+                return Ok(ChainOutcome::failed(RouterReject::archive_entry_symlink(
+                    &entry.path,
+                    &detail,
+                )));
+            }
+        }
+        // 闸 3 条目数帽 512（含目录条目）。
+        if meta.entries.len() > ARCHIVE_MAX_ENTRIES {
+            return Ok(ChainOutcome::failed(
+                RouterReject::archive_entry_budget_exceeded(
+                    meta.entries.len(),
+                    ARCHIVE_MAX_ENTRIES,
+                ),
+            ));
+        }
+        // 闸 4 解压总量 256 MiB / 单条目 64 MiB（-slt Size 声明判定）。
+        let total = meta.total_uncompressed_bytes();
+        let worst = meta
+            .entries
+            .iter()
+            .max_by_key(|e| e.size)
+            .map(|e| (e.path.as_str(), e.size))
+            .unwrap_or(("", 0));
+        if total > ARCHIVE_MAX_TOTAL_BYTES || worst.1 > ARCHIVE_MAX_ENTRY_BYTES {
+            return Ok(ChainOutcome::failed(RouterReject::archive_budget_exceeded(
+                total,
+                ARCHIVE_MAX_TOTAL_BYTES,
+                worst,
+                ARCHIVE_MAX_ENTRY_BYTES,
+            )));
+        }
+
+        // 阶段 2：解包（-y 覆盖确认抑制；-oout cwd 相对 → 本 run out/，
+        // cwd=ws.root 由行为级 e2e 钉死，D4）。
+        let extract = self.drive_step(
+            ctx,
+            TOOL_ARCHIVE_EXTRACT,
+            source_bytes,
+            &base.staged,
+            json!({}),
+        )?;
+        if let Some(reject) = terminal_reject(&extract) {
+            runs.push(extract);
+            return Ok(ChainOutcome::failed(reject));
+        }
+        let extract_run_id = extract.run_id.clone();
+        runs.push(extract);
+        let out_dir = self.config.workspace_root.join(&extract_run_id).join("out");
+
+        // post-extract 符号链接终检（闸 2 之后的第二道防线兜底，D4）。
+        // extract 行已在上方成功路径推入（真实终态 SUCCEEDED 留证）。
+        let mut survived: Vec<String> = Vec::new();
+        collect_surviving_symlinks(&out_dir, &mut survived);
+        if !survived.is_empty() {
+            return Ok(ChainOutcome::failed(
+                RouterReject::archive_symlink_survived(&survived),
+            ));
+        }
+
+        // 对账：out/ 实收文件 vs 列目清单（stdout.log/stderr.log 排除；
+        // 不一致 → warnings 如实记录）。
+        let actual = list_regular_files(&out_dir);
+        let files: Vec<(String, u64)> = meta
+            .entries
+            .iter()
+            .filter(|e| !e.folder)
+            .map(|e| (e.path.clone(), e.size))
+            .collect();
+        if actual.len() != files.len() {
+            warnings.push(format!(
+                "extracted {} file(s) disagree(s) with the listing's {} file entries: reconciliation follows actual out/ contents (honest reporting)",
+                actual.len(),
+                files.len()
+            ));
+        }
+
+        let metadata = json!({
+            "archive": {
+                "format": format,
+                "entries": meta.entries.len(),
+                "directories": meta.entries.iter().filter(|e| e.folder).count(),
+                "total_uncompressed_bytes": total,
+                "files": files
+                    .iter()
+                    .map(|(path, size)| json!({"path": path, "size": size}))
+                    .collect::<Vec<_>>(),
+            }
+        });
+        Ok(ChainOutcome::succeeded(build_unified(UnifiedDocInput {
+            channel: Channel::Archive.as_str(),
+            source_name: &base.staged,
+            source_bytes: base.source_bytes,
+            source_sha256: &base.source_sha256,
+            sniff_magic: base.sniff_magic,
+            ext: &base.ext,
+            mismatch: base.mismatch,
+            text: String::new(),
+            metadata,
+            page_anchors: Vec::new(),
+            warnings: std::mem::take(warnings),
+            runs: runs.iter().map(|r| r.run_id.clone()).collect(),
+        })))
+    }
+
+    // -----------------------------------------------------------------
     // 子 run 驱动（D2/D5）
     // -----------------------------------------------------------------
 
@@ -684,6 +1269,78 @@ impl RunRecord {
 // ---------------------------------------------------------------------------
 // 内部工具
 // ---------------------------------------------------------------------------
+
+/// 抽帧产物清点（DI-2 D3：out/frame-NNN.png 计数以实收为准——`-frames:v 32`
+/// 帽生效后实际帧数即断言对象）。
+fn count_frame_files(out_dir: &std::path::Path) -> u64 {
+    std::fs::read_dir(out_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter(|e| {
+                    let name = e.file_name();
+                    let name = name.to_string_lossy();
+                    name.starts_with("frame-") && name.ends_with(".png")
+                })
+                .count() as u64
+        })
+        .unwrap_or(0)
+}
+
+/// post-extract 符号链接遍历（DI-2 D4 终检：`symlink_metadata` 不跟随链接，
+/// 目录仅对真实目录递归——符号链接目录本身即上报目标，不进入遍历）。
+fn collect_surviving_symlinks(dir: &std::path::Path, out: &mut Vec<String>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in rd.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let Ok(md) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if md.file_type().is_symlink() {
+            out.push(path.display().to_string());
+        } else if md.is_dir() {
+            collect_surviving_symlinks(&path, out);
+        }
+    }
+}
+
+/// 解包产物实收清单（DI-2 D4 对账面：递归正则文件，stdout.log/stderr.log
+/// 为 adapter 留档面排除；符号链接已被终检拦截，遍历只遇真实文件/目录）。
+fn list_regular_files(dir: &std::path::Path) -> Vec<(String, u64)> {
+    let mut out = Vec::new();
+    walk_regular_files(dir, dir, &mut out);
+    out.sort();
+    out
+}
+
+fn walk_regular_files(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, u64)>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in rd.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let Ok(md) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        let name = match path.strip_prefix(root) {
+            Ok(rel) => rel.to_string_lossy().to_string(),
+            Err(_) => path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+        };
+        if name == "stdout.log" || name == "stderr.log" {
+            continue;
+        }
+        if md.is_file() {
+            out.push((name, md.len()));
+        } else if md.is_dir() {
+            walk_regular_files(root, &path, out);
+        }
+    }
+}
 
 /// staged 名派生的测试可见面（D5 规则断言用；生产路径走 route() 内部
 /// 同名私有函数，规则单源）。

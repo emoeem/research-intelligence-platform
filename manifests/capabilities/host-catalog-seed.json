@@ -12,7 +12,7 @@
       },
       "binary_identity": {
         "sha256_prefix": "09190fb791fb0db8",
-        "sha256_full": null,
+        "sha256_full": "09190fb791fb0db81fb2616a59b9c4a16f8806792b6247e7c1ff1a9dd1708889",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
@@ -139,7 +139,7 @@
       },
       "binary_identity": {
         "sha256_prefix": "a2ae3d0209aec739",
-        "sha256_full": null,
+        "sha256_full": "a2ae3d0209aec73992d0c9f8baadce19f4929c276bb58a7305e5beb3ec38eff1",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
@@ -187,7 +187,7 @@
       },
       "binary_identity": {
         "sha256_prefix": "44e4c41d9986e8b2",
-        "sha256_full": null,
+        "sha256_full": "44e4c41d9986e8b23f9684ef332189a4cb422c450b1d87112bf795772c1c35d0",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
@@ -657,7 +657,7 @@
         "wrapper_target": {
           "executable_path": "/usr/lib/7zip/7z",
           "sha256_prefix": "d48e622e9009acdb",
-          "sha256_full": null,
+          "sha256_full": "d48e622e9009acdba4f8e29645ce791fef1ecb2c41bf385e960852a8c902fad9",
           "file_type": "elf-pie",
           "owner_mode": "root:root 755"
         }

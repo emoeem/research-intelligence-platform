@@ -51,7 +51,7 @@ fn fixture(tag: &str) -> Fixture {
     std::fs::create_dir_all(&ws).unwrap();
     // fixture：入库样本（document-router tests/fixtures/，sha256 钉值见
     // fixture_pins.rs）复制进受信文档根（零下载）。
-    for name in ["sample.pdf", "evil.zip"] {
+    for name in ["sample.pdf", "evil.zip", "text-ocr.png", "tone.wav"] {
         std::fs::copy(
             repo_root().join(format!("crates/document-router/tests/fixtures/{name}")),
             doc_root.join(name),
@@ -87,8 +87,8 @@ impl Fixture {
     }
 }
 
-/// 四份 DI-1 Manifest 登记进运行库（run_tool 受理面 D-TC-05 Registry 查询
-/// 来源；rp-tool register --db 同款库面，不触生产库）。
+/// 九份通道表 Manifest 登记进运行库（DI-1 四份 + DI-2 五份；run_tool 受理
+/// 面 D-TC-05 Registry 查询来源；rp-tool register --db 同款库面，不触生产库）。
 fn register_di1_manifests(fix: &Fixture) {
     let pool = Pool::open(PoolConfig {
         path: DbPath::File(fix.run_db.clone()),
@@ -104,6 +104,11 @@ fn register_di1_manifests(fix: &Fixture) {
         "rip.doc.pdf.text",
         "rip.doc.office.to_pdf",
         "rip.doc.image.meta",
+        "rip.doc.image.ocr",
+        "rip.media.probe",
+        "rip.media.frames",
+        "rip.archive.list",
+        "rip.archive.extract",
     ] {
         let text = std::fs::read_to_string(repo_root().join(format!("manifests/tools/{id}.json")))
             .unwrap();
@@ -239,18 +244,26 @@ fn native_rust_dispatch_runs_pdf_chain_with_self_anchored_traces() {
     }
 }
 
-/// 嗅探门前置拒绝（evil.zip → zip_other → INPUT ROUTER_UNSUPPORTED_TYPE，
-/// 无 run 行；D7 前置门语义）。
+/// 嗅探门前置拒绝（DI-2 ADR D1 迁移后形态）：gzip 魔数（1f8b 不入嗅探表）
+/// → INPUT ROUTER_UNSUPPORTED_TYPE，无 run 行（D7 前置门语义）。evil.zip
+/// 自 DI-2 起路由归档通道——其链级拒绝面迁移至
+/// native_rust_dispatch_zip_routes_to_archive_gate（list 行留证）。
 #[test]
-fn native_rust_dispatch_gate_rejects_zip_other_without_rows() {
+fn native_rust_dispatch_gate_rejects_unsniffed_magic_without_rows() {
     let fix = fixture("gate");
+    // gzip 魔数测试字节（1F 8B + 非 UTF-8 体；魔数权威，扩展名仅提示）。
+    std::fs::write(
+        fix.document_input_root.join("archive.gz"),
+        [0x1Fu8, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x02],
+    )
+    .unwrap();
     let channel = fix.channel();
     let err = channel
         .run_tool(&json!({
             "tool_id": "rip.doc.pdf.info",
-            "input": {"input_path": "evil.zip"},
+            "input": {"input_path": "archive.gz"},
         }))
-        .expect_err("zip_other rejected at sniff gate");
+        .expect_err("gzip magic rejected at sniff gate");
     assert_eq!(err["ok"], json!(false));
     assert_eq!(err["error"]["category"], json!("INPUT"));
     assert_eq!(err["error"]["code"], json!("ROUTER_UNSUPPORTED_TYPE"));
@@ -260,6 +273,141 @@ fn native_rust_dispatch_gate_rejects_zip_other_without_rows() {
         .with_conn(|c| c.query_row("SELECT count(*) FROM tool_run", [], |r| r.get::<_, i64>(0)))
         .unwrap();
     assert_eq!(count, 0, "嗅探门拒绝零 run 行");
+}
+
+/// DI-2 判据 1 dispatch 面：input.ocr 请求位透传 → route_ocr → channel
+/// "ocr" 统一输出（identify + tesseract 两子 run trace 自锚定）。
+#[test]
+fn native_rust_dispatch_ocr_request_bit_routes_ocr_channel() {
+    let test = "native_rust_dispatch_ocr_request_bit_routes_ocr_channel";
+    let provider = tool_engine::capability::StaticCatalogProvider::load(
+        &repo_root().join("manifests/capabilities/host-catalog-seed.json"),
+    )
+    .unwrap();
+    for id in ["image.magick", "ocr.tesseract"] {
+        match provider.get(&tool_engine::capability::CapabilityId::new(id).unwrap()) {
+            Some(e) if e.entry.status.as_str() == "available" => match &e.entry.executable_path {
+                Some(path) if path.exists() => {}
+                _ => {
+                    println!("SKIP {test}: capability {id} executable missing");
+                    return;
+                }
+            },
+            _ => {
+                println!("SKIP {test}: capability {id} status unavailable");
+                return;
+            }
+        }
+    }
+    let fix = fixture("ocr");
+    register_di1_manifests(&fix);
+    let channel = fix.channel();
+    let payload = channel
+        .run_tool(&json!({
+            "tool_id": "rip.doc.image.meta",
+            "input": {
+                "input_path": "text-ocr.png",
+                "ocr": {"language": "en"},
+            },
+        }))
+        .expect("ocr request bit dispatches route_ocr");
+    assert_eq!(payload["ok"], json!(true));
+    assert_eq!(payload["channel"], json!("ocr"), "请求位路由 OCR 通道");
+    let unified = &payload["result"];
+    assert_eq!(unified["channel"], json!("ocr"));
+    assert_eq!(unified["text"], json!("HELLO OCR 123"));
+    assert_eq!(unified["metadata"]["ocr"]["language"], json!("eng"));
+    assert_eq!(
+        unified["metadata"]["ocr"]["requested_language"],
+        json!("en")
+    );
+    let runs = payload["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2, "identify + tesseract 两子 run");
+}
+
+/// DI-2 判据 3 dispatch 面：chi_tra 请求 → ROUTER_OCR_LANG_MISSING 前置门
+/// 拒绝（DEPENDENCY），零 run 行。
+#[test]
+fn native_rust_dispatch_ocr_chi_tra_rejected_without_rows() {
+    let test = "native_rust_dispatch_ocr_chi_tra_rejected_without_rows";
+    let provider = tool_engine::capability::StaticCatalogProvider::load(
+        &repo_root().join("manifests/capabilities/host-catalog-seed.json"),
+    )
+    .unwrap();
+    for id in ["image.magick", "ocr.tesseract"] {
+        match provider.get(&tool_engine::capability::CapabilityId::new(id).unwrap()) {
+            Some(e) if e.entry.status.as_str() == "available" => match &e.entry.executable_path {
+                Some(path) if path.exists() => {}
+                _ => {
+                    println!("SKIP {test}: capability {id} executable missing");
+                    return;
+                }
+            },
+            _ => {
+                println!("SKIP {test}: capability {id} status unavailable");
+                return;
+            }
+        }
+    }
+    let fix = fixture("chitra");
+    register_di1_manifests(&fix);
+    let channel = fix.channel();
+    let err = channel
+        .run_tool(&json!({
+            "tool_id": "rip.doc.image.meta",
+            "input": {
+                "input_path": "text-ocr.png",
+                "ocr": {"language": "zh-Hant"},
+            },
+        }))
+        .expect_err("chi_tra request rejected at language gate");
+    assert_eq!(err["ok"], json!(false));
+    assert_eq!(err["error"]["category"], json!("DEPENDENCY"));
+    assert_eq!(err["error"]["code"], json!("ROUTER_OCR_LANG_MISSING"));
+    let pool = run_pool(&fix);
+    let count: i64 = pool
+        .with_conn(|c| c.query_row("SELECT count(*) FROM tool_run", [], |r| r.get::<_, i64>(0)))
+        .unwrap();
+    assert_eq!(count, 0, "语言前置门拒绝零 run 行");
+}
+
+/// DI-2 ADR D1 行为变更迁移面：evil.zip（DI-1 zip_other 嗅探门负例）改
+/// 路由归档通道 → 闸 1 穿越名链级拒绝，错误载荷 + list 子 run 行留证
+/// （解包阶段零提交）。
+#[test]
+fn native_rust_dispatch_zip_routes_to_archive_gate() {
+    let fix = fixture("zipgate");
+    register_di1_manifests(&fix);
+    let channel = fix.channel();
+    let err = channel
+        .run_tool(&json!({
+            "tool_id": "rip.doc.pdf.info",
+            "input": {"input_path": "evil.zip"},
+        }))
+        .expect_err("evil.zip traversal entry rejected at archive gate 1");
+    assert_eq!(err["ok"], json!(false));
+    assert_eq!(err["error"]["category"], json!("INPUT"));
+    assert_eq!(
+        err["error"]["code"],
+        json!("ROUTER_ARCHIVE_ENTRY_INVALID"),
+        "闸 1 穿越名拒绝（DI-2 ADR D4）：{:?}",
+        err["error"]
+    );
+    // list 子 run 行已在库保持真实终态；解包阶段零提交（D8 表口径）。
+    let runs = err["runs"].as_array().expect("run rows present");
+    assert_eq!(runs.len(), 1, "仅 list 行留证");
+    let pool = run_pool(&fix);
+    let (count, status): (i64, String) = pool
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT count(*), coalesce((SELECT status FROM tool_run LIMIT 1), '')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })
+        .unwrap();
+    assert_eq!(count, 1, "list 单行（解包零提交）");
+    assert_eq!(status, "SUCCEEDED", "list 行真实终态留证");
 }
 
 /// 评审修订 2026-11-19：输入 64 MiB 帽 stat 前置——fs::read 全量读入之前
@@ -385,7 +533,7 @@ fn native_rust_tool_outside_channel_table_rejected() {
         .expect_err("non-channel-table native tool rejected");
     let message = err["error"]["message"].as_str().unwrap();
     assert!(
-        message.contains("outside the DI-1 document channel table"),
-        "承载范围守卫语义：{message}"
+        message.contains("outside the DI-1/DI-2 document channel table"),
+        "承载范围守卫语义（DI-2 九工具清单更新）：{message}"
     );
 }

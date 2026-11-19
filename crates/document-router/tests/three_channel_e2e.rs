@@ -68,8 +68,8 @@ fn workspace_root(tag: &str) -> PathBuf {
     ws
 }
 
-/// 引擎 + 四份 DI-1 Manifest 登记（内存库；生产库零触碰，红线 4）。
-/// `extra` 为追加登记件（判据 5 harness 注入面）。
+/// 引擎 + 九份通道表 Manifest 登记（DI-1 四份 + DI-2 五份；内存库；生产库
+/// 零触碰，红线 4）。`extra` 为追加登记件（判据 5 harness 注入面）。
 fn fresh_engine(extra: &[Value]) -> Engine {
     let pool = Pool::open(PoolConfig {
         path: DbPath::Memory,
@@ -87,6 +87,11 @@ fn fresh_engine(extra: &[Value]) -> Engine {
         "rip.doc.pdf.text",
         "rip.doc.office.to_pdf",
         "rip.doc.image.meta",
+        "rip.doc.image.ocr",
+        "rip.media.probe",
+        "rip.media.frames",
+        "rip.archive.list",
+        "rip.archive.extract",
     ] {
         let text = std::fs::read_to_string(repo_root().join(format!("manifests/tools/{id}.json")))
             .unwrap();
@@ -544,7 +549,10 @@ fn image_channel_end_to_end_png_and_generated_jpeg() {
 }
 
 // ---------------------------------------------------------------------------
-// 判据 4：不支持类型拒绝（嗅探门，零子进程零 run 行）
+// 判据 4（DI-2 ADR D1 迁移后形态）：不支持类型拒绝（嗅探门，零子进程零
+// run 行）。zip_other 三负例（epub/zip/evil.zip）自 DI-2 起路由归档通道
+// （迁移见 archive 四闸负例与本文件 archive e2e 正例），嗅探门零 run 行
+// 负例集改由 tar/gzip/unknown 二进制承载（D1：fail-closed INPUT 拒绝）。
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -555,18 +563,26 @@ fn unsupported_types_rejected_at_gate_with_zero_rows() {
     let router = router_for(&ws_root);
     let adapter = adapter_for(&ws_root);
 
-    // 五类负例（§5 表）：epub / zip / evil.zip（zip_other）+ 伪 .pdf 纯文本。
-    for (name, bytes) in [
-        ("sample.epub", smoke("sample.epub")),
-        ("sample.zip", smoke("sample.zip")),
-        ("evil.zip", smoke("evil.zip")),
-    ] {
-        let err = router
-            .route(&engine, &adapter, Some(&provider), &bytes, name, "zip")
-            .expect_err("zip_other must be rejected at sniff gate");
-        assert_eq!(err.category, "INPUT");
-        assert_eq!(err.code, "ROUTER_UNSUPPORTED_TYPE");
-    }
+    // gzip 魔数（1F 8B，D1 实测可判不入表）→ Unknown → INPUT 拒绝。
+    let gzip = [0x1Fu8, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x02];
+    let err = router
+        .route(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &gzip,
+            "archive.gz",
+            "gz",
+        )
+        .expect_err("gzip magic must stay fail-closed at sniff gate");
+    assert_eq!(err.category, "INPUT");
+    assert_eq!(err.code, "ROUTER_UNSUPPORTED_TYPE");
+    // 非 UTF-8 二进制 blob → Unknown → INPUT 拒绝。
+    let blob = [0xDEu8, 0xAD, 0xBE, 0xEF, 0xFF, 0x00, 0x01];
+    let err = router
+        .route(&engine, &adapter, Some(&provider), &blob, "blob.bin", "bin")
+        .expect_err("unknown magic must be rejected at sniff gate");
+    assert_eq!(err.code, "ROUTER_UNSUPPORTED_TYPE");
     // 伪造 .pdf 扩展名纯文本 → text 签名拒绝并注明走 rip.doc.parse。
     let fake_pdf = b"this is definitely not a pdf document\n".to_vec();
     let err = router
@@ -1311,4 +1327,1309 @@ fn pdfinfo_pages_unparsed_carries_honest_warning() {
     );
     let _ = std::fs::remove_dir_all(&ws_root);
     let _ = std::fs::remove_dir_all(&harness_dir);
+}
+
+// ===========================================================================
+// DI-2 三通道 e2e（DI-2-TASK §5 判据 1-12 逐项；负例为硬性红线）
+// ===========================================================================
+
+use document_router::channel::{
+    ARCHIVE_MAX_ENTRIES, MEDIA_DURATION_MAX_SECONDS, MEDIA_FRAME_PIXELS_MAX, OCR_PIXELS_MAX,
+};
+
+/// 判据 1：OCR 通道端到端——text-ocr.png + 请求 language=en → identify +
+/// tesseract 两子 run SUCCEEDED；统一输出 channel="ocr"、text="HELLO OCR 123"
+/// （TSV 重组）、metadata.ocr{language:"eng", requested_language:"en",
+/// words=3, mean_conf>90}、page_anchors 单页锚。
+#[test]
+fn di2_ocr_channel_end_to_end_explicit_request_bit() {
+    let test = "di2_ocr_channel_end_to_end_explicit_request_bit";
+    let provider = provider();
+    if !require_capability(&provider, test, "image.magick")
+        || !require_capability(&provider, test, "ocr.tesseract")
+    {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-ocr");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let bytes = smoke("text-ocr.png");
+    let outcome = router
+        .route_ocr(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &bytes,
+            "text-ocr.png",
+            "png",
+            Some("en"),
+        )
+        .expect("ocr channel accepted");
+    assert_eq!(
+        outcome.status,
+        document_router::RouteStatus::Succeeded,
+        "OCR 链失败：{:?}",
+        outcome.reject
+    );
+    assert_eq!(outcome.runs.len(), 2, "identify 门步 + tesseract 步");
+    assert_eq!(outcome.runs[0].tool_id, "rip.doc.image.meta");
+    assert_eq!(outcome.runs[1].tool_id, "rip.doc.image.ocr");
+    for run in &outcome.runs {
+        assert_eq!(
+            run_row_status(&engine, &run.run_id).as_deref(),
+            Some("SUCCEEDED"),
+            "子 run {} 行真实终态",
+            run.run_id
+        );
+    }
+    let unified = outcome.unified.as_ref().unwrap();
+    assert_eq!(unified["channel"], json!("ocr"));
+    assert_eq!(unified["text"], json!("HELLO OCR 123"), "TSV 重组正文");
+    assert_eq!(unified["metadata"]["format"], json!("PNG"));
+    assert_eq!(unified["metadata"]["dimensions"]["width"], json!(460));
+    assert_eq!(unified["metadata"]["dimensions"]["height"], json!(80));
+    let ocr = &unified["metadata"]["ocr"];
+    assert_eq!(ocr["language"], json!("eng"), "tesseract -l 实际参数");
+    assert_eq!(ocr["requested_language"], json!("en"), "路由输入原值");
+    assert_eq!(ocr["words"], json!(3));
+    assert!(
+        ocr["mean_conf"].as_f64().unwrap() > 90.0,
+        "mean_conf > 90（fixture 实测 93.6）：{:?}",
+        ocr
+    );
+    assert_eq!(ocr["low_conf_words"], json!(0));
+    let anchors = unified["page_anchors"].as_array().unwrap();
+    assert_eq!(anchors.len(), 1, "单图单页锚");
+    assert_eq!(anchors[0]["page"], json!(1));
+    assert_eq!(anchors[0]["char_start"], json!(0));
+    assert_eq!(
+        anchors[0]["char_end"],
+        json!(unified["text"].as_str().unwrap().chars().count())
+    );
+    // 判据 4 同款 trace 自锚定面：两子 run trace_id = run_id。
+    for run in &outcome.runs {
+        assert_eq!(
+            engine.trace_id_of(&run.run_id).unwrap().as_deref(),
+            Some(run.run_id.as_str())
+        );
+    }
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 判据 2：OCR 缺省语言——无请求位语言（None）→ `-l chi_sim+eng`（目录双
+/// 语言放行）；同一 fixture 文本一致；requested_language="auto"。
+#[test]
+fn di2_ocr_default_language_routes_chi_sim_plus_eng() {
+    let test = "di2_ocr_default_language_routes_chi_sim_plus_eng";
+    let provider = provider();
+    if !require_capability(&provider, test, "image.magick")
+        || !require_capability(&provider, test, "ocr.tesseract")
+    {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-ocr-auto");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let bytes = smoke("text-ocr.png");
+    let outcome = router
+        .route_ocr(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &bytes,
+            "text-ocr.png",
+            "png",
+            None,
+        )
+        .expect("ocr channel accepted (auto)");
+    assert_eq!(outcome.status, document_router::RouteStatus::Succeeded);
+    let unified = outcome.unified.as_ref().unwrap();
+    assert_eq!(
+        unified["text"],
+        json!("HELLO OCR 123"),
+        "双语言同 fixture 同文"
+    );
+    let ocr = &unified["metadata"]["ocr"];
+    assert_eq!(ocr["language"], json!("chi_sim+eng"), "缺省双语言组合");
+    assert_eq!(ocr["requested_language"], json!("auto"));
+    assert_eq!(outcome.runs.len(), 2);
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 判据 3：chi_tra 请求显式 error——请求 zh-Hant → 前置门 Err：
+/// category=DEPENDENCY、code=ROUTER_OCR_LANG_MISSING、零 run 行、消息注明
+/// 禁静默回退与补装属用户决策；chi_sim 兜底面零出现。
+#[test]
+fn di2_ocr_chi_tra_request_rejected_at_gate_without_rows() {
+    let test = "di2_ocr_chi_tra_request_rejected_at_gate_without_rows";
+    let provider = provider();
+    if !require_capability(&provider, test, "image.magick")
+        || !require_capability(&provider, test, "ocr.tesseract")
+    {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-ocr-chitra");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let bytes = smoke("text-ocr.png");
+    for requested in ["zh-Hant", "chi_tra", "zh-TW"] {
+        let err = router
+            .route_ocr(
+                &engine,
+                &adapter,
+                Some(&provider),
+                &bytes,
+                "text-ocr.png",
+                "png",
+                Some(requested),
+            )
+            .expect_err("chi_tra-family request must be rejected at the language gate");
+        assert_eq!(
+            err.category, "DEPENDENCY",
+            "语言包缺失归因 DEPENDENCY（D6）"
+        );
+        assert_eq!(err.code, "ROUTER_OCR_LANG_MISSING");
+        assert!(!err.retryable);
+        assert!(
+            err.message.contains("user decision"),
+            "补装属用户决策：{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("silent fallback"),
+            "禁静默回退注明：{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("chi_tra"),
+            "缺失语言如实进消息：{}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("fallback to chi_sim"),
+            "chi_sim 兜底面零出现：{}",
+            err.message
+        );
+    }
+    // 零 run 行（前置门语义——拒绝发生在任何子 run 提交之前）。
+    assert_eq!(run_row_count(&engine), 0, "chi_tra 前置门拒绝零 run 行");
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 判据 4：OCR 像素帽——oversized-pixels.png（121 MP）→ OCR 管线 identify
+/// 行 SUCCEEDED 留证 + 链内 FAILED ROUTER_PIXEL_BUDGET_EXCEEDED（消息含
+/// 121000000 与 50 MP OCR 帽）；tesseract 未拉起。
+#[test]
+fn di2_ocr_pixel_budget_chain_fails_with_identify_evidence() {
+    let test = "di2_ocr_pixel_budget_chain_fails_with_identify_evidence";
+    let provider = provider();
+    if !require_capability(&provider, test, "image.magick")
+        || !require_capability(&provider, test, "ocr.tesseract")
+    {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-ocr-pixcap");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let bytes = smoke("oversized-pixels.png");
+    let outcome = router
+        .route_ocr(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &bytes,
+            "oversized-pixels.png",
+            "png",
+            Some("en"),
+        )
+        .expect("ocr channel accepted");
+    assert_eq!(outcome.status, document_router::RouteStatus::Failed);
+    let reject = outcome.reject.as_ref().expect("D8 reject");
+    assert_eq!(reject.category, "INPUT");
+    assert_eq!(reject.code, "ROUTER_PIXEL_BUDGET_EXCEEDED", "码沿用 DI-1");
+    assert!(
+        reject.message.contains("121000000"),
+        "超帽像素如实进消息：{}",
+        reject.message
+    );
+    assert!(
+        reject.message.contains(&OCR_PIXELS_MAX.to_string()),
+        "OCR 50 MP 帽注明：{}",
+        reject.message
+    );
+    // identify 单步留证 SUCCEEDED；tesseract 未拉起。
+    assert_eq!(outcome.runs.len(), 1, "identify 单步留证");
+    assert_eq!(outcome.runs[0].tool_id, "rip.doc.image.meta");
+    assert_eq!(
+        run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+        Some("SUCCEEDED")
+    );
+    let line = stdout_log(&ws_root, &outcome.runs[0].run_id);
+    assert!(line.contains("11000x11000"));
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 判据 5：畸形图像——PNG 魔数 + 垃圾体 → identify 子 run exit!=0 →
+/// EXECUTION 透传 FAILED（子 run 行留证），tesseract 未拉起。
+#[test]
+fn di2_ocr_malformed_image_execution_passthrough_no_tesseract() {
+    let test = "di2_ocr_malformed_image_execution_passthrough_no_tesseract";
+    let provider = provider();
+    if !require_capability(&provider, test, "image.magick")
+        || !require_capability(&provider, test, "ocr.tesseract")
+    {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-ocr-malformed");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    // PNG 魔数 + 垃圾体（嗅探 Png 命中，identify 解码失败 exit != 0）。
+    let mut malformed = vec![0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    malformed.extend_from_slice(b"garbage body not a real png \xff\xfe\x01\x02");
+    let outcome = router
+        .route_ocr(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &malformed,
+            "malformed.png",
+            "png",
+            Some("en"),
+        )
+        .expect("ocr channel accepted at gate");
+    assert_eq!(outcome.status, document_router::RouteStatus::Failed);
+    let reject = outcome
+        .reject
+        .as_ref()
+        .expect("EXECUTION passthrough reject");
+    assert_eq!(reject.category, "EXECUTION", "identify 失败透传（D8）");
+    assert_eq!(outcome.runs.len(), 1, "identify 单步留证");
+    assert_eq!(outcome.runs[0].tool_id, "rip.doc.image.meta");
+    assert_eq!(
+        run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+        Some("FAILED"),
+        "identify 子 run 行真实终态 FAILED"
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 判据 6：媒体端到端（音频）——tone.wav → ffprobe 单子 run SUCCEEDED；
+/// metadata.media{format_name:"wav", duration_s≈0.5, streams 含 pcm_s16le}；
+/// warnings 记录 no-video-stream 分支；抽帧步未提交。
+#[test]
+fn di2_media_tone_wav_metadata_only_no_frames_step() {
+    let test = "di2_media_tone_wav_metadata_only_no_frames_step";
+    let provider = provider();
+    if !require_capability(&provider, test, "media.ffprobe") {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-media-wav");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let bytes = smoke("tone.wav");
+    let outcome = router
+        .route(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &bytes,
+            "tone.wav",
+            "wav",
+        )
+        .expect("media channel accepted");
+    assert_eq!(
+        outcome.status,
+        document_router::RouteStatus::Succeeded,
+        "媒体链失败：{:?}",
+        outcome.reject
+    );
+    assert_eq!(outcome.runs.len(), 1, "ffprobe 单子 run（抽帧步未提交）");
+    assert_eq!(outcome.runs[0].tool_id, "rip.media.probe");
+    assert_eq!(
+        run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+        Some("SUCCEEDED")
+    );
+    let unified = outcome.unified.as_ref().unwrap();
+    assert_eq!(unified["channel"], json!("media"));
+    let media = &unified["metadata"]["media"];
+    assert_eq!(media["format_name"], json!("wav"));
+    assert!(
+        (media["duration_s"].as_f64().unwrap() - 0.5).abs() < 0.01,
+        "duration_s ≈ 0.5（ffprobe 字符串形态数值化）：{:?}",
+        media
+    );
+    let streams = media["streams"].as_array().unwrap();
+    assert!(
+        streams
+            .iter()
+            .any(|s| s["codec_name"] == json!("pcm_s16le")),
+        "streams 含 pcm_s16le：{:?}",
+        streams
+    );
+    let warnings = unified["warnings"].as_array().unwrap();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("no video stream")),
+        "warnings 记录 no-video-stream 分支（诚实分支）：{warnings:?}"
+    );
+    assert!(
+        unified["metadata"].get("frames").is_none(),
+        "纯音频 metadata-only：frames 块不在位"
+    );
+    assert_eq!(unified["text"], json!(""));
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 判据 7：媒体端到端（视频）——small.mp4（运行时生成）→ ffprobe + ffmpeg
+/// 两子 run；out/ 内帧 PNG（2s@fps2 = 4 帧 ≤ 32 帽）；metadata.frames
+/// {extracted, capped:false}；stdout.log JSON 有 format.duration。
+#[test]
+fn di2_media_video_frames_extracted_with_budget() {
+    let test = "di2_media_video_frames_extracted_with_budget";
+    let provider = provider();
+    if !require_capability(&provider, test, "media.ffprobe")
+        || !require_capability(&provider, test, "media.ffmpeg")
+    {
+        return;
+    }
+    // 运行时生成 small.mp4（ffmpeg lavfi testsrc + libx264 显式编码器；
+    // mp4 容器时间戳/编码器元数据非确定 → 行为断言不字节断言，DI-2-TASK §4）。
+    let gen_dir = std::env::temp_dir().join(format!("di2-mp4-{}", std::process::id()));
+    std::fs::create_dir_all(&gen_dir).unwrap();
+    let mp4 = gen_dir.join("small.mp4");
+    let ok = std::process::Command::new("/usr/bin/ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=128x64:rate=10",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            mp4.to_str().unwrap(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !ok || !mp4.exists() {
+        println!("SKIP {test}: local ffmpeg could not generate small.mp4 fixture");
+        let _ = std::fs::remove_dir_all(&gen_dir);
+        return;
+    }
+    let bytes = std::fs::read(&mp4).unwrap();
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-media-mp4");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let outcome = router
+        .route(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &bytes,
+            "small.mp4",
+            "mp4",
+        )
+        .expect("media channel accepted");
+    assert_eq!(
+        outcome.status,
+        document_router::RouteStatus::Succeeded,
+        "媒体视频链失败：{:?}",
+        outcome.reject
+    );
+    assert_eq!(outcome.runs.len(), 2, "ffprobe + ffmpeg 两子 run");
+    assert_eq!(outcome.runs[0].tool_id, "rip.media.probe");
+    assert_eq!(outcome.runs[1].tool_id, "rip.media.frames");
+    for run in &outcome.runs {
+        assert_eq!(
+            run_row_status(&engine, &run.run_id).as_deref(),
+            Some("SUCCEEDED")
+        );
+    }
+    // 探测步 stdout.log JSON 有 format.duration。
+    let probe_log = stdout_log(&ws_root, &outcome.runs[0].run_id);
+    let probe_json: Value =
+        serde_json::from_str(probe_log.trim()).expect("ffprobe stdout.log is JSON");
+    assert!(
+        probe_json["format"]["duration"].is_string(),
+        "format.duration 字符串形态实测锚：{:?}",
+        probe_json["format"]
+    );
+    // 抽帧步产物登记（out/frame-NNN.png Artifact 面）。
+    let frames_run = &outcome.runs[1];
+    let frame_artifacts: Vec<&Value> = frames_run.outcome.envelope.result.as_ref().unwrap()
+        ["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["name"].as_str().unwrap_or("").starts_with("frame-"))
+        .collect();
+    assert_eq!(
+        frame_artifacts.len(),
+        4,
+        "2s@fps2 = 4 帧（≤ 32 帽）：{:?}",
+        frame_artifacts
+            .iter()
+            .map(|a| a["name"].clone())
+            .collect::<Vec<_>>()
+    );
+    let unified = outcome.unified.as_ref().unwrap();
+    assert_eq!(unified["channel"], json!("media"));
+    let frames = &unified["metadata"]["frames"];
+    assert_eq!(frames["extracted"], json!(4));
+    assert_eq!(frames["capped"], json!(false));
+    assert_eq!(frames["fps"], json!(2));
+    assert_eq!(frames["pattern"], json!("frame-%03d.png"));
+    let media = &unified["metadata"]["media"];
+    assert_eq!(
+        media["format_name"],
+        json!("mov,mp4,m4a,3gp,3g2,mj2"),
+        "format_name 逗号列表原样承载"
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+    let _ = std::fs::remove_dir_all(&gen_dir);
+}
+
+/// 判据 8：超时长媒体——400 s WAV（测试内构造，6.4 MB 内存字节不落盘全量）
+/// → ffprobe 行 SUCCEEDED 留证 + 链内 FAILED ROUTER_MEDIA_DURATION_EXCEEDED；
+/// ffmpeg 未拉起。
+#[test]
+fn di2_media_duration_exceeded_chain_fails_with_probe_evidence() {
+    let test = "di2_media_duration_exceeded_chain_fails_with_probe_evidence";
+    let provider = provider();
+    if !require_capability(&provider, test, "media.ffprobe") {
+        return;
+    }
+    // 400 s 8kHz 16-bit 零 PCM WAV：data 长度字段 = 6.4 MB，内存组装不落盘。
+    let data_len: u32 = 8000 * 2 * 400;
+    let mut wav = b"RIFF".to_vec();
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+    wav.extend_from_slice(&8000u32.to_le_bytes());
+    wav.extend_from_slice(&16000u32.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend(std::iter::repeat_n(0u8, data_len as usize));
+    assert_eq!(wav.len(), 44 + data_len as usize);
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-media-long");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let outcome = router
+        .route(&engine, &adapter, Some(&provider), &wav, "long.wav", "wav")
+        .expect("media channel accepted at gate");
+    assert_eq!(outcome.status, document_router::RouteStatus::Failed);
+    let reject = outcome.reject.as_ref().expect("D8 reject");
+    assert_eq!(reject.category, "INPUT");
+    assert_eq!(reject.code, "ROUTER_MEDIA_DURATION_EXCEEDED");
+    assert!(
+        reject.message.contains("400"),
+        "超帽时长如实进消息：{}",
+        reject.message
+    );
+    assert!(
+        reject
+            .message
+            .contains(&MEDIA_DURATION_MAX_SECONDS.to_string()),
+        "300 s 帽在消息：{}",
+        reject.message
+    );
+    // ffprobe 行 SUCCEEDED 留证；ffmpeg 未拉起（runs.len()==1）。
+    assert_eq!(outcome.runs.len(), 1, "probe 单步留证，frames 步未提交");
+    assert_eq!(outcome.runs[0].tool_id, "rip.media.probe");
+    assert_eq!(
+        run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+        Some("SUCCEEDED")
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+/// 评审修订 2026-11-20：媒体门 4 单帧像素帽 16 MP 行为级负例（媒体五门序
+/// 中此前唯一无可运行证据的门——时长门有判据 8、视频流分支有判据 6、帧数
+/// 有判据 7、畸形透传有判据 9）。载具 = ffprobe stdout harness 免编码
+/// （pdfinfo_pages_unparsed 先例同形态）：rip.media.probe 克隆 binary =
+/// 自持 stub 脚本，stdout 恒为 4100x4100（16 810 000 像素 > 16 MP 帽）单
+/// 视频流 ffprobe JSON——streams[].width/height 整数形态命中 FfprobeMeta
+/// 解析面（评审以 ffmpeg 实造 4100x4100 证实负例类真实可产，本测免编码钉
+/// 门触发路径）；时长 1 s 不触时长门（判据 8 同款门序前提）。
+///
+/// 零 capability 守卫：载具 stub 自持（/bin/sh + heredoc），链条仅执行
+/// probe 单步（门中止使 ffmpeg 步结构性不提交），真 ffprobe/ffmpeg 零依赖
+/// ——异机无 ffprobe 亦应跑（对照 require_capability 只覆盖真二进制面）。
+#[test]
+fn di2_media_pixel_budget_exceeded_chain_fails_with_probe_evidence() {
+    // stub：stdout 恒为 ffprobe JSON（width/height 整数形态 + duration
+    // 字符串形态，D3 实测冻结形态同构）；exit 0。纯 shell 内建 echo——
+    // adapter D4 白名单 PATH=钉值二进制所在目录（ws.root），外部命令
+    // （cat/printf）结构性不可用，env_echo.sh fixture 同纪律。
+    let probe_json = r#"{"streams":[{"index":0,"codec_name":"h264","codec_type":"video","width":4100,"height":4100}],"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2","duration":"1.000000","bit_rate":"128000","size":"123456"}}"#;
+    let ws_root = workspace_root("di2-media-pixcap");
+    let stub = ws_root.join("ffprobe-pixel-harness.sh");
+    std::fs::write(&stub, format!("#!/bin/sh\necho '{probe_json}'\n")).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    // harness 克隆（同 id rip.media.probe 升版本 0.9.0 supersede 真件；
+    // capability_ref 移除——载具零真 ffprobe 依赖，钉值自持 stub 实时 sha
+    // 写入使 identity 校验恒过，DI-1 判据 5 missingcap 先例同形态）。
+    let mut doc: Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_root().join("manifests/tools/rip.media.probe.json")).unwrap(),
+    )
+    .unwrap();
+    doc["version"] = json!("0.9.0");
+    doc["name"] = json!("Media Stream Probe (pixel-cap harness)");
+    doc["description"] = json!("harness：stdout 恒为 4100x4100 单视频流 ffprobe JSON（免编码载具），媒体单帧 16 MP 像素帽门定案输入（评审修订 2026-11-20）");
+    doc["runtime"]["binary"] = json!(stub.to_str().unwrap());
+    doc["runtime"]["binary_sha256"] = json!(tool_registry::hash::sha256_hex(
+        &std::fs::read(&stub).unwrap()
+    ));
+    doc["runtime"]["argv_template"] = json!([]);
+    doc["runtime"]
+        .as_object_mut()
+        .unwrap()
+        .remove("capability_ref");
+    doc["resources"] = json!({
+        "cpu": "1",
+        "memory": "64Mi",
+        "timeout_seconds": 30,
+        "max_output_bytes": 1048576
+    });
+    let harness_dir =
+        std::env::temp_dir().join(format!("di2-pixel-harness-{}", std::process::id()));
+    std::fs::create_dir_all(&harness_dir).unwrap();
+    std::fs::write(
+        harness_dir.join("rip.media.probe.json"),
+        serde_json::to_string_pretty(&doc).unwrap(),
+    )
+    .unwrap();
+    let engine = {
+        let pool = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(5),
+        })
+        .unwrap();
+        migrate(&pool, &repo_root().join("migrations")).unwrap();
+        let registry = Registry::open(pool.clone()).with_options(Options {
+            allow_placeholder_digest: false,
+        });
+        for id in [
+            "rip.doc.pdf.info",
+            "rip.doc.pdf.text",
+            "rip.doc.office.to_pdf",
+            "rip.doc.image.meta",
+            "rip.doc.image.ocr",
+            "rip.media.probe",
+            "rip.media.frames",
+            "rip.archive.list",
+            "rip.archive.extract",
+        ] {
+            let text =
+                std::fs::read_to_string(repo_root().join(format!("manifests/tools/{id}.json")))
+                    .unwrap();
+            registry
+                .register(&serde_json::from_str(&text).unwrap())
+                .unwrap_or_else(|e| panic!("register {id}: {e}"));
+        }
+        // harness 克隆升版本 supersede 真件 → current = harness。
+        registry
+            .register(&doc)
+            .expect("harness clone supersedes real manifest");
+        Engine::open(pool, registry)
+    };
+    // harness 目录在前：RouterManifests 同 id 首见优先（from_dirs 语义）。
+    let router = document_router::Router::new(
+        document_router::RouterConfig {
+            workspace_root: ws_root.clone(),
+        },
+        document_router::RouterManifests::from_dirs(&[
+            harness_dir.clone(),
+            repo_root().join("manifests/tools"),
+        ])
+        .expect("manifests load with harness override"),
+    );
+    let adapter = adapter_for(&ws_root);
+    let provider = provider();
+    // tone.wav：真 WAV 魔数 → 嗅探 Wav → 媒体通道（stub 不读输入，字节面
+    // 仅承载嗅探定案）。
+    let bytes = smoke("tone.wav");
+    let outcome = router
+        .route(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &bytes,
+            "tone.wav",
+            "wav",
+        )
+        .expect("media channel accepted at gate");
+    assert_eq!(
+        outcome.status,
+        document_router::RouteStatus::Failed,
+        "16.81 MP 单帧必须链内 FAILED"
+    );
+    let reject = outcome.reject.as_ref().expect("D8 reject");
+    assert_eq!(reject.category, "INPUT");
+    assert_eq!(reject.code, "ROUTER_MEDIA_PIXEL_BUDGET_EXCEEDED");
+    assert!(
+        reject.message.contains("16810000"),
+        "超帽单帧像素（4100x4100）如实进消息：{}",
+        reject.message
+    );
+    assert!(
+        reject.message.contains(&MEDIA_FRAME_PIXELS_MAX.to_string()),
+        "16 MP 帽在消息：{}",
+        reject.message
+    );
+    // probe 行 SUCCEEDED 留证（帽在其 stdout 解析后定案）；ffmpeg 未拉起
+    //（runs.len()==1，frames 步结构性未提交）。
+    assert_eq!(outcome.runs.len(), 1, "probe 单步留证，frames 步未提交");
+    assert_eq!(outcome.runs[0].tool_id, "rip.media.probe");
+    assert_eq!(
+        run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+        Some("SUCCEEDED"),
+        "probe（harness stub）行真实终态"
+    );
+    let line = stdout_log(&ws_root, &outcome.runs[0].run_id);
+    assert!(
+        line.contains("\"width\":4100") && line.contains("\"height\":4100"),
+        "probe stdout 尺寸整数形态留证（帽定案输入）：{line}"
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+    let _ = std::fs::remove_dir_all(&harness_dir);
+}
+
+/// 判据 9：畸形媒体 / 媒体嗅探——RIFF 形态垃圾（嗅探 Wav 命中）→ ffprobe
+/// exit 1 → EXECUTION 透传；gzip 字节 → 嗅探门 INPUT 拒绝零 run 行（魔数
+/// 1f8b 不入表）。
+#[test]
+fn di2_media_malformed_execution_passthrough_and_gzip_gate() {
+    let test = "di2_media_malformed_execution_passthrough_and_gzip_gate";
+    let provider = provider();
+    if !require_capability(&provider, test, "media.ffprobe") {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-media-fake");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    // RIFF+WAVE 形态垃圾体：嗅探 Wav 命中 → ffprobe 拉起 → exit 1 透传。
+    let fake_wav = b"RIFF\x24\x00\x00\x00WAVEgarbage-not-a-real-wave\xff\x01\x02".to_vec();
+    let outcome = router
+        .route(
+            &engine,
+            &adapter,
+            Some(&provider),
+            &fake_wav,
+            "fake.wav",
+            "wav",
+        )
+        .expect("media channel accepted at gate");
+    assert_eq!(outcome.status, document_router::RouteStatus::Failed);
+    let reject = outcome.reject.as_ref().expect("EXECUTION passthrough");
+    assert_eq!(reject.category, "EXECUTION");
+    assert_eq!(outcome.runs.len(), 1);
+    assert_eq!(outcome.runs[0].tool_id, "rip.media.probe");
+    assert_eq!(
+        run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+        Some("FAILED")
+    );
+    // gzip 字节 → 嗅探门 INPUT 拒绝零 run 行。
+    let gzip = [0x1Fu8, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x02];
+    let err = router
+        .route(&engine, &adapter, Some(&provider), &gzip, "x.gz", "gz")
+        .expect_err("gzip stays fail-closed at sniff gate");
+    assert_eq!(err.category, "INPUT");
+    assert_eq!(err.code, "ROUTER_UNSUPPORTED_TYPE");
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+// ---------------------------------------------------------------------------
+// 归档通道运行时生成器（判据 10/12：7z 容器内嵌创建时间戳字节非确定 →
+// 行为断言不字节断言，生成器 = 被测能力自身，守卫沿用 require_capability）
+// ---------------------------------------------------------------------------
+
+/// 7z 本地生成双条目文本归档（demo.zip / demo.7z；archive.7z 能力）。
+fn generated_archive(dir: &std::path::Path, seven_zip_format: bool) -> Option<Vec<u8>> {
+    let a = dir.join("a.txt");
+    let b = dir.join("b.txt");
+    std::fs::write(&a, "alpha content\n").unwrap();
+    std::fs::write(&b, "beta payload\n").unwrap();
+    let out = dir.join(if seven_zip_format {
+        "demo.7z"
+    } else {
+        "demo.zip"
+    });
+    let mut cmd = std::process::Command::new("/usr/bin/7z");
+    cmd.arg("a");
+    if !seven_zip_format {
+        cmd.arg("-tzip");
+    }
+    cmd.arg(out.to_str().unwrap()).arg(&a).arg(&b);
+    let ok = cmd.output().map(|o| o.status.success()).unwrap_or(false);
+    if !ok || !out.exists() {
+        println!("SKIP: local 7z could not generate demo archive");
+        return None;
+    }
+    Some(std::fs::read(&out).unwrap())
+}
+
+/// 判据 10 + DI-1 判据 4 迁移正例：demo.zip / demo.7z（运行时生成）→
+/// list + extract 两子 run 均 SUCCEEDED；解包产物落本 run out/（-oout cwd
+/// 相对裁决行为级钉死）；metadata.archive 全形状；两子 run 各自独立预算行。
+/// sample.zip / sample.epub（DI-1 zip_other 负例）→ 归档通道正例。
+#[test]
+fn di2_archive_channel_end_to_end_zip_and_sevenzip() {
+    let test = "di2_archive_channel_end_to_end_zip_and_sevenzip";
+    let provider = provider();
+    if !require_capability(&provider, test, "archive.7z") {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-archive-e2e");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+    let gen_dir = std::env::temp_dir().join(format!("di2-archive-gen-{}", std::process::id()));
+    std::fs::create_dir_all(&gen_dir).unwrap();
+
+    for (name, ext, bytes) in [
+        ("demo.zip", "zip", generated_archive(&gen_dir, false)),
+        ("demo.7z", "7z", generated_archive(&gen_dir, true)),
+        // DI-1 判据 4 迁移正例：zip_other 入库语料改路由归档通道（D1）。
+        ("sample.zip", "zip", Some(smoke("sample.zip"))),
+        ("sample.epub", "epub", Some(smoke("sample.epub"))),
+    ] {
+        let Some(bytes) = bytes else { return };
+        let outcome = router
+            .route(&engine, &adapter, Some(&provider), &bytes, name, ext)
+            .unwrap_or_else(|e| panic!("{name} archive channel rejected at gate: {e:?}"));
+        assert_eq!(
+            outcome.status,
+            document_router::RouteStatus::Succeeded,
+            "{name} 归档链失败：{:?}",
+            outcome.reject
+        );
+        assert_eq!(outcome.runs.len(), 2, "{name} list + extract 两子 run");
+        assert_eq!(outcome.runs[0].tool_id, "rip.archive.list");
+        assert_eq!(outcome.runs[1].tool_id, "rip.archive.extract");
+        for run in &outcome.runs {
+            assert_eq!(
+                run_row_status(&engine, &run.run_id).as_deref(),
+                Some("SUCCEEDED"),
+                "{name} 子 run {} 真实终态",
+                run.run_id
+            );
+        }
+        // 解包产物落本 run out/（-oout cwd 相对裁决行为级钉死，D4）。
+        let out_dir = ws_root.join(&outcome.runs[1].run_id).join("out");
+        let extracted: Vec<_> = std::fs::read_dir(&out_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n != "stdout.log" && n != "stderr.log"
+            })
+            .collect();
+        assert!(
+            !extracted.is_empty(),
+            "{name} 解包产物落本 run out/（cwd 相对裁决）：{}",
+            out_dir.display()
+        );
+        // 解包产物字节经信封 artifacts 面 sha256/size 登记（collect_out_artifacts）。
+        let data = outcome.runs[1].outcome.envelope.result.as_ref().unwrap();
+        let listed = data["artifacts"].as_array().unwrap();
+        let row = outcome.runs[1]
+            .outcome
+            .envelope
+            .artifacts
+            .iter()
+            .find(|a| {
+                a.uri.ends_with("/out/a.txt")
+                    || a.uri.ends_with("/out/docs/a.txt")
+                    || a.uri.ends_with("/out/mimetype")
+            })
+            .or_else(|| {
+                outcome.runs[1]
+                    .outcome
+                    .envelope
+                    .artifacts
+                    .iter()
+                    .find(|a| a.role == "primary")
+            })
+            .expect("extract artifact registered");
+        assert!(row.size_bytes > 0);
+        assert_eq!(row.sha256.len(), 64);
+        let _ = listed;
+        // 统一输出 metadata.archive 全形状（清单 = 授权面记录）。
+        let unified = outcome.unified.as_ref().unwrap();
+        assert_eq!(unified["channel"], json!("archive"));
+        let archive = &unified["metadata"]["archive"];
+        assert!(archive["format"].is_string(), "{name} Type 头解析");
+        assert!(archive["entries"].as_u64().unwrap() >= 1);
+        assert!(archive["total_uncompressed_bytes"].as_u64().unwrap() >= 1);
+        let files = archive["files"].as_array().unwrap();
+        assert!(!files.is_empty(), "{name} files 清单非空");
+        for f in files {
+            assert!(f["path"].is_string());
+            assert!(f["size"].as_u64().is_some());
+        }
+    }
+    let _ = std::fs::remove_dir_all(&ws_root);
+    let _ = std::fs::remove_dir_all(&gen_dir);
+}
+
+/// 最小合法 zip 构造器（LFH + central directory + EOCD；DI-1 multi_page_pdf
+/// 先例同形态，纯代码构造零入库零下载）。通用形态按条目名列表构造（评审
+/// 修订 2026-11-20：闸 1 绝对路径 / 反斜杠分支负例载具——7z l -slt 对两类
+/// 名字逐字原样呈现，实测 exit 0）。
+fn minimal_zip_named(names: &[&str]) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::new();
+    let mut central: Vec<u8> = Vec::new();
+    let mut offsets: Vec<u32> = Vec::new();
+    for (i, name) in names.iter().enumerate() {
+        offsets.push(out.len() as u32);
+        // LFH：sig + ver + flags + method + time + date + crc + csize + usize
+        // + namelen + extralen + name。
+        out.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
+        out.extend_from_slice(&20u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        // central directory record。
+        central.extend_from_slice(&[0x50, 0x4B, 0x01, 0x02]);
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&offsets[i].to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    let cd_offset = out.len() as u32;
+    let cd_size = central.len() as u32;
+    out.extend_from_slice(&central);
+    // EOCD。
+    out.extend_from_slice(&[0x50, 0x4B, 0x05, 0x06]);
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&(names.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(names.len() as u16).to_le_bytes());
+    out.extend_from_slice(&cd_size.to_le_bytes());
+    out.extend_from_slice(&cd_offset.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out
+}
+
+/// 条目数帽负例载具（判据 11）：按数量派生 f0000.bin 形态条目名。
+fn minimal_zip_entry_count(entries: usize) -> Vec<u8> {
+    let names: Vec<String> = (0..entries).map(|i| format!("f{i:04}.bin")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    minimal_zip_named(&refs)
+}
+
+/// 判据 11 + DI-1 判据 4 迁移负例：归档四闸负例矩阵——evil2.zip →
+/// ROUTER_ARCHIVE_ENTRY_INVALID（runs.len()==1 仅 list 行，解包未提交）；
+/// bomb.zip → ROUTER_ARCHIVE_BUDGET_EXCEEDED（Size=67108864 进消息）；
+/// symlink.zip → ROUTER_ARCHIVE_ENTRY_SYMLINK；513 条目 zip →
+/// ROUTER_ARCHIVE_ENTRY_BUDGET_EXCEEDED；evil.zip（DI-1 穿越名语料）→
+/// 闸 1；abs.zip / backslash.zip（评审修订 2026-11-20，测试内构造）→ 闸 1
+/// 绝对路径 / 反斜杠两分支（evil2.zip `..` 条目先行短路使这两分支在既有
+/// e2e 永不可达）。四闸任一触发解包阶段零提交。
+#[test]
+fn di2_archive_four_gates_negative_matrix() {
+    let test = "di2_archive_four_gates_negative_matrix";
+    let provider = provider();
+    if !require_capability(&provider, test, "archive.7z") {
+        return;
+    }
+    let engine = fresh_engine(&[]);
+    let ws_root = workspace_root("di2-archive-gates");
+    let router = router_for(&ws_root);
+    let adapter = adapter_for(&ws_root);
+
+    let cases: Vec<(&str, &str, Vec<u8>, &str, &str)> = vec![
+        (
+            "evil2.zip",
+            "zip",
+            smoke("evil2.zip"),
+            "ROUTER_ARCHIVE_ENTRY_INVALID",
+            "../escape.txt",
+        ),
+        // DI-1 判据 4 迁移负例：evil.zip 穿越名语料（嗅探门拒绝 → 归档闸 1）。
+        (
+            "evil.zip",
+            "zip",
+            smoke("evil.zip"),
+            "ROUTER_ARCHIVE_ENTRY_INVALID",
+            "..",
+        ),
+        // 评审修订 2026-11-20：闸 1 绝对路径分支——evil2.zip 的 `..` 条目
+        // （第二条目）先行短路使 starts_with('/') 分支在既有 e2e 永不可达；
+        // 纯绝对路径条目 zip 测试内构造（minimal_zip_named 先例同形态零入库；
+        // 7z l -slt 对绝对路径条目名逐字原样呈现实测）。
+        (
+            "abs.zip",
+            "zip",
+            minimal_zip_named(&["/tmp/di2-fix/abs-escape.txt"]),
+            "ROUTER_ARCHIVE_ENTRY_INVALID",
+            "/tmp/di2-fix/abs-escape.txt",
+        ),
+        // 评审修订 2026-11-20：闸 1 反斜杠分支——contains('\\') 判据（保守
+        // fail-closed，Windows 语义）。条目名 `a\b.txt` 字面字节构造；消息
+        // 内条目名经 {path:?} Debug 转义呈双反斜杠字面。
+        (
+            "backslash.zip",
+            "zip",
+            minimal_zip_named(&["a\\b.txt"]),
+            "ROUTER_ARCHIVE_ENTRY_INVALID",
+            "a\\\\b.txt",
+        ),
+        (
+            "bomb.zip",
+            "zip",
+            smoke("bomb.zip"),
+            "ROUTER_ARCHIVE_BUDGET_EXCEEDED",
+            "67109888",
+        ),
+        (
+            "symlink.zip",
+            "zip",
+            smoke("symlink.zip"),
+            "ROUTER_ARCHIVE_ENTRY_SYMLINK",
+            "lrwxrwxrwx",
+        ),
+        (
+            "entries513.zip",
+            "zip",
+            minimal_zip_entry_count(ARCHIVE_MAX_ENTRIES + 1),
+            "ROUTER_ARCHIVE_ENTRY_BUDGET_EXCEEDED",
+            "513",
+        ),
+    ];
+    for (name, ext, bytes, want_code, want_msg) in cases {
+        let outcome = router
+            .route(&engine, &adapter, Some(&provider), &bytes, name, ext)
+            .unwrap_or_else(|e| panic!("{name} rejected at gate (must fail in-chain): {e:?}"));
+        assert_eq!(
+            outcome.status,
+            document_router::RouteStatus::Failed,
+            "{name} 必须链内 FAILED"
+        );
+        let reject = outcome
+            .reject
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} carries D8 reject"));
+        assert_eq!(reject.category, "INPUT", "{name} 四闸归因 INPUT");
+        assert_eq!(reject.code, want_code, "{name} 闸码");
+        assert!(
+            reject.message.contains(want_msg),
+            "{name} 违规事实进消息（{want_msg}）：{}",
+            reject.message
+        );
+        // 评审修订 2026-11-20：闸 1 三判据 reason 文案逐分支对账（`..` 段 /
+        // 绝对路径 / 反斜杠），补齐此前零证据的两分支。
+        match name {
+            "abs.zip" => assert!(
+                reject.message.contains("absolute path entry"),
+                "{name} 闸 1 绝对路径 reason 原文：{}",
+                reject.message
+            ),
+            "backslash.zip" => assert!(
+                reject
+                    .message
+                    .contains("contains a backslash separator (Windows semantics, fail-closed)"),
+                "{name} 闸 1 反斜杠 reason 原文：{}",
+                reject.message
+            ),
+            _ => {}
+        }
+        assert!(
+            reject.message.contains("extract phase never submitted"),
+            "{name} 消息注明解包阶段零提交：{}",
+            reject.message
+        );
+        // runs.len()==1 仅 list 行（解包阶段永不提交），list 行 SUCCEEDED 留证。
+        assert_eq!(
+            outcome.runs.len(),
+            1,
+            "{name} 解包步零提交（list 单行留证）"
+        );
+        assert_eq!(outcome.runs[0].tool_id, "rip.archive.list");
+        assert_eq!(
+            run_row_status(&engine, &outcome.runs[0].run_id).as_deref(),
+            Some("SUCCEEDED"),
+            "{name} list 行真实终态留证"
+        );
+    }
+    // 列目成功但清单头块解析失败 → EXECUTION ARCHIVE_LIST_NO_OUTPUT
+    // （D6 表同位语义）。载具 = harness 注入（pdfinfo_pages_unparsed 先例
+    // 同形态）：rip.archive.list 克隆 binary=/usr/bin/true（exit 0 但 stdout
+    // 恒空 → ArchiveListMeta::parse 头块 None）；零条目空 zip 全 ASCII 头
+    // 落嗅探 Text 签名（NUL 合法 UTF-8）到不了归档通道，harness 是该防御
+    // 面的确定性载具。RouterManifests 同 id 首见优先（harness 目录在前）。
+    let true_sha = tool_registry::hash::sha256_hex(
+        &std::fs::read("/usr/bin/true").expect("/usr/bin/true (coreutils) present"),
+    );
+    let harness = json!({
+        "schema_version": "1",
+        "id": "rip.archive.list",
+        "name": "Archive Listing (list-no-output harness)",
+        "version": "0.9.0",
+        "kind": "tool",
+        "family": "document",
+        "description": "harness：stdout 恒空（/usr/bin/true），-slt 清单头块解析失败形态载具（ARCHIVE_LIST_NO_OUTPUT 防御面）",
+        "runtime": {
+            "type": "native_rust",
+            "binary": "/usr/bin/true",
+            "binary_sha256": true_sha,
+            "argv_template": [],
+            "result_mode": "file"
+        },
+        "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input_path"],
+            "properties": {
+                "input_path": {"type": "string", "minLength": 1}
+            }
+        },
+        "output_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["exit_code", "stdout_bytes", "stdout_capped", "artifacts"],
+            "properties": {
+                "exit_code": {"type": "integer", "const": 0},
+                "stdout_bytes": {"type": "integer", "minimum": 0},
+                "stdout_capped": {"type": "boolean"},
+                "artifacts": {"type": "array", "items": {"type": "object"}}
+            }
+        },
+        "resources": {"cpu": "1", "memory": "64Mi", "timeout_seconds": 30, "max_output_bytes": 1048576},
+        "network": {"mode": "none"},
+        "secrets": [],
+        "permission_level": "T0",
+        "idempotent": true,
+        "health": {"probe": {"type": "none"}, "on_run_recover": false},
+        "provenance": {"origin": "rip-native", "license": "repo-internal", "dependencies": [], "tested": "list-no-output harness"}
+    });
+    let harness_dir =
+        std::env::temp_dir().join(format!("di2-list-no-output-{}", std::process::id()));
+    std::fs::create_dir_all(&harness_dir).unwrap();
+    std::fs::write(
+        harness_dir.join("rip.archive.list.json"),
+        serde_json::to_string_pretty(&harness).unwrap(),
+    )
+    .unwrap();
+    let engine2 = {
+        let pool = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(5),
+        })
+        .unwrap();
+        migrate(&pool, &repo_root().join("migrations")).unwrap();
+        let registry = Registry::open(pool.clone()).with_options(Options {
+            allow_placeholder_digest: false,
+        });
+        for id in [
+            "rip.doc.pdf.info",
+            "rip.doc.pdf.text",
+            "rip.doc.office.to_pdf",
+            "rip.doc.image.meta",
+            "rip.doc.image.ocr",
+            "rip.media.probe",
+            "rip.media.frames",
+            "rip.archive.list",
+            "rip.archive.extract",
+        ] {
+            let text =
+                std::fs::read_to_string(repo_root().join(format!("manifests/tools/{id}.json")))
+                    .unwrap();
+            registry
+                .register(&serde_json::from_str(&text).unwrap())
+                .unwrap_or_else(|e| panic!("register {id}: {e}"));
+        }
+        // harness 克隆升版本 supersede 真件 → current = harness。
+        registry
+            .register(&harness)
+            .expect("harness clone supersedes real manifest");
+        Engine::open(pool, registry)
+    };
+    let router2 = document_router::Router::new(
+        document_router::RouterConfig {
+            workspace_root: ws_root.clone(),
+        },
+        document_router::RouterManifests::from_dirs(&[
+            harness_dir.clone(),
+            repo_root().join("manifests/tools"),
+        ])
+        .expect("manifests load with harness override"),
+    );
+    let outcome = router2
+        .route(
+            &engine2,
+            &adapter,
+            Some(&provider),
+            &smoke("sample.zip"),
+            "sample.zip",
+            "zip",
+        )
+        .expect("harness listing accepted at gate");
+    assert_eq!(outcome.status, document_router::RouteStatus::Failed);
+    let reject = outcome.reject.as_ref().unwrap();
+    assert_eq!(reject.category, "EXECUTION");
+    assert_eq!(reject.code, "ARCHIVE_LIST_NO_OUTPUT");
+    assert_eq!(outcome.runs.len(), 1, "list 行留证（解包阶段未提交）");
+    let _ = std::fs::remove_dir_all(&ws_root);
+    let _ = std::fs::remove_dir_all(&harness_dir);
+}
+
+/// 判据 12：不支持格式 + 能力 missing——t.tar（运行时 bsdtar 生成，内容含
+/// 非 UTF-8 字节保证 Unknown 落点）→ 嗅探门 INPUT ROUTER_UNSUPPORTED_TYPE
+/// 零 run 行；harness 注入缺失 capability_ref（pdf.mutool 形态，DI-1 判据 5
+/// 同款）→ PREPARING DEPENDENCY 显式信封 run 行 FAILED。
+#[test]
+fn di2_unsupported_tar_gate_and_missing_capability_ref() {
+    let test = "di2_unsupported_tar_gate_and_missing_capability_ref";
+    let provider = provider();
+    // t.tar 生成器 = archive.bsdtar（「不支持格式」负例真实性：真 tar 而非
+    // 伪字节；bsdtar 缺席按 SKIP）。
+    let gen_dir = std::env::temp_dir().join(format!("di2-tar-{}", std::process::id()));
+    std::fs::create_dir_all(&gen_dir).unwrap();
+    let payload = gen_dir.join("blob.bin");
+    std::fs::write(&payload, [0xFFu8, 0xFE, 0x00, 0x01]).unwrap();
+    let tar_path = gen_dir.join("t.tar");
+    let tar_ok = std::process::Command::new("/usr/bin/bsdtar")
+        .arg("-cf")
+        .arg(tar_path.to_str().unwrap())
+        .arg("-C")
+        .arg(gen_dir.to_str().unwrap())
+        .arg("blob.bin")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if tar_ok && tar_path.exists() {
+        let engine = fresh_engine(&[]);
+        let ws_root = workspace_root("di2-tar");
+        let router = router_for(&ws_root);
+        let adapter = adapter_for(&ws_root);
+        let bytes = std::fs::read(&tar_path).unwrap();
+        let err = router
+            .route(&engine, &adapter, Some(&provider), &bytes, "t.tar", "tar")
+            .expect_err("tar must stay fail-closed at sniff gate");
+        assert_eq!(err.category, "INPUT");
+        assert_eq!(err.code, "ROUTER_UNSUPPORTED_TYPE");
+        assert_eq!(run_row_count(&engine), 0, "tar 嗅探门拒绝零 run 行");
+        let _ = std::fs::remove_dir_all(&ws_root);
+    } else {
+        println!("SKIP {test}: capability archive.bsdtar status=available-but-executable-missing (/usr/bin/bsdtar)");
+    }
+    let _ = std::fs::remove_dir_all(&gen_dir);
+
+    // harness 注入缺失 capability_ref：rip.archive.list 克隆 capability_ref
+    // → pdf.mutool（种子 status=missing 条目形态）→ PREPARING DEPENDENCY
+    // 显式信封 run 行 FAILED（钉值自持 stub 同 DI-1 判据 5 形态）。
+    let mut doc: Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_root().join("manifests/tools/rip.archive.list.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    doc["runtime"]["capability_ref"] = json!("pdf.mutool");
+    doc["id"] = json!("rip.archive.list.missingcap");
+    doc["name"] = json!("Archive Listing (missingcap harness)");
+    let ws_root = workspace_root("di2-missingcap");
+    let stub = ws_root.join("missingcap-identity-stub.sh");
+    std::fs::write(&stub, "#!/bin/sh\nexit 0\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    doc["runtime"]["binary"] = json!(stub.to_str().unwrap());
+    doc["runtime"]["binary_sha256"] = json!(tool_registry::hash::sha256_hex(
+        &std::fs::read(&stub).unwrap()
+    ));
+    doc["runtime"]
+        .as_object_mut()
+        .unwrap()
+        .remove("binary_target_sha256");
+    let engine = fresh_engine(std::slice::from_ref(&doc));
+    let adapter = adapter_for(&ws_root);
+    let run_id = "rn-di2-missingcap";
+    let in_dir = ws_root.join(run_id).join("in");
+    std::fs::create_dir_all(&in_dir).unwrap();
+    std::fs::write(in_dir.join("demo.zip"), smoke("sample.zip")).unwrap();
+    engine
+        .submit(&json!({
+            "protocol_version": "1",
+            "run_id": run_id,
+            "tool_id": "rip.archive.list.missingcap",
+            "input": {"input_path": "demo.zip"},
+            "workspace_id": "ws-di2-missingcap",
+        }))
+        .unwrap();
+    let outcome = tool_engine::adapter::execute_native_rust_via_engine(
+        tool_engine::adapter::NativeRustCall {
+            engine: &engine,
+            run_id,
+            adapter: &adapter,
+            manifest: &doc,
+            capability: Some(&provider),
+        },
+    )
+    .expect("drive ok");
+    assert_eq!(outcome.envelope.status, domain::ToolRunStatus::Failed);
+    let error = outcome
+        .envelope
+        .error
+        .as_ref()
+        .expect("explicit error envelope");
+    assert_eq!(
+        error.category, "DEPENDENCY",
+        "能力 missing → DEPENDENCY（D8 表）"
+    );
+    assert!(
+        error.message.to_lowercase().contains("missing"),
+        "显式 missing 语义：{}",
+        error.message
+    );
+    assert_eq!(run_row_status(&engine, run_id).as_deref(), Some("FAILED"));
+    let _ = std::fs::remove_dir_all(&ws_root);
 }

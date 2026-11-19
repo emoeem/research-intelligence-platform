@@ -1,0 +1,124 @@
+{
+  "schema_version": "1",
+  "id": "rip.archive.list",
+  "name": "Archive Listing (7z -slt)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "归档列目阶段（DI-2 ADR D4 归档通道阶段 1）：7z l -slt 技术清单为唯一机器可解析面（-ba 表格空格分列遇含空格文件名即歧义，否决）；-slt 逐字段 Key = Value 无歧义且四闸所需字段（Path/Folder/Size/Attributes/Symbolic Link）全覆盖。条目 Path 逐字原样呈现（../escape.txt 与绝对路径条目实测），Router 四闸判定输入完整可得——E §4.3.1「先列目录解析条目清单，经 Router 校验后再放行解包」两阶段分别授权分别预算。zip 与 7z 同管道（archive.7z 能力格式集 7z/zip 全覆盖，Type 字段区分容器）。wrapper 双钉（binary_target_sha256）全额适用：/usr/bin/7z 为静态 exec 形态 sh wrapper（exec /usr/lib/7zip/7z \"$@\"），verify_wrapper_target 自动核验。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/7z",
+    "binary_sha256": "f802383f13b8331aabaf779def00a356c8d2b8148255170b75b03028f4d23ad4",
+    "binary_target_sha256": "d48e622e9009acdba4f8e29645ce791fef1ecb2c41bf385e960852a8c902fad9",
+    "capability_ref": "archive.7z",
+    "argv_template": [
+      "l",
+      "-slt",
+      "{{input_path}}"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "256Mi",
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "demo.zip"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/7z",
+    "license": "BSD-3-Clause + LGPL-2.1-unrar restriction",
+    "dependencies": [
+      "7zip 26.06-1.1 sha256_prefix f802383f13b8331a（wrapper /usr/bin/7z）+ exec 目标 /usr/lib/7zip/7z sha256_prefix d48e622e9009acdb（双钉）"
+    ],
+    "tested": "DI-2 e2e：demo.zip/demo.7z 列目+解包两子 run SUCCEEDED；evil2.zip 闸 1 / bomb.zip 闸 4 / symlink.zip 闸 2 / 513 条目闸 3 各负例 list 行留证解包零提交，crates/document-router/tests/",
+    "known_limits": [
+      "Rar/Rar5/gzip/xz/bzip2/zstd/tar 不入嗅探表：归档通道本批仅承载 zip + 7z 两格式（DI-2 ADR D1 fail-closed；Rar 面 archive.7z 能力条目在列但路由随 DI-3 Rar 签名裁决一并落地）",
+      "7z 自身净化行为（穿越条目剥离前导段、绝对路径条目落位相对路径）属第三方实现细节非规格承诺：Router 四闸是唯一权威面（fail-closed 不依赖工具善意，D4）",
+      "wrapper 双钉（D7）：binary_sha256 钉 sh wrapper + binary_target_sha256 钉 exec 目标 ELF，PREPARING 期 verify_wrapper_target fail-closed 核验",
+      "7za/7zr 不入通道表：zip+7z 输入面 archive.7z 单能力全覆盖，零消费面登记 = 死 Manifest（D7 否决项）"
+    ]
+  }
+}

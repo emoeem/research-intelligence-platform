@@ -50,10 +50,14 @@ fn d6_table_fixture_corpus_routes_exactly() {
         Some(Channel::Office)
     );
     // zip_other 三类（epub 首条目 mimetype / zip docs/a.txt / evil.zip 穿越
-    // 名）→ DI-1 显式不支持。
+    // 名）→ DI-2 ADR D1 行为变更：改路由归档通道（两阶段四闸承接）。
     for name in ["sample.epub", "sample.zip", "evil.zip"] {
         assert_eq!(sniff(&smoke(name)), Magic::ZipOther, "{name}");
-        assert!(sniff(&smoke(name)).routed_channel().is_none(), "{name}");
+        assert_eq!(
+            sniff(&smoke(name)).routed_channel(),
+            Some(Channel::Archive),
+            "{name} 按 DI-2 D1 路由归档通道"
+        );
     }
     // text（md/txt/html 全量 UTF-8 有效）→ DI-1 显式不路由（走 rip.doc.parse）。
     for name in ["clean.md", "sample.txt", "sample.html", "sample.md"] {
@@ -110,6 +114,122 @@ fn unknown_magic_and_non_utf8_binary() {
     assert_eq!(sniff(&pdf_then_text), Magic::Pdf);
 }
 
+// ---------------------------------------------------------------------------
+// DI-2 ADR D1 八新签名（精确字节判定）+ 不路由面 fail-closed 维持
+// ---------------------------------------------------------------------------
+
+/// D1 表八签名逐行（2026-11-20 hexdump 实测判据）：7z / wav / avi / mp4 /
+/// webm / ogg / flac / mp3。
+#[test]
+fn di2_eight_new_signatures_route_exactly() {
+    use document_router::sniff::Magic as M;
+    // 7z：头 6 字节 37 7A BC AF 27 1C（demo.7z 实测）→ 归档。
+    let seven_zip = [0x37u8, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x02];
+    assert_eq!(sniff(&seven_zip), M::SevenZip);
+    assert_eq!(sniff(&seven_zip).routed_channel(), Some(Channel::Archive));
+    // wav：RIFF + @8 WAVE → 媒体；RIFF 但 @8 非 WAVE/AVI → 不判 wav/avi。
+    let wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00".to_vec();
+    assert_eq!(sniff(&wav), M::Wav);
+    assert_eq!(sniff(&wav).routed_channel(), Some(Channel::Media));
+    // avi：RIFF + @8 `AVI `（尾随空格实测判据）→ 媒体。
+    let avi = b"RIFF\x00\x01\x00\x00AVI LISTxxxx".to_vec();
+    assert_eq!(sniff(&avi), M::Avi);
+    assert_eq!(sniff(&avi).routed_channel(), Some(Channel::Media));
+    // RIFF+WEBP 形态不收（D1 否决项：图像 magick 面留 DI-3）。全 ASCII+NUL
+    // 体是合法 UTF-8（NUL 为合法码点，D6 判定序）→ 落 Text → 同在嗅探门
+    // 拒绝（不可路由性一致）；含非 UTF-8 字节的 WEBP 体落 Unknown。
+    let webp_ascii = b"RIFF\x00\x00\x00\x00WEBPVP8 ".to_vec();
+    assert_eq!(sniff(&webp_ascii), M::Text);
+    assert!(sniff(&webp_ascii).routed_channel().is_none());
+    let webp_binary = b"RIFF\x00\x00\x00\x00WEBPVP8 \xff\xfe".to_vec();
+    assert_eq!(sniff(&webp_binary), M::Unknown);
+    assert!(sniff(&webp_binary).routed_channel().is_none());
+    // mp4：4-7 字节 ftyp（small.mp4 实测 ....ftypisom）→ 媒体。
+    let mp4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2".to_vec();
+    assert_eq!(sniff(&mp4), M::Mp4);
+    assert_eq!(sniff(&mp4).routed_channel(), Some(Channel::Media));
+    // webm：EBML 头 1A 45 DF A3（v.mkv 实测）→ 媒体。
+    let webm = [0x1Au8, 0x45, 0xDF, 0xA3, 0x01, 0x00, 0x00, 0x00];
+    assert_eq!(sniff(&webm), M::Webm);
+    assert_eq!(sniff(&webm).routed_channel(), Some(Channel::Media));
+    // ogg / flac / mp3（ID3 头形态；帧同步 FF FB 启发式不收，D1 否决项）。
+    for (bytes, want) in [
+        (b"OggS\x00\x02\x00\x00".to_vec(), M::Ogg),
+        (b"fLaC\x00\x00\x00\x22".to_vec(), M::Flac),
+        (b"ID3\x04\x00\x00\x00\x00\x00\x00".to_vec(), M::Mp3),
+    ] {
+        assert_eq!(sniff(&bytes), want);
+        assert_eq!(sniff(&bytes).routed_channel(), Some(Channel::Media));
+    }
+    // 帧同步形态不判 mp3（启发式误判率高，D1）：FF FB 非 UTF-8 → Unknown。
+    let frame_sync = [0xFFu8, 0xFB, 0x90, 0x00];
+    assert_eq!(sniff(&frame_sync), M::Unknown);
+}
+
+/// tar/gzip/Rar 不入嗅探表：本批 fail-closed INPUT 拒绝（D1——归档通道
+/// 本批仅承载 zip + 7z 两格式；tar @257 ustar 与 gzip 1F 8B 实测可判但
+/// 不路由，落 Unknown）。
+#[test]
+fn tar_gzip_family_stays_fail_closed() {
+    // gzip 魔数 1F 8B（a.txt.gz 实测）→ Unknown → 无通道。
+    let gz = [0x1Fu8, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00];
+    assert_eq!(sniff(&gz), Magic::Unknown);
+    assert!(sniff(&gz).routed_channel().is_none());
+    // tar @257 ustar（t.tar 实测判据）：NUL 是合法 UTF-8 码点——全 ASCII
+    // tar 头本身落 Text，含二进制内容字节（0xFF）的 tar 落 Unknown；两态
+    // 都在嗅探门 INPUT 拒绝（不可路由性一致，判据 12 零 run 行）。
+    let mut tar_ascii = vec![0u8; 512];
+    tar_ascii[..4].copy_from_slice(b"name");
+    tar_ascii[257..262].copy_from_slice(b"ustar");
+    assert_eq!(sniff(&tar_ascii), Magic::Text);
+    assert!(sniff(&tar_ascii).routed_channel().is_none());
+    let mut tar_binary = tar_ascii.clone();
+    tar_binary[512 - 1] = 0xFF; // 文件数据区非 UTF-8 字节（真实 tar 常态）
+    assert_eq!(sniff(&tar_binary), Magic::Unknown);
+    assert!(sniff(&tar_binary).routed_channel().is_none());
+    // rar 魔数（Rar!）不入表：真实 rar 体含二进制字节（0xFF）→ Unknown；
+    // 纯 ASCII 头形态落 Text——两态都在嗅探门拒绝（DI-2 D1：本批不路由）。
+    let rar = b"Rar!\x1a\x07\x01\x00\xff\xfe\x03".to_vec();
+    assert_eq!(sniff(&rar), Magic::Unknown);
+    assert!(sniff(&rar).routed_channel().is_none());
+}
+
+/// DI-2 判据 12 后半：Rar/7za/7zr 面在通道三源文件 grep 零命中（路由面
+/// 只承载 zip + 7z；7za/7zr 死 Manifest 否决，D7）。
+#[test]
+fn no_rar_7za_7zr_route_tokens_in_channel_sources() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for file in ["sniff.rs", "channel.rs", "router.rs"] {
+        let src = std::fs::read_to_string(manifest_dir.join(file))
+            .unwrap_or_else(|e| panic!("{file}: {e}"));
+        for token in ["7za", "7zr", "rar"] {
+            assert!(
+                !src.contains(token),
+                "{file} 不得出现 {token:?} 路由面（DI-2 ADR D1/D7：归档通道仅 zip+7z）"
+            );
+        }
+    }
+}
+
+/// 新通道扩展名提示面：媒体/归档 ext 家族进 mismatch 矩阵（魔数权威）。
+#[test]
+fn mismatch_covers_media_and_archive_families() {
+    let wav = b"RIFF\x24\x00\x00\x00WAVEfmt ".to_vec();
+    // .wav 提示与 wav 魔数一致 → 无 mismatch。
+    assert!(!mismatch(&sniff(&wav), "wav"));
+    // .txt 提示 + wav 魔数 → mismatch（嗅探权威路由媒体 + 提示失真）。
+    assert!(mismatch(&sniff(&wav), "txt"));
+    // 7z 魔数 + .zip 提示 → mismatch（同为归档家族才不报；7z≠zip 家族内
+    // 子型不细分，同族一致 → 无 mismatch）。
+    let seven_zip = [0x37u8, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x02];
+    assert!(!mismatch(&sniff(&seven_zip), "zip"));
+    assert!(!mismatch(&sniff(&seven_zip), "7z"));
+    // zip_other + .zip → 归档家族一致。
+    assert!(!mismatch(&Magic::ZipOther, "zip"));
+    // zip_other + .pdf → mismatch。
+    assert!(mismatch(&Magic::ZipOther, "pdf"));
+}
+
 /// xlsx 首条目反例钉值断言（D6 否决项的实证前提）：首条目 docProps/app.xml
 /// 非 [Content_Types].xml，首条目规则将误判 zip_other。
 #[test]
@@ -153,11 +273,12 @@ fn zip_scan_fail_closed_edges() {
     z2.extend_from_slice(b"cut");
     assert_eq!(sniff(&z2), Magic::ZipOther);
 
-    // LFH 签名后接非 ZIP 体（PDF 名伪装）→ 扫描终止 → zip_other（拒绝）。
+    // LFH 签名后接非 ZIP 体（PDF 名伪装）→ 扫描终止 → zip_other（DI-2 起
+    // 路由归档通道，四闸在其内做防护）。
     let mut z3 = vec![0x50u8, 0x4B, 0x03, 0x04];
     z3.extend_from_slice(b"%PDF-1.7 fake body not a zip");
     assert_eq!(sniff(&z3), Magic::ZipOther);
-    assert!(sniff(&z3).routed_channel().is_none());
+    assert_eq!(sniff(&z3).routed_channel(), Some(Channel::Archive));
 }
 
 /// mismatch 判定矩阵（D6：魔数权威；不一致不拒绝、以嗅探为准路由）。

@@ -93,8 +93,8 @@ fn p4_2_registry_cards_and_briefs_cover_registered_surface() {
     let (pool, registry) = open_memory_registry();
     let registered = register_manifest_files(&registry);
     assert_eq!(
-        registered, 29,
-        "coverage: 15 manifests in manifests/tools/ (RIP3 P5-5 rip.security.nuclei) + 6 in Phase 3 pack dirs + 4 SK-3 tools + 4 DI-1 document tools (base smoke excluded)"
+        registered, 34,
+        "coverage: 20 manifests in manifests/tools/ (RIP3 P5-5 rip.security.nuclei + DI-1 四工具 + DI-2 三通道五工具) + 6 in Phase 3 pack dirs + 4 SK-3 tools + 4 DI-1 document tools (base smoke excluded)"
     );
 
     // 登记后默认 VALIDATED（store.rs:100-104），目录可见性要求 ENABLED 活跃段
@@ -104,21 +104,21 @@ fn p4_2_registry_cards_and_briefs_cover_registered_surface() {
         .with_conn(|c| c.execute("UPDATE tool SET lifecycle = 'ENABLED'", []))
         .unwrap();
     assert_eq!(
-        promoted, 29,
+        promoted, 34,
         "ENABLED promotion must cover the full surface"
     );
 
     let discovered = registry.discover().expect("discover");
-    assert_eq!(discovered.len(), 29, "落库时以 discover() 实查数为准");
+    assert_eq!(discovered.len(), 34, "落库时以 discover() 实查数为准");
 
     let index = ManifestIndex::from_dirs(&manifest_dirs()).expect("manifest index");
-    assert_eq!(index.len(), 29, "file-side index covers the same surface");
+    assert_eq!(index.len(), 34, "file-side index covers the same surface");
 
     let source = RegistrySource::new(registry, index);
 
     // tier1 card：登记面全量逐条，软上限 45 tokens（约 30 的落面口径）。
     let cards = source.tool_cards().expect("cards");
-    assert_eq!(cards.len(), 29, "every registered tool gets a card");
+    assert_eq!(cards.len(), 34, "every registered tool gets a card");
     for card in &cards {
         assert!(
             est_tokens(&card.line) <= CARD_TOKEN_SOFT_CAP,
@@ -139,7 +139,7 @@ fn p4_2_registry_cards_and_briefs_cover_registered_surface() {
 
     // tier2 brief：登记面全量逐条，软上限 120 tokens，必填键保留。
     let briefs = source.tool_briefs().expect("briefs");
-    assert_eq!(briefs.len(), 29, "every registered tool gets a brief");
+    assert_eq!(briefs.len(), 34, "every registered tool gets a brief");
     for brief in &briefs {
         assert!(
             est_tokens(&brief.text) <= BRIEF_TOKEN_SOFT_CAP,
@@ -200,7 +200,7 @@ fn p4_2_registry_cards_and_briefs_cover_registered_surface() {
     let candidates = source_dyn
         .candidates(&empty_intent(), 100)
         .expect("candidates");
-    assert_eq!(candidates.len(), 29);
+    assert_eq!(candidates.len(), 34);
     for candidate in &candidates {
         assert_eq!(candidate.kind, ContextItemKind::Tool);
         assert_eq!(candidate.layer, ContextLayer::L2);

@@ -1,15 +1,27 @@
-//! 魔数嗅探（DI-1 ADR D6）：手写判定表，零第三方 MIME/魔数依赖（禁
-//! mime_guess/file-type/infer 类，红线 1）。
+//! 魔数嗅探（DI-1 ADR D6 + DI-2 ADR D1 八签名扩展）：手写判定表，零第三方
+//! MIME/魔数依赖（禁 mime_guess/file-type/infer 类，红线 1）。
 //!
-//! 判定序（D6 表）：
+//! 判定序（D6 表 + D1 扩展行）：
 //! 1. 头 4 字节 `%PDF-` → pdf；
 //! 2. 头 8 字节 `89 50 4E 47 0D 0A 1A 0A` → png；
 //! 3. 头 3 字节 `FF D8 FF` → jpeg；
 //! 4. 头 4 字节 `PK\x03\x04` → ZIP：条目名顺序扫描命中 `[Content_Types].xml`
 //!    → zip_ooxml（子型按 marker 条目 word/document.xml→docx、
 //!    xl/workbook.xml→xlsx、ppt/presentation.xml→pptx）；未命中 → zip_other；
-//! 5. 全量 UTF-8 有效 → text；
-//! 6. 其余 → unknown。
+//! 5. 头 6 字节 `37 7A BC AF 27 1C` → 7z（D1 归档）；
+//! 6. 头 4 字节 `RIFF` 且 8-11 字节 `WAVE` → wav / `AVI ` → avi（D1 媒体；
+//!    RIFF+`WEBP` 不收——图像 magick 面留 DI-3，D1 否决项）；
+//! 7. 4-7 字节 `ftyp` → mp4（D1 媒体）；
+//! 8. 头 4 字节 `1A 45 DF A3`（EBML）→ webm / `OggS` → ogg / `fLaC` → flac /
+//!    `ID3` → mp3（D1 媒体）；
+//! 9. 全量 UTF-8 有效 → text；
+//! 10. 其余 → unknown（tar/gzip/Rar 等本批不路由面落此——fail-closed INPUT
+//!     拒绝，D1：归档通道本批仅承载 zip + 7z 两格式）。
+//!
+//! **ZipOther 路由变更（D1 行为变更登记）**：DI-1 中 zip_other 显式不支持
+//! （归档两阶段面属 DI-3）；DI-2 起归档通道入列（rip.archive.list/extract
+//! 两阶段四闸），zip 是归档防护的第一频次输入 → `routed_channel()` 改路由
+//! 归档通道（DI-1 ADR 历史文本不改写，行为面以 DI-2 ADR D1 为准）。
 //!
 //! **禁「首条目 = [Content_Types].xml」判定**（D6 否决项）：本机实测
 //! sample.xlsx 首条目为 `docProps/app.xml`（tests/fixtures 内钉值样本反例），
@@ -20,7 +32,7 @@
 //! 权威序（D6）：魔数权威、扩展名仅提示。嗅探与扩展名可路由类型不一致 →
 //! 以嗅探为准路由 + `mismatch=true`（不拒绝）；嗅探结果本身不受支持 → 拒绝。
 //! 嗅探发生于任何子 run 提交之前（URL/MSL/MVG 等 coder 输入在结构上到不了
-//! magick argv——E §4.1 policy 空壳的补偿面）。
+//! magick argv——E §4.1 policy 空壳的补偿面；媒体/归档 URL 输入同理无入口）。
 
 /// 嗅探签名（D6 表判据行）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,9 +46,25 @@ pub enum Magic {
     /// ZIP 且条目含 `[Content_Types].xml`（Office 通道；子型见
     /// [`OfficeSubtype`]）。
     ZipOoxml(OfficeSubtype),
-    /// ZIP 且无 `[Content_Types].xml`（DI-1 显式不支持：归档两阶段面属
-    /// DI-3，RT-0.5-E §4.3）。
+    /// ZIP 且无 `[Content_Types].xml`（DI-2 起路由归档通道两阶段四闸——
+    /// DI-1 ADR D6 表「显式不支持」行由 DI-2 ADR D1 取代，行为变更登记）。
     ZipOther,
+    /// 头 `37 7A BC AF 27 1C`（7z 容器，DI-2 ADR D1 归档通道）。
+    SevenZip,
+    /// 头 `RIFF` 且 8-11 字节 `WAVE`（DI-2 ADR D1 媒体通道）。
+    Wav,
+    /// 头 `RIFF` 且 8-11 字节 `AVI `（DI-2 ADR D1 媒体通道）。
+    Avi,
+    /// 4-7 字节 `ftyp`（ISO-BMFF 容器：mp4/mov/m4a 等，DI-2 ADR D1 媒体通道）。
+    Mp4,
+    /// 头 `1A 45 DF A3`（EBML：webm/mkv，DI-2 ADR D1 媒体通道）。
+    Webm,
+    /// 头 `OggS`（DI-2 ADR D1 媒体通道）。
+    Ogg,
+    /// 头 `fLaC`（DI-2 ADR D1 媒体通道）。
+    Flac,
+    /// 头 `ID3`（mp3 ID3v2 头形态；帧同步 `FF FB` 启发式不收，D1 否决项）。
+    Mp3,
     /// 全量 UTF-8 有效且无上述魔数（DI-1 显式不路由：走既有 rip.doc.parse，
     /// DI-0 §3 冻结不迁不扩，禁造第二套 md/txt/html 解析）。
     Text,
@@ -45,7 +73,7 @@ pub enum Magic {
 }
 
 impl Magic {
-    /// 统一输出 Schema `source.sniff.magic` 字面量（D3；zip_other/unknown/
+    /// 统一输出 Schema `source.sniff.magic` 字面量（D3 + D1 扩展；unknown/
     /// text 不进统一输出——均在嗅探门拒绝，此处仅供错误消息与测试引用）。
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -54,6 +82,14 @@ impl Magic {
             Magic::Jpeg => "jpeg",
             Magic::ZipOoxml(_) => "zip_ooxml",
             Magic::ZipOther => "zip_other",
+            Magic::SevenZip => "7z",
+            Magic::Wav => "wav",
+            Magic::Avi => "avi",
+            Magic::Mp4 => "mp4",
+            Magic::Webm => "webm",
+            Magic::Ogg => "ogg",
+            Magic::Flac => "flac",
+            Magic::Mp3 => "mp3",
             Magic::Text => "text",
             Magic::Unknown => "unknown",
         }
@@ -67,13 +103,25 @@ impl Magic {
         }
     }
 
-    /// 嗅探签名可路由的通道（None = DI-1 不支持 / 不路由）。
+    /// 嗅探签名可路由的通道（None = 不支持 / 不路由）。
+    ///
+    /// DI-2 ADR D1 行为变更：ZipOther → Archive（归档两阶段四闸承接）；
+    /// 八新签名 → 7z 归档 + 七媒体签名；tar/gzip/Rar/unknown 维持
+    /// fail-closed None（本批不路由，D1）。
     pub fn routed_channel(&self) -> Option<crate::channel::Channel> {
         match self {
             Magic::Pdf => Some(crate::channel::Channel::Pdf),
             Magic::Png | Magic::Jpeg => Some(crate::channel::Channel::Image),
             Magic::ZipOoxml(_) => Some(crate::channel::Channel::Office),
-            Magic::ZipOther | Magic::Text | Magic::Unknown => None,
+            Magic::ZipOther | Magic::SevenZip => Some(crate::channel::Channel::Archive),
+            Magic::Wav
+            | Magic::Avi
+            | Magic::Mp4
+            | Magic::Webm
+            | Magic::Ogg
+            | Magic::Flac
+            | Magic::Mp3 => Some(crate::channel::Channel::Media),
+            Magic::Text | Magic::Unknown => None,
         }
     }
 }
@@ -169,7 +217,7 @@ fn scan_zip_entries(bytes: &[u8]) -> (bool, Option<OfficeSubtype>) {
     (has_content_types, subtype)
 }
 
-/// 嗅探主入口（D6 判定序；全量字节在手——Router 已读入源文件）。
+/// 嗅探主入口（D6 判定序 + D1 八签名扩展；全量字节在手——Router 已读入源文件）。
 pub fn sniff(bytes: &[u8]) -> Magic {
     if bytes.starts_with(b"%PDF-") {
         return Magic::Pdf;
@@ -187,6 +235,31 @@ pub fn sniff(bytes: &[u8]) -> Magic {
         }
         return Magic::ZipOther;
     }
+    // ---- DI-2 ADR D1 八新签名（精确字节判定，无启发式）----
+    if bytes.starts_with(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]) {
+        return Magic::SevenZip;
+    }
+    if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WAVE" {
+        return Magic::Wav;
+    }
+    if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"AVI " {
+        return Magic::Avi;
+    }
+    if bytes.len() >= 8 && &bytes[4..8] == b"ftyp" {
+        return Magic::Mp4;
+    }
+    if bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        return Magic::Webm;
+    }
+    if bytes.starts_with(b"OggS") {
+        return Magic::Ogg;
+    }
+    if bytes.starts_with(b"fLaC") {
+        return Magic::Flac;
+    }
+    if bytes.starts_with(b"ID3") {
+        return Magic::Mp3;
+    }
     if std::str::from_utf8(bytes).is_ok() {
         return Magic::Text;
     }
@@ -200,6 +273,10 @@ enum ExtFamily {
     Pdf,
     Office,
     Image,
+    /// zip/7z 归档面（DI-2 D1）。
+    Archive,
+    /// wav/avi/mp4/webm/ogg/flac/mp3 媒体面（DI-2 D1）。
+    Media,
     /// md/txt/html 属 rip.doc.parse 面（DI-0 §3 冻结）；DI-1 不路由但作
     /// mismatch 提示对照（PNG 名 .md → 嗅探图像权威路由 + mismatch）。
     Text,
@@ -210,6 +287,8 @@ fn ext_family(ext: &str) -> Option<ExtFamily> {
         "pdf" => Some(ExtFamily::Pdf),
         "docx" | "xlsx" | "pptx" => Some(ExtFamily::Office),
         "png" | "jpg" | "jpeg" => Some(ExtFamily::Image),
+        "zip" | "7z" => Some(ExtFamily::Archive),
+        "wav" | "avi" | "mp4" | "webm" | "ogg" | "flac" | "mp3" => Some(ExtFamily::Media),
         "md" | "txt" | "html" => Some(ExtFamily::Text),
         _ => None,
     }
@@ -220,6 +299,9 @@ fn channel_family(c: crate::channel::Channel) -> ExtFamily {
         crate::channel::Channel::Pdf => ExtFamily::Pdf,
         crate::channel::Channel::Office => ExtFamily::Office,
         crate::channel::Channel::Image => ExtFamily::Image,
+        crate::channel::Channel::Ocr => ExtFamily::Image,
+        crate::channel::Channel::Media => ExtFamily::Media,
+        crate::channel::Channel::Archive => ExtFamily::Archive,
     }
 }
 
@@ -286,7 +368,8 @@ mod tests {
         )
         .expect("sample.pptx fixture (tests/fixtures)");
         assert_eq!(sniff(&pptx), Magic::ZipOoxml(OfficeSubtype::Pptx));
-        // zip_other 反例三类（D6 表）：epub 首条目 mimetype / zip 普通 / evil.zip 穿越名。
+        // zip_other 三类（epub 首条目 mimetype / zip 普通 / evil.zip 穿越名）：
+        // DI-2 ADR D1 行为变更——zip_other 改路由归档通道（两阶段四闸承接）。
         for name in ["sample.epub", "sample.zip", "evil.zip"] {
             let bytes = std::fs::read(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -294,9 +377,10 @@ mod tests {
             )
             .unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(sniff(&bytes), Magic::ZipOther, "{name}");
-            assert!(
-                sniff(&bytes).routed_channel().is_none(),
-                "{name} 必须不路由"
+            assert_eq!(
+                sniff(&bytes).routed_channel(),
+                Some(Channel::Archive),
+                "{name} 按 DI-2 D1 路由归档通道"
             );
         }
     }

@@ -1,0 +1,137 @@
+{
+  "schema_version": "1",
+  "id": "rip.doc.image.ocr",
+  "name": "Image OCR (tesseract TSV)",
+  "version": "0.1.0",
+  "kind": "tool",
+  "family": "document",
+  "description": "图像 OCR（DI-2 ADR D2 OCR 通道步 2）：tesseract 单 run 以 TSV config 承载文本 + 词级置信度（plain stdout 与 tsv 双 config 走文件形态实测否决——cwd=ws.root 非 out/ 破产物登记纪律，D2 否决项）。语言路由以 capability 目录 ocr.tesseract 条目 language 集为唯一权威（chi_sim/eng/osd）；chi_tra 语言包缺失请求由 Router 前置门显式拒绝（ROUTER_OCR_LANG_MISSING，禁静默回退 chi_sim 兜底，RT-0.5-C §3.3 constraints）。{{ocr_lang}} 为整 token 槽位，值由 Router 路由表生成后填 input，input_schema enum 三值二道收紧。仅由显式 OCR 请求位触发（input.ocr），无请求位图像走 rip.doc.image.meta 元数据路径。",
+  "runtime": {
+    "type": "native_rust",
+    "binary": "/usr/bin/tesseract",
+    "binary_sha256": "44e4c41d9986e8b23f9684ef332189a4cb422c450b1d87112bf795772c1c35d0",
+    "capability_ref": "ocr.tesseract",
+    "argv_template": [
+      "{{input_path}}",
+      "stdout",
+      "-l",
+      "{{ocr_lang}}",
+      "tsv"
+    ],
+    "result_mode": "file"
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "input_path",
+      "ocr_lang"
+    ],
+    "properties": {
+      "input_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "任务 in/ 目录内的暂存名（相对形态；Router 预写 D5，adapter 前缀校验 D8.3）"
+      },
+      "ocr_lang": {
+        "type": "string",
+        "enum": [
+          "chi_sim",
+          "eng",
+          "chi_sim+eng"
+        ],
+        "description": "tesseract -l 参数（Router 语言路由表生成；enum 三值 = 目录 language 集的组合面，缺省/auto → chi_sim+eng 双语言放行）"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "exit_code",
+      "stdout_bytes",
+      "stdout_capped",
+      "artifacts"
+    ],
+    "properties": {
+      "exit_code": {
+        "type": "integer",
+        "const": 0
+      },
+      "stdout_bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "stdout_capped": {
+        "type": "boolean"
+      },
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "size_bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "1Gi",
+    "timeout_seconds": 120,
+    "max_output_bytes": 4194304
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": true,
+  "health": {
+    "probe": {
+      "type": "none"
+    },
+    "on_run_recover": false
+  },
+  "examples": [
+    {
+      "input": {
+        "input_path": "text-ocr.png",
+        "ocr_lang": "eng"
+      }
+    }
+  ],
+  "provenance": {
+    "origin": "opensource",
+    "source_path": "/usr/bin/tesseract",
+    "license": "Apache-2.0",
+    "dependencies": [
+      "tesseract 5.5.4-1.1 sha256_prefix 44e4c41d9986e8b2（leptonica-1.87.0；tessdata=/usr/share/tessdata/）"
+    ],
+    "tested": "DI-2 e2e：text-ocr.png identify+tesseract 两子 run SUCCEEDED（TSV 重组 text=HELLO OCR 123 / words=3 / mean_conf>90），crates/document-router/tests/",
+    "known_limits": [
+      "chi_tra 语言包缺失属环境持久事实：Router 前置门 ROUTER_OCR_LANG_MISSING 显式拒绝（DEPENDENCY，零 run 行），补装属用户决策不自动安装；禁静默回退 chi_sim（RT-0.5-C §3.3 constraints 原文）",
+      "绕过 Router 直呼时 -l chi_tra 由 tesseract 自身 exit 1（Error opening data file）显式失败——第二道防线，不静默（DI-2 ADR D2）",
+      "max_output_bytes 4 MiB 单点放宽：TSV 解析面实测行宽下 1 MiB ≈ 1.7 万词，50 MP 密集文本 TSV 上界会诚实失败误伤（D5 #10）",
+      "双 config 文件形态（tesseract <in> out txt tsv）向 cwd 写 out.txt/out.tsv：cwd=ws.root 非 out/ 破产物登记纪律，D2 否决项永不采用",
+      "不可信图像禁宿主 tesseract 直连（C §3.3:69），本 Manifest 仅承载可信低风险档"
+    ]
+  }
+}
