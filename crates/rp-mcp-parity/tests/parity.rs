@@ -419,7 +419,8 @@ fn run_db_row(run_db: &Path, sql: &str, param: &str) -> Value {
     let pool = Pool::open(PoolConfig::readonly_file(run_db)).expect("run db ro pool");
     pool.with_conn(|conn| -> rusqlite::Result<Value> {
         let mut stmt = conn.prepare(sql)?;
-        let names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+        // rusqlite 0.41：column_names() 返回 impl Iterator<Item=&str>（不再是 &[&str]）。
+        let names: Vec<String> = stmt.column_names().map(|s| s.to_string()).collect();
         let rows = stmt.query_map([param], |row| {
             let mut map = serde_json::Map::new();
             for (idx, name) in names.iter().enumerate() {

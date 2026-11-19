@@ -525,7 +525,8 @@ fn table_exists(conn: &rusqlite::Connection, table: &str) -> bool {
 /// 行转 JSON（列名按游标元数据；避免逐资源手写投影漂移）。
 fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     let mut map = serde_json::Map::new();
-    for (idx, col) in row.as_ref().column_names().iter().enumerate() {
+    // rusqlite 0.41：column_names() 返回 impl Iterator<Item=&str>（不再是 &[&str]）。
+    for (idx, col) in row.as_ref().column_names().enumerate() {
         let value = match row.get_ref(idx)? {
             rusqlite::types::ValueRef::Null => Value::Null,
             rusqlite::types::ValueRef::Integer(i) => json!(i),
@@ -535,7 +536,7 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
             }
             rusqlite::types::ValueRef::Blob(_) => Value::Null,
         };
-        map.insert((*col).to_string(), value);
+        map.insert(col.to_string(), value);
     }
     Ok(Value::Object(map))
 }

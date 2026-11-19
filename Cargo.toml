@@ -39,7 +39,15 @@ authors = ["RIP core team"]
 # backup feature（P10-1）：rusqlite 自带 backup 模块（Online Backup API 快照，
 # 纯 Rust 门控模块，bundled libsqlite3-sys 内置完整 SQLite，无新增 C 依赖与
 # 无新增 vendor）；P10-5 backup() 用它做 WAL 一致快照。
-rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+# SEC-0 bump（0.32 → 0.41.1，RUSTSEC-2026-0459 修复线：rusqlite 0.41.x 首条
+# 带动 libsqlite3-sys ^0.39.0 即 bundles SQLite 3.54.1）：default-features=false
+# 关掉 0.41 默认的 ffi-sqlite-wasm-rs（wasm 后端，本仓无 wasm target，避免无谓
+# vendor 增量）；cache feature 显式补回 prepare_cached（plugin-runtime ingest
+# 两处调用依赖，default-features=false 会失去默认的 cache）；fallible_uint
+# 恢复 0.38 起默认关闭的 u64/usize FromSql（retention.rs COUNT(*) 读出位，
+# 语义与 0.32 相同：> i64::MAX fallible）。
+# 选型记录 docs/phase0/SEC-0-TASK.md §1。
+rusqlite = { version = "0.41.1", default-features = false, features = ["bundled", "backup", "cache", "fallible_uint"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
