@@ -193,6 +193,26 @@ fn capability_available(test: &str) -> bool {
     true
 }
 
+/// RT-1 host_pin_guard SKIP 先例（commit 12258e86 同款）：宿主二进制全量
+/// sha256 前缀对照 manifest 双钉。异机构建宿主（CI runner p7zip ≠ 本机
+/// Arch 构建）时 NATIVE_IDENTITY_MISMATCH fail-closed 在归档闸序之前触发，
+/// 闸面归因证据属本机宿主面——该用例 SKIP（不降级断言不伪造失败，
+/// fail-closed 拒绝行为本身即 adapter 身份校验语义的实证）。
+fn host_binary_pin_guard(test: &str, path: &str, sha256_prefix: &str) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        println!("SKIP {test}: host binary missing ({path})");
+        return false;
+    };
+    let measured = tool_registry::hash::sha256_hex(&bytes);
+    if !measured.starts_with(sha256_prefix) {
+        println!(
+            "SKIP {test}: host binary sha256 prefix mismatch at {path} expected {sha256_prefix} measured {measured}"
+        );
+        return false;
+    }
+    true
+}
+
 /// 判据 10：native_rust 分支派发 PDF 通道链（run_tool 全链：受理 → Router
 /// 编排 → 统一信封载荷），两条子 run trace_id = run_id 自锚定可反查。
 #[test]
@@ -376,6 +396,15 @@ fn native_rust_dispatch_ocr_chi_tra_rejected_without_rows() {
 /// （解包阶段零提交）。
 #[test]
 fn native_rust_dispatch_zip_routes_to_archive_gate() {
+    let test = "native_rust_dispatch_zip_routes_to_archive_gate";
+    // manifest 双钉两段（rip.archive.list.json runtime.binary_sha256 /
+    // 执行目标），任一段异构即整测 SKIP（capability_catalog.rs:236-237
+    // 与 document-router three_channel_e2e 同口径）。
+    if !host_binary_pin_guard(test, "/usr/bin/7z", "f802383f13b8331a")
+        || !host_binary_pin_guard(test, "/usr/lib/7zip/7z", "d48e622e9009acdb")
+    {
+        return;
+    }
     let fix = fixture("zipgate");
     register_di1_manifests(&fix);
     let channel = fix.channel();
