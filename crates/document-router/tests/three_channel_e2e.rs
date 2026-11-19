@@ -122,6 +122,26 @@ fn provider() -> StaticCatalogProvider {
 /// 在案但可执行文件缺席时守卫照样放行，随后 adapter 身份校验失败落为
 /// 测试失败而非 SKIP（红线 3 在异机不成立）。此处对 executable_path 做
 /// stat 存在性复核，缺席按 SKIP 处理（缺失能力只报告不安装，红线 3）。
+/// RT-1 host_pin_guard SKIP 先例（commit 12258e86 同款）：宿主二进制全量
+/// sha256 前缀对照 manifest 钉值。异机构建宿主（CI runner p7zip ≠ 本机
+/// Arch 构建）时 NATIVE_IDENTITY_MISMATCH fail-closed 在身份校验先于闸序
+/// 触发，双钉实跑证据属本机宿主面——该用例 SKIP（不降级断言不伪造失败，
+/// fail-closed 拒绝行为本身即语义正确的实证）。
+fn host_binary_pin_guard(test: &str, path: &str, sha256_prefix: &str) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        println!("SKIP {test}: host binary missing ({path})");
+        return false;
+    };
+    let measured = tool_registry::hash::sha256_hex(&bytes);
+    if !measured.starts_with(sha256_prefix) {
+        println!(
+            "SKIP {test}: host binary sha256 prefix mismatch at {path} expected {sha256_prefix} measured {measured}"
+        );
+        return false;
+    }
+    true
+}
+
 fn require_capability(provider: &StaticCatalogProvider, test: &str, id: &str) -> bool {
     match provider.get(&CapabilityId::new(id).expect("capability id")) {
         Some(entry) if entry.entry.status.as_str() == "available" => {
@@ -2105,6 +2125,13 @@ fn di2_archive_channel_end_to_end_zip_and_sevenzip() {
     if !require_capability(&provider, test, "archive.7z") {
         return;
     }
+    // manifest 双钉两段（rip.archive.list.json runtime.binary_sha256 / 执行
+    // 目标），任一段异构即整测 SKIP（capability_catalog.rs:236-237 同口径）。
+    if !host_binary_pin_guard(test, "/usr/bin/7z", "f802383f13b8331a")
+        || !host_binary_pin_guard(test, "/usr/lib/7zip/7z", "d48e622e9009acdb")
+    {
+        return;
+    }
     let engine = fresh_engine(&[]);
     let ws_root = workspace_root("di2-archive-e2e");
     let router = router_for(&ws_root);
@@ -2277,6 +2304,13 @@ fn di2_archive_four_gates_negative_matrix() {
     let test = "di2_archive_four_gates_negative_matrix";
     let provider = provider();
     if !require_capability(&provider, test, "archive.7z") {
+        return;
+    }
+    // manifest 双钉两段守卫（同 e2e 测）：异机 7z 构建 fail-closed 于身份校验
+    // 先于闸序触发，四闸归因证据属本机宿主面。
+    if !host_binary_pin_guard(test, "/usr/bin/7z", "f802383f13b8331a")
+        || !host_binary_pin_guard(test, "/usr/lib/7zip/7z", "d48e622e9009acdb")
+    {
         return;
     }
     let engine = fresh_engine(&[]);
