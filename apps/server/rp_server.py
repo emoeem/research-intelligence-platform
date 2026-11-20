@@ -3517,6 +3517,34 @@ def _wsw_history_list(_conn, params) -> dict:
         conn.close()
 
 
+def _wsw_display_redact(headers: list) -> tuple:
+    """详情展示投影脱敏（W3-D7/红线 10；PLAN :543-545 原始行面与脱敏展示分离）。
+
+    rp-wsw redact-headers 子进程消费 `wsw_message::redact`（redact.rs:55
+    唯一挂点——Python/TS 侧零脱敏逻辑复制，实现唯一性经进程边界保持）。
+    fail-closed：子进程失败/超时 → 全部头值掩码（凭据绝不以明文进展示层）。
+    """
+    if not headers:
+        return [], []
+    try:
+        proc = subprocess.run(
+            [RP_WSW_BIN, "redact-headers"],
+            input=json.dumps({"headers": headers}, ensure_ascii=False).encode("utf-8"),
+            capture_output=True, timeout=10, cwd=REPO_ROOT,
+        )
+        if proc.returncode == 0:
+            out = json.loads(proc.stdout.decode("utf-8"))
+            return out["headers"], out["redacted_header_names"]
+        print(f"[wsw] redact-headers rc={proc.returncode}: "
+              f"{proc.stderr.decode('utf-8', 'replace')[:200]}", file=sys.stderr)
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError, KeyError) as exc:
+        print(f"[wsw] redact projection subprocess failed: {exc}", file=sys.stderr)
+    return (
+        [{"name": h.get("name", ""), "value": "[REDACTED-UNAVAILABLE]"} for h in headers],
+        ["*"],
+    )
+
+
 def _wsw_exchange_row_full(conn, exchange_id: str) -> dict:
     rows = list(conn.execute(
         "SELECT exchange_id, session_id, listener_id, sequence_no, direction, source, protocol, "
@@ -3532,12 +3560,20 @@ def _wsw_exchange_row_full(conn, exchange_id: str) -> dict:
         raise ApiError(404, "exchange_not_found", f"exchange 不存在：{exchange_id}")
     row = dict(rows[0])
     # 详情端点零 body 字节（D3）：只有 sha256/uri/len/mime/fidelity 派生列。
+    # 头区走脱敏展示投影（红线 10：原始行面留在 DB，API/UI 只见掩码面）。
+    redacted_names: list = []
     for src, dst in (("request_headers_json", "request_headers"),
                      ("response_headers_json", "response_headers")):
         try:
-            row[dst] = json.loads(row.pop(src) or "[]")
+            headers = json.loads(row.pop(src) or "[]")
         except json.JSONDecodeError:
-            row[dst] = []
+            headers = []
+        masked, names = _wsw_display_redact(headers)
+        row[dst] = masked
+        for n in names:
+            if n not in redacted_names:
+                redacted_names.append(n)
+    row["redacted_header_names"] = redacted_names
     try:
         row["tags"] = json.loads(row.pop("tags_json") or "[]")
     except json.JSONDecodeError:

@@ -42,7 +42,8 @@ rp-wsw send --db <path> --session-id <ses> --tab-id <rpt> --send-id <snd> --vers
 rp-wsw ca status [--ca-dir <dir>]\n  \
 rp-wsw ca export [--ca-dir <dir>] --out <path>\n  \
 rp-wsw ca regenerate [--ca-dir <dir>]\n  \
-rp-wsw db migrate --db <path>"
+rp-wsw db migrate --db <path>\n  \
+rp-wsw redact-headers（stdin 头数组 JSON → stdout 脱敏投影）"
     );
     std::process::exit(2);
 }
@@ -615,6 +616,46 @@ async fn run_send(a: Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// redact-headers 展示投影面（W3-D7/红线 10）：stdin 头数组 JSON →
+/// `wsw_message::redact`（redact.rs:55 唯一挂点，实现零复制）→ stdout
+/// `{"headers":[…],"redacted_header_names":[…]}`。rp_server detail 端点
+/// 展示投影消费（原始行面不动，原始与脱敏展示分离）；凭据值永不进展示层。
+fn redact_headers_json(input: &str) -> Result<String, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct HeadersIn {
+        headers: Vec<wsw_message::types::HeaderRecord>,
+    }
+    let parsed_in: HeadersIn = serde_json::from_str(input)?;
+    let msg = wsw_message::types::ParsedMessage {
+        kind: wsw_message::types::MessageKind::Request,
+        method: Some("GET".into()),
+        target: Some("/".into()),
+        status: None,
+        reason: None,
+        version: wsw_message::types::HttpVersion::Http11,
+        headers: parsed_in.headers,
+        trailers: Vec::new(),
+        body: Vec::new(),
+        delimiting: wsw_message::types::BodyDelimiting::ContentLength,
+    };
+    let display = wsw_message::redact::redact(&msg, &wsw_message::redact::RedactRules::default());
+    Ok(serde_json::json!({
+        "headers": display.headers,
+        "redacted_header_names": display.redacted_header_names,
+    })
+    .to_string())
+}
+
+fn run_redact_headers() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read as _;
+    let mut input = String::new();
+    std::io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|e| format!("read stdin: {e}"))?;
+    println!("{}", redact_headers_json(&input)?);
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     // 日志可见面：拒绝记录/五态/捕获计数落 stderr 单行（PLAN :528）。
@@ -639,10 +680,35 @@ async fn main() {
             Some("migrate") => db_migrate(&parse_args(&mut args)),
             _ => usage(),
         },
+        "redact-headers" => run_redact_headers(),
         _ => usage(),
     };
     if let Err(e) = result {
         eprintln!("{TAG} error: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_headers_masks_credentials_and_keeps_others() {
+        // 脱敏面单测（wsw_message::redact 唯一挂点消费；红线 10：凭据值
+        // 不进展示投影——命中头值替换掩码，未命中头值原样，名/位保序）。
+        let input = r#"{"headers":[
+            {"name":"Authorization","value":"Bearer wsw3-secret-token"},
+            {"name":"Cookie","value":"session=abc123; theme=dark"},
+            {"name":"Accept","value":"text/html"},
+            {"name":"authorization","value":"Bearer lowercase-dup"}]}"#;
+        let out = redact_headers_json(input).expect("redact projection");
+        assert!(out.contains("[REDACTED]"), "命中头值替换掩码");
+        assert!(!out.contains("wsw3-secret-token"), "凭据值不进展示层");
+        assert!(!out.contains("session=abc123"), "Cookie 值不进展示层");
+        assert!(out.contains("text/html"), "未命中头值原样保留");
+        assert!(out.contains("\"redacted_header_names\""), "脱敏头名清单在场");
+        // 大小写不敏感命中（Authorization/authorization 各记一条，保序去重）。
+        assert!(out.contains("authorization"), "命中头名清单含小写形式");
     }
 }

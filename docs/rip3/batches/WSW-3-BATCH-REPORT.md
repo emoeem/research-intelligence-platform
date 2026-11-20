@@ -3,7 +3,7 @@
 - 批次：WSW-3（PLAN §九 :605：History 列表详情、过滤搜索、请求编辑、重放、Tab 历史；不包含大规模 Fuzz）
 - 日期：2026-11-20（主体实施经中断点快照 `9aff134a` 入库；本会话续跑收口：定向门禁复跑 + 实拍断言修复 + e2e 跑绿 + 性能实测 + 报告收口）
 - 依据：`docs/rip3/wsw/WSW-3-TASK.md`（硬验收 §四）+ `docs/rip3/wsw/WSW-3-ADR.md`（W3-D1～D8）+ `docs/rip3/wsw/05-DESIGN-AND-THREAT-MODEL.md` §1.2/§3.2/§3.4 + WSW-2-ADR W2-D4/D5/D9 遗留授权面
-- 状态：**本地定向门禁全绿（wsw-runtime 101 项 / clippy -D warnings / deny licenses / lock 399 = HEAD / reqwest 0 / web build+test 124 项 / e2e 21/21 exit 0——本会话全部复跑实测）；快照基线 CI success（run 44645109640）；收口提交按 REDLINES 八步循环执行**
+- 状态：**本地定向门禁全绿（wsw-runtime 102 项 / clippy -D warnings / deny licenses / lock 399 = HEAD / reqwest 0 / web build+test 124 项 / e2e 32/32 exit 0——全部复跑实测）；实拍与联动验收追加批（redact 展示投影挂钩 + 多 Tab/版本回退/视图切换断言 + curl 循环 ≥1000 独立种子 + 20 次中位数代理增量 0.91ms）随收口提交入库；快照基线与首收口批 CI success（run 44645109640 / 44648573212）**
 
 ## A. 本批完成内容
 
@@ -35,20 +35,20 @@
 | `crates/wsw-runtime/src/listener.rs` | 修改（+144 worker/计数器/enable_wal） | 零改动 |
 | `crates/wsw-runtime/src/listener/handler.rs` | 修改（+712 CaptureMeta/snapshot/join/mpsc） | 零改动 |
 | `crates/wsw-runtime/src/sender.rs` | 新建（1075 行发送引擎） | 零改动 |
-| `crates/wsw-runtime/src/bin/rp-wsw.rs` | 修改（+255 send 子命令） | **修改（预飞失败落 failed 终态，G11）** |
+| `crates/wsw-runtime/src/bin/rp-wsw.rs` | 修改（+255 send 子命令） | **修改（预飞失败落 failed 终态 G11；+redact-headers 子命令——展示投影唯一挂点消费面，G13）** |
 | `crates/wsw-runtime/tests/exchange_persist.rs` | 新建（416 行 11 测） | **修改（+吞吐实测测试，12 测）** |
 | `crates/wsw-runtime/tests/sender_send.rs` | 新建（418 行 8 测） | 零改动 |
-| `apps/server/rp_server.py` | 修改（+885 History/Repeater API） | 零改动 |
+| `apps/server/rp_server.py` | 修改（+885 History/Repeater API） | **修改（详情投影挂 `_wsw_display_redact`→rp-wsw redact-headers 子进程，fail-closed 掩码；G13）** |
 | `web/src/routes/WswHistoryPage.tsx` | 新建（602 行） | 零改动 |
 | `web/src/routes/WswRepeaterPage.tsx` | 新建（659 行） | **修改（版本词表归一 normalizeVersionToken，G8）** |
 | `web/src/components/MessageViews.tsx` | 新建（258 行六视图） | 零改动 |
 | `web/src/components/VirtualList.tsx` | 新建（83 行窗口化列表） | 零改动 |
 | `web/src/workspaces.ts` / `web/src/App.tsx` / `web/src/components/Layout.tsx` | 修改（websec order 12 两 tab/两路由） | 零改动 |
 | `web/tests/workspaces.test.ts` / `shell-smoke.test.tsx` | 修改（路由钉值 20→22 如实记录） | 零改动 |
-| `web/scripts/rip3_wsw3_browser_e2e.mjs` | 新建（486 行） | **修改（种子逐请求 socket/waitFor falsy/waitMs async，G7/G9/G10）** |
+| `web/scripts/rip3_wsw3_browser_e2e.mjs` | 新建（486 行） | **修改（种子逐请求 socket/waitFor falsy/waitMs async G7/G9/G10；+凭据面种子/视图切换/交互时序/多 Tab 编辑发送/版本回退/脱敏断言，e2e 21→32 断言）** |
 | 迁移钉值跟随（11 文件） | 修改（agent-engine×2 + database×5 + plugin-runtime + workflow-engine + wsw-message store/cas_e2e + wsw-runtime intercept_queue） | 零改动 |
 | `scripts/local_range.py` | — | **修改（allow_reuse_address=True，G12）** |
-| `docs/rip3/batches/browser-e2e/wsw-3/*.png` | — | 新建 4 张（08:44 末轮 e2e 实拍） |
+| `docs/rip3/batches/browser-e2e/wsw-3/*.png` | — | 新建 **7 张**（01 列表/02 详情 Body/03 联动/04 发送往返/05 多 Tab 编辑发送/06 版本回退/07 脱敏详情——末轮 e2e 实拍） |
 | `docs/rip3/batches/WSW-3-BATCH-REPORT.md` | — | 新建（本报告） |
 | `Cargo.lock` / `vendor/**` / workspace `Cargo.toml` | 零变更 | 零变更（`git diff HEAD -- Cargo.lock` 空、`git status` 无 vendor 面） |
 
@@ -76,7 +76,9 @@ $ cargo test --offline -p wsw-runtime -- --test-threads=1
   unittests src/lib.rs            49 passed
   unittests src/bin/rp-wsw.rs      0 passed
   tests/authority_ca.rs            5 passed
-  tests/exchange_persist.rs       12 passed   （快照 11 + 本会话吞吐实测 1）
+  tests/exchange_persist.rs       12 passed   （快照 11 + 吞吐实测 1）
+  unittests src/bin/rp-wsw.rs      1 passed    （redact-headers 脱敏投影单测：凭据值掩码/未命中头值原样/大小写不敏感命中）
+  合计 102 passed / 0 failed
   tests/intercept_queue.rs         7 passed
   tests/mitm_loopback.rs           6 passed
   tests/scope_gate.rs             14 passed
@@ -84,7 +86,7 @@ $ cargo test --offline -p wsw-runtime -- --test-threads=1
   合计 101 passed / 0 failed
 $ npm --prefix web run build                    → ✓ built in 472ms
 $ npm --prefix web run test                     → Test Files 19 passed (19) / Tests 124 passed (124)
-$ cd web && node scripts/rip3_wsw3_browser_e2e.mjs   → 21/21 PASS，exit=0（三次全绿：08:39/08:44/08:57）
+$ cd web && node scripts/rip3_wsw3_browser_e2e.mjs   → **32/32 PASS，exit=0**（追加验收批：+交互时序/视图切换/多 Tab 编辑发送/版本回退/脱敏五组断言）
 ```
 
 迁移钉值与依赖面套件（同会话实跑）：
@@ -122,6 +124,18 @@ E7 搜索面：q=p59c-marker hits: 1100；search_text payload 命中 163；crede
 E8 未鉴权 /api/wsw/history → http=401
 ```
 
+### E.2b 实拍与联动验收独立证据（追加批，/tmp/wsw3-live-evidence.sh 全文回显留档）
+
+```
+L1 curl 循环经代理 1000 条（for i in $(seq 1 1000); do curl -s -o /dev/null -w '%{http_code} '
+   -x 127.0.0.1:13128 http://127.0.0.1:18443/seed/$i; done）：
+   loop-seconds=7.2；codes-distribution: 404=1000 other=0（全量成功往返）
+L2 落库断言：total=1000（≥1000 PASS）
+L3 代理增量：direct median=0.61ms（20 样本全列）/ proxy median=1.52ms（20 样本全列）
+   → INCREMENT=0.91ms（n=20 each，中位数差；门 <50ms PASS；落库链路在环）
+L4 History 列表 API p95（1103 行库 limit=200，20 采样）：p95=8.8ms median=6.3ms min=5.8 max=22.8（门 <300ms PASS）
+```
+
 ### E.3 Repeater append-only 活体断言（S7 门）
 
 ```
@@ -131,6 +145,10 @@ $ GET /api/wsw/repeater/tabs/{id} → version rows: 4 version_nos: [4,3,2,1] ori
   PATCH /tabs/{id}/version/1 → http=405（无该路由）
   rp_server.py PATCH/DELETE × version 路由扫描：NONE（append-only 面无端点）
 ```
+
+### E.4 e2e 断言面（32 项，追加批全集）
+
+虚拟滚动（行节点 17/22 ≤80 + 滚动更换）／防抖（5 键入→1 请求）／Body 按需（0→1）／详情视图切换（Headers 表格渲染含 host、Pretty 互斥、回 Raw）／交互时序 <1s（行点击→详情面板实测 <1000ms，断言面实测值见 I/F 节）／Send to Repeater（跳转+编辑器 method/path+origin=from_history）／发送往返（marker+succeeded+source=repeater+send-status 一致）／多 Tab（新建后 tabbar +1）／编辑发送（改 method=POST/path=/p59c-marker/body=RIP3-EDIT-BODY-E2E → 响应 marker + latest_request_json 解码核验 POST/target/体 base64 解码命中）／版本回退（v1 → origin=restore 新行，2→3 行）／脱敏展示（UI Headers 视图 authorization/cookie=[REDACTED]、x-custom-keep=keep-me 原样、凭据明文零出现；API 投影 redacted_header_names=["authorization","cookie"]）／性能硬门（首屏/交互/p95×4/代理增量）。
 
 ## E2. CI 状态
 
@@ -152,6 +170,7 @@ $ GET /api/wsw/repeater/tabs/{id} → version rows: 4 version_nos: [4,3,2,1] ori
 | API /api/wsw/repeater/send-status p95（n=20） | <300ms | **3.5 ms**（median 2.5） |
 | API /api/wsw/repeater/tabs/{id} p95（n=20） | <300ms | **2.7 ms**（median 2.5） |
 | 代理增量（直连 vs 经代理 curl time_total 中位数差，n=21，**落库链路在环**） | <50ms | **+1.32 ms**（direct 0.65 / proxy 1.97） |
+| 代理增量（**独立实拍：n=20 each 中位数差**，直连 0.61 / 经代理 1.52，落库链路在环） | <50ms | **+0.91 ms** |
 
 **落库吞吐实测**（`cargo test -p wsw-runtime --test exchange_persist insert_batch_throughput_measurement -- --test-threads=1 --nocapture` 三次采样；临时文件库 WAL 同 listener 实态，128 行/批 × 40 批 = 5120 行）：
 
@@ -183,6 +202,9 @@ insert throughput:  9919 rows/s (5120 rows in 516.2ms, 40 batches x 128 rows, fi
 12. **local_range.py REUSEADDR（基础设施面，任务书清单外改动如实登记）**：`socketserver.ThreadingTCPServer` 默认 allow_reuse_address=False，HTTP/1.0 服务端先关连接的子连接 TIME_WAIT 挂 18443 达 2×MSL → 60s 内重绑 EADDRINUSE（e2e 快速重跑/复现脚本三连踩实测）。修复 = 子类开 allow_reuse_address=True（消除 TIME_WAIT 重绑阻塞，不改监听语义；`git diff scripts/local_range.py` 一类一实例化两处）。首次改写误将 do_GET/log_message 挂入新类（实测 501 Unsupported method 'GET' 暴露），整文件重写修正——过程如实记录。
 13. **e2e 首轮连败如实记录（同法两次纪律）**：种子面失败 2 次（逐请求 socket 修复后 total 假象 2 次）→ 第 3 次换根因面（waitFor/waitMs 事件环）修复后全绿；每步根因有实测回显（本报告 G7-G11），未谎报。
 
+13. **脱敏展示投影挂钩（追加批落地，红线 10 实做面）**：`wsw_message::redact`（redact.rs:55 唯一实现）此前仅存在函数与单测，展示链路零消费点——本批落 `rp-wsw redact-headers` 子命令（stdin 头数组 → stdout 掩码投影 + redacted_header_names；bin 单测 1 项）+ rp_server 详情投影 `_wsw_display_redact`（子进程消费；**fail-closed**：子进程失败/超时 → 全部头值 `[REDACTED-UNAVAILABLE]`，凭据绝不以明文进展示层）。原始行面不动（DB request_headers_json 保持原样），API/UI 只见掩码面——原始与脱敏展示分离落位。头名大小写实态：MITM Parsed 视图 hyper 归一小写（x-custom-keep），值原样保留。
+14. **追加批 e2e 教训**：① 真值字符串坑（G10）再犯——新写的过滤生效 waitFor 非匹配分支返回模板字符串被 truthy 首轮解析，导致点击了未过滤首行（repeater POST）而非凭据行，两轮假阴性后诊断行（credRowId vs detailShown 对照）定位，修为布尔返回；② 断言读取序列化形状要先看 API 投影——版本行 latest_request_json 的 body 为 base64 内联、头名 hyper 归一小写，两处断言先误后修；③ e2e 从错误 cwd（web/ 外）运行报 MODULE_NOT_FOUND 属环境面非断言面，如实区分。
+
 ## H. 下一批依赖和明确的非目标
 
 - **非目标不变**（任务书 §一）：Fuzzer（W4）、WebSocket Workbench（W5）、Decoder/Comparer/Passive Audit（W6）、HAR 导入导出、retention 执行器、FTS5、捕获期全量 wire tee。
@@ -192,12 +214,15 @@ insert throughput:  9919 rows/s (5120 rows in 516.2ms, 40 batches x 128 rows, fi
 
 ## I. UI 截图与浏览器验收证据
 
-4 张实拍入库 `docs/rip3/batches/browser-e2e/wsw-3/`（文件存在且非空，`ls -la` 实测 243474/284439/153825/152918 字节，08:44 末轮 e2e 实拍）：
+**7 张**实拍入库 `docs/rip3/batches/browser-e2e/wsw-3/`（文件存在且非空，`ls -la` 实测 243245/285843/160979/152815/163304/165086/191188 字节，末轮 32/32 e2e 实拍）：
 
 1. `01-history-list.png` — History 页 1100 行库首屏（虚拟滚动 17 行节点 + 过滤构建器 + total 计数）；
 2. `02-history-detail-body.png` — 详情六视图 + Body 按需加载后（/body 恰一次）；
 3. `03-repeater-from-history.png` — Send to Repeater 联动落 Repeater 页（编辑器含 method/path + from_history 版本）；
-4. `04-repeater-send-roundtrip.png` — Repeater 发送往返（响应视图 marker + succeeded 徽标）。
+4. `04-repeater-send-roundtrip.png` — Repeater 发送往返（响应视图 marker + succeeded 徽标）；
+5. `05-repeater-multitab-send.png` — 多 Tab + 编辑请求（method=POST/path/body）发送往返响应视图；
+6. `06-repeater-version-restore.png` — 版本历史回退（v1 → origin=restore 新行）；
+7. `07-history-redacted-detail.png` — 凭据面 exchange 详情 Headers 视图脱敏（authorization/cookie=[REDACTED]、x-custom-keep 原样）。
 
 ## J. RTIS 对账和数据安全回归结果
 

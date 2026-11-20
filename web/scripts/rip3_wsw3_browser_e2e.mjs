@@ -5,14 +5,23 @@
 //
 // 断言面（WSW-3-TASK §四.3 全集）：
 // 1. 种子：经代理 socket 流量 ≥1000（变体路径/方法/状态）→ /api/wsw/history
-//    total ≥1000 断言；
+//    total ≥1000 断言；末位凭据面种子（Cookie/Authorization，脱敏实测数据面）；
 // 2. 虚拟滚动仅视口渲染（DOM 行节点 ≤80）+ 滚动后行更换；
 // 3. 过滤防抖 300ms（5 次快速键入 → /api/wsw/history 请求数 ≤2）；
-// 4. Body 按需（列表全程零 /body；详情打开后恰一次）；
+// 4. Body 按需（列表全程零 /body；详情打开后恰一次）+ 详情视图切换
+//    （Raw/Pretty/Headers 互斥渲染）+ 交互时序 <1s；
 // 5. Send to Repeater 联动（跳转 + 编辑器含 method/path + 版本行
 //    origin='from_history' API 核验）；
 // 6. Repeater 发送往返（marker 响应 + source=repeater 行 + send 行
 //    succeeded，全部 API 核验）；
+// 9. Repeater 多 Tab（新建后 tabbar +1）+ 编辑请求改 method/path/body
+//    发送往返（POST+体 marker + latest_request_json API 核验）；
+// 10. Tab 修改历史保留 + 版本回退（restore → 新 origin='restore' 行，
+//     append-only 不覆盖，API 核验）；
+// 11. 脱敏展示投影（红线 10）：凭据面 exchange 详情 Headers 视图
+//     Authorization/Cookie 头值 = [REDACTED]、非命中头值原样、API 投影
+//     redacted_header_names 在场（wsw_message::redact 挂钩，rp-wsw
+//     redact-headers 子进程消费）；
 // 7. 性能硬门：首屏 <3s / 交互 <1s / 新 API p95 <300ms（20 采样 × ≥3 端点）
 //    / 代理增量 <50ms（直连 vs 经代理 curl time_total 中位数差，repeat≥3）。
 //
@@ -232,6 +241,15 @@ async function seedTraffic(count) {
     }
     await seedRequest(writeFn, `#${i}`);
   }
+  // 凭据面种子（脱敏实测：Cookie/Authorization 经代理捕获；详情展示投影
+  // 期望掩码——wsw_message::redact 挂钩，红线 10；X-Custom-Keep 期望原样）。
+  await seedRequest(() =>
+    `GET http://127.0.0.1:${RANGE_PORT}/cred-e2e-marker HTTP/1.1\r\n` +
+    `Host: 127.0.0.1:${RANGE_PORT}\r\n` +
+    `Authorization: Bearer wsw3-cred-secret-value\r\n` +
+    `Cookie: session=wsw3-cred-session-value; theme=dark\r\n` +
+    `X-Custom-Keep: keep-me\r\n` +
+    `Connection: close\r\n\r\n`, "#cred");
 }
 
 // ---- 静态服务（web/dist + /api 反代；W2 e2e 同款）--------------------------
@@ -384,7 +402,7 @@ try {
   await page.locator('[data-testid="wsw-history-filter-reset"]').click();
   await waitMs(700);
 
-  // —— 断言 4 + 5：Body 按需 + Send to Repeater 联动 ——
+  // —— 断言 4 + 5：Body 按需 + 详情视图切换 + 交互时序 + Send to Repeater ——
   let bodyRequests = 0;
   const onBodyRequest = (req) => {
     if (req.url().includes("/api/wsw/history/") && req.url().includes("/body")) bodyRequests += 1;
@@ -392,8 +410,12 @@ try {
   page.on("request", onBodyRequest);
   bodyRequests = 0;
   const firstRow = page.locator('[data-testid="wsw-history-row"]').first();
+  const tInteract0 = performance.now();
   await firstRow.click();
   await page.waitForSelector('[data-testid="wsw-history-detail"]', { timeout: 10000 });
+  const interactMs = performance.now() - tInteract0;
+  pass("时序：详情交互响应（行点击 → 详情面板在屏）<1s", interactMs < 1000,
+    `${interactMs.toFixed(0)}ms`);
   const bodyAfterDetail = bodyRequests;
   await page.locator('[data-testid="wsw-history-load-request-body"]').click();
   await waitFor(async () => (bodyRequests > bodyAfterDetail ? true : "no body request"), 8000, 200, "body 按需请求");
@@ -401,6 +423,21 @@ try {
   await waitMs(500);
   pass("Body 按需：详情打开零 /body + 按钮恰一次", bodyAfterDetail === 0 && bodyRequests - bodyAfterDetail === 1,
     `详情打开时=${bodyAfterDetail} 加载后=${bodyAfterLoad}`);
+  // 详情六视图切换（Raw/Pretty/Headers 互斥渲染；MessageViews testIdPrefix
+  // = wsw-history-req 请求侧）。
+  await page.locator('[data-testid="wsw-history-req-tab-headers"]').click();
+  const headersVisible = await page.locator('[data-testid="wsw-history-req-headers"]').isVisible();
+  pass("详情视图切换：Headers 表格渲染（头名+值列在场）",
+    headersVisible && (await page.locator('[data-testid="wsw-history-req-headers"]').textContent()).includes("host"),
+    `headers 可见=${headersVisible}`);
+  await page.locator('[data-testid="wsw-history-req-tab-pretty"]').click();
+  pass("详情视图切换：Pretty 视图渲染（互斥面，Raw 退出）",
+    await page.locator('[data-testid="wsw-history-req-pretty"]').isVisible()
+      && !(await page.locator('[data-testid="wsw-history-req-raw"]').isVisible().catch(() => false)),
+    "pretty 在屏");
+  await page.locator('[data-testid="wsw-history-req-tab-raw"]').click();
+  pass("详情视图切换：回 Raw 视图",
+    await page.locator('[data-testid="wsw-history-req-raw"]').isVisible(), "raw 在屏");
   await page.screenshot({ path: join(outDir, "02-history-detail-body.png") });
 
   const detailExchange = await firstRow.getAttribute("data-exchange-id");
@@ -444,6 +481,112 @@ try {
   pass("send-status 端点：六态 succeeded + exchange 引用一致",
     sendStatus.json?.state === "succeeded" && sendStatus.json?.exchange_id === repeaterExchange,
     `state=${sendStatus.json?.state} exchange=${sendStatus.json?.exchange_id}`);
+
+  // —— 断言 9：Repeater 多 Tab + 编辑请求（改 method/path/body）发送往返 ——
+  const tabCountBefore = await page.locator('[data-testid="wsw-repeater-tab"]').count();
+  const prevTabId = page.url().split("tab=")[1] ?? "";
+  await page.locator('[data-testid="wsw-repeater-new-tab"]').click();
+  // 新 Tab 就绪门 = URL 切到新 tab_id（createTab: loadTabs→loadTab→
+  // setSearchParams 末位导航；先等导航再编辑，防 fill 落在 loadTab 前被
+  // 新 tab 初始 draft 覆盖——首轮实测 latest_version_no=2 但内容为旧草稿）。
+  await waitFor(async () => {
+    const cur = page.url().split("tab=")[1] ?? "";
+    return cur && cur !== prevTabId ? true : `url=${page.url()}`;
+  }, 10000, 200, "新 Tab 导航");
+  await waitMs(400);
+  await waitFor(async () =>
+    (await page.locator('[data-testid="wsw-repeater-tab"]').count()) === tabCountBefore + 1
+      ? true : `tabs=${await page.locator('[data-testid="wsw-repeater-tab"]').count()}`,
+    10000, 200, "新建 Tab tabbar");
+  pass("Repeater 多 Tab：新建 Tab 后 tabbar +1", true,
+    `tabs=${tabCountBefore}→${await page.locator('[data-testid="wsw-repeater-tab"]').count()}`);
+  // 新 Tab 内编辑请求：改 method/path/body（POST + /p59c-marker + 文本体）。
+  const editedRequest =
+    `POST /p59c-marker HTTP/1.1\r\nHost: 127.0.0.1:${RANGE_PORT}\r\n` +
+    `Content-Type: text/plain\r\nX-Wsw3-Edit: e2e\r\n\r\nRIP3-EDIT-BODY-E2E`;
+  const editor2 = page.locator('[data-testid="wsw-repeater-raw-editor"]');
+  await editor2.fill(editedRequest);
+  await page.locator('[data-testid="wsw-repeater-send"]').click();
+  await waitFor(async () => {
+    const text = (await page.locator('[data-testid="wsw-repeater-response"]').textContent().catch(() => "")) ?? "";
+    return text.includes(MARKER) ? true : text.slice(0, 60);
+  }, 20000, 400, "编辑请求发送响应 marker");
+  pass("Repeater 编辑发送：改 method/path/body 后响应视图含 marker", true,
+    `编辑请求=${editedRequest.split("\r\n")[0]}`);
+  await page.screenshot({ path: join(outDir, "05-repeater-multitab-send.png") });
+  const activeTabId = page.url().split("tab=")[1] ?? "";
+  const editedTabDetail = await fetchJson(`http://127.0.0.1:${API_PORT}/api/wsw/repeater/tabs/${activeTabId}`);
+  const editedVersions = editedTabDetail.json?.versions ?? [];
+  const latestReq = String(editedTabDetail.json?.latest_request_json ?? "");
+  // 版本行 body = OutboundRequest base64 内联（体走 base64 JSON 往返），解码比对。
+  const latestParsed = (() => { try { return JSON.parse(latestReq); } catch { return {}; } })();
+  const latestBody = Buffer.from(String(latestParsed.body ?? ""), "base64").toString("utf8");
+  pass("Repeater 编辑发送：版本行保留编辑后的 method/target/body（API 核验）",
+    latestParsed.method === "POST" && latestParsed.target === "/p59c-marker"
+      && latestBody.includes("RIP3-EDIT-BODY-E2E")
+      && (editedTabDetail.json?.latest_version_no ?? 0) >= 2,
+    `latest_version_no=${editedTabDetail.json?.latest_version_no} method=${latestParsed.method} target=${latestParsed.target} body=${latestBody.slice(0, 30)}`);
+
+  // —— 断言 10：Tab 修改历史保留 + 版本回退（append-only + origin=restore）——
+  const versionsBefore = editedVersions.length;
+  await page.locator('[data-testid="wsw-repeater-version-select"]').selectOption("1");
+  await waitFor(async () => {
+    const d = await fetchJson(`http://127.0.0.1:${API_PORT}/api/wsw/repeater/tabs/${activeTabId}`);
+    const vs = d.json?.versions ?? [];
+    return vs.length === versionsBefore + 1 && vs[0]?.origin === "restore"
+      ? true : `versions=${vs.length} top=${vs[0]?.origin}`;
+  }, 10000, 300, "回退新版本行");
+  pass("Tab 修改历史保留：回退 v1 → 新 origin=restore 行（append-only 不覆盖）",
+    editedVersions.every((v) => v.version_no >= 1) && versionsBefore >= 2,
+    `回退前 ${versionsBefore} 行 → 回退后 ${versionsBefore + 1} 行`);
+  await page.screenshot({ path: join(outDir, "06-repeater-version-restore.png") });
+
+  // —— 断言 11：脱敏展示投影（红线 10；wsw_message::redact 挂钩）——
+  // 凭据面 exchange（Cookie/Authorization 种子）经 UI 详情 Headers 视图：
+  // 命中头值 = 掩码、非命中头值原样、凭据明文零出现。
+  await page.goto(`http://127.0.0.1:${STATIC_PORT}/websec/history`, { waitUntil: "domcontentloaded", timeout: 20000 });
+  await page.waitForSelector('[data-testid="wsw-history-list"]', { timeout: 20000 });
+  const pathFilter = page.locator('[data-testid="wsw-history-filter-path"]');
+  await pathFilter.fill("/cred-e2e-marker");
+  // 过滤生效门 = 首行文本即凭据行（rows>=1 会被未过滤旧列表满足——首轮
+  // 实测点了非凭据行导致脱敏断言假阴性）。
+  await waitFor(async () => {
+    const rows = page.locator('[data-testid="wsw-history-row"]');
+    const n = await rows.count();
+    if (n === 0) return "rows=0";
+    const t = await rows.first().textContent();
+    // 未匹配必须返回 falsy（真值字符串会被 waitFor 首轮即解析——G10 同坑）。
+    return t.includes("/cred-e2e-marker");
+  }, 10000, 300, "路径过滤出凭据行");
+  const credRowId = await page.locator('[data-testid="wsw-history-row"]').first().getAttribute("data-exchange-id");
+  await page.locator('[data-testid="wsw-history-row"]').first().click();
+  await page.waitForSelector('[data-testid="wsw-history-detail"]', { timeout: 10000 });
+  await waitMs(600);
+  const detailShown = await page.locator('[data-testid="wsw-history-detail"]').textContent();
+  const totalShown = await page.locator('[data-testid="wsw-history-total"]').textContent().catch(() => "?");
+  console.log(`[diag-cred] credRowId=${credRowId} detailShown=${(detailShown.match(/详情 (wsw-[\w-]+)/) ?? ["", "?"])[1]} total=${totalShown.slice(0, 24)}`);
+  await page.locator('[data-testid="wsw-history-req-tab-headers"]').click();
+  await waitFor(async () =>
+    page.locator('[data-testid="wsw-history-req-headers"]').isVisible() ? true : "headers 不可见",
+    8000, 200, "Headers 视图");
+  const headersText = await page.locator('[data-testid="wsw-history-req-headers"]').textContent();
+  pass("脱敏展示：Authorization/Cookie 头值 = 掩码（UI 详情侧）",
+    headersText.includes("[REDACTED]") && !headersText.includes("wsw3-cred-secret-value")
+      && !headersText.includes("wsw3-cred-session-value"),
+    `掩码=${headersText.includes("[REDACTED]")} 凭据明文零出现=${!headersText.includes("wsw3-cred-secret-value")}`);
+  // 头名大小写：MITM Parsed 视图 hyper 归一小写（API 实态 x-custom-keep），
+  // 值原样保留——比对大小写不敏感。
+  pass("脱敏展示：非命中头值原样保留（X-Custom-Keep: keep-me）",
+    headersText.toLowerCase().includes("x-custom-keep") && headersText.includes("keep-me"),
+    `keep-me=${headersText.includes("keep-me")} 头名小写在场=${headersText.toLowerCase().includes("x-custom-keep")}`);
+  const detailApi = await fetchJson(
+    `http://127.0.0.1:${API_PORT}/api/wsw/history/${credRowId}`);
+  const apiAuth = (detailApi.json?.request_headers ?? []).find((h) => h.name?.toLowerCase() === "authorization");
+  pass("脱敏展示：API 详情投影掩码 + redacted_header_names 在场（API 核验）",
+    apiAuth?.value === "[REDACTED]" && (detailApi.json?.redacted_header_names ?? []).some(
+      (n) => n.toLowerCase() === "authorization"),
+    `API authorization=${apiAuth?.value} names=${JSON.stringify(detailApi.json?.redacted_header_names)}`);
+  await page.screenshot({ path: join(outDir, "07-history-redacted-detail.png") });
 
   // —— 断言 7：API p95 <300ms（20 采样 × 4 新端点；首屏在 1000+ 行上）——
   const apiEndpoints = [
