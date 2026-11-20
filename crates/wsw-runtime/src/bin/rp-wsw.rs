@@ -1,9 +1,12 @@
-//! `rp-wsw`：WSW-2 Listener/CA/DB 命令行面（Rust-First；rp_server 子进程
-//! 消费，同 rp-doc/rp-workflow 先例）。
+//! `rp-wsw`：WSW-2 Listener/CA/DB 命令行面 + WSW-3 send 子命令（Rust-First；
+//! rp_server 子进程消费，同 rp-doc/rp-workflow 先例）。
 //!
 //! 子命令：
 //! - `listener`：跑 MITM 代理（loopback 拒绑 + Scope 闸 + 024 持久化 +
 //!   状态心跳文件）；SIGTERM/SIGINT 优雅停机（拦截队列全 EXPIRED）。
+//! - `send`：Repeater 发送（W3-D4）：Outbound → serialize → h1 字节写 →
+//!   parse_wire；SIGTERM → cancelled 终态落行；pending→sending→终态自落
+//!   wsw_repeater_send 行 + source=repeater exchange 行 + outbound CAS。
 //! - `ca status|export|regenerate`：CA 状态/导出/重生成（导出与重生成均为
 //!   显式用户动作——API 带 confirm 语义，本面不静默安装、不碰系统代理/信任库）。
 //! - `db migrate`：迁移执行（只在开发库副本/测试内存库；platform*.db 禁触）。
@@ -12,14 +15,20 @@
 //! `rp-wsw listener --bind 127.0.0.1:3128 --db rip-data/wsw-e2e.db
 //!   --rules-json '{"include":["127.0.0.1"],"allow_private_targets":true}'
 //!   --status-file rip-data/wsw-state/listener-status.json`
+//!
+//! `rp-wsw send --db rip-data/wsw-e2e.db --session-id wsw-ses-cli-0001
+//!   --tab-id wsw-rpt-1 --send-id wsw-snd-1 --version-no 1
+//!   --request-json /tmp/outbound.json --policy /tmp/policy.json`
 
 use hudsucker::rustls::crypto::aws_lc_rs;
 use std::path::PathBuf;
 use wsw_runtime::listener::{handler::InterceptMatcher, RuntimeOptions};
 use wsw_runtime::scope::ScopeRules;
-use wsw_runtime::{authority, listener, ListenerConfig};
+use wsw_runtime::{authority, listener, persist, ListenerConfig};
 
 const TAG: &str = "[rp-wsw]";
+
+use tracing::error as tracing_error;
 
 fn usage() -> ! {
     eprintln!(
@@ -27,6 +36,9 @@ fn usage() -> ! {
 [--rules-json <json>] [--scope-rules-file <path>] [--intercept] [--matcher-hosts a,b] \
 [--matcher-paths /p59c] [--queue-ttl <secs>] [--status-file <path>] [--pid-file <path>] \
 [--upstream-ca <pem>]... [--no-capture]\n  \
+rp-wsw send --db <path> --session-id <ses> --tab-id <rpt> --send-id <snd> --version-no <n> \
+--request-json <file> [--policy <file>] [--upstream-ca <pem>]... [--artifacts-root <dir>] \
+[--pid-file <path>]\n  \
 rp-wsw ca status [--ca-dir <dir>]\n  \
 rp-wsw ca export [--ca-dir <dir>] --out <path>\n  \
 rp-wsw ca regenerate [--ca-dir <dir>]\n  \
@@ -50,6 +62,14 @@ struct Args {
     upstream_cas: Vec<PathBuf>,
     no_capture: bool,
     out: Option<PathBuf>,
+    // send 子命令
+    session_id: Option<String>,
+    tab_id: Option<String>,
+    send_id: Option<String>,
+    version_no: Option<i64>,
+    request_json: Option<PathBuf>,
+    policy_file: Option<PathBuf>,
+    artifacts_root: Option<PathBuf>,
 }
 
 fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
@@ -68,6 +88,13 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
         upstream_cas: Vec::new(),
         no_capture: false,
         out: None,
+        session_id: None,
+        tab_id: None,
+        send_id: None,
+        version_no: None,
+        request_json: None,
+        policy_file: None,
+        artifacts_root: None,
     };
     while let Some(arg) = next.next() {
         let mut take = |what: &str| -> String {
@@ -99,6 +126,13 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
             "--upstream-ca" => a.upstream_cas.push(take("--upstream-ca").into()),
             "--no-capture" => a.no_capture = true,
             "--out" => a.out = Some(take("--out").into()),
+            "--session-id" => a.session_id = Some(take("--session-id")),
+            "--tab-id" => a.tab_id = Some(take("--tab-id")),
+            "--send-id" => a.send_id = Some(take("--send-id")),
+            "--version-no" => a.version_no = Some(take("--version-no").parse().expect("version no")),
+            "--request-json" => a.request_json = Some(take("--request-json").into()),
+            "--policy" => a.policy_file = Some(take("--policy").into()),
+            "--artifacts-root" => a.artifacts_root = Some(take("--artifacts-root").into()),
             other => {
                 eprintln!("{TAG} unknown arg {other}");
                 usage();
@@ -143,6 +177,14 @@ async fn status_heartbeat(
             captures_total: shared
                 .counters
                 .captures_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            persist_dropped_total: shared
+                .counters
+                .persist_dropped_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            persist_enqueued_total: shared
+                .counters
+                .persist_enqueued_total
                 .load(std::sync::atomic::Ordering::Relaxed),
             error_counts: shared.counters.error_counts(),
             started_at: shared.started_at.clone(),
@@ -317,6 +359,212 @@ fn db_migrate(a: &Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// send 子命令（W3-D4）：pending→sending→终态自落 + 引擎发送 + 落库收尾；
+/// SIGTERM → cancelled（非终态时）。stdout 输出终态 JSON（rp_server 侧消费）。
+async fn run_send(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let db = a.db.clone().ok_or("send requires --db <path>")?;
+    let session_id = a.session_id.clone().ok_or("send requires --session-id")?;
+    let tab_id = a.tab_id.clone().ok_or("send requires --tab-id")?;
+    let send_id = a.send_id.clone().ok_or("send requires --send-id")?;
+    let version_no = a.version_no.ok_or("send requires --version-no")?;
+    let artifacts_root = a
+        .artifacts_root
+        .clone()
+        .unwrap_or_else(wsw_message::cas::resolve_artifacts_dir);
+
+    let store = persist::PersistStore::open_file(&db)?;
+    let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    store.run_migrations(&migrations_dir)?;
+    store.assert_watermark_25()?;
+
+    // 幂等防呆：已有终态行 = 重放调用，直接回显终态退出。
+    if let Some(existing) = store.get_send(&send_id)? {
+        if !matches!(existing.state.as_str(), "pending" | "sending") {
+            println!(
+                "{}",
+                serde_json::json!({"send_id": send_id, "state": existing.state, "note": "already terminal"})
+            );
+            return Ok(());
+        }
+    } else {
+        store.insert_send(&persist::SendRow {
+            send_id: send_id.clone(),
+            tab_id: tab_id.clone(),
+            version_no,
+            session_id: session_id.clone(),
+            state: "pending".to_string(),
+            created_at: persist::now_iso(),
+            ..Default::default()
+        })?;
+    }
+    if let Some(pid_file) = &a.pid_file {
+        std::fs::write(pid_file, format!("{}\n", std::process::id()))?;
+    }
+
+    // scope 规则源：wsw_session 行（缺行 = default deny——安全默认）。
+    let rules = store
+        .get_session(&session_id)?
+        .map(|s| ScopeRules::from_json(&s.scope_rules_json))
+        .transpose()?
+        .unwrap_or_default();
+
+    // 发送面：version-no 指定版本回放，否则 tab 最新版本（request-json 显式
+    // 优先——rp_server 已从版本行读出落盘）。
+    let request: wsw_message::serialize::OutboundRequest = if let Some(f) = &a.request_json {
+        serde_json::from_str(&std::fs::read_to_string(f)?)?
+    } else {
+        return Err("send requires --request-json".into());
+    };
+    let _ = version_no;
+
+    let policy = match &a.policy_file {
+        Some(f) => wsw_runtime::sender::SendPolicy::from_json(&std::fs::read_to_string(f)?)?,
+        None => wsw_runtime::sender::SendPolicy::default(),
+    };
+
+    // 发送中态推进。
+    store.advance_send(
+        &send_id,
+        &persist::SendPatch {
+            state: "sending",
+            started_at: Some(persist::now_iso()),
+            ..Default::default()
+        },
+    )?;
+
+    // SIGTERM/SIGINT → cancelled watch（graceful：非终态时落 cancelled 终态）。
+    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigterm.recv() => println!("{TAG} SIGTERM received (send cancelled)"),
+            _ = sigint.recv() => println!("{TAG} SIGINT received (send cancelled)"),
+        }
+        let _ = cancel_tx.send(true);
+    });
+
+    // 引擎发送。
+    let outcome =
+        wsw_runtime::sender::send_request(&rules, &request, &policy, &a.upstream_cas, &cancel_rx)
+            .await;
+    let (outcome, exchange_id) = match outcome {
+        Ok(outcome) => {
+            let exchange_id = wsw_runtime::sender::persist_send_result(
+                &store,
+                &artifacts_root,
+                &send_id,
+                &session_id,
+                "wsw-lis-repeater",
+                &tab_id,
+                version_no,
+                &request,
+                &outcome,
+            )?;
+            (outcome, exchange_id)
+        }
+        Err(wsw_runtime::sender::SendError::Cancelled) => {
+            let o = wsw_runtime::sender::SendOutcome {
+                state: "cancelled",
+                error_code: Some("cancelled".into()),
+                reason: None,
+                response_status: None,
+                response_bytes: Vec::new(),
+                parsed: None,
+                redirect_chain: Vec::new(),
+                outbound_sha256: None,
+                outbound_bytes: Vec::new(),
+                remote_ip: None,
+                duration_ms: 0,
+                ttfb_ms: None,
+            };
+            wsw_runtime::sender::persist_send_failure(&store, &send_id, &o)?;
+            (o, None)
+        }
+        Err(wsw_runtime::sender::SendError::Timeout(m)) => {
+            let o = wsw_runtime::sender::SendOutcome {
+                state: "timed_out",
+                error_code: Some("timed_out".into()),
+                reason: Some(m),
+                response_status: None,
+                response_bytes: Vec::new(),
+                parsed: None,
+                redirect_chain: Vec::new(),
+                outbound_sha256: None,
+                outbound_bytes: Vec::new(),
+                remote_ip: None,
+                duration_ms: 0,
+                ttfb_ms: None,
+            };
+            wsw_runtime::sender::persist_send_failure(&store, &send_id, &o)?;
+            (o, None)
+        }
+        Err(wsw_runtime::sender::SendError::Scope(reason)) => {
+            // scope 拒发：state=failed + error_code=scope_blocked（PLAN :528
+            // 越界拒绝记录可见；reason 串落日志不落列）。
+            tracing_error!(class = "scope_blocked", reason = %reason, send_id = %send_id, "send rejected by scope gate");
+            let o = wsw_runtime::sender::SendOutcome {
+                state: "failed",
+                error_code: Some("scope_blocked".into()),
+                reason: Some(reason),
+                response_status: None,
+                response_bytes: Vec::new(),
+                parsed: None,
+                redirect_chain: Vec::new(),
+                outbound_sha256: None,
+                outbound_bytes: Vec::new(),
+                remote_ip: None,
+                duration_ms: 0,
+                ttfb_ms: None,
+            };
+            wsw_runtime::sender::persist_send_failure(&store, &send_id, &o)?;
+            (o, None)
+        }
+        Err(e) => {
+            let code = match &e {
+                wsw_runtime::sender::SendError::Serialize(_) => "serialize_failed",
+                wsw_runtime::sender::SendError::Connect(_) => "connect_failed",
+                wsw_runtime::sender::SendError::Tls(_) => "tls_failed",
+                wsw_runtime::sender::SendError::Read(_) => "read_failed",
+                wsw_runtime::sender::SendError::CapExceeded(_) => "cap_exceeded",
+                wsw_runtime::sender::SendError::Scope(_) => "scope_blocked",
+                wsw_runtime::sender::SendError::Cancelled => "cancelled",
+                wsw_runtime::sender::SendError::Timeout(_) => "timed_out",
+            };
+            let o = wsw_runtime::sender::SendOutcome {
+                state: "failed",
+                error_code: Some(code.into()),
+                reason: Some(e.to_string()),
+                response_status: None,
+                response_bytes: Vec::new(),
+                parsed: None,
+                redirect_chain: Vec::new(),
+                outbound_sha256: None,
+                outbound_bytes: Vec::new(),
+                remote_ip: None,
+                duration_ms: 0,
+                ttfb_ms: None,
+            };
+            wsw_runtime::sender::persist_send_failure(&store, &send_id, &o)?;
+            (o, None)
+        }
+    };
+    let summary = serde_json::json!({
+        "send_id": send_id,
+        "state": outcome.state,
+        "error_code": outcome.error_code,
+        "exchange_id": exchange_id,
+        "response_status": outcome.response_status,
+        "redirect_hops": outcome.redirect_chain.len(),
+        "duration_ms": outcome.duration_ms,
+    });
+    println!("{summary}");
+    if let Some(pid_file) = &a.pid_file {
+        let _ = std::fs::remove_file(pid_file);
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     // 日志可见面：拒绝记录/五态/捕获计数落 stderr 单行（PLAN :528）。
@@ -330,6 +578,7 @@ async fn main() {
     };
     let result = match cmd.as_str() {
         "listener" => run_listener(parse_args(&mut args)).await,
+        "send" => run_send(parse_args(&mut args)).await,
         "ca" => match args.next().as_deref() {
             Some("status") => ca_status(&parse_args(&mut args)),
             Some("export") => ca_export(&parse_args(&mut args)),

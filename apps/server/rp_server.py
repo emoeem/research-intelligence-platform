@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import base64
 import json
 import os
 import posixpath
@@ -3300,10 +3301,802 @@ def wsw_write(action: str, body: dict) -> dict:
     raise ApiError(404, "no_route", f"未知 WSW 写操作：{action}")
 
 
+def wsw_post_route(path: str, body: dict) -> dict:
+    """WSW POST 分发：WSW-3 新写面（send-to-repeater / tabs / send / cancel）
+    优先，其余回落 WSW-2 既有 listener/ca 动作（只增量，既有语义不动）。"""
+    rest = unquote(path[len("/api/wsw/"):]).strip("/")
+    match = re.fullmatch(r"history/([^/]+)/send-to-repeater", rest)
+    if match:
+        return _wsw_history_send_to_repeater(unquote(match.group(1)), body)
+    if rest == "repeater/tabs":
+        return _wsw_repeater_tab_create(body)
+    match = re.fullmatch(r"repeater/tabs/([^/]+)/close", rest)
+    if match:
+        return _wsw_repeater_tab_close(unquote(match.group(1)), body)
+    match = re.fullmatch(r"repeater/tabs/([^/]+)/restore", rest)
+    if match:
+        return _wsw_repeater_tab_restore(unquote(match.group(1)), body)
+    if rest == "repeater/send":
+        return _wsw_spawn_send(body)
+    if rest == "repeater/cancel":
+        return _wsw_send_cancel(body)
+    return wsw_write(rest, body)
+
+
+# ---------------------------------------------------------------------------
+# WSW-3 History + Repeater API（W3-D3/D4/D6/D7）：读面全量 mode=ro +
+# query_only；写面分治（W3-D7 分治表）——exchange/send 行 Rust-only（listener
+# worker + rp-wsw send 子进程），tags/notes/tab/tab_version 小控制行 Python
+# 直写（busy_timeout 5s + WAL）。游标分页协议（D3）：排序键
+# (started_at DESC, exchange_id DESC)；cursor = base64url(JSON{t,id,f})，
+# f = 过滤指纹 sha256 前 16 hex，不匹配 → 400 filter_cursor_mismatch；
+# limit 1..500 默认 100（超帽 400）；禁 OFFSET。列表端点零 body 字节、
+# 禁选 headers_json/search_text/notes 大列；Body 按需端点单响应帽 8MiB
+# 超帽 413 + x-wsw-body-sha256 校验头。
+# ---------------------------------------------------------------------------
+
+WSW_HISTORY_BODY_CAP = 8 * 1024 * 1024  # 8MiB（D3 单响应帽）
+WSW_LIST_LIMIT_CAP = 500
+WSW_LIST_LIMIT_DEFAULT = 100
+WSW_ARTIFACTS_ROOT = (os.environ.get("RP_ARTIFACTS_DIR")
+                      or os.path.join(REPO_ROOT, "rip-data", "artifacts"))
+WSW_EXCHANGE_ROW_CAP = int(os.environ.get("RP_WSW_EXCHANGE_ROW_CAP") or 200_000)  # DESIGN §3.4 行数帽草案
+
+# 列表投影列（禁选 request_headers_json/response_headers_json/search_text/notes
+# 大列——PLAN :404 SQL 面落地）。
+_WSW_HISTORY_LIST_COLUMNS = (
+    "exchange_id, session_id, listener_id, sequence_no, direction, source, protocol, "
+    "http_version, method, scheme, authority, path, response_status, "
+    "request_body_len, request_mime, request_body_fidelity, "
+    "response_body_len, response_mime, response_body_fidelity, "
+    "started_at, completed_at, duration_ms, ttfb_ms, remote_ip, scope_decision, "
+    "edited, tags_json, capture_fidelity, parse_status, error_code"
+)
+_WSW_HISTORY_FILTER_KEYS = ("authority", "method", "path", "status", "mime", "source", "q", "tags", "from", "to")
+
+
+def _wsw_ro_conn() -> sqlite3.Connection:
+    """WSW 库只读连接（mode=ro + query_only 双保险；D7 读面）。"""
+    if not os.path.isfile(WSW_DB_PATH):
+        raise ApiError(503, "wsw_db_missing",
+                       f"WSW 库不存在：{WSW_DB_PATH}（启动 rp-wsw listener 或 db migrate）")
+    conn = sqlite3.connect(f"file:{WSW_DB_PATH}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _wsw_rw_conn() -> sqlite3.Connection:
+    """WSW 库写连接（tags/notes/tab/tab_version 小控制行 Python 直写面；
+    busy_timeout 5s——WAL 下与 Rust worker 批量写竞争窗口毫秒级，W3-D7）。"""
+    conn = sqlite3.connect(WSW_DB_PATH)
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _wsw_require_025(conn: sqlite3.Connection) -> None:
+    """025 水位守卫（wsw_exchange 表在场；缺 → 503 可诊断）。"""
+    names = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+        "('wsw_exchange','wsw_repeater_tab','wsw_repeater_tab_version','wsw_repeater_send')")}
+    need = {"wsw_exchange", "wsw_repeater_tab", "wsw_repeater_tab_version", "wsw_repeater_send"}
+    if not need.issubset(names):
+        raise ApiError(503, "wsw_025_not_applied",
+                       "025 迁移未应用（四表缺失）：rp-wsw listener 启动即迁移，或 rp-wsw db migrate --db <path>")
+
+
+def _wsw_history_filters(params: dict) -> tuple:
+    """过滤参数解析（D3）：返回 (where_sql, sql_args, normalized dict)。
+    时间区间 from/to 为 ISO8601 UTC ms 口径（GLOB 同 024）；status 整数；
+    tags 精确项 JSON 成员匹配；q 走 search_text LIKE（大小写折叠）。"""
+    norm = {}
+    conds, args = [], []
+    for key in _WSW_HISTORY_FILTER_KEYS:
+        raw = params.get(key, [""])[0]
+        if raw == "" or raw is None:
+            continue
+        norm[key] = raw
+    if "authority" in norm:
+        conds.append("authority = ?"); args.append(norm["authority"])
+    if "method" in norm:
+        conds.append("UPPER(method) = ?"); args.append(norm["method"].upper())
+    if "path" in norm:
+        conds.append("path LIKE ? ESCAPE '\\'")
+        args.append(norm["path"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+    if "status" in norm:
+        try:
+            status = int(norm["status"])
+        except ValueError:
+            raise ApiError(400, "bad_filter", f"status 非整数：{norm['status']!r}")
+        conds.append("response_status = ?"); args.append(status)
+        norm["status"] = str(status)
+    if "mime" in norm:
+        conds.append("(request_mime LIKE ? OR response_mime LIKE ?)")
+        args.extend([f"%{norm['mime']}%", f"%{norm['mime']}%"])
+    if "source" in norm:
+        if norm["source"] not in ("proxy_capture", "repeater", "fuzzer", "import"):
+            raise ApiError(400, "bad_filter", f"source 词表外：{norm['source']!r}")
+        conds.append("source = ?"); args.append(norm["source"])
+    if "tags" in norm:
+        conds.append("tags_json LIKE ? ESCAPE '\\'")
+        tag = json.dumps(norm["tags"], ensure_ascii=False)
+        args.append("%" + tag.replace("\\", "\\\\").replace("%", "\\%") + "%")
+    if "from" in norm:
+        conds.append("started_at >= ?"); args.append(norm["from"])
+    if "to" in norm:
+        conds.append("started_at <= ?"); args.append(norm["to"])
+    if "q" in norm:
+        if len(norm["q"]) > 256:
+            raise ApiError(400, "bad_filter", "q 超 256 字符帽")
+        conds.append("search_text LIKE ? ESCAPE '\\'")
+        like = norm["q"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        args.append(f"%{like}%")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    return where, args, norm
+
+
+def _wsw_filter_fingerprint(norm: dict) -> str:
+    """过滤指纹（D3）：归一化过滤参数字典序拼接 sha256 前 16 hex。"""
+    material = "\n".join(f"{k}={v}" for k, v in sorted(norm.items()))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def _wsw_cursor_decode(cursor: str) -> dict:
+    """base64url cursor 解码（{t,id,f}；非法 → 400 invalid_cursor）。"""
+    import base64 as _b64
+    try:
+        pad = "=" * (-len(cursor) % 4)
+        payload = json.loads(_b64.urlsafe_b64decode(cursor + pad).decode("utf-8"))
+        t = payload["t"]; eid = payload["id"]; f = payload["f"]
+        if not isinstance(t, str) or not isinstance(eid, str) or not isinstance(f, str):
+            raise ValueError
+    except Exception:
+        raise ApiError(400, "invalid_cursor",
+                       "cursor 非法（应为服务端签发的 base64url 不透明串）")
+    return {"t": t, "id": eid, "f": f}
+
+
+def _wsw_cursor_encode(t: str, eid: str, fingerprint: str) -> str:
+    import base64 as _b64
+    payload = json.dumps({"t": t, "id": eid, "f": fingerprint}, separators=(",", ":"))
+    return _b64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _wsw_history_list(_conn, params) -> dict:
+    """GET /api/wsw/history：游标分页 + 过滤 + q 搜索（D3 协议全集）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        where, args, norm = _wsw_history_filters(params)
+        fingerprint = _wsw_filter_fingerprint(norm)
+        limit_raw = params.get("limit", [""])[0]
+        if limit_raw == "":
+            limit = WSW_LIST_LIMIT_DEFAULT
+        else:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                raise ApiError(400, "bad_limit", f"limit 非整数：{limit_raw!r}")
+        if not (1 <= limit <= WSW_LIST_LIMIT_CAP):
+            raise ApiError(400, "limit_exceeds_cap",
+                           f"limit 越界（1..{WSW_LIST_LIMIT_CAP}）：{limit}")
+        cursor_raw = params.get("cursor", [""])[0]
+        cursor_sql, cursor_args = "", []
+        if cursor_raw:
+            cur = _wsw_cursor_decode(cursor_raw)
+            if cur["f"] != fingerprint:
+                raise ApiError(400, "filter_cursor_mismatch",
+                               "过滤参数与 cursor 签发时不一致（漏行/重行防线，D3 指纹守卫）")
+            cursor_sql = " AND (started_at < ? OR (started_at = ? AND exchange_id < ?))"
+            cursor_args = [cur["t"], cur["t"], cur["id"]]
+        base_where = where.replace(" WHERE ", " WHERE (", 1) + ")" if where else ""
+        # 过滤存在时游标条件并入过滤括号内；无过滤时直接全局游标面。
+        if where:
+            sql = (f"SELECT {_WSW_HISTORY_LIST_COLUMNS} FROM wsw_exchange"
+                   f"{base_where}{cursor_sql} ORDER BY started_at DESC, exchange_id DESC LIMIT ?")
+            sql_args = args + cursor_args + [limit + 1]
+        else:
+            global_where = ("WHERE (started_at < ? OR (started_at = ? AND exchange_id < ?))"
+                            if cursor_sql else "")
+            sql = (f"SELECT {_WSW_HISTORY_LIST_COLUMNS} FROM wsw_exchange"
+                   f" {global_where} ORDER BY started_at DESC, exchange_id DESC LIMIT ?")
+            sql_args = cursor_args + [limit + 1]
+        rows = [dict(r) for r in conn.execute(sql, sql_args)]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = ""
+        if has_more and rows:
+            last = rows[-1]
+            next_cursor = _wsw_cursor_encode(last["started_at"] or "", last["exchange_id"], fingerprint)
+        total = conn.execute("SELECT COUNT(*) FROM wsw_exchange").fetchone()[0]
+        return {"rows": rows, "next_cursor": next_cursor, "has_more": has_more,
+                "total": total, "limit": limit,
+                "fingerprint": fingerprint}
+    finally:
+        conn.close()
+
+
+def _wsw_exchange_row_full(conn, exchange_id: str) -> dict:
+    rows = list(conn.execute(
+        "SELECT exchange_id, session_id, listener_id, sequence_no, direction, source, protocol, "
+        "http_version, tls_version, alpn, method, scheme, authority, path, response_status, "
+        "request_headers_json, response_headers_json, "
+        "request_body_sha256, request_body_uri, request_body_len, request_mime, request_body_fidelity, "
+        "response_body_sha256, response_body_uri, response_body_len, response_mime, response_body_fidelity, "
+        "started_at, completed_at, duration_ms, ttfb_ms, remote_ip, scope_decision, "
+        "edited, tags_json, notes, trace_id, task_id, tool_run_id, artifact_id, evidence_id, "
+        "capture_fidelity, parse_status, error_code "
+        "FROM wsw_exchange WHERE exchange_id=?", (exchange_id,)))
+    if not rows:
+        raise ApiError(404, "exchange_not_found", f"exchange 不存在：{exchange_id}")
+    row = dict(rows[0])
+    # 详情端点零 body 字节（D3）：只有 sha256/uri/len/mime/fidelity 派生列。
+    for src, dst in (("request_headers_json", "request_headers"),
+                     ("response_headers_json", "response_headers")):
+        try:
+            row[dst] = json.loads(row.pop(src) or "[]")
+        except json.JSONDecodeError:
+            row[dst] = []
+    try:
+        row["tags"] = json.loads(row.pop("tags_json") or "[]")
+    except json.JSONDecodeError:
+        row["tags"] = []
+    return row
+
+
+def _wsw_history_detail(_conn, exchange_id: str) -> dict:
+    """GET /api/wsw/history/{id}：全元数据 + headers JSON + body 引用列，
+    不含 body 字节（D3 按需纪律）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        return _wsw_exchange_row_full(conn, exchange_id)
+    finally:
+        conn.close()
+
+
+def _wsw_cas_read(uri: str) -> bytes:
+    """CAS 正文读回（cas.rs read_body 同型路径校验 + sha256 校验 + 8MiB 帽）：
+    uri 形如 wsw/<2hex>/<64hex>；拒绝路径穿越/绝对路径/越界文件。"""
+    import base64 as _b64
+    parts = uri.split("/")
+    if (len(parts) != 3 or parts[0] != "wsw"
+            or not re.fullmatch(r"[0-9a-f]{2}", parts[1])
+            or not re.fullmatch(r"[0-9a-f]{64}", parts[2])):
+        raise ApiError(400, "bad_body_uri", f"CAS uri 非法：{uri!r}")
+    expected_sha = parts[2]
+    path = os.path.join(WSW_ARTIFACTS_ROOT, "wsw", parts[1], parts[2])
+    real_root = os.path.realpath(WSW_ARTIFACTS_ROOT)
+    real_path = os.path.realpath(path)
+    if not real_path.startswith(real_root + os.sep):
+        raise ApiError(400, "bad_body_uri", "CAS 路径越界（穿越拒绝）")
+    if not os.path.isfile(real_path) or os.path.islink(real_path):
+        raise ApiError(404, "body_not_in_cas",
+                       "body 未落 CAS（空体/超帽截断/中断捕获如实无字节）")
+    data = open(real_path, "rb").read()
+    if len(data) > WSW_HISTORY_BODY_CAP:
+        raise ApiError(413, "body_too_large",
+                       f"CAS body 超单响应帽 8MiB：{len(data)} 字节")
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected_sha:
+        raise ApiError(500, "body_integrity_mismatch",
+                       f"CAS 完整性校验失败（expected {expected_sha[:12]}… got {actual[:12]}…）")
+    return data
+
+
+def _wsw_history_body(_conn, exchange_id: str, params) -> dict:
+    """GET /api/wsw/history/{id}/body?direction=request|response：Body 按需
+    （D3）；响应头带 x-wsw-body-sha256 校验头；单响应帽 8MiB 超帽 413。"""
+    direction = params.get("direction", ["request"])[0]
+    if direction not in ("request", "response"):
+        raise ApiError(400, "bad_direction", f"direction 词表外：{direction!r}")
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        row = _wsw_exchange_row_full(conn, exchange_id)
+        uri = row.get(f"{direction}_body_uri")
+        sha = row.get(f"{direction}_body_sha256")
+        length = row.get(f"{direction}_body_len")
+        mime = row.get(f"{direction}_mime") or "application/octet-stream"
+        fidelity = row.get(f"{direction}_body_fidelity")
+        if not uri or not sha:
+            raise ApiError(404, "body_not_captured",
+                           f"{direction} 体未捕获（fidelity={fidelity!r}，len={length!r}）")
+        data = _wsw_cas_read(uri)
+        return {
+            "exchange_id": exchange_id,
+            "direction": direction,
+            "mime": mime,
+            "len": len(data),
+            "fidelity": fidelity,
+            "sha256": sha,
+            "encoding": "base64",
+            "body": base64.b64encode(data).decode("ascii"),
+        }, sha
+    finally:
+        conn.close()
+
+
+def _wsw_history_patch(exchange_id: str, body: dict) -> dict:
+    """PATCH /api/wsw/history/{id}：只接受 tags/notes 两字段（D7 写权面）；
+    tags JSON 数组校验；exchange 行本身仍 Rust-only（W3-D7 分治表）。"""
+    unknown = set(body.keys()) - {"tags", "notes"}
+    if unknown:
+        raise ApiError(400, "bad_patch_fields",
+                       f"PATCH 只接受 tags/notes，多余字段：{sorted(unknown)}")
+    tags = body.get("tags", None)
+    notes = body.get("notes", "__unset__")
+    tags_json = None
+    if tags is not None:
+        if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
+            raise ApiError(400, "bad_tags", "tags 必须为字符串数组")
+        if len(tags) > 64 or any(len(t) > 128 for t in tags):
+            raise ApiError(400, "bad_tags", "tags 项数/长度超帽（64 项 × 128 字符）")
+        tags_json = json.dumps(tags, ensure_ascii=False)
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        cur = conn.execute(
+            "UPDATE wsw_exchange SET "
+            "tags_json = COALESCE(?1, tags_json), "
+            "notes = CASE WHEN ?2 = '__unset__' THEN notes ELSE ?2 END "
+            "WHERE exchange_id=?3",
+            (tags_json, notes, exchange_id))
+        if cur.rowcount != 1:
+            raise ApiError(404, "exchange_not_found", f"exchange 不存在：{exchange_id}")
+        conn.commit()
+    finally:
+        conn.close()
+    detail = _wsw_history_detail(None, exchange_id)
+    return {"patched": True, "exchange": detail}
+
+
+def _wsw_history_stats(_conn, _params) -> dict:
+    """GET /api/wsw/status：retention 行数帽查询面（DESIGN §3.4——本批只落
+    查询面，LRU 淘汰执行器留 retention 批，如实登记遗留）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        exchange_count = conn.execute("SELECT COUNT(*) FROM wsw_exchange").fetchone()[0]
+        blob_count = conn.execute("SELECT COUNT(*) FROM wsw_body_blob").fetchone()[0]
+        blob_bytes = conn.execute("SELECT COALESCE(SUM(size_bytes),0) FROM wsw_body_blob").fetchone()[0]
+        return {
+            "exchange_rows": exchange_count,
+            "exchange_row_cap": WSW_EXCHANGE_ROW_CAP,
+            "exchange_row_cap_ratio": round(exchange_count / WSW_EXCHANGE_ROW_CAP, 4) if WSW_EXCHANGE_ROW_CAP else None,
+            "body_blob_rows": blob_count,
+            "body_blob_bytes": blob_bytes,
+            "retention_executor": "本批未落（DESIGN §3.4 执行器留 retention 批；查询面已暴露）",
+            "db": WSW_DB_PATH,
+        }
+    finally:
+        conn.close()
+
+
+# --- Repeater 面（tab/tab_version Python 直写；send 经 rp-wsw 子进程） ------
+
+def _wsw_outbound_from_history(conn, exchange_id: str) -> dict:
+    """History 行 → OutboundRequest 草稿（W3-D6.1 编辑态重建，非逐字节
+    Wire 重放；fidelity=degraded_no_wire 头区无原始 wire）。"""
+    row = _wsw_exchange_row_full(conn, exchange_id)
+    if row["source"] not in ("proxy_capture", "import"):
+        raise ApiError(400, "bad_source_for_rebuild",
+                       f"source={row['source']} 行不做重建面（repeater 行走 outbound 重发）")
+    authority = row.get("authority") or ""
+    method = row.get("method") or "GET"
+    path = row.get("path") or "/"
+    scheme = row.get("scheme") or "http"
+    headers = [{"name": h["name"], "value": h["value"]}
+               for h in (row.get("request_headers") or [])]
+    if not any(h["name"].lower() == "host" for h in headers) and authority:
+        headers.insert(0, {"name": "Host", "value": authority})
+    body_bytes = b""
+    if row.get("request_body_sha256") and row.get("request_body_uri"):
+        body_bytes = _wsw_cas_read(row["request_body_uri"])
+    return {
+        "method": method,
+        "target": path,
+        "version": "http/1.1",
+        "headers": headers,
+        "body": base64.b64encode(body_bytes).decode("ascii"),
+        "trailers": [],
+        "framing": "content_length",
+        "_authority": authority,
+        "_scheme": scheme,
+        "_fidelity": "degraded_no_wire",
+    }
+
+
+def _wsw_tab_touch(conn, tab_id: str) -> None:
+    conn.execute("UPDATE wsw_repeater_tab SET updated_at=? WHERE tab_id=?",
+                 (wsw_iso_now(), tab_id))
+
+
+def wsw_iso_now() -> str:
+    """ISO8601 UTC 带毫秒（epoch_ms_to_iso 同宽格式；字典序=时间序）。"""
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") \
+        + f"{_dt.datetime.now(_dt.timezone.utc).microsecond // 1000:03d}Z"
+
+
+def _wsw_next_version_no(conn, tab_id: str) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(MAX(version_no)+1, 1) FROM wsw_repeater_tab_version WHERE tab_id=?",
+        (tab_id,)).fetchone()
+    return int(row[0])
+
+
+def _wsw_append_version(conn, tab_id: str, request_json: str,
+                        origin: str, source_exchange_id: str | None) -> int:
+    """append-only 版本行落账（UNIQUE(tab_id,version_no) 锚；8MiB 帽）。"""
+    if len(request_json) > 8_388_608:
+        raise ApiError(413, "request_json_too_large", "request_json 超 8MiB 帽")
+    if origin not in ("manual", "from_history", "restore", "send_snapshot"):
+        raise ApiError(400, "bad_origin", f"origin 词表外：{origin!r}")
+    version_no = _wsw_next_version_no(conn, tab_id)
+    conn.execute(
+        "INSERT INTO wsw_repeater_tab_version "
+        "(tab_id, version_no, request_json, source_exchange_id, origin, created_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (tab_id, version_no, request_json, source_exchange_id, origin, wsw_iso_now()))
+    _wsw_tab_touch(conn, tab_id)
+    return version_no
+
+
+def _wsw_repeater_tab_create(body: dict) -> dict:
+    title = (body.get("title") or "").strip() or "Untitled tab"
+    session_id = body.get("session_id") or "wsw-ses-cli-0001"
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        sess = conn.execute("SELECT session_id FROM wsw_session WHERE session_id=?",
+                            (session_id,)).fetchone()
+        if sess is None:
+            raise ApiError(404, "session_not_found",
+                           f"wsw_session 行不存在：{session_id}（listener 启动登记面）")
+        tab_id = "wsw-rpt-{}-{}".format(
+            int(time.time() * 1_000_000), os.getpid() % 0xffff)
+        conn.execute(
+            "INSERT INTO wsw_repeater_tab (tab_id, session_id, title, created_at, updated_at, closed_at) "
+            "VALUES (?,?,?,?,?,NULL)", (tab_id, session_id, title, wsw_iso_now(), wsw_iso_now()))
+        template = {"method": "GET", "target": "/", "version": "http/1.1",
+                    "headers": [{"name": "Host", "value": "127.0.0.1"}],
+                    "body": "", "trailers": [], "framing": "content_length"}
+        version_no = _wsw_append_version(conn, tab_id,
+                                         json.dumps(template, ensure_ascii=False), "manual", None)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"tab_id": tab_id, "title": title, "session_id": session_id, "version_no": version_no}
+
+
+def _wsw_repeater_tabs(_conn, _params) -> dict:
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        rows = [dict(r) for r in conn.execute(
+            "SELECT tab_id, session_id, title, created_at, updated_at FROM wsw_repeater_tab "
+            "WHERE closed_at IS NULL ORDER BY updated_at DESC LIMIT 200")]
+        for r in rows:
+            latest = conn.execute(
+                "SELECT version_no, origin FROM wsw_repeater_tab_version WHERE tab_id=? "
+                "ORDER BY version_no DESC LIMIT 1", (r["tab_id"],)).fetchone()
+            r["latest_version_no"] = latest["version_no"] if latest else None
+            r["latest_origin"] = latest["origin"] if latest else None
+            r["version_count"] = conn.execute(
+                "SELECT COUNT(*) FROM wsw_repeater_tab_version WHERE tab_id=?",
+                (r["tab_id"],)).fetchone()[0]
+        return {"tabs": rows}
+    finally:
+        conn.close()
+
+
+def _wsw_repeater_tab_detail(_conn, tab_id: str) -> dict:
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        tab = conn.execute("SELECT tab_id, session_id, title, created_at, updated_at, closed_at "
+                           "FROM wsw_repeater_tab WHERE tab_id=?", (tab_id,)).fetchone()
+        if tab is None:
+            raise ApiError(404, "tab_not_found", f"tab 不存在：{tab_id}")
+        versions = [dict(r) for r in conn.execute(
+            "SELECT version_no, origin, source_exchange_id, created_at, LENGTH(request_json) AS request_json_len "
+            "FROM wsw_repeater_tab_version WHERE tab_id=? ORDER BY version_no DESC LIMIT 200",
+            (tab_id,))]
+        latest = conn.execute(
+            "SELECT version_no, request_json FROM wsw_repeater_tab_version WHERE tab_id=? "
+            "ORDER BY version_no DESC LIMIT 1", (tab_id,)).fetchone()
+        return {"tab": dict(tab), "versions": versions,
+                "latest_request_json": latest["request_json"] if latest else None,
+                "latest_version_no": latest["version_no"] if latest else None}
+    finally:
+        conn.close()
+
+
+def _wsw_repeater_tab_put_request(tab_id: str, body: dict) -> dict:
+    """PUT tab request（W3-D8.3 编辑面）：落新 version 行（append-only，
+    禁 UPDATE）——PUT 语义 = 编辑态快照追加，非行内更新。"""
+    request_json = body.get("request_json")
+    if isinstance(request_json, dict):
+        request_json = json.dumps(request_json, ensure_ascii=False)
+    if not isinstance(request_json, str) or not request_json.strip():
+        raise ApiError(400, "bad_request_json", "request_json 必填（OutboundRequest 形状）")
+    try:
+        parsed = json.loads(request_json)
+        if not isinstance(parsed, dict) or "method" not in parsed or "target" not in parsed:
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        raise ApiError(400, "bad_request_json",
+                       "request_json 非法（须含 method/target 的 OutboundRequest JSON）")
+    origin = body.get("origin") or "manual"
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        tab = conn.execute("SELECT tab_id, closed_at FROM wsw_repeater_tab WHERE tab_id=?",
+                           (tab_id,)).fetchone()
+        if tab is None:
+            raise ApiError(404, "tab_not_found", f"tab 不存在：{tab_id}")
+        if tab["closed_at"] is not None:
+            raise ApiError(409, "tab_closed", f"tab 已关闭：{tab_id}")
+        version_no = _wsw_append_version(conn, tab_id, request_json, origin, None)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"tab_id": tab_id, "version_no": version_no, "origin": origin,
+            "append_only": True, "note": "PUT = 新 version 行追加（表上无 UPDATE/DELETE 路径）"}
+
+
+def _wsw_repeater_tab_patch(tab_id: str, body: dict) -> dict:
+    """PATCH tab 控制行（title 重命名——tab 行级控制面，D7 小控制行 Python
+    直写；version 行 append-only 不受影响）。"""
+    unknown = set(body.keys()) - {"title"}
+    if unknown:
+        raise ApiError(400, "bad_patch_fields", f"tab PATCH 只接受 title，多余字段：{sorted(unknown)}")
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise ApiError(400, "bad_title", "title 非空必填")
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        cur = conn.execute(
+            "UPDATE wsw_repeater_tab SET title=?, updated_at=? WHERE tab_id=? AND closed_at IS NULL",
+            (title, wsw_iso_now(), tab_id))
+        if cur.rowcount != 1:
+            raise ApiError(404, "tab_not_found_or_closed", f"tab 不存在或已关闭：{tab_id}")
+        conn.commit()
+    finally:
+        conn.close()
+    return {"patched": True, "tab_id": tab_id, "title": title}
+
+
+def _wsw_repeater_tab_close(tab_id: str, _body: dict) -> dict:
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        cur = conn.execute(
+            "UPDATE wsw_repeater_tab SET closed_at=?, updated_at=? WHERE tab_id=? AND closed_at IS NULL",
+            (wsw_iso_now(), wsw_iso_now(), tab_id))
+        if cur.rowcount != 1:
+            raise ApiError(404, "tab_not_found_or_closed", f"tab 不存在或已关闭：{tab_id}")
+        conn.commit()
+    finally:
+        conn.close()
+    return {"closed": True, "tab_id": tab_id}
+
+
+def _wsw_repeater_tab_restore(tab_id: str, body: dict) -> dict:
+    """版本回退 = append 语义（W3-D1）：restore N → 新 origin='restore' 行。"""
+    version_no = body.get("version_no")
+    if not isinstance(version_no, int) or version_no < 1:
+        raise ApiError(400, "bad_version_no", "version_no 必须为正整数")
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        src = conn.execute(
+            "SELECT request_json FROM wsw_repeater_tab_version WHERE tab_id=? AND version_no=?",
+            (tab_id, version_no)).fetchone()
+        if src is None:
+            raise ApiError(404, "version_not_found", f"版本不存在：{tab_id} v{version_no}")
+        new_no = _wsw_append_version(conn, tab_id, src["request_json"], "restore", None)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"tab_id": tab_id, "restored_from": version_no, "new_version_no": new_no}
+
+
+def _wsw_send_to_repeater(exchange_id: str, body: dict) -> dict:
+    """Send to Repeater（W3-D6）：编辑态重建 → tab 版本行 origin='from_history'
+    + source_exchange_id 引用；无 tab_id 时新建 tab。UI 保真徽标明示
+    degraded_no_wire（禁假成功，PLAN :482）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        draft = _wsw_outbound_from_history(conn, exchange_id)
+    finally:
+        conn.close()
+    request_json = json.dumps({k: v for k, v in draft.items() if not k.startswith("_")},
+                              ensure_ascii=False)
+    tab_id = body.get("tab_id")
+    conn = _wsw_rw_conn()
+    try:
+        _wsw_require_025(conn)
+        if not tab_id:
+            tab = conn.execute("SELECT tab_id, session_id FROM wsw_repeater_tab WHERE closed_at IS NULL "
+                               "ORDER BY updated_at DESC LIMIT 1").fetchone()
+            if tab is None:
+                tab_id = "wsw-rpt-{}-{}".format(int(time.time() * 1_000_000), os.getpid() % 0xffff)
+                conn.execute(
+                    "INSERT INTO wsw_repeater_tab (tab_id, session_id, title, created_at, updated_at, closed_at) "
+                    "VALUES (?,?,?,?,?,NULL)",
+                    (tab_id, draft.get("_session") or "wsw-ses-cli-0001",
+                     f"History {exchange_id[:24]}", wsw_iso_now(), wsw_iso_now()))
+            else:
+                tab_id = tab["tab_id"]
+        version_no = _wsw_append_version(conn, tab_id, request_json, "from_history", exchange_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"tab_id": tab_id, "version_no": version_no, "source_exchange_id": exchange_id,
+            "origin": "from_history", "rebuild_fidelity": "degraded_no_wire",
+            "note": "重建自 History：头序/绝对形式不保证逐字节（W3-D6.2）"}
+
+
+def _wsw_spawn_send(body: dict) -> dict:
+    """POST /api/wsw/repeater/send：版本行 request_json 落盘 → rp-wsw send
+    子进程 spawn（Rust-First 发送事实面；W3-D4.6）——send 行 pending/sending/
+    终态由子命令自落，本面零直连 send 行写。"""
+    tab_id = body.get("tab_id")
+    if not tab_id:
+        raise ApiError(400, "bad_request", "tab_id 必填")
+    if not os.path.isfile(RP_WSW_BIN):
+        raise ApiError(503, "rp_wsw_bin_missing",
+                       f"rp-wsw 二进制不存在：{RP_WSW_BIN}（cargo build -p wsw-runtime --bin rp-wsw）")
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        if body.get("version_no"):
+            ver = conn.execute(
+                "SELECT version_no, request_json FROM wsw_repeater_tab_version "
+                "WHERE tab_id=? AND version_no=?", (tab_id, body["version_no"])).fetchone()
+        else:
+            ver = conn.execute(
+                "SELECT version_no, request_json FROM wsw_repeater_tab_version "
+                "WHERE tab_id=? ORDER BY version_no DESC LIMIT 1", (tab_id,)).fetchone()
+        if ver is None:
+            raise ApiError(404, "version_not_found", f"tab 无版本行：{tab_id}")
+        tab = conn.execute("SELECT session_id FROM wsw_repeater_tab WHERE tab_id=?",
+                           (tab_id,)).fetchone()
+        session_id = tab["session_id"] if tab else "wsw-ses-cli-0001"
+    finally:
+        conn.close()
+    send_id = "wsw-snd-{}-{}".format(int(time.time() * 1_000_000), os.getpid() % 0xffff)
+    os.makedirs(WSW_STATE_DIR, exist_ok=True)
+    request_path = os.path.join(WSW_STATE_DIR, f"send-{send_id}.request.json")
+    with open(request_path, "w", encoding="utf-8") as fh:
+        fh.write(ver["request_json"])
+    policy_path = None
+    if body.get("policy"):
+        policy_path = os.path.join(WSW_STATE_DIR, f"send-{send_id}.policy.json")
+        with open(policy_path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(body["policy"], ensure_ascii=False))
+    pid_file = os.path.join(WSW_STATE_DIR, f"send-{send_id}.pid")
+    cmd = [RP_WSW_BIN, "send",
+           "--db", WSW_DB_PATH,
+           "--session-id", session_id,
+           "--tab-id", tab_id,
+           "--send-id", send_id,
+           "--version-no", str(ver["version_no"]),
+           "--request-json", request_path,
+           "--pid-file", pid_file] + (["--policy", policy_path] if policy_path else [])
+    with open(WSW_LISTENER_LOG, "ab") as log:
+        proc = subprocess.Popen(cmd, stdout=log, stderr=log, cwd=REPO_ROOT,
+                                start_new_session=True)
+    return {"send_id": send_id, "pid": proc.pid, "tab_id": tab_id,
+            "version_no": ver["version_no"], "session_id": session_id,
+            "status_url": f"/api/wsw/repeater/send-status?send_id={send_id}"}
+
+
+def _wsw_send_status(_conn, params) -> dict:
+    """GET /api/wsw/repeater/send-status：send 行只读（六态 + 产出引用）。"""
+    send_id = params.get("send_id", [""])[0]
+    if not send_id:
+        raise ApiError(400, "bad_request", "send_id 必填")
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        row = conn.execute("SELECT * FROM wsw_repeater_send WHERE send_id=?", (send_id,)).fetchone()
+        if row is None:
+            raise ApiError(404, "send_not_found", f"send 行不存在：{send_id}")
+        out = dict(row)
+        if out.get("redirect_chain_json"):
+            try:
+                out["redirect_chain"] = json.loads(out.pop("redirect_chain_json"))
+            except json.JSONDecodeError:
+                out["redirect_chain"] = []
+        else:
+            out.pop("redirect_chain_json", None)
+            out["redirect_chain"] = []
+        return out
+    finally:
+        conn.close()
+
+
+def _wsw_send_cancel(body: dict) -> dict:
+    """POST /api/wsw/repeater/cancel：SIGTERM 子进程（graceful → cancelled
+    终态；W3-D4.5）。"""
+    send_id = body.get("send_id")
+    if not send_id:
+        raise ApiError(400, "bad_request", "send_id 必填")
+    pid_file = os.path.join(WSW_STATE_DIR, f"send-{send_id}.pid")
+    try:
+        with open(pid_file, "r", encoding="utf-8") as fh:
+            pid = int(fh.read().strip())
+    except (FileNotFoundError, ValueError):
+        return {"cancelled": False, "note": "pid 文件不存在（发送已结束或未运行）"}
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return {"cancelled": False, "note": "进程已不存在"}
+    for _ in range(50):
+        if not _wsw_listener_alive(pid):
+            break
+        time.sleep(0.1)
+    else:
+        os.kill(pid, signal.SIGKILL)
+    try:
+        os.unlink(pid_file)
+    except OSError:
+        pass
+    return {"cancelled": True, "send_id": send_id, "pid": pid,
+            "note": "SIGTERM graceful：子命令落 cancelled 终态"}
+
+
+def _wsw_send_list(_conn, params) -> dict:
+    tab_id = params.get("tab_id", [""])[0]
+    if not tab_id:
+        raise ApiError(400, "bad_request", "tab_id 必填")
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_025(conn)
+        rows = []
+        for r in conn.execute(
+                "SELECT send_id, tab_id, version_no, exchange_id, state, error_code, "
+                "response_status, response_body_len, response_mime, remote_ip, "
+                "redirect_chain_json, duration_ms, ttfb_ms, started_at, completed_at, created_at "
+                "FROM wsw_repeater_send WHERE tab_id=? ORDER BY created_at DESC LIMIT 200",
+                (tab_id,)):
+            row = dict(r)
+            if row.get("redirect_chain_json"):
+                try:
+                    row["redirect_chain"] = json.loads(row.pop("redirect_chain_json"))
+                except json.JSONDecodeError:
+                    row["redirect_chain"] = []
+            else:
+                row.pop("redirect_chain_json", None)
+                row["redirect_chain"] = []
+            rows.append(row)
+        return {"sends": rows, "tab_id": tab_id}
+    finally:
+        conn.close()
+
+
+def _wsw_history_send_to_repeater(exchange_id: str, body: dict) -> dict:
+    return _wsw_send_to_repeater(exchange_id, body)
+
+
+
 API_ROUTES = {
     "/api/wsw/proxy-status": handle_wsw_proxy_status,
     "/api/wsw/ca-status": handle_wsw_ca_status,
     "/api/wsw/intercept-queue": handle_wsw_intercept_queue,
+    # WSW-3 History/Repeater 读面（W3-D3/D7：mode=ro；游标分页 + 过滤 +
+    # q 搜索 / tab 列表 / retention 行数帽查询面）。
+    "/api/wsw/history": _wsw_history_list,
+    "/api/wsw/repeater/tabs": _wsw_repeater_tabs,
+    "/api/wsw/repeater/sends": _wsw_send_list,
+    "/api/wsw/repeater/send-status": _wsw_send_status,
+    "/api/wsw/status": _wsw_history_stats,
     "/api/plugins": handle_plugins_list,
     "/api/plugins/trust-policy": handle_plugin_trust_policy,
     "/api/knowledge_sources": handle_knowledge_sources,
@@ -3353,12 +4146,15 @@ class RpHandler(BaseHTTPRequestHandler):
             self._audit_trace_id = headers.get("X-Trace-Id")
             self._audit_correlation_id = headers.get("X-Correlation-Id")
 
-    def send_json(self, payload: dict, status: int = 200) -> None:
+    def send_json(self, payload: dict, status: int = 200,
+                  extra_headers: dict | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         for name, value in trace_response_headers(payload).items():
             self.send_header(name, value)
         self._audit_note(status, payload)
@@ -3484,6 +4280,23 @@ class RpHandler(BaseHTTPRequestHandler):
                     if evidence_id and "/" not in evidence_id:
                         self.send_json(handle_research_evidence_detail(evidence_id))
                         return
+                # WSW-3 History/Repeater 动态路径（W3-D3/D8）：详情 / Body 按需
+                #（单响应帽 8MiB 超帽 413 + x-wsw-body-sha256 校验头）/ tab 详情。
+                if parsed.path.startswith("/api/wsw/history/"):
+                    rest = unquote(parsed.path[len("/api/wsw/history/"):]).strip("/")
+                    if rest.endswith("/body"):
+                        exchange_id = rest[: -len("/body")]
+                        payload, sha = _wsw_history_body(None, exchange_id, params)
+                        self.send_json(payload, extra_headers={"x-wsw-body-sha256": sha})
+                        return
+                    if rest and "/" not in rest:
+                        self.send_json(_wsw_history_detail(None, rest))
+                        return
+                if parsed.path.startswith("/api/wsw/repeater/tabs/"):
+                    rest = unquote(parsed.path[len("/api/wsw/repeater/tabs/"):]).strip("/")
+                    if rest and "/" not in rest:
+                        self.send_json(_wsw_repeater_tab_detail(None, rest))
+                        return
                 raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
             file_path = self.resolve_static(parsed.path)
             if file_path is None:
@@ -3504,7 +4317,71 @@ class RpHandler(BaseHTTPRequestHandler):
             status=405,
         )
 
-    do_PUT = do_DELETE = do_PATCH = _reject_write
+    def do_PATCH(self) -> None:  # noqa: N802
+        """WSW-3 写面：PATCH /api/wsw/history/{id} tags/notes（D7 小控制行
+        Python 直写；exchange 行本身 Rust-only）。其余路径保持只读 405。"""
+        parsed = urlparse(self.path)
+        t0 = time.monotonic()
+        try:
+            if parsed.path.startswith("/api/wsw/history/"):
+                check_rate_limit()
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "WSW 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                exchange_id = unquote(parsed.path[len("/api/wsw/history/"):]).strip("/")
+                if not exchange_id or "/" in exchange_id:
+                    raise ApiError(404, "not_found", f"路径不存在：{parsed.path}")
+                body = self._read_json_body()
+                self.send_json(_wsw_history_patch(exchange_id, body))
+                return
+            tab_match = re.fullmatch(r"/api/wsw/repeater/tabs/([^/]+)", parsed.path)
+            if tab_match:
+                check_rate_limit()
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "WSW 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                self.send_json(_wsw_repeater_tab_patch(unquote(tab_match.group(1)), body))
+                return
+            self._reject_write()
+        except ApiError as exc:
+            self.send_api_error(exc)
+        except BrokenPipeError:
+            pass
+        except Exception as exc:  # 兜底：不泄露堆栈给客户端
+            self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
+        finally:
+            self._finish_audit("PATCH", parsed.path, t0)
+
+    def do_PUT(self) -> None:  # noqa: N802
+        """WSW-3 写面：PUT tab request = 新 version 行追加（append-only，
+        表上无 UPDATE/DELETE 路径，W3-D1/D8.3）。其余路径保持只读 405。"""
+        parsed = urlparse(self.path)
+        t0 = time.monotonic()
+        try:
+            match = re.fullmatch(r"/api/wsw/repeater/tabs/([^/]+)/request", parsed.path)
+            if match:
+                check_rate_limit()
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "WSW 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                self.send_json(_wsw_repeater_tab_put_request(unquote(match.group(1)), body))
+                return
+            self._reject_write()
+        except ApiError as exc:
+            self.send_api_error(exc)
+        except BrokenPipeError:
+            pass
+        except Exception as exc:
+            self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
+        finally:
+            self._finish_audit("PUT", parsed.path, t0)
+
+    do_DELETE = _reject_write
 
     def do_POST(self) -> None:  # noqa: N802
         """写面白名单（本文件对数据面零直连 SQL 写）：
@@ -3529,9 +4406,9 @@ class RpHandler(BaseHTTPRequestHandler):
                 if not AUTH_ENABLED:
                     raise ApiError(403, "auth_required_for_write",
                                    "WSW 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
-                action = unquote(parsed.path[len("/api/wsw/"):]).strip("/")
                 body = self._read_json_body()
-                self.send_json(wsw_write(action, body))
+                payload = wsw_post_route(parsed.path, body)
+                self.send_json(payload)
                 return
             # RIP3 P1-2 文档导入写面：base64 内容经 rp-doc 子进程
             # （magic bytes + CAS + 单事务落对象/来源/文档/版本），本进程零直连 PG。

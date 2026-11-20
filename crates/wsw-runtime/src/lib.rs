@@ -20,6 +20,7 @@ pub mod authority;
 pub mod listener;
 pub mod persist;
 pub mod scope;
+pub mod sender;
 
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};

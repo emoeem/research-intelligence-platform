@@ -105,15 +105,15 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
     assert_eq!(
         versions,
         vec![
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         ],
-        "discover must see all current migrations 001..024 in order (including WSW-2 024 intercept 三表) (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
+        "discover must see all current migrations 001..025 in order (including WSW-3 025 exchange 四表) (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
     );
 
     reset_dev_copy();
     let pool = open_dev_pool();
 
-    // 第一次：全链 001..024 落地，链尾 024_wsw_intercept。
+    // 第一次：全链 001..025 落地，链尾 025_wsw_exchange。
     let first = migrate(&pool, &dir).unwrap();
     let first_summary: Vec<(i64, String)> =
         first.iter().map(|m| (m.version, m.name.clone())).collect();
@@ -144,16 +144,17 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
             (22, "_coverage_matrix".to_string()),
             (23, "_wsw_body_blob".to_string()),
             (24, "_wsw_intercept".to_string()),
+            (25, "_wsw_exchange".to_string()),
         ],
-        "first run must apply exactly 001..024"
+        "first run must apply exactly 001..025"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 24,
-        "user_version must be 24 after first run (chain tail 024)"
+        uv1, 25,
+        "user_version must be 25 after first run (chain tail 025)"
     );
     assert!(
         sv1.iter()

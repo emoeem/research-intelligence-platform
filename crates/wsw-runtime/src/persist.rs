@@ -1,4 +1,5 @@
-//! 024 三表持久化 store（WSW-2-ADR W2-D4/D6；`migrations/024_wsw_intercept.sql`）。
+//! 024 三表 + 025 四表持久化 store（WSW-2-ADR W2-D4/D6；WSW-3-ADR W3-D1/D2/D4/D7；
+//! `migrations/024_wsw_intercept.sql` + `migrations/025_wsw_exchange.sql`）。
 //!
 //! - [`ListenerRow`]/[`SessionRow`]：listener/session 登记面（状态机列 +
 //!   规则 JSON 引用）；
@@ -9,6 +10,17 @@
 //!   队列、过期标 EXPIRED；W2-D6）；
 //! - [`PersistStore::expire_all_queued`]：停机全量强制 EXPIRED 终态
 //!   （PLAN §7.5 :553 红线）。
+//! - [`ExchangeRow`]：025 exchange 行（单行纪律：一 exchange 一行，请求+响应
+//!   同行；Body 大内容不入行，行内只落 CAS BodyRef 派生列；W3-D1）。
+//!   写权 = Rust-only（capture 通道 listener worker 批量事务 + send 通道
+//!   rp-wsw send；W3-D7 分治表）；
+//! - [`TabRow`]/[`TabVersionRow`]：Repeater tab 登记与 append-only 版本行
+//!   （UNIQUE(tab_id, version_no) 锚：禁 UPDATE 禁 DELETE；W3-D1）；
+//! - [`SendRow`]：发送历史六态行式状态机（PLAN §6.4 :501 词表；终态唯一性
+//!   SQL `WHERE state IN ('pending','sending')` 强制，intercept 同款口径）。
+//!
+//! WAL：`PersistStore::open_file` 后显式 `enable_wal()`（`database::Pool::
+//! enable_wal`，`pool.rs:258` 既有 API；rp_server 只读连接并发不互锁；W2-D2）。
 //!
 //! 纪律：rusqlite 经 `database` 重导出使用不直连；迁移执行器唯一为
 //! `database::migrate`；只在测试内存库与开发库副本执行（`platform*.db`
@@ -17,6 +29,7 @@
 use crate::{InterceptState, ListenerState};
 use database::{DbError, DbPath, DbResult, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
+use tracing::error as tracing_error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -269,7 +282,7 @@ pub fn generate_intercept_id() -> String {
     format!("wsw-itc-{ts64}-{seq}-{rand4:04x}")
 }
 
-/// 024 三表 store（Pool 包裹；rusqlite 经 database 重导出）。
+/// 024/025 store（Pool 包裹；rusqlite 经 database 重导出）。
 #[derive(Clone)]
 pub struct PersistStore {
     pool: Pool,
@@ -278,10 +291,13 @@ pub struct PersistStore {
 }
 
 impl PersistStore {
-    /// 文件库打开（调用面随后必须 `run_migrations`）。
+    /// 文件库打开（调用面随后必须 `run_migrations`）。WAL 在 open 后显式
+    /// 开启（W3-D2.4：rp_server mode=ro 读连接与 Rust 写者并发不互锁）。
     pub fn open_file(path: &Path) -> DbResult<Self> {
+        let pool = Pool::open(PoolConfig::writable_file(path))?;
+        pool.enable_wal()?;
         Ok(Self {
-            pool: Pool::open(PoolConfig::writable_file(path))?,
+            pool,
             path: Some(path.to_path_buf()),
         })
     }
@@ -299,7 +315,7 @@ impl PersistStore {
         })
     }
 
-    /// 迁移执行（唯一入口 `database::migrate`；024 后 user_version=24）。
+    /// 迁移执行（唯一入口 `database::migrate`；025 后 user_version=25）。
     pub fn run_migrations(
         &self,
         migrations_dir: &Path,
@@ -620,6 +636,746 @@ fn validate_intercept_row(row: &InterceptRow) -> Result<(), DbError> {
     Ok(())
 }
 
+// ===========================================================================
+// 025：wsw_exchange / wsw_repeater_tab / wsw_repeater_tab_version /
+//      wsw_repeater_send（WSW-3-ADR W3-D1/D4/D7）
+// ===========================================================================
+
+/// 生成 `wsw-rpt-<micros>-<seq>-<rand4>` Repeater tab ID（ids.rs:9 范式）。
+pub fn generate_tab_id() -> String {
+    format!("wsw-rpt-{}", generic_unique_suffix())
+}
+
+/// 生成 `wsw-snd-<micros>-<seq>-<rand4>` 发送行 ID（ids.rs:9 范式）。
+pub fn generate_send_id() -> String {
+    format!("wsw-snd-{}", generic_unique_suffix())
+}
+
+fn generic_unique_suffix() -> String {
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros();
+    let ts64 = ts as u64;
+    let rand4 = (std::process::id() as u64 ^ ts64 ^ (seq << 32)) & 0xffff;
+    format!("{ts64}-{seq}-{rand4:04x}")
+}
+
+/// `wsw_exchange` 行（025 表；单行纪律：一 exchange 一行，请求+响应同行）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ExchangeRow {
+    pub exchange_id: String,
+    pub session_id: String,
+    pub listener_id: String,
+    pub sequence_no: i64,
+    /// 'client_to_server'/'server_to_client'（capture 行恒请求方向）。
+    pub direction: &'static str,
+    /// 'proxy_capture'/'repeater'/'fuzzer'/'import'。
+    pub source: &'static str,
+    /// 'http'/'ws'（本批 capture/send 均为 'http'）。
+    pub protocol: &'static str,
+    pub http_version: Option<String>,
+    pub tls_version: Option<String>,
+    pub alpn: Option<String>,
+    pub method: Option<String>,
+    pub scheme: Option<String>,
+    pub authority: Option<String>,
+    pub path: Option<String>,
+    pub response_status: Option<i64>,
+    /// Parsed 头序保持投影 JSON（detail 专用；列表端点不选此列）。
+    pub request_headers_json: Option<String>,
+    pub response_headers_json: Option<String>,
+    pub request_body_sha256: Option<String>,
+    pub request_body_uri: Option<String>,
+    pub request_body_len: Option<i64>,
+    pub request_mime: Option<String>,
+    /// 'full'/'truncated'（CAS BodyRef.c 继承；None = 无体/未捕获）。
+    pub request_body_fidelity: Option<&'static str>,
+    pub response_body_sha256: Option<String>,
+    pub response_body_uri: Option<String>,
+    pub response_body_len: Option<i64>,
+    pub response_mime: Option<String>,
+    pub response_body_fidelity: Option<&'static str>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub ttfb_ms: Option<i64>,
+    pub remote_ip: Option<String>,
+    /// 'in_scope'/'out_of_scope_passive'/'out_of_scope_blocked'；None=Unknown。
+    pub scope_decision: Option<&'static str>,
+    pub edited: bool,
+    /// JSON 数组串（默认 '[]'）。
+    pub tags_json: String,
+    pub notes: Option<String>,
+    pub trace_id: Option<String>,
+    pub task_id: Option<String>,
+    pub tool_run_id: Option<String>,
+    pub artifact_id: Option<String>,
+    pub evidence_id: Option<String>,
+    /// 'full'/'truncated'/'degraded_no_wire'/'import'。
+    pub capture_fidelity: &'static str,
+    /// 'ok'/'partial'/'failed'。
+    pub parse_status: &'static str,
+    pub error_code: Option<String>,
+    /// 有界搜索投影（≤8KiB；凭据头值排除——DESIGN §4.5；insert 侧生成）。
+    pub search_text: Option<String>,
+}
+
+/// `wsw_repeater_tab` 行（025 表）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabRow {
+    pub tab_id: String,
+    pub session_id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+    /// NULL = 打开。
+    pub closed_at: Option<String>,
+}
+
+/// `wsw_repeater_tab_version` 行（025 表；append-only，禁 UPDATE 禁 DELETE）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabVersionRow {
+    pub tab_id: String,
+    pub version_no: i64,
+    /// OutboundRequest serde JSON（体 base64 内联，8MiB 帽）。
+    pub request_json: String,
+    pub source_exchange_id: Option<String>,
+    /// 'manual'/'from_history'/'restore'/'send_snapshot'。
+    pub origin: String,
+    pub created_at: String,
+}
+
+/// `wsw_repeater_send` 行（025 表；六态行式状态机）。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SendRow {
+    pub send_id: String,
+    pub tab_id: String,
+    pub version_no: i64,
+    pub session_id: String,
+    pub exchange_id: Option<String>,
+    /// 'pending'/'sending'/'succeeded'/'failed'/'cancelled'/'timed_out'。
+    pub state: String,
+    pub request_outbound_sha256: Option<String>,
+    pub redirect_chain_json: Option<String>,
+    pub response_status: Option<i64>,
+    pub response_body_sha256: Option<String>,
+    pub response_body_len: Option<i64>,
+    pub response_mime: Option<String>,
+    pub remote_ip: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub ttfb_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub created_at: String,
+}
+
+/// send 行终态推进 patch（SQL WHERE state IN ('pending','sending') 强制）。
+#[derive(Debug, Clone, Default)]
+pub struct SendPatch {
+    pub state: &'static str,
+    pub exchange_id: Option<String>,
+    pub request_outbound_sha256: Option<String>,
+    pub redirect_chain_json: Option<String>,
+    pub response_status: Option<i64>,
+    pub response_body_sha256: Option<String>,
+    pub response_body_len: Option<i64>,
+    pub response_mime: Option<String>,
+    pub remote_ip: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub ttfb_ms: Option<i64>,
+    pub error_code: Option<String>,
+}
+
+/// 批量落行结果（salvage 语义：单行失败不炸整批，计数可见）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BatchInsertOutcome {
+    pub inserted: usize,
+    pub failed: usize,
+}
+
+/// exchange 行校验（025 CHECK 双保险：ID 前缀 + 词表 + ISO8601 ms）。
+fn validate_exchange_row(row: &ExchangeRow) -> Result<(), DbError> {
+    if !row.exchange_id.starts_with("wsw-") {
+        return Err(DbError::Validation(format!(
+            "exchange_id must start with wsw-: {:?}",
+            row.exchange_id
+        )));
+    }
+    if !row.session_id.starts_with("wsw-ses-") {
+        return Err(DbError::Validation(format!(
+            "session_id must start with wsw-ses-: {:?}",
+            row.session_id
+        )));
+    }
+    if !row.listener_id.starts_with("wsw-lis-") {
+        return Err(DbError::Validation(format!(
+            "listener_id must start with wsw-lis-: {:?}",
+            row.listener_id
+        )));
+    }
+    if !matches!(row.direction, "client_to_server" | "server_to_client") {
+        return Err(DbError::Validation(format!("invalid direction: {:?}", row.direction)));
+    }
+    if !matches!(row.source, "proxy_capture" | "repeater" | "fuzzer" | "import") {
+        return Err(DbError::Validation(format!("invalid source: {:?}", row.source)));
+    }
+    if !matches!(row.protocol, "http" | "ws") {
+        return Err(DbError::Validation(format!("invalid protocol: {:?}", row.protocol)));
+    }
+    if !matches!(
+        row.capture_fidelity,
+        "full" | "truncated" | "degraded_no_wire" | "import"
+    ) {
+        return Err(DbError::Validation(format!(
+            "invalid capture_fidelity: {:?}",
+            row.capture_fidelity
+        )));
+    }
+    if !matches!(row.parse_status, "ok" | "partial" | "failed") {
+        return Err(DbError::Validation(format!(
+            "invalid parse_status: {:?}",
+            row.parse_status
+        )));
+    }
+    if let Some(d) = row.scope_decision {
+        if !matches!(d, "in_scope" | "out_of_scope_passive" | "out_of_scope_blocked") {
+            return Err(DbError::Validation(format!("invalid scope_decision: {d:?}")));
+        }
+    }
+    if let Some(t) = &row.started_at {
+        if iso_to_epoch_ms(t).is_none() {
+            return Err(DbError::Validation(format!(
+                "started_at must be ISO8601 UTC ms: {t:?}"
+            )));
+        }
+    }
+    if let Some(t) = &row.completed_at {
+        if iso_to_epoch_ms(t).is_none() {
+            return Err(DbError::Validation(format!(
+                "completed_at must be ISO8601 UTC ms: {t:?}"
+            )));
+        }
+    }
+    if let Some(sha) = &row.request_body_sha256 {
+        if !wsw_message::cas::is_valid_sha256(sha) {
+            return Err(DbError::Validation("bad request_body_sha256".into()));
+        }
+    }
+    if let Some(sha) = &row.response_body_sha256 {
+        if !wsw_message::cas::is_valid_sha256(sha) {
+            return Err(DbError::Validation("bad response_body_sha256".into()));
+        }
+    }
+    Ok(())
+}
+
+/// send 六态词表校验。
+fn validate_send_state(state: &str) -> Result<(), DbError> {
+    if matches!(
+        state,
+        "pending" | "sending" | "succeeded" | "failed" | "cancelled" | "timed_out"
+    ) {
+        Ok(())
+    } else {
+        Err(DbError::Validation(format!("invalid send state: {state:?}")))
+    }
+}
+
+impl PersistStore {
+    /// 025 水位断言（迁移后调用面；user_version 必须 = 25）。
+    pub fn assert_watermark_25(&self) -> DbResult<()> {
+        let v: i64 = self
+            .pool
+            .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
+        if v != 25 {
+            return Err(DbError::Validation(format!(
+                "025 chain head expected user_version=25, got {v}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// 批量落 exchange 行（W3-D2.3：单事务 + 逐行 salvage——单行 CHECK/UNIQUE
+    /// 冲突只跳过该行计数可见，不炸整批；W3-D2.2 满载丢弃面由 worker 上游
+    /// channel 承担，本面是落库终端）。
+    pub fn insert_exchanges(&self, rows: &[ExchangeRow]) -> DbResult<BatchInsertOutcome> {
+        let mut outcome = BatchInsertOutcome::default();
+        self.pool.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for row in rows {
+                if let Err(e) = validate_exchange_row(row) {
+                    tracing_error!(
+                        class = "parse_framing",
+                        error_code = "exchange_row_invalid",
+                        cause = %e,
+                        exchange_id = %row.exchange_id,
+                        "exchange row rejected by pre-insert validation"
+                    );
+                    outcome.failed += 1;
+                    continue;
+                }
+                let res = tx.execute(
+                    "INSERT INTO wsw_exchange \
+                     (exchange_id, session_id, listener_id, sequence_no, direction, source, \
+                      protocol, http_version, tls_version, alpn, method, scheme, authority, path, \
+                      response_status, request_headers_json, response_headers_json, \
+                      request_body_sha256, request_body_uri, request_body_len, request_mime, \
+                      request_body_fidelity, response_body_sha256, response_body_uri, \
+                      response_body_len, response_mime, response_body_fidelity, \
+                      started_at, completed_at, duration_ms, ttfb_ms, remote_ip, scope_decision, \
+                      edited, tags_json, notes, trace_id, task_id, tool_run_id, artifact_id, \
+                      evidence_id, capture_fidelity, parse_status, error_code, search_text) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20, \
+                             ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38, \
+                             ?39,?40,?41,?42,?43,?44,?45)",
+                    &sql_params![
+                        row.exchange_id,
+                        row.session_id,
+                        row.listener_id,
+                        row.sequence_no,
+                        row.direction,
+                        row.source,
+                        row.protocol,
+                        row.http_version,
+                        row.tls_version,
+                        row.alpn,
+                        row.method,
+                        row.scheme,
+                        row.authority,
+                        row.path,
+                        row.response_status,
+                        row.request_headers_json,
+                        row.response_headers_json,
+                        row.request_body_sha256,
+                        row.request_body_uri,
+                        row.request_body_len,
+                        row.request_mime,
+                        row.request_body_fidelity,
+                        row.response_body_sha256,
+                        row.response_body_uri,
+                        row.response_body_len,
+                        row.response_mime,
+                        row.response_body_fidelity,
+                        row.started_at,
+                        row.completed_at,
+                        row.duration_ms,
+                        row.ttfb_ms,
+                        row.remote_ip,
+                        row.scope_decision,
+                        row.edited as i64,
+                        row.tags_json,
+                        row.notes,
+                        row.trace_id,
+                        row.task_id,
+                        row.tool_run_id,
+                        row.artifact_id,
+                        row.evidence_id,
+                        row.capture_fidelity,
+                        row.parse_status,
+                        row.error_code,
+                        row.search_text
+                    ][..],
+                );
+                match res {
+                    Ok(_) => outcome.inserted += 1,
+                    Err(e) => {
+                        tracing_error!(
+                            class = "parse_framing",
+                            error_code = "exchange_row_insert_failed",
+                            cause = %e,
+                            exchange_id = %row.exchange_id,
+                            "exchange row insert failed (row salvaged out of batch)"
+                        );
+                        outcome.failed += 1;
+                    }
+                }
+            }
+            tx.commit()?;
+            Ok::<(), database::rusqlite::Error>(())
+        })?;
+        Ok(outcome)
+    }
+
+    /// tags/notes 编辑（W3-D7 Python 直写同款列；Rust 侧供测试/工具面）。
+    /// 返回 false = 行不存在。
+    pub fn update_exchange_tags_notes(
+        &self,
+        exchange_id: &str,
+        tags_json: &str,
+        notes: Option<&str>,
+    ) -> DbResult<bool> {
+        let n = self.pool.with_conn(|conn| {
+            conn.execute(
+                "UPDATE wsw_exchange SET tags_json=?1, notes=?2 WHERE exchange_id=?3",
+                sql_params![tags_json, notes, exchange_id],
+            )
+        })?;
+        Ok(n == 1)
+    }
+
+    /// exchange 行数（DESIGN §3.4 retention 行数帽查询面）。
+    pub fn exchange_count(&self) -> DbResult<u64> {
+        self.pool
+            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM wsw_exchange", [], |r| r.get(0)))
+    }
+
+    /// 下一 sequence_no（listener 内对账面；重启恢复 = MAX+1）。
+    pub fn next_sequence_no(&self, listener_id: &str) -> DbResult<i64> {
+        self.pool.with_conn(|conn| {
+            conn.query_row(
+                "SELECT COALESCE(MAX(sequence_no)+1, 0) FROM wsw_exchange WHERE listener_id=?1",
+                sql_params![listener_id],
+                |r| r.get(0),
+            )
+        })
+    }
+
+    /// Repeater tab 登记（INSERT；同 tab_id 重复报错）。
+    pub fn create_tab(&self, row: &TabRow) -> DbResult<()> {
+        if !row.tab_id.starts_with("wsw-rpt-") {
+            return Err(DbError::Validation(format!(
+                "tab_id must start with wsw-rpt-: {:?}",
+                row.tab_id
+            )));
+        }
+        if row.title.trim().is_empty() {
+            return Err(DbError::Validation("tab title must be non-empty".into()));
+        }
+        self.pool.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO wsw_repeater_tab \
+                 (tab_id, session_id, title, created_at, updated_at, closed_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                sql_params![
+                    row.tab_id,
+                    row.session_id,
+                    row.title,
+                    row.created_at,
+                    row.updated_at,
+                    row.closed_at
+                ],
+            )?;
+            Ok::<(), database::rusqlite::Error>(())
+        })
+    }
+
+    /// tab 关闭（closed_at 落账；控制行级 UPDATE——版本行 append-only 不受影响）。
+    pub fn close_tab(&self, tab_id: &str, closed_at: &str) -> DbResult<bool> {
+        let n = self.pool.with_conn(|conn| {
+            conn.execute(
+                "UPDATE wsw_repeater_tab SET closed_at=?1, updated_at=?1 \
+                 WHERE tab_id=?2 AND closed_at IS NULL",
+                sql_params![closed_at, tab_id],
+            )
+        })?;
+        Ok(n == 1)
+    }
+
+    /// 打开 tab 列表（closed_at IS NULL；updated_at DESC）。
+    pub fn list_open_tabs(&self, session_id: &str) -> DbResult<Vec<TabRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Vec<TabRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT tab_id, session_id, title, created_at, updated_at, closed_at \
+                 FROM wsw_repeater_tab WHERE session_id=?1 AND closed_at IS NULL \
+                 ORDER BY updated_at DESC LIMIT 200",
+            )?;
+            let rows = stmt.query_map(sql_params![session_id], map_tab_row)?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+    }
+
+    /// append-only 版本行落账（UNIQUE(tab_id, version_no) 锚：同键重写报错；
+    /// origin 词表 + request_json 8MiB 帽校验；无 UPDATE/DELETE 路径）。
+    pub fn append_tab_version(&self, row: &TabVersionRow) -> DbResult<()> {
+        if !row.tab_id.starts_with("wsw-rpt-") {
+            return Err(DbError::Validation(format!(
+                "tab_id must start with wsw-rpt-: {:?}",
+                row.tab_id
+            )));
+        }
+        if row.version_no < 1 {
+            return Err(DbError::Validation("version_no must be >= 1".into()));
+        }
+        if !matches!(row.origin.as_str(), "manual" | "from_history" | "restore" | "send_snapshot") {
+            return Err(DbError::Validation(format!("invalid origin: {:?}", row.origin)));
+        }
+        if row.request_json.len() > 8_388_608 {
+            return Err(DbError::Validation(
+                "request_json exceeds 8MiB cap (413)".into(),
+            ));
+        }
+        if let Some(ex) = &row.source_exchange_id {
+            if !ex.starts_with("wsw-") {
+                return Err(DbError::Validation(format!(
+                    "source_exchange_id must start with wsw-: {ex:?}"
+                )));
+            }
+        }
+        self.pool.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO wsw_repeater_tab_version \
+                 (tab_id, version_no, request_json, source_exchange_id, origin, created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                sql_params![
+                    row.tab_id,
+                    row.version_no,
+                    row.request_json,
+                    row.source_exchange_id,
+                    row.origin,
+                    row.created_at
+                ],
+            )?;
+            Ok::<(), database::rusqlite::Error>(())
+        })
+    }
+
+    /// 取版本行（发送面回放依据）。
+    pub fn get_tab_version(&self, tab_id: &str, version_no: i64) -> DbResult<Option<TabVersionRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Option<TabVersionRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT tab_id, version_no, request_json, source_exchange_id, origin, created_at \
+                 FROM wsw_repeater_tab_version WHERE tab_id=?1 AND version_no=?2",
+            )?;
+            let mut rows = stmt.query_map(sql_params![tab_id, version_no], map_version_row)?;
+            Ok(rows.next().transpose()?)
+        })
+    }
+
+    /// 最新版本行（tab 打开面回填编辑器）。
+    pub fn latest_tab_version(&self, tab_id: &str) -> DbResult<Option<TabVersionRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Option<TabVersionRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT tab_id, version_no, request_json, source_exchange_id, origin, created_at \
+                 FROM wsw_repeater_tab_version WHERE tab_id=?1 \
+                 ORDER BY version_no DESC LIMIT 1",
+            )?;
+            let mut rows = stmt.query_map(sql_params![tab_id], map_version_row)?;
+            Ok(rows.next().transpose()?)
+        })
+    }
+
+    /// 版本历史（append-only 全序列；version_no DESC）。
+    pub fn list_tab_versions(&self, tab_id: &str, limit: i64) -> DbResult<Vec<TabVersionRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Vec<TabVersionRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT tab_id, version_no, request_json, source_exchange_id, origin, created_at \
+                 FROM wsw_repeater_tab_version WHERE tab_id=?1 \
+                 ORDER BY version_no DESC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(sql_params![tab_id, limit.min(500)], map_version_row)?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+    }
+
+    /// send 行登记（state='pending' 起步；INSERT）。
+    pub fn insert_send(&self, row: &SendRow) -> DbResult<()> {
+        if !row.send_id.starts_with("wsw-snd-") {
+            return Err(DbError::Validation(format!(
+                "send_id must start with wsw-snd-: {:?}",
+                row.send_id
+            )));
+        }
+        validate_send_state(&row.state)?;
+        if iso_to_epoch_ms(&row.created_at).is_none() {
+            return Err(DbError::Validation(
+                "created_at must be ISO8601 UTC ms".into(),
+            ));
+        }
+        self.pool.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO wsw_repeater_send \
+                 (send_id, tab_id, version_no, session_id, exchange_id, state, \
+                  request_outbound_sha256, redirect_chain_json, response_status, \
+                  response_body_sha256, response_body_len, response_mime, remote_ip, \
+                  started_at, completed_at, duration_ms, ttfb_ms, error_code, created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+                sql_params![
+                    row.send_id,
+                    row.tab_id,
+                    row.version_no,
+                    row.session_id,
+                    row.exchange_id,
+                    row.state,
+                    row.request_outbound_sha256,
+                    row.redirect_chain_json,
+                    row.response_status,
+                    row.response_body_sha256,
+                    row.response_body_len,
+                    row.response_mime,
+                    row.remote_ip,
+                    row.started_at,
+                    row.completed_at,
+                    row.duration_ms,
+                    row.ttfb_ms,
+                    row.error_code,
+                    row.created_at
+                ],
+            )?;
+            Ok::<(), database::rusqlite::Error>(())
+        })
+    }
+
+    /// send 行推进（终态唯一性 SQL 强制：仅 pending/sending 可推进；返回
+    /// false = 已终态或不存在——intercept `WHERE state='queued'` 同款口径）。
+    pub fn advance_send(&self, send_id: &str, patch: &SendPatch) -> DbResult<bool> {
+        validate_send_state(patch.state)?;
+        let n = self.pool.with_conn(|conn| {
+            conn.execute(
+                "UPDATE wsw_repeater_send SET \
+                   exchange_id=COALESCE(?2, exchange_id), \
+                   request_outbound_sha256=COALESCE(?3, request_outbound_sha256), \
+                   redirect_chain_json=COALESCE(?4, redirect_chain_json), \
+                   response_status=COALESCE(?5, response_status), \
+                   response_body_sha256=COALESCE(?6, response_body_sha256), \
+                   response_body_len=COALESCE(?7, response_body_len), \
+                   response_mime=COALESCE(?8, response_mime), \
+                   remote_ip=COALESCE(?9, remote_ip), \
+                   started_at=COALESCE(?10, started_at), \
+                   completed_at=COALESCE(?11, completed_at), \
+                   duration_ms=COALESCE(?12, duration_ms), \
+                   ttfb_ms=COALESCE(?13, ttfb_ms), \
+                   error_code=COALESCE(?14, error_code), \
+                   state=?1 \
+                 WHERE send_id=?15 AND state IN ('pending','sending')",
+                sql_params![
+                    patch.state,
+                    patch.exchange_id,
+                    patch.request_outbound_sha256,
+                    patch.redirect_chain_json,
+                    patch.response_status,
+                    patch.response_body_sha256,
+                    patch.response_body_len,
+                    patch.response_mime,
+                    patch.remote_ip,
+                    patch.started_at,
+                    patch.completed_at,
+                    patch.duration_ms,
+                    patch.ttfb_ms,
+                    patch.error_code,
+                    send_id
+                ],
+            )
+        })?;
+        Ok(n == 1)
+    }
+
+    /// 取 send 行（状态轮询面）。
+    pub fn get_send(&self, send_id: &str) -> DbResult<Option<SendRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Option<SendRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT send_id, tab_id, version_no, session_id, exchange_id, state, \
+                        request_outbound_sha256, redirect_chain_json, response_status, \
+                        response_body_sha256, response_body_len, response_mime, remote_ip, \
+                        started_at, completed_at, duration_ms, ttfb_ms, error_code, created_at \
+                 FROM wsw_repeater_send WHERE send_id=?1",
+            )?;
+            let mut rows = stmt.query_map(sql_params![send_id], map_send_row)?;
+            Ok(rows.next().transpose()?)
+        })
+    }
+
+    /// send 历史（tab 维度；created_at DESC）。
+    pub fn list_sends(&self, tab_id: &str, limit: i64) -> DbResult<Vec<SendRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Vec<SendRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT send_id, tab_id, version_no, session_id, exchange_id, state, \
+                        request_outbound_sha256, redirect_chain_json, response_status, \
+                        response_body_sha256, response_body_len, response_mime, remote_ip, \
+                        started_at, completed_at, duration_ms, ttfb_ms, error_code, created_at \
+                 FROM wsw_repeater_send WHERE tab_id=?1 ORDER BY created_at DESC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(sql_params![tab_id, limit.min(500)], map_send_row)?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+    }
+
+    /// session 取行（send 面 scope 规则回读）。
+    pub fn get_session(&self, session_id: &str) -> DbResult<Option<SessionRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Option<SessionRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT session_id, title, scope_rules_json, out_of_scope_policy, created_at, updated_at \
+                 FROM wsw_session WHERE session_id=?1",
+            )?;
+            let mut rows = stmt.query_map(sql_params![session_id], |r| {
+                Ok(SessionRow {
+                    session_id: r.get(0)?,
+                    title: r.get(1)?,
+                    scope_rules_json: r.get(2)?,
+                    out_of_scope_policy: r.get(3)?,
+                    created_at: r.get(4)?,
+                    updated_at: r.get(5)?,
+                })
+            })?;
+            Ok(rows.next().transpose()?)
+        })
+    }
+}
+
+fn map_tab_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result<TabRow> {
+    Ok(TabRow {
+        tab_id: row.get(0)?,
+        session_id: row.get(1)?,
+        title: row.get(2)?,
+        created_at: row.get(3)?,
+        updated_at: row.get(4)?,
+        closed_at: row.get(5)?,
+    })
+}
+
+fn map_version_row(
+    row: &database::rusqlite::Row<'_>,
+) -> database::rusqlite::Result<TabVersionRow> {
+    Ok(TabVersionRow {
+        tab_id: row.get(0)?,
+        version_no: row.get(1)?,
+        request_json: row.get(2)?,
+        source_exchange_id: row.get(3)?,
+        origin: row.get(4)?,
+        created_at: row.get(5)?,
+    })
+}
+
+fn map_send_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result<SendRow> {
+    Ok(SendRow {
+        send_id: row.get(0)?,
+        tab_id: row.get(1)?,
+        version_no: row.get(2)?,
+        session_id: row.get(3)?,
+        exchange_id: row.get(4)?,
+        state: row.get(5)?,
+        request_outbound_sha256: row.get(6)?,
+        redirect_chain_json: row.get(7)?,
+        response_status: row.get(8)?,
+        response_body_sha256: row.get(9)?,
+        response_body_len: row.get(10)?,
+        response_mime: row.get(11)?,
+        remote_ip: row.get(12)?,
+        started_at: row.get(13)?,
+        completed_at: row.get(14)?,
+        duration_ms: row.get(15)?,
+        ttfb_ms: row.get(16)?,
+        error_code: row.get(17)?,
+        created_at: row.get(18)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -650,7 +1406,7 @@ mod tests {
                 .join("../../migrations")
                 .as_path(),
         )
-        .expect("migrate 001..024");
+        .expect("migrate 001..025");
         s
     }
 

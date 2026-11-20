@@ -15,7 +15,8 @@ import {
  *   1. 编号漂移：tab 编号若取自渲染位置，过滤后「5.1」就换了页面；
  *   2. 路径冲突：workspaceIdOf 按首个匹配归属，路径重复会串工作区。 */
 
-/** SESSION-HANDOFF §11.2 的十一工作区（顺序即 order 1 到 11）。 */
+/** SESSION-HANDOFF §11.2 的十一工作区 + WSW-3 websec 工作区（order 12，
+ *  W3-D8：HTTP History + Repeater 两 tab）→ 十二工作区。 */
 const EXPECTED_IDS = [
   "dashboard",
   "projects",
@@ -28,6 +29,7 @@ const EXPECTED_IDS = [
   "runs",
   "runtime",
   "settings",
+  "websec",
 ] as const;
 
 function tabOf(workspace: Workspace, order: number): WorkspaceNavItem {
@@ -36,11 +38,11 @@ function tabOf(workspace: Workspace, order: number): WorkspaceNavItem {
   return tab;
 }
 
-describe("workspaces 数据模型（P7-1 十一工作区）", () => {
+describe("workspaces 数据模型（P7-1 十一工作区 + WSW-3 websec 第十二工作区）", () => {
   it("十一个工作区按 1 到 11 编号、id 唯一且顺序与 §11.2 清单一致，BY_ORDER 是防御式排序", () => {
     expect(WORKSPACES.map((workspace) => workspace.id)).toEqual([...EXPECTED_IDS]);
     expect(WORKSPACES.map((workspace) => workspace.order)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
     ]);
     expect(WORKSPACES_BY_ORDER.map((workspace) => workspace.id)).toEqual(
       WORKSPACES.map((workspace) => workspace.id),
@@ -96,13 +98,15 @@ describe("workspaces 数据模型（P7-1 十一工作区）", () => {
 
   it("路由与工作区数据一一对应且无重复（十一工作区 + 总览 + RIP3 文档中心 + Research 子页 tab）", () => {
     const routes = ["/", ...WORKSPACES.flatMap((workspace) => workspace.tabs.map((tab) => tab.to))];
-    // Dashboard 的 entry 即「/」：列表含一次重复，去重后为 20 条路由
+    // Dashboard 的 entry 即「/」：列表含一次重复，去重后为 22 条路由
     //（11 工作区主路由 + RIP3 P1-2 文档中心 tab 挂 Knowledge 第二 tab
     // + P5-1 Research 三子页 tab：tasks/assets/knowledge + P5-6 验证计划
     // 子页 plans + P5-9b 证据档 evidence 与覆盖矩阵 coverage 子页
     // + WSW-2 批次 Settings 两个子页 tab：settings/wsw-proxy 与
-    //   settings/wsw-cert（W2-D8 代理状态页 + 证书状态页））。
-    expect(new Set(routes).size).toBe(20);
+    //   settings/wsw-cert（W2-D8 代理状态页 + 证书状态页）
+    // + WSW-3 批次 websec 工作区两 tab：websec/history 与
+    //   websec/repeater（W3-D8 路由钉值 20→22 设计内扩展，如实记录））。
+    expect(new Set(routes).size).toBe(22);
     for (const route of [
       "/",
       "/projects",
@@ -124,6 +128,8 @@ describe("workspaces 数据模型（P7-1 十一工作区）", () => {
       "/settings",
       "/settings/wsw-proxy",
       "/settings/wsw-cert",
+      "/websec/history",
+      "/websec/repeater",
     ]) {
       expect(routes).toContain(route);
     }
@@ -163,6 +169,7 @@ describe("workspaces 数据模型（P7-1 十一工作区）", () => {
       "9",
       "10",
       "11",
+      "12",
     ]);
     const dashboard = map.find((workspace) => workspace.id === "dashboard");
     const tools = map.find((workspace) => workspace.id === "tools");

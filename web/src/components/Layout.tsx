@@ -28,6 +28,8 @@ import {
   ShieldCheck,
   Settings,
   Sun,
+  Globe,
+  RefreshCw,
   Workflow,
   Wrench,
   type LucideIcon,
@@ -55,6 +57,8 @@ const ICONS: Record<WorkspaceIconKey, LucideIcon> = {
   serverCog: ServerCog,
   shieldCheck: ShieldCheck,
   settings: Settings,
+  globe: Globe,
+  refreshCw: RefreshCw,
 };
 
 /**

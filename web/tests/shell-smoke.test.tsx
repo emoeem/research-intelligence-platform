@@ -73,10 +73,10 @@ afterEach(() => {
 });
 
 describe("顶部栏五要素（P7-1）", () => {
-  it("工作区切换器列出十一工作区，切换后路由跳到该区着陆页", () => {
+  it("工作区切换器列出十二工作区（WSW-3 websec 第十二工作区，W3-D8），切换后路由跳到该区着陆页", () => {
     render(<App />);
     const select = screen.getByRole("combobox", { name: "切换工作区" }) as HTMLSelectElement;
-    expect(select.options).toHaveLength(12); // 十一工作区 + 隐藏占位 option
+    expect(select.options).toHaveLength(13); // 十二工作区 + 隐藏占位 option
     expect(select.value).toBe("dashboard");
     fireEvent.change(select, { target: { value: "tools" } });
     expect(window.location.pathname).toBe("/tools");

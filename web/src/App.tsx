@@ -98,6 +98,13 @@ const WswProxyPage = lazy(() =>
 const WswCertPage = lazy(() =>
   import("./routes/WswCertPage").then((m) => ({ default: m.WswCertPage })),
 );
+// WSW-3 History/Repeater 两页（W3-D8：新 websec 工作区 order 12）。
+const WswHistoryPage = lazy(() =>
+  import("./routes/WswHistoryPage").then((m) => ({ default: m.WswHistoryPage })),
+);
+const WswRepeaterPage = lazy(() =>
+  import("./routes/WswRepeaterPage").then((m) => ({ default: m.WswRepeaterPage })),
+);
 
 function lazyElement(node: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
@@ -159,6 +166,9 @@ export function App() {
             {/* WSW-2 最小 UI 面（W2-D8）：代理状态页 + 证书状态页。 */}
             <Route path="settings/wsw-proxy" element={lazyElement(<WswProxyPage />)} />
             <Route path="settings/wsw-cert" element={lazyElement(<WswCertPage />)} />
+            {/* WSW-3 websec 工作区（W3-D8）：History + Repeater 两页。 */}
+            <Route path="websec/history" element={lazyElement(<WswHistoryPage />)} />
+            <Route path="websec/repeater" element={lazyElement(<WswRepeaterPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

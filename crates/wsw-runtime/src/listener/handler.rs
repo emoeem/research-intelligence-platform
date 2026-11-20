@@ -16,7 +16,7 @@
 //!   `wsw_message::redact` 命中的头名列表（**任何头值/体值不落日志**，
 //!   DESIGN §4.5 / PLAN §7.5 :555）。
 
-use crate::persist::{self, InterceptDirection, InterceptRow, PersistStore};
+use crate::persist::{self, ExchangeRow, InterceptDirection, InterceptRow, PersistStore};
 use crate::scope::{self, ScopeRules, ScopeTarget};
 use crate::{
     is_loopback_peer, InterceptState, ListenerConfig, ListenerState, PendingQueue, QueueError,
@@ -276,6 +276,11 @@ pub struct Counters {
     pub intercept_total: AtomicU64,
     /// CAS 捕获登记。
     pub captures_total: AtomicU64,
+    /// exchange 落库满载丢弃（W3-D2.2：mpsc try_send Err(Full) → 丢行计数，
+    /// 转发热路径零阻塞零等待）。
+    pub persist_dropped_total: AtomicU64,
+    /// exchange 行已入 channel 计数（worker 消费面；吞吐实测分母）。
+    pub persist_enqueued_total: AtomicU64,
     /// 五态错误计数（index = ProxyErrorClass as_str）。
     pub errors: Mutex<BTreeMap<&'static str, u64>>,
 }
@@ -314,6 +319,16 @@ pub struct ListenerShared {
     pub coordinator: InterceptCoordinator,
     /// 024 store（None = 纯内存）。
     persist: Option<PersistStore>,
+    /// exchange 落库通道发送端（persist 在场才挂；W3-D2.2 有界 mpsc(2048)）。
+    exchange_tx: Option<tokio::sync::mpsc::Sender<ExchangeRow>>,
+    /// exchange 落库通道接收端（listener start 取走 spawn worker；取一次）。
+    persist_rx: Mutex<Option<tokio::sync::mpsc::Receiver<ExchangeRow>>>,
+    /// exchange 行 listener 内单调序号（UNIQUE(listener_id, sequence_no)；
+    /// 启动时由 worker 侧 MAX+1 恢复）。
+    persist_sequence: AtomicU64,
+    /// 在途 capture 组装器登记（worker 清扫面：超龄未推行的 partial 行兜底
+    /// 落库——连接中断且双侧流末都未触发时的可见性保证）。
+    pub pending_captures: Mutex<BTreeMap<String, Arc<ExchangeCapture>>>,
     /// downstream_tls 连续错误（RUNNING→DEGRADED 评估，DESIGN §2.1）。
     pub consecutive_downstream_tls: AtomicU64,
     /// 启动时刻。
@@ -321,13 +336,21 @@ pub struct ListenerShared {
 }
 
 impl ListenerShared {
-    /// 构造（listener start 面消费）。
+    /// 构造（listener start 面消费）。persist 在场时同时挂 exchange 落库
+    /// 有界通道（cap 2048；W3-D2.2）——接收端由 [`Self::take_persist_rx`]
+    /// 取走交给单 worker。
     pub fn new(options: RuntimeOptions, persist: Option<PersistStore>) -> Self {
         let coordinator = InterceptCoordinator::new(
             options.config.queue_capacity,
             options.config.queue_ttl_seconds * 1000,
             persist.clone(),
         );
+        let (exchange_tx, persist_rx) = if persist.is_some() {
+            let (tx, rx) = tokio::sync::mpsc::channel(2048);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
         Self {
             policy: OutOfScopePolicy::parse(&options.out_of_scope_policy),
             rules: options.scope_rules.clone(),
@@ -336,8 +359,51 @@ impl ListenerShared {
             state: Mutex::new(ListenerState::Stopped),
             coordinator,
             persist,
+            exchange_tx,
+            persist_rx: Mutex::new(persist_rx),
+            persist_sequence: AtomicU64::new(0),
+            pending_captures: Mutex::new(BTreeMap::new()),
             consecutive_downstream_tls: AtomicU64::new(0),
             started_at: persist::now_iso(),
+        }
+    }
+
+    /// sequence 基线恢复（worker 启动面：MAX(sequence_no)+1；此后单调递增）。
+    pub fn set_persist_sequence_base(&self, base: u64) {
+        self.persist_sequence.store(base, Ordering::Relaxed);
+    }
+
+    /// 取走 exchange 落库通道接收端（worker spawn 用；二次调用 None）。
+    pub fn take_persist_rx(&self) -> Option<tokio::sync::mpsc::Receiver<ExchangeRow>> {
+        self.persist_rx.lock().expect("persist rx mutex").take()
+    }
+
+    /// exchange 行 try_send（满载 → 丢行 + 计数 + 结构化日志，不等待不重试；
+    /// W3-D2.2）。返回 false = 满载丢弃。persist_enqueued_total 只计成功入
+    /// 通道行（worker 吞吐分母语义）。
+    pub fn push_exchange_row(&self, row: ExchangeRow) -> bool {
+        let Some(tx) = &self.exchange_tx else {
+            return false; // 纯内存面：无落库通道，行即弃（capture_cas/024 行为不变）
+        };
+        match tx.try_send(row) {
+            Ok(()) => {
+                self.counters
+                    .persist_enqueued_total
+                    .fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                self.counters
+                    .persist_dropped_total
+                    .fetch_add(1, Ordering::Relaxed);
+                tracing_error!(
+                    class = "parse_framing",
+                    error_code = "persist_channel_full_drop",
+                    "exchange row dropped: bounded persist channel full (2048); forward path unblocked"
+                );
+                false
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
         }
     }
 
@@ -388,6 +454,11 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// now → epoch ms（listener 清扫面消费；pub(crate) 转发）。
+pub(crate) fn now_ms_pub() -> u64 {
+    now_ms()
+}
+
 /// 生成 exchange 形状 ID（`wsw-<micros>-<seq>-<rand4>`；ids.rs:9 范式）。
 pub fn new_exchange_id() -> String {
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -399,6 +470,417 @@ pub fn new_exchange_id() -> String {
     let ts64 = ts as u64;
     let rand4 = (std::process::id() as u64 ^ ts64 ^ (seq.wrapping_mul(0x9e37_79b9))) & 0xffff;
     format!("wsw-{ts64}-{seq}-{rand4:04x}")
+}
+
+// ===========================================================================
+// WSW-3 S3：capture→exchange 落库异步面（W3-D2）
+// ===========================================================================
+
+/// 体捕获产出（CAS BodyRef 派生列 + 搜索投影片段；行内只落派生列不落字节）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyOutcome {
+    /// CAS sha256（未落 CAS = None：空体/超帽/中断）。
+    pub sha256: Option<String>,
+    /// CAS uri（同上）。
+    pub uri: Option<String>,
+    /// 完整体长度（截断/中断未知 = None）。
+    pub len: Option<i64>,
+    /// MIME（Content-Type 投影）。
+    pub mime: String,
+    /// 'full'/'truncated'。
+    pub fidelity: &'static str,
+    /// 搜索投影体前 4KiB 文本化（二进制体 = None；DESIGN §4.5）。
+    pub snippet: Option<String>,
+}
+
+/// 体前 4KiB UTF-8 文本化（非法 UTF-8 = 二进制体 → None 空投影）。
+pub fn body_snippet(bytes: &[u8]) -> Option<String> {
+    let cap = bytes.len().min(4096);
+    std::str::from_utf8(&bytes[..cap])
+        .ok()
+        .map(|s| s.to_string())
+}
+
+/// 搜索文本投影组装（D7：authority+path+头名/头值+体前 4KiB；凭据头值排除
+/// ——Authorization/Cookie/Set-Cookie 只落头名不落值；总帽 8KiB）。
+pub fn build_search_text(
+    authority: &str,
+    path: &str,
+    header_pairs: &[(&str, &str)],
+    snippets: &[Option<String>],
+) -> String {
+    const CREDENTIAL_HEADERS: [&str; 3] = ["authorization", "cookie", "set-cookie"];
+    let mut parts: Vec<String> = Vec::new();
+    if !authority.is_empty() {
+        parts.push(authority.to_string());
+    }
+    if !path.is_empty() {
+        parts.push(path.to_string());
+    }
+    for (name, value) in header_pairs {
+        if CREDENTIAL_HEADERS.contains(&name.to_ascii_lowercase().as_str()) {
+            parts.push(name.to_string()); // 可搜头名不搜凭据值
+        } else {
+            parts.push(format!("{name} {value}"));
+        }
+    }
+    for s in snippets.iter().flatten() {
+        parts.push(s.clone());
+    }
+    let mut joined = parts.join("\n");
+    joined.truncate_bytes(8192);
+    joined
+}
+
+trait TruncateBytes {
+    fn truncate_bytes(&mut self, cap: usize);
+}
+
+impl TruncateBytes for String {
+    fn truncate_bytes(&mut self, cap: usize) {
+        if self.len() <= cap {
+            return;
+        }
+        // char boundary 回退（多字节字符不劈半）。
+        let mut cut = cap;
+        while cut > 0 && !self.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        self.truncate(cut);
+    }
+}
+
+/// exchange 捕获组装器：请求入口 snapshot + 响应流末 join 成单行（W3-D2.1
+/// 单行纪律）；双侧任一完成面推行（try_send 满载丢弃，W3-D2.2）；worker
+/// 清扫面兜底超龄 partial 行。
+pub struct ExchangeCapture {
+    inner: Mutex<ExchangeCaptureInner>,
+    shared: Arc<ListenerShared>,
+}
+
+struct ExchangeCaptureInner {
+    exchange_id: String,
+    session_id: String,
+    listener_id: String,
+    sequence_no: i64,
+    started_at: String,
+    started_ms: u64,
+    scope_decision: Option<&'static str>,
+    method: String,
+    scheme: String,
+    authority: String,
+    path: String,
+    http_version: String,
+    request_headers_json: Option<String>,
+    request_headers_plain: Vec<(String, String)>,
+    request_body: Option<BodyOutcome>,
+    response_status: Option<i64>,
+    response_headers_json: Option<String>,
+    response_headers_plain: Vec<(String, String)>,
+    response_body: Option<BodyOutcome>,
+    response_head_ms: Option<u64>,
+    /// 无服务端响应面（拦截 Drop / Modified-Forward scope 拒）：立即 partial 行。
+    no_response: bool,
+    pushed: bool,
+}
+
+impl ExchangeCapture {
+    /// 测试面：直构组装器（#[doc(hidden)]；exchange_persist.rs 集成测试
+    /// 消费——正常路径组装器只在 handle_request 入口创建）。
+    #[doc(hidden)]
+    pub fn __test_new(
+        shared: &Arc<ListenerShared>,
+        exchange_id: &str,
+        sequence_no: i64,
+        started_ms: u64,
+    ) -> Arc<Self> {
+        Self::new(
+            shared,
+            exchange_id.to_string(),
+            sequence_no,
+            "GET".to_string(),
+            "http".to_string(),
+            "127.0.0.1:8443".to_string(),
+            "/p59c-marker".to_string(),
+            "http/1.1".to_string(),
+            Some("in_scope"),
+            started_ms,
+        )
+    }
+
+    /// 测试面：起始时刻改写（清扫判龄断言用）。
+    #[doc(hidden)]
+    pub fn __test_set_started_ms(&self, ms: u64) {
+        self.inner.lock().expect("exchange capture mutex").started_ms = ms;
+    }
+
+    /// 请求入口 snapshot（W3-D2.1：exchange_id/method/scheme/authority/path/
+    /// sequence_no/started_at/scope_decision 一次定型）。
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        shared: &Arc<ListenerShared>,
+        exchange_id: String,
+        sequence_no: i64,
+        method: String,
+        scheme: String,
+        authority: String,
+        path: String,
+        http_version: String,
+        scope_decision: Option<&'static str>,
+        started_ms: u64,
+    ) -> Arc<Self> {
+        let arc = Arc::new(Self {
+            inner: Mutex::new(ExchangeCaptureInner {
+                exchange_id: exchange_id.clone(),
+                session_id: shared.options.session_id.clone(),
+                listener_id: shared.options.listener_id.clone(),
+                sequence_no,
+                started_at: persist::epoch_ms_to_iso(started_ms as i64),
+                started_ms,
+                scope_decision,
+                method,
+                scheme,
+                authority,
+                path,
+                http_version,
+                request_headers_json: None,
+                request_headers_plain: Vec::new(),
+                request_body: None,
+                response_status: None,
+                response_headers_json: None,
+                response_headers_plain: Vec::new(),
+                response_body: None,
+                response_head_ms: None,
+                no_response: false,
+                pushed: false,
+            }),
+            shared: Arc::clone(shared),
+        });
+        shared
+            .pending_captures
+            .lock()
+            .expect("pending captures mutex")
+            .insert(exchange_id, Arc::clone(&arc));
+        arc
+    }
+
+    /// 请求头投影登记（HeaderMap 迭代序投影——头区非原始 wire，capture 行
+    /// capture_fidelity=degraded_no_wire 如实落库，W2-D9/W3-D2.5）。
+    pub fn register_request_headers(&self, headers: &hudsucker::hyper::HeaderMap) {
+        let pairs: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.as_str().to_string(),
+                    v.to_str().unwrap_or("<binary>").to_string(),
+                )
+            })
+            .collect();
+        let json = serde_json::to_string(
+            &pairs
+                .iter()
+                .map(|(n, v)| serde_json::json!({"name": n, "value": v}))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|_| "[]".into());
+        let mut inner = self.inner.lock().expect("exchange capture mutex");
+        if inner.request_headers_json.is_none() {
+            inner.request_headers_json = Some(json);
+            inner.request_headers_plain = pairs;
+        }
+    }
+
+    /// 请求体产出登记（流末 CAS 完成面 / 拦截聚合面 / 中断面）。
+    pub fn register_request_body(&self, outcome: BodyOutcome) {
+        let mut inner = self.inner.lock().expect("exchange capture mutex");
+        if inner.request_body.is_none() {
+            inner.request_body = Some(outcome);
+        }
+        self.try_push(&mut inner);
+    }
+
+    /// 响应头登记（handle_response 入口；status + 头投影 + TTFB 时刻）。
+    pub fn register_response_head(&self, status: u16, headers: &hudsucker::hyper::HeaderMap) {
+        let pairs: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.as_str().to_string(),
+                    v.to_str().unwrap_or("<binary>").to_string(),
+                )
+            })
+            .collect();
+        let json = serde_json::to_string(
+            &pairs
+                .iter()
+                .map(|(n, v)| serde_json::json!({"name": n, "value": v}))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|_| "[]".into());
+        let mut inner = self.inner.lock().expect("exchange capture mutex");
+        if inner.response_status.is_none() {
+            inner.response_status = Some(status as i64);
+            inner.response_headers_json = Some(json);
+            inner.response_headers_plain = pairs;
+            inner.response_head_ms = Some(now_ms());
+        }
+    }
+
+    /// 响应体产出登记（流末 / 中断面；本侧登记即触发推行——响应侧是
+    /// 单行推行的默认触发点，W3-D2.1）。
+    pub fn register_response_body(&self, outcome: BodyOutcome) {
+        let mut inner = self.inner.lock().expect("exchange capture mutex");
+        if inner.response_body.is_none() {
+            inner.response_body = Some(outcome);
+        }
+        self.try_push(&mut inner);
+    }
+
+    /// 无服务端响应面（拦截 Drop / Modified-Forward scope 拒 / TTL 自动放行
+    /// 前已回本地响应——本地 503/403 不经 handle_response）：立即 partial 行。
+    pub fn mark_no_response(&self) {
+        let mut inner = self.inner.lock().expect("exchange capture mutex");
+        inner.no_response = true;
+        self.try_push(&mut inner);
+    }
+
+    /// 推行判定：响应体已登记 或 无响应标记 → 组行 try_send（一次性）。
+    fn try_push(&self, inner: &mut ExchangeCaptureInner) {
+        if inner.pushed || !(inner.response_body.is_some() || inner.no_response) {
+            return;
+        }
+        inner.pushed = true;
+        self.shared
+            .pending_captures
+            .lock()
+            .expect("pending captures mutex")
+            .remove(&inner.exchange_id);
+        let completed_ms = now_ms();
+        let row = self.build_row(inner, completed_ms);
+        self.shared.push_exchange_row(row);
+    }
+
+    /// 清扫兜底推行（worker 周期面；双侧流末都未触发的静默死亡连接 →
+    /// 超龄 partial 行强制落库，行不丢）。返回本次推行条数。
+    /// （集成测试面消费：#[doc(hidden)] 清扫兜底断言。）
+    #[doc(hidden)]
+    pub fn sweep_push_stale(&self, now_ms_v: u64) -> usize {
+        let mut inner = self.inner.lock().expect("exchange capture mutex");
+        if inner.pushed {
+            return 0;
+        }
+        if now_ms_v.saturating_sub(inner.started_ms) < 10_000 {
+            return 0;
+        }
+        inner.pushed = true;
+        self.shared
+            .pending_captures
+            .lock()
+            .expect("pending captures mutex")
+            .remove(&inner.exchange_id);
+        let row = self.build_row(&inner, now_ms_v);
+        self.shared.push_exchange_row(row);
+        1
+    }
+
+    /// 起始时刻 ms（清扫面判龄）。
+    #[doc(hidden)]
+    pub fn started_ms(&self) -> u64 {
+        self.inner.lock().expect("exchange capture mutex").started_ms
+    }
+
+    /// 行组装（列映射 = W3-D1 表形状；capture_fidelity=degraded_no_wire——
+    /// 头区来自 hudsucker http 视图非原始 wire，W2-D9 实态如实落库）。
+    fn build_row(
+        &self,
+        inner: &ExchangeCaptureInner,
+        completed_ms: u64,
+    ) -> ExchangeRow {
+        let request_truncated = inner
+            .request_body
+            .as_ref()
+            .map(|b| b.fidelity == "truncated")
+            .unwrap_or(false);
+        let response_truncated = inner
+            .response_body
+            .as_ref()
+            .map(|b| b.fidelity == "truncated")
+            .unwrap_or(false);
+        let complete = inner.request_headers_json.is_some()
+            && inner.request_body.is_some()
+            && inner.response_status.is_some()
+            && inner.response_body.is_some()
+            && !request_truncated
+            && !response_truncated;
+        let search = build_search_text(
+            &inner.authority,
+            &inner.path,
+            &inner
+                .request_headers_plain
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.as_str()))
+                .chain(
+                    inner
+                        .response_headers_plain
+                        .iter()
+                        .map(|(n, v)| (n.as_str(), v.as_str())),
+                )
+                .collect::<Vec<_>>(),
+            &[
+                inner.request_body.as_ref().and_then(|b| b.snippet.clone()),
+                inner.response_body.as_ref().and_then(|b| b.snippet.clone()),
+            ],
+        );
+        ExchangeRow {
+            exchange_id: inner.exchange_id.clone(),
+            session_id: inner.session_id.clone(),
+            listener_id: inner.listener_id.clone(),
+            sequence_no: inner.sequence_no,
+            direction: "client_to_server",
+            source: "proxy_capture",
+            protocol: "http",
+            http_version: Some(inner.http_version.clone()),
+            tls_version: None,
+            alpn: None,
+            method: Some(inner.method.clone()),
+            scheme: Some(inner.scheme.clone()),
+            authority: Some(inner.authority.clone()),
+            path: Some(inner.path.clone()),
+            response_status: inner.response_status,
+            request_headers_json: inner.request_headers_json.clone(),
+            response_headers_json: inner.response_headers_json.clone(),
+            request_body_sha256: inner.request_body.as_ref().and_then(|b| b.sha256.clone()),
+            request_body_uri: inner.request_body.as_ref().and_then(|b| b.uri.clone()),
+            request_body_len: inner.request_body.as_ref().and_then(|b| b.len),
+            request_mime: inner.request_body.as_ref().map(|b| b.mime.clone()),
+            request_body_fidelity: inner.request_body.as_ref().map(|b| b.fidelity),
+            response_body_sha256: inner.response_body.as_ref().and_then(|b| b.sha256.clone()),
+            response_body_uri: inner.response_body.as_ref().and_then(|b| b.uri.clone()),
+            response_body_len: inner.response_body.as_ref().and_then(|b| b.len),
+            response_mime: inner.response_body.as_ref().map(|b| b.mime.clone()),
+            response_body_fidelity: inner.response_body.as_ref().map(|b| b.fidelity),
+            started_at: Some(inner.started_at.clone()),
+            completed_at: Some(persist::epoch_ms_to_iso(completed_ms as i64)),
+            duration_ms: Some(completed_ms.saturating_sub(inner.started_ms) as i64),
+            ttfb_ms: inner
+                .response_head_ms
+                .map(|h| h.saturating_sub(inner.started_ms) as i64),
+            remote_ip: None, // 上游对端 IP 查点 C 面另行核销；capture 行如实缺测
+            scope_decision: inner.scope_decision,
+            edited: false,
+            tags_json: "[]".into(),
+            notes: None,
+            trace_id: None,
+            task_id: None,
+            tool_run_id: None,
+            artifact_id: None,
+            evidence_id: None,
+            capture_fidelity: "degraded_no_wire",
+            parse_status: if complete { "ok" } else { "partial" },
+            error_code: None,
+            search_text: Some(search),
+        }
+    }
 }
 
 /// 拦截裁决三动作（W2-D6）。
@@ -635,17 +1117,26 @@ impl InterceptCoordinator {
 }
 
 /// 捕获元数据（tee 完成回调面；pub 但仅经 doc(hidden) 测试助手暴露）。
+///
+/// WSW-3 扩展：`accum` = exchange 组装器（请求/响应双侧流末 join 落行；
+/// W3-D2.1）。method/scheme/authority/path/sequence_no/started_at/
+/// scope_decision 定型在 [`ExchangeCapture::new`] snapshot。
 #[derive(Clone)]
 #[doc(hidden)]
+#[allow(missing_debug_implementations)]
 pub struct CaptureMeta {
     exchange_id: String,
     direction: &'static str,
     content_type: String,
+    /// exchange 组装器（None = 无落库面/测试直调）。
+    accum: Option<Arc<ExchangeCapture>>,
 }
 
 /// 流式 tee 捕获体（透传路径）：≤cap 缓冲；流末完成 CAS + wsw_body_blob
 /// 登记（capture_cas 开启时）；超帽 truncated 不落 CAS（避免半真数据入
-/// CAS，仅日志记录——PLAN :482 fidelity 可见性）。
+/// CAS，仅日志记录——PLAN :482 fidelity 可见性）。WSW-3：流末同时向
+/// exchange 组装器登记体产出（join 单行）；Drop 未完成 = 连接中断 →
+/// partial 体产出如实登记（W3-D2.1 响应中断落行）。
 struct TeeBody {
     inner: Body,
     shared: Arc<ListenerShared>,
@@ -653,6 +1144,11 @@ struct TeeBody {
     buf: Vec<u8>,
     cap: usize,
     truncated: bool,
+    /// 流末已走 clean-end 面（Drop 兜底不再登记）。
+    finished: bool,
+    /// 流曾被 poll（空体请求 hyper 可能不 poll 直接弃流——Drop 面区分
+    /// 「零字节完整」与「中断截断」的判据）。
+    polled: bool,
 }
 
 impl futures::Stream for TeeBody {
@@ -663,6 +1159,7 @@ impl futures::Stream for TeeBody {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let this = self.get_mut();
+        this.polled = true;
         match Pin::new(&mut this.inner).poll_frame(cx) {
             std::task::Poll::Ready(None) => {
                 let meta = this.meta.clone();
@@ -670,9 +1167,20 @@ impl futures::Stream for TeeBody {
                 let buf = std::mem::take(&mut this.buf);
                 let truncated = this.truncated;
                 let cap = this.cap;
-                // 流末注册：小任务做 CAS 写 + 024 blob 行（异步面）。
+                // 先置 finished 再 spawn：Drop 兜底面不重复登记。
+                this.finished = true;
+                // 流末注册：小任务做 CAS 写 + 024 blob 行 + exchange 体产出
+                // 登记（异步面；W3-D2.1 join 点 = capture_finish 同点）。
                 tokio::spawn(async move {
-                    capture_finish(&shared, &meta, &buf, truncated, cap as u64);
+                    let outcome =
+                        capture_body_outcome(&shared, &meta, &buf, truncated, cap as u64);
+                    if let Some(acc) = &meta.accum {
+                        if meta.direction == "request" {
+                            acc.register_request_body(outcome);
+                        } else {
+                            acc.register_response_body(outcome);
+                        }
+                    }
                 });
                 std::task::Poll::Ready(None)
             }
@@ -699,6 +1207,126 @@ impl futures::Stream for TeeBody {
                 }
             },
             std::task::Poll::Pending => std::task::Poll::Pending,
+        }
+    }
+}
+
+impl Drop for TeeBody {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        // 流被弃（未走 clean-end）分两态：
+        // - 从未 poll（空体请求 hyper 直弃流）：零字节完整面（fidelity=full，
+        //   len=0）——不是中断，不应误标 truncated；
+        // - 已 poll 未到流末（连接中断/上游早响应弃流）：部分字节如实登记
+        //   ——不落 CAS（W2 超帽不落 CAS 同口径），fidelity=truncated + len
+        //   未知；响应侧登记即推行 → partial 行落地（W3-D2.1）。
+        let outcome = if !self.polled && self.buf.is_empty() {
+            BodyOutcome {
+                sha256: None,
+                uri: None,
+                len: Some(0),
+                mime: self.meta.content_type.clone(),
+                fidelity: "full",
+                snippet: None,
+            }
+        } else {
+            BodyOutcome {
+                sha256: None,
+                uri: None,
+                len: None,
+                mime: self.meta.content_type.clone(),
+                fidelity: "truncated",
+                snippet: None,
+            }
+        };
+        if let Some(acc) = &self.meta.accum {
+            if self.meta.direction == "request" {
+                acc.register_request_body(outcome);
+            } else {
+                acc.register_response_body(outcome);
+            }
+        }
+    }
+}
+
+/// CAS + 024 blob + BodyOutcome 组装（W3-D2.1 capture_finish 同点 join）。
+/// capture_cas=false 或空体/超帽 → 派生列缺失的如实产出（fidelity 标注）。
+fn capture_body_outcome(
+    shared: &Arc<ListenerShared>,
+    meta: &CaptureMeta,
+    bytes: &[u8],
+    truncated: bool,
+    cap: u64,
+) -> BodyOutcome {
+    let base = BodyOutcome {
+        sha256: None,
+        uri: None,
+        len: if truncated {
+            None // 超帽/中断：全量长度未知，如实缺测
+        } else {
+            Some(bytes.len() as i64)
+        },
+        mime: meta.content_type.clone(),
+        fidelity: if truncated { "truncated" } else { "full" },
+        snippet: body_snippet(bytes),
+    };
+    if truncated || bytes.is_empty() || !shared.options.capture_cas {
+        capture_finish(shared, meta, bytes, truncated, cap);
+        return base;
+    }
+    match wsw_message::cas::store_body(&shared.options.artifacts_root, bytes, cap) {
+        Ok(body_ref) => {
+            if let Some(store) = shared.persist() {
+                let row = wsw_message::store::BodyBlobRow {
+                    sha256: body_ref.sha256.clone(),
+                    uri: body_ref.uri.clone(),
+                    size_bytes: body_ref.size as i64,
+                    mime_type: meta.content_type.clone(),
+                    first_seen_exchange_id: Some(meta.exchange_id.clone()),
+                    created_at: persist::now_iso(),
+                };
+                if let Err(e) =
+                    store.with_conn(|conn| wsw_message::store::register_body_blob(conn, &row))
+                {
+                    tracing_error!(
+                        class = "parse_framing",
+                        error_code = "blob_register_failed",
+                        cause = %e,
+                        exchange_id = %meta.exchange_id,
+                        "wsw_body_blob register failed"
+                    );
+                }
+            }
+            shared
+                .counters
+                .captures_total
+                .fetch_add(1, Ordering::Relaxed);
+            tracing::info!(
+                class = "capture",
+                exchange_id = %meta.exchange_id,
+                direction = meta.direction,
+                sha256 = %body_ref.sha256,
+                size = body_ref.size,
+                "body captured (CAS + wsw_body_blob)"
+            );
+            BodyOutcome {
+                sha256: Some(body_ref.sha256),
+                uri: Some(body_ref.uri),
+                len: Some(body_ref.size as i64),
+                ..base
+            }
+        }
+        Err(e) => {
+            tracing_error!(
+                class = "parse_framing",
+                error_code = "cas_store_failed",
+                cause = %e,
+                exchange_id = %meta.exchange_id,
+                "CAS store failed"
+            );
+            base
         }
     }
 }
@@ -841,6 +1469,7 @@ pub fn __test_capture_meta(exchange_id: &str) -> CaptureMeta {
         exchange_id: exchange_id.to_string(),
         direction: "request",
         content_type: "application/octet-stream".to_string(),
+        accum: None,
     }
 }
 
@@ -864,12 +1493,14 @@ pub struct WswHandler {
     current: Option<Arc<CurrentExchange>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct CurrentExchange {
     exchange_id: String,
     host: String,
     path: String,
     content_type: String,
+    /// exchange 组装器（WSW-3 单行纪律 join 面）。
+    accum: Option<Arc<ExchangeCapture>>,
 }
 
 impl WswHandler {
@@ -947,6 +1578,7 @@ impl HttpHandler for WswHandler {
             port,
             path: &path,
         };
+        let mut scope_decision: Option<&'static str> = Some("in_scope");
         match scope::check(&self.shared.rules, &target) {
             scope::ScopeDecision::Allowed { traces } => {
                 for t in &traces {
@@ -991,6 +1623,7 @@ impl HttpHandler for WswHandler {
                             .counters
                             .out_of_scope_passive_total
                             .fetch_add(1, Ordering::Relaxed);
+                        scope_decision = Some("out_of_scope_passive");
                         tracing::warn!(
                             class = "scope_trace",
                             kind = "out_of_scope_passive",
@@ -1017,16 +1650,49 @@ impl HttpHandler for WswHandler {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("application/octet-stream")
             .to_string();
+        // WSW-3 请求入口 snapshot（W3-D2.1）：exchange 行固定列一次定型；
+        // sequence_no 单调分配；无落库通道时组装器缺省（capture 行为零开销跳过）。
+        let accum = if self.shared.exchange_tx.is_some() {
+            let seq = self
+                .shared
+                .persist_sequence
+                .fetch_add(1, Ordering::Relaxed) as i64;
+            let started_ms = now_ms();
+            let scheme = req.uri().scheme_str().unwrap_or("http").to_string();
+            let http_version = match req.version() {
+                hudsucker::hyper::Version::HTTP_10 => "http/1.0",
+                hudsucker::hyper::Version::HTTP_11 => "http/1.1",
+                hudsucker::hyper::Version::HTTP_2 => "h2",
+                _ => "http/1.1",
+            };
+            let capture = ExchangeCapture::new(
+                &self.shared,
+                exchange_id.clone(),
+                seq,
+                method.clone(),
+                scheme,
+                format!("{host}:{port}"),
+                path.clone(),
+                http_version.to_string(),
+                scope_decision,
+                started_ms,
+            );
+            capture.register_request_headers(req.headers());
+            Some(capture)
+        } else {
+            None
+        };
         self.current = Some(Arc::new(CurrentExchange {
             exchange_id: exchange_id.clone(),
             host: host.clone(),
             path: path.clone(),
             content_type: content_type.clone(),
+            accum: accum.clone(),
         }));
 
         if intercepting {
             return self
-                .handle_request_intercepted(req, exchange_id, content_type)
+                .handle_request_intercepted(req, exchange_id, content_type, accum)
                 .await;
         }
 
@@ -1037,6 +1703,7 @@ impl HttpHandler for WswHandler {
                 exchange_id,
                 direction: "request",
                 content_type,
+                accum,
             };
             let tee = TeeBody {
                 inner: body,
@@ -1045,6 +1712,8 @@ impl HttpHandler for WswHandler {
                 buf: Vec::new(),
                 cap: self.shared.options.config.max_body_bytes,
                 truncated: false,
+                finished: false,
+                polled: false,
             };
             // 体流替换后原 Content-Length 不再可靠：移除，由 hyper 重定界。
             parts.headers.remove(CONTENT_LENGTH);
@@ -1063,7 +1732,7 @@ impl HttpHandler for WswHandler {
         if !self.shared.options.capture_cas {
             return Response::from_parts(parts, body);
         }
-        let (exchange_id, host, content_type) = match &self.current {
+        let (exchange_id, host, content_type, accum) = match &self.current {
             Some(cur) => (
                 cur.exchange_id.clone(),
                 cur.host.clone(),
@@ -1073,14 +1742,20 @@ impl HttpHandler for WswHandler {
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or(&cur.content_type)
                     .to_string(),
+                cur.accum.clone(),
             ),
             None => (
                 new_exchange_id(),
                 "-".to_string(),
                 "application/octet-stream".to_string(),
+                None,
             ),
         };
         let status = parts.status.as_u16();
+        // 响应头登记（W3-D2.1：TTFB 时刻 + status + 头投影立即定型）。
+        if let Some(acc) = &accum {
+            acc.register_response_head(status, &parts.headers);
+        }
         tracing::info!(
             class = "capture",
             exchange_id = %exchange_id,
@@ -1092,6 +1767,7 @@ impl HttpHandler for WswHandler {
             exchange_id,
             direction: "response",
             content_type,
+            accum,
         };
         let tee = TeeBody {
             inner: body,
@@ -1100,6 +1776,8 @@ impl HttpHandler for WswHandler {
             buf: Vec::new(),
             cap: self.shared.options.config.max_body_bytes,
             truncated: false,
+            finished: false,
+            polled: false,
         };
         parts.headers.remove(CONTENT_LENGTH);
         Response::from_parts(parts, Body::from_stream(tee))
@@ -1156,6 +1834,7 @@ impl WswHandler {
         req: Request<Body>,
         exchange_id: String,
         content_type: String,
+        accum: Option<Arc<ExchangeCapture>>,
     ) -> RequestOrResponse {
         let cap = self.shared.options.config.max_body_bytes;
         // CL 前检（头帽/体帽 → parse_framing 400）。
@@ -1243,13 +1922,18 @@ impl WswHandler {
             );
         }
 
-        // CAS 捕获（拦截路径聚合字节完整落 CAS）。
+        // CAS 捕获（拦截路径聚合字节完整落 CAS）+ exchange 请求侧登记
+        // （聚合面字节已知：headers/body 立即定型；响应侧走 handle_response tee）。
         let meta = CaptureMeta {
             exchange_id: exchange_id.clone(),
             direction: "request",
             content_type,
+            accum: accum.clone(),
         };
-        capture_finish(&self.shared, &meta, &bytes, false, cap as u64);
+        let outcome = capture_body_outcome(&self.shared, &meta, &bytes, false, cap as u64);
+        if let Some(acc) = &accum {
+            acc.register_request_body(outcome);
+        }
 
         // 入队（内存 + persist 双面）。
         let (method, host, path) = (
@@ -1333,6 +2017,10 @@ impl WswHandler {
             }
             Some(InterceptResolution::Drop) => {
                 // Drop 已在 resolve 侧落账；对客户端 503 + reason 头。
+                // 本地响应不经 handle_response：partial 行立即落（W3-D2.1）。
+                if let Some(acc) = &accum {
+                    acc.mark_no_response();
+                }
                 reject_response(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "intercept_dropped",
@@ -1365,6 +2053,10 @@ impl WswHandler {
                         reason = %reason.code(),
                         "modified-forward failed scope re-check (403)"
                     );
+                    // 本地 403 不经 handle_response：partial 行立即落。
+                    if let Some(acc) = &accum {
+                        acc.mark_no_response();
+                    }
                     return reject_response(
                         StatusCode::FORBIDDEN,
                         "out_of_scope_blocked",

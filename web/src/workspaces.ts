@@ -27,7 +27,8 @@ export type WorkspaceId =
   | "workflows"
   | "runs"
   | "runtime"
-  | "settings";
+  | "settings"
+  | "websec";
 
 /** 图标键 → Layout 侧 ICONS 表映射为 lucide-react 组件（Record 全键覆盖，漏键 tsc 报错）。 */
 export type WorkspaceIconKey =
@@ -42,7 +43,9 @@ export type WorkspaceIconKey =
   | "circlePlay"
   | "serverCog"
   | "shieldCheck"
-  | "settings";
+  | "settings"
+  | "globe"
+  | "refreshCw";
 
 /** 键全集（测试用：数据里出现的图标键必须都在其中）。 */
 export const WORKSPACE_ICON_KEYS: readonly WorkspaceIconKey[] = [
@@ -58,6 +61,8 @@ export const WORKSPACE_ICON_KEYS: readonly WorkspaceIconKey[] = [
   "serverCog",
   "shieldCheck",
   "settings",
+  "globe",
+  "refreshCw",
 ];
 
 export interface WorkspaceNavItem {
@@ -314,6 +319,30 @@ export const WORKSPACES: readonly Workspace[] = [
         label: "证书状态",
         icon: "shieldCheck",
         hint: "WSW-2 CA 指纹/有效期/显式导出与重生成（W2-D8）",
+      },
+    ],
+  },
+  {
+    id: "websec",
+    order: 12,
+    label: "Web Security",
+    icon: "shieldCheck",
+    entry: "/websec/history",
+    hint: "HTTP History 与 Repeater（WSW-3）",
+    tabs: [
+      {
+        order: 1,
+        to: "/websec/history",
+        label: "HTTP History",
+        icon: "globe",
+        hint: "捕获/发送交换行（游标分页 + 过滤搜索 + 六视图详情，W3-D8.3）",
+      },
+      {
+        order: 2,
+        to: "/websec/repeater",
+        label: "Repeater",
+        icon: "refreshCw",
+        hint: "多 Tab 请求编辑重放（append-only 版本历史，W3-D4/D8.3）",
       },
     ],
   },

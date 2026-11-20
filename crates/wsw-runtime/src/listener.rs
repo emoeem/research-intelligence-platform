@@ -17,12 +17,14 @@
 pub mod handler;
 
 use crate::authority::WswAuthority;
+use crate::persist::ExchangeRow;
 use crate::scope::{self, ScopeRules};
 use crate::{ConfigError, ListenerState, StateError};
 pub use handler::{
     InterceptCoordinator, InterceptResolution, ListenerShared, OutOfScopePolicy, ProxyErrorClass,
     RuntimeOptions,
 };
+use crate::persist::PersistStore;
 use hudsucker::rustls::crypto::aws_lc_rs;
 use hudsucker::rustls::pki_types::{pem::PemObject, CertificateDer};
 use hudsucker::rustls::ClientConfig;
@@ -280,6 +282,116 @@ fn build_upstream_roots(extra: &[PathBuf]) -> Result<RootCertStore, ListenerErro
     Ok(roots)
 }
 
+/// exchange 落库单 worker（W3-D2.3）：批量事务落行（每批 ≤128 行或 50ms
+/// 窗口 flush）+ 周期清扫超龄 partial 行；SQLite 单写者天然串行，批量降
+/// fsync 次数。结束条件 = 通道关闭（全部 sender drop）。落库失败只计数
+/// 不影响转发（W2 先例语义延续）。
+pub(crate) async fn persist_exchange_worker(
+    shared: Arc<ListenerShared>,
+    store: PersistStore,
+    mut rx: tokio::sync::mpsc::Receiver<ExchangeRow>,
+) {
+    // sequence 恢复（重启对账：listener 内 MAX(sequence_no)+1 续跑）。
+    match store.next_sequence_no(&shared.options.listener_id) {
+        Ok(next) => {
+            shared.set_persist_sequence_base(next as u64);
+        }
+        Err(e) => {
+            tracing_error!(class = "listener", cause = %e, "exchange sequence recover failed");
+        }
+    }
+    let mut flush = tokio::time::interval(std::time::Duration::from_millis(50));
+    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut batch: Vec<ExchangeRow> = Vec::new();
+    loop {
+        tokio::select! {
+            item = rx.recv() => {
+                match item {
+                    Some(row) => {
+                        batch.push(row);
+                        if batch.len() >= 128 {
+                            flush_exchange_batch(&shared, &store, &mut batch);
+                        }
+                    }
+                    None => {
+                        if !batch.is_empty() {
+                            flush_exchange_batch(&shared, &store, &mut batch);
+                        }
+                        tracing::info!(class = "listener", "exchange persist worker drained and exited");
+                        break;
+                    }
+                }
+            }
+            _ = flush.tick() => {
+                if !batch.is_empty() {
+                    flush_exchange_batch(&shared, &store, &mut batch);
+                }
+                sweep_stale_captures(&shared);
+            }
+        }
+    }
+}
+
+/// 批量落行（salvage 语义：insert_exchanges 单行失败只计数；整批失败
+/// 全计数——persist 失败放行，客户端可见行为不变）。
+fn flush_exchange_batch(
+    shared: &Arc<ListenerShared>,
+    store: &PersistStore,
+    batch: &mut Vec<ExchangeRow>,
+) {
+    let n = batch.len();
+    match store.insert_exchanges(batch) {
+        Ok(outcome) => {
+            if outcome.failed > 0 {
+                shared
+                    .counters
+                    .persist_dropped_total
+                    .fetch_add(outcome.failed as u64, std::sync::atomic::Ordering::Relaxed);
+            }
+            tracing::debug!(
+                class = "capture",
+                inserted = outcome.inserted,
+                failed = outcome.failed,
+                "exchange batch persisted"
+            );
+        }
+        Err(e) => {
+            shared
+                .counters
+                .persist_dropped_total
+                .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+            tracing_error!(
+                class = "parse_framing",
+                error_code = "exchange_batch_persist_failed",
+                cause = %e,
+                batch = n,
+                "exchange batch persist failed (rows dropped, forward path unaffected)"
+            );
+        }
+    }
+    batch.clear();
+}
+
+/// 超龄 partial 行清扫（双侧流末都未触发的静默死亡连接兜底；10s 判龄）。
+fn sweep_stale_captures(shared: &Arc<ListenerShared>) {
+    let now = handler::now_ms_pub();
+    let mut stale: Vec<std::sync::Arc<handler::ExchangeCapture>> = Vec::new();
+    {
+        let mut pending = shared.pending_captures.lock().expect("pending captures mutex");
+        pending.retain(|_, cap| {
+            if now.saturating_sub(cap.started_ms()) >= 10_000 {
+                stale.push(std::sync::Arc::clone(cap));
+                false
+            } else {
+                true
+            }
+        });
+    }
+    for cap in stale {
+        let _ = cap.sweep_push_stale(now);
+    }
+}
+
 /// Listener 六态运行时句柄。
 pub struct WswListener {
     /// 共享运行面（handler/连接器/状态页共用）。
@@ -314,6 +426,10 @@ pub struct ListenerStatus {
     pub queue_pending: usize,
     /// CAS 捕获登记数。
     pub captures_total: u64,
+    /// exchange 落库满载丢弃数（W3-D2.2 可见记录面）。
+    pub persist_dropped_total: u64,
+    /// exchange 行已入通道数（worker 吞吐分母）。
+    pub persist_enqueued_total: u64,
     /// 错误五态计数。
     pub error_counts: std::collections::BTreeMap<String, u64>,
     /// 启动时刻（ISO8601 UTC）。
@@ -390,6 +506,18 @@ impl WswListener {
         let shared = Arc::new(ListenerShared::new(options, persist.map(|(s, _)| s)));
         shared.coordinator.recover(reloaded_rows);
 
+        // exchange 落库 worker（W3-D2.3 单 worker；persist 在场才挂）。
+        if let Some(rx) = shared.take_persist_rx() {
+            let store = shared
+                .persist()
+                .cloned()
+                .expect("persist store present when exchange channel present");
+            let shared_for_worker = Arc::clone(&shared);
+            tokio::spawn(async move {
+                persist_exchange_worker(shared_for_worker, store, rx).await;
+            });
+        }
+
         // 4) 上游 connector：审计 connector 包入 HttpsConnector（ALPN h2 面）
         let mut roots = build_upstream_roots(&shared.options.upstream_ca_paths)?;
         let _ = &mut roots;
@@ -458,6 +586,20 @@ impl WswListener {
             };
             if let Err(e) = store.register_listener(&row) {
                 tracing_error!(class = "listener", error = %e, "listener row register failed");
+            }
+            // session 行登记（scope 规则源落库；rp-wsw send 面回读依据，
+            // W3-D4.6——send 子命令从 wsw_session.scope_rules_json 读规则）。
+            let session_row = crate::persist::SessionRow {
+                session_id: shared.options.session_id.clone(),
+                title: shared.options.name.clone(),
+                scope_rules_json: serde_json::to_string(&shared.rules)
+                    .unwrap_or_else(|_| "{}".to_string()),
+                out_of_scope_policy: shared.options.out_of_scope_policy.clone(),
+                created_at: shared.started_at.clone(),
+                updated_at: crate::persist::now_iso(),
+            };
+            if let Err(e) = store.register_session(&session_row) {
+                tracing_error!(class = "listener", error = %e, "session row register failed");
             }
         }
 
@@ -536,6 +678,8 @@ impl WswListener {
             out_of_scope_passive_total: counters.out_of_scope_passive_total.load(Ordering::Relaxed),
             queue_pending: self.shared.coordinator.pending(),
             captures_total: counters.captures_total.load(Ordering::Relaxed),
+            persist_dropped_total: counters.persist_dropped_total.load(Ordering::Relaxed),
+            persist_enqueued_total: counters.persist_enqueued_total.load(Ordering::Relaxed),
             error_counts: counters.error_counts(),
             started_at: self.shared.started_at.clone(),
         }
