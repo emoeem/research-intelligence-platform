@@ -28,7 +28,7 @@ use wsw_runtime::sender::{SendPolicy, SendError};
 type ReceivedBytes = Arc<std::sync::Mutex<Vec<Vec<u8>>>>;
 
 /// 本地 HTTP 靶场：GET → 200 marker；其余按 behavior。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Behavior {
     /// 200 + marker 体。
     Marker,
@@ -36,6 +36,9 @@ enum Behavior {
     RedirectLoop(usize),
     /// 302 → include 外域（越界 Location）。
     RedirectOut,
+    /// 首请求 → 302 + 给定 Location（相对引用/protocol-relative 形态断言
+    /// 面，W3 修订批）；其后 200 marker。
+    RedirectRel(String),
     /// 收到请求后不响应（超时面）。
     Silent,
 }
@@ -51,6 +54,7 @@ async fn spawn_target(behavior: Behavior) -> (u16, ReceivedBytes, tokio::task::J
                 break;
             };
             let rx = Arc::clone(&rx);
+            let behavior = behavior.clone();
             tokio::spawn(async move {
                 // 读完整请求头 + CL 体（本地靶场请求必带 CL）。
                 let mut buf = Vec::new();
@@ -94,6 +98,16 @@ async fn spawn_target(behavior: Behavior) -> (u16, ReceivedBytes, tokio::task::J
                     }
                     Behavior::RedirectOut => {
                         b"HTTP/1.1 302 Found\r\nLocation: http://169.254.169.254/latest/meta-data\r\nContent-Length: 0\r\n\r\n".to_vec()
+                    }
+                    Behavior::RedirectRel(loc) => {
+                        if count == 1 {
+                            format!(
+                                "HTTP/1.1 302 Found\r\nLocation: {loc}\r\nContent-Length: 0\r\n\r\n"
+                            )
+                            .into_bytes()
+                        } else {
+                            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nwsw3-marker\r\n".to_vec()
+                        }
                     }
                     Behavior::Silent => {
                         // 不响应：挂住直至对端超时。
@@ -331,6 +345,196 @@ async fn redirect_out_of_scope_location_rejected() {
     assert!(
         matches!(&err, SendError::Scope(code) if code == "metadata_endpoint"),
         "越界 Location → scope 拒（metadata deny-never-allow）"
+    );
+}
+
+/// 靶场收到的第 n 个请求的 origin-form 请求行（最终请求 path 断言锚点）。
+fn request_line(received: &ReceivedBytes, n: usize) -> String {
+    let buf = received.lock().unwrap()[n].clone();
+    String::from_utf8_lossy(&buf).lines().next().unwrap_or_default().to_string()
+}
+
+#[tokio::test]
+async fn redirect_relative_reference_joins_base_directory() {
+    // Location: bar（RFC 3986 relative-path）自 /a/b/c：并入基准目录 →
+    // /a/b/bar（无 // 双斜杠；修订批 F2 回归钉：旧实现拼出 //a/bar）。
+    let (port, received, _server) = spawn_target(Behavior::RedirectRel("bar".into())).await;
+    let rules = rules_for(port);
+    let req = outbound("/a/b/c", &format!("127.0.0.1:{port}"));
+    let policy = SendPolicy {
+        redirect: wsw_runtime::sender::RedirectPolicy::Follow,
+        ..Default::default()
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let outcome = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
+        .await
+        .expect("relative-path follow");
+    assert_eq!(outcome.response_status, Some(200));
+    assert_eq!(
+        request_line(&received, 1),
+        "GET /a/b/bar HTTP/1.1",
+        "相对段并入基准目录，无双斜杠"
+    );
+    assert_eq!(
+        outcome.redirect_chain[0].url,
+        format!("http://127.0.0.1:{port}/a/b/bar"),
+        "redirect_chain url 同面无双斜杠"
+    );
+}
+
+#[tokio::test]
+async fn redirect_dot_dot_reference_normalizes() {
+    // Location: ../up 自 /a/b/c：../ 段归一化（RFC 3986 §5.2.4）→ /a/up。
+    let (port, received, _server) = spawn_target(Behavior::RedirectRel("../up".into())).await;
+    let rules = rules_for(port);
+    let req = outbound("/a/b/c", &format!("127.0.0.1:{port}"));
+    let policy = SendPolicy {
+        redirect: wsw_runtime::sender::RedirectPolicy::Follow,
+        ..Default::default()
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let outcome = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
+        .await
+        .expect("dot-dot follow");
+    assert_eq!(outcome.response_status, Some(200));
+    assert_eq!(
+        request_line(&received, 1),
+        "GET /a/up HTTP/1.1",
+        "../ 段归一化（非字面拼进 path）"
+    );
+    assert_eq!(
+        outcome.redirect_chain[0].url,
+        format!("http://127.0.0.1:{port}/a/up"),
+        "redirect_chain url 归一化同面"
+    );
+}
+
+#[tokio::test]
+async fn redirect_relative_from_root_path_no_double_slash() {
+    // Location: bar 自 /hop（基准目录 = 根）：/bar——修复面：旧实现空目录
+    // 段拼出 //bar。
+    let (port, received, _server) = spawn_target(Behavior::RedirectRel("bar".into())).await;
+    let rules = rules_for(port);
+    let req = outbound("/hop", &format!("127.0.0.1:{port}"));
+    let policy = SendPolicy {
+        redirect: wsw_runtime::sender::RedirectPolicy::Follow,
+        ..Default::default()
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let outcome = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
+        .await
+        .expect("root-base relative follow");
+    assert_eq!(outcome.response_status, Some(200));
+    assert_eq!(
+        request_line(&received, 1),
+        "GET /bar HTTP/1.1",
+        "根基准目录相对段无双斜杠"
+    );
+    assert_eq!(
+        outcome.redirect_chain[0].url,
+        format!("http://127.0.0.1:{port}/bar"),
+        "根基准 redirect_chain url 无双斜杠"
+    );
+}
+
+#[tokio::test]
+async fn redirect_protocol_relative_switches_host() {
+    // Location: //127.0.0.1:{port_b}/other（RFC 3986 network-path 引用）：
+    // host/port 切换到第二靶场（继承 http scheme），不误并进本 host path
+    // （修复面：旧实现当普通相对段拼出 //other/...）。
+    let (port_b, received_b, _s2) = spawn_target(Behavior::Marker).await;
+    let (port_a, _received_a, _s1) =
+        spawn_target(Behavior::RedirectRel(format!("//127.0.0.1:{port_b}/other"))).await;
+    let rules = ScopeRules {
+        include: vec!["127.0.0.1".to_string()],
+        allow_private_targets: true,
+        allowed_ports: vec![port_a, port_b],
+        ..Default::default()
+    };
+    let req = outbound("/start", &format!("127.0.0.1:{port_a}"));
+    let policy = SendPolicy {
+        redirect: wsw_runtime::sender::RedirectPolicy::Follow,
+        ..Default::default()
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let outcome = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
+        .await
+        .expect("protocol-relative follow");
+    assert_eq!(outcome.response_status, Some(200));
+    assert_eq!(outcome.redirect_chain.len(), 1);
+    assert_eq!(
+        outcome.redirect_chain[0].url,
+        format!("http://127.0.0.1:{port_b}/other"),
+        "protocol-relative → host/port 切换"
+    );
+    let buf_b = received_b.lock().unwrap();
+    assert_eq!(buf_b.len(), 1, "第二请求落到 port_b 靶场");
+    let head = String::from_utf8_lossy(&buf_b[0]);
+    assert!(
+        head.starts_with("GET /other HTTP/1.1\r\n"),
+        "最终请求 origin-form = /other"
+    );
+    assert!(
+        head.contains(&format!("Host: 127.0.0.1:{port_b}")),
+        "Host 头重写为新 authority"
+    );
+}
+
+#[tokio::test]
+async fn redirect_policy_cap_tightens_below_scope_rules() {
+    // policy.max_redirects=2 < rules 默认 10：生效帽 = min → 第 3 跳拒
+    // （policy 帽消费面，修订批 F1：此前该字段定义未消费，--policy 配置
+    // max_redirects 静默失效）。
+    let (port, received, _server) = spawn_target(Behavior::RedirectLoop(99)).await;
+    let rules = rules_for(port);
+    let req = outbound("/hop", &format!("127.0.0.1:{port}"));
+    let policy = SendPolicy {
+        redirect: wsw_runtime::sender::RedirectPolicy::Follow,
+        max_redirects: 2,
+        ..Default::default()
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let err = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, SendError::Scope(code) if code == "redirect_limit"),
+        "policy 帽拒 = redirect_limit 同码"
+    );
+    assert_eq!(
+        received.lock().unwrap().len(),
+        3,
+        "首跳 + 2 次跟随；第 3 跳 policy 帽拒（rules 帽 10 不触发）"
+    );
+}
+
+#[tokio::test]
+async fn redirect_scope_rules_cap_bounds_policy() {
+    // policy.max_redirects=10 > rules.max_redirects=1：生效帽 = rules——
+    // --policy JSON 不可放大 scope 安全帽（min 收口另一侧）。
+    let (port, received, _server) = spawn_target(Behavior::RedirectLoop(99)).await;
+    let rules = ScopeRules {
+        max_redirects: 1,
+        ..rules_for(port)
+    };
+    let req = outbound("/hop", &format!("127.0.0.1:{port}"));
+    let policy = SendPolicy {
+        redirect: wsw_runtime::sender::RedirectPolicy::Follow,
+        max_redirects: 10,
+        ..Default::default()
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let err = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, SendError::Scope(code) if code == "redirect_limit"),
+        "rules 帽兜底拒"
+    );
+    assert_eq!(
+        received.lock().unwrap().len(),
+        2,
+        "首跳 + 1 次跟随；第 2 跳 rules 帽拒（policy 10 不放大）"
     );
 }
 

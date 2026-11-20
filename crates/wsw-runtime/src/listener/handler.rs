@@ -791,6 +791,9 @@ impl ExchangeCapture {
 
     /// 行组装（列映射 = W3-D1 表形状；capture_fidelity=degraded_no_wire——
     /// 头区来自 hudsucker http 视图非原始 wire，W2-D9 实态如实落库）。
+    /// completed_at/duration_ms = 行定型时刻（响应侧流末 push 或 worker 清扫
+    /// 时刻；partial 行同面落定型时刻，不伪造响应完成态——ADR W3-D2.1 修订
+    /// 批口径，partial 识别面 = parse_status='partial' + 响应列缺口）。
     fn build_row(
         &self,
         inner: &ExchangeCaptureInner,

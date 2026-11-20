@@ -156,6 +156,7 @@ PENDING → SKIPPED_SCOPE | SKIPPED_BUDGET
 - 正文 GC：`wsw_body_blob` 引用计数（exchange/用户收藏 pin），零引用超期清理。
 - 用户清理：按 session/host/时间范围删除 + "清空全部"；删除含正文（CAS 引用归零即删文件），元数据行保留 scope_decision 级别摘要或按用户选择全删。
 - 不写明文凭据进正文以外的一切面（§4.5）。
+- **已知前瞻面（修订批登记）**：`_wsw_history_list` 每请求全表 `SELECT COUNT(*)`（rp_server.py:3512，无 WHERE 走索引扫 O(N)）——1100 行实测 p95 10.5ms << 300ms 门（WSW-3 E 节实测余量充足），retention 行数帽 200_000（rp_server.py:3343）下每页请求全索引扫为前瞻性开销。retention 批落地时 total 改近实时计数（`/api/wsw/status` 已有 exchange_rows 供数或会话级计数列），列表端点去掉每次 COUNT；本批保留现实现。同批顺带收口：cancel SIGKILL 兜底的滞留 sending/pending 行 sweeper（send-status 读面已 stale 提示显性化，写权面 Rust-only 见 W3-D7）。
 
 ---
 

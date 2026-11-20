@@ -4034,7 +4034,15 @@ def _wsw_spawn_send(body: dict) -> dict:
 
 
 def _wsw_send_status(_conn, params) -> dict:
-    """GET /api/wsw/repeater/send-status：send 行只读（六态 + 产出引用）。"""
+    """GET /api/wsw/repeater/send-status：send 行只读（六态 + 产出引用）。
+
+    滞留检测（修订批 F3，只读提示不写行——W3-D7 send 行写权 Rust-only）：
+    pending/sending 行若子进程已不在（pid 文件可读但进程已死；或 pid 文件缺
+    且行龄 > 30s——spawn 后 pid 落盘前的毫秒级窗口不误报），标 stale 提示。
+    背景：cancel 的 SIGTERM 5s 等待超时走 SIGKILL 兜底，子进程无机会落
+    cancelled，行永久滞留中间态且 advance_send 的写权面（子进程）已死，本端
+    点将其显性化；滞留行推进（sweeper/对账）留 retention 批收口（批次报告
+    G 节登记）。"""
     send_id = params.get("send_id", [""])[0]
     if not send_id:
         raise ApiError(400, "bad_request", "send_id 必填")
@@ -4053,14 +4061,47 @@ def _wsw_send_status(_conn, params) -> dict:
         else:
             out.pop("redirect_chain_json", None)
             out["redirect_chain"] = []
+        if out.get("state") in ("pending", "sending"):
+            stale = False
+            pid_file = os.path.join(WSW_STATE_DIR, f"send-{send_id}.pid")
+            try:
+                with open(pid_file, "r", encoding="utf-8") as fh:
+                    pid = int(fh.read().strip())
+                stale = not _wsw_listener_alive(pid)
+            except (FileNotFoundError, ValueError, OSError):
+                # pid 文件缺失：要么已终止（cancel unlink / rp-wsw 退出位），
+                # 要么 spawn 窗口未落盘——行龄 > 30s 才判滞留（防误报）。
+                stale = _wsw_iso_age_seconds(out.get("created_at") or "") > 30.0
+            if stale:
+                out["stale"] = True
+                out["stale_note"] = (
+                    "send 行滞留中间态且子进程已不在（SIGTERM 5s 超时 SIGKILL "
+                    "兜底路径无落终态机会；行推进收口留 retention 批）"
+                )
         return out
     finally:
         conn.close()
 
 
+def _wsw_iso_age_seconds(iso: str) -> float:
+    """ISO8601 UTC 带毫秒（epoch_ms_to_iso 同宽格式）→ 距今秒数；解析失败 0。"""
+    import datetime as _dt
+    try:
+        dt = _dt.datetime.strptime(iso, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+            tzinfo=_dt.timezone.utc)
+        return time.time() - dt.timestamp()
+    except (ValueError, AttributeError):
+        return 0.0
+
+
 def _wsw_send_cancel(body: dict) -> dict:
     """POST /api/wsw/repeater/cancel：SIGTERM 子进程（graceful → cancelled
-    终态；W3-D4.5）。"""
+    终态；W3-D4.5）。
+
+    已知缺口（修订批 F3）：SIGTERM 后 5s 未死即 SIGKILL——子进程无机会落
+    cancelled，send 行永久滞留 sending 态（六态收敛缺口）。滞留态由
+    send-status 读面 stale 提示显性化（本面不代写 send 行——W3-D7 写权
+    Rust-only）；行推进收口留 retention 批（批次报告 G 节登记）。"""
     send_id = body.get("send_id")
     if not send_id:
         raise ApiError(400, "bad_request", "send_id 必填")

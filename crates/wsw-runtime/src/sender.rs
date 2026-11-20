@@ -14,7 +14,11 @@
 //!   跟随 = 逐跳从 Location 重建 OutboundRequest + `serialize_request` 重序列化
 //!   （每跳都是显式 Outbound）+ [`scope::check_redirect_hop`] 帽逐跳计数接线
 //!   （W2-D5 查点 B 收口）+ 每跳 DNS 解析 IP 过 [`scope::audit_resolved`]（查
-//!   点 C，Pinned-IP 直连）；
+//!   点 C，Pinned-IP 直连）；跳数帽双源取 min：`policy.max_redirects`（--policy
+//!   JSON 用户面，只可收紧）× `scope rules.max_redirects`（安全边界兜底），
+//!   document_fetch `MIN(cap)` 同型（document_fetch.rs:757）；Location 相对
+//!   引用（RFC 3986 §5）按 §5.2 merge + §5.2.4 remove_dot_segments 归一化，
+//!   protocol-relative（`//host/path`）按 host 切换；
 //! - 超时三件：connect/read/total（policy 默认 10s/30s/60s）；取消面 =
 //!   `tokio::sync::watch`（rp-wsw send SIGTERM graceful → cancelled）；
 //! - scope default deny：include 空 = 全拒（PLAN :527 主动面不自动扩大范围）；
@@ -70,7 +74,8 @@ pub struct SendPolicy {
     /// 重定向策略。
     #[serde(default)]
     pub redirect: RedirectPolicy,
-    /// 重定向跳数帽（follow 时生效；default 10）。
+    /// 重定向跳数帽（follow 时生效；default 10）。生效帽 = min(本值, scope
+    /// rules.max_redirects)——policy 只可收紧，scope rules 帽兜底不放大。
     #[serde(default = "default_max_redirects")]
     pub max_redirects: u32,
     /// 响应体读帽字节（默认 8MiB；与 ListenerConfig.max_body_bytes 同源）。
@@ -564,26 +569,27 @@ fn find_chunked_end(buf: &[u8]) -> Option<usize> {
 /// 重建下一跳 OutboundRequest（Location → origin-form target + Host 头重写；
 /// 303 → GET 空体；其余方法保持——RFC 9110 §10.4 保守面，307/308 保方法，
 /// 301/302 亦保方法（历史惯例重写 POST→GET 属 UA 语义，显式编辑面自理））。
+/// Location 形态全谱（RFC 3986 §5）：绝对 URL / protocol-relative（`//host`
+/// → host 切换，继承当前 scheme）/ absolute-path（`/path`）/ relative-path
+/// （`bar`、`../up` → §5.2 merge + §5.2.4 remove_dot_segments 归一化）。
 fn build_redirect_request(
     prev: &OutboundRequest,
     prev_target: &RequestTarget,
     location: &str,
 ) -> Result<(OutboundRequest, RequestTarget, String), SendError> {
-    // Location 解析：绝对 URL / 相对引用（RFC 3986 §5）。
+    // Location 解析：绝对 URL / protocol-relative / 相对引用（RFC 3986 §5）。
     let new_url = if location.contains("://") {
         location.to_string()
-    } else if let Some(stripped) = location.strip_prefix('/') {
-        format!("{}://{}:{}/{}", prev_target.scheme, prev_target.host, prev_target.port, stripped)
+    } else if let Some(rest) = location.strip_prefix("//") {
+        // protocol-relative（network-path reference）：host 切换，继承当前
+        // scheme（https→同 scheme 不降级），port/path 由 URI 解析接管。
+        format!("{}://{}", prev_target.scheme, rest)
     } else {
-        // 相对路径引用：并入当前目录（最小面：拼在当前 path 前段）。
-        let base_dir = prev_target
-            .path
-            .rsplit_once('/')
-            .map(|(d, _)| d)
-            .unwrap_or("");
+        // 相对引用：并入当前 path（merge + dot-segment 归一化，无双斜杠）。
+        let joined = join_reference(&prev_target.path, location);
         format!(
-            "{}://{}:{}/{}/{}",
-            prev_target.scheme, prev_target.host, prev_target.port, base_dir, location
+            "{}://{}:{}{}",
+            prev_target.scheme, prev_target.host, prev_target.port, joined
         )
     };
     let mut target: RequestTarget = {
@@ -639,6 +645,75 @@ fn build_redirect_request(
     Ok((next, target, url))
 }
 
+/// RFC 3986 §5.2.3 merge + §5.2.4 remove_dot_segments：relative-path 引用
+/// 并入 base path 目录段（目录段含末尾 '/'——join 点不产双斜杠），`.`/`..`
+/// 段逐段归一化（尾斜杠语义保留）；absolute-path 引用直取后归一化；仅
+/// query 的引用（"?q"）path 取 base 原样。base_path 为 origin-form path
+/// （可能带 query——merge 只取 path 段）；query 只取 reference 自身。
+fn join_reference(base_path: &str, reference: &str) -> String {
+    let (ref_path, ref_query) = match reference.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (reference, None),
+    };
+    let (base_only, _) = base_path.split_once('?').unwrap_or((base_path, ""));
+    let merged: String = if ref_path.starts_with('/') {
+        ref_path.to_string()
+    } else if ref_path.is_empty() {
+        base_only.to_string()
+    } else {
+        let dir = match base_only.rfind('/') {
+            // 目录段含末尾 '/'（"/a/b" → "/a/"；根 "/" → "/"）。
+            Some(pos) => &base_only[..=pos],
+            None => "/",
+        };
+        format!("{dir}{ref_path}")
+    };
+    remove_dot_segments(&merged, ref_query)
+}
+
+/// RFC 3986 §5.2.4 remove_dot_segments（两缓冲原算法）：`.`/`..` 段剥离 +
+/// 末段回退；`..` 在根之上不越出根（`/../x` → `/x`）；尾斜杠保留；
+/// query 透传不参与归一化。
+fn remove_dot_segments(path: &str, query: Option<&str>) -> String {
+    let pop_last = |out: &mut String| {
+        if let Some(pos) = out.rfind('/') {
+            out.truncate(pos);
+        }
+    };
+    let mut out = String::new();
+    let mut input = path.to_string();
+    while !input.is_empty() {
+        if let Some(rest) = input.strip_prefix("../").or_else(|| input.strip_prefix("./")) {
+            input = rest.to_string();
+        } else if let Some(rest) = input.strip_prefix("/./") {
+            input = format!("/{rest}");
+        } else if input == "/." {
+            input = "/".to_string();
+        } else if let Some(rest) = input.strip_prefix("/../") {
+            input = format!("/{rest}");
+            pop_last(&mut out);
+        } else if input == "/.." {
+            input = "/".to_string();
+            pop_last(&mut out);
+        } else if input == "." || input == ".." {
+            input = String::new();
+        } else {
+            // 移出一段（含前导 '/'，至下一 '/' 止——不含下一 '/'）。
+            let end = match input[1..].find('/') {
+                Some(pos) => 1 + pos,
+                None => input.len(),
+            };
+            out.push_str(&input[..end]);
+            input = input[end..].to_string();
+        }
+    }
+    if let Some(q) = query {
+        out.push('?');
+        out.push_str(q);
+    }
+    out
+}
+
 /// 发送主入口（W3-D4 全路径）：Outbound → serialize → h1 字节写 → parse_wire；
 /// 重定向逐跳 scope 闸 + IP 审计 + 帽；超时/取消；outbound bytes 原样返回
 /// （CAS 写面在调用方）。
@@ -657,10 +732,16 @@ pub async fn send_request(
     let mut ttfb: Option<i64> = None;
     let mut last_remote_ip: Option<IpAddr>;
     let mut hop: u32 = 0;
+    // 重定向帽双源收口：生效帽 = min(policy.max_redirects, rules.max_redirects)
+    // ——policy（--policy JSON 用户面）只可收紧，scope rules 帽兜底不放大
+    // （document_fetch.rs:757 MIN(cap) 同型；policy 帽曾为定义未消费的死配置，
+    // 本行接线为唯一生效点）。
+    let redirect_cap = policy.max_redirects.min(rules.max_redirects);
 
     loop {
         // 1) 目标解析 + scope 闸（查点 A：hop 0 = check；重定向跳 = 帽逐跳
-        // check_redirect_hop 接线，W2-D5 查点 B 收口）。
+        // check_redirect_hop 接线，W2-D5 查点 B 收口；hop 超生效帽 →
+        // RedirectLimit 拒，cap 报生效帽）。
         let target = resolve_target(&current)?;
         let scope_target = ScopeTarget {
             scheme: &target.scheme,
@@ -670,6 +751,10 @@ pub async fn send_request(
         };
         let decision = if hop == 0 {
             scope::check(rules, &scope_target)
+        } else if hop > redirect_cap {
+            scope::ScopeDecision::Blocked {
+                reason: scope::ScopeRejection::RedirectLimit { hop, cap: redirect_cap },
+            }
         } else {
             scope::check_redirect_hop(rules, &scope_target, hop)
         };
