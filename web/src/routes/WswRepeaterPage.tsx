@@ -98,6 +98,19 @@ function encodeDraftBody(text: string): string {
   return btoa(bin);
 }
 
+/** Raw 请求行版本 token → wsw_message HttpVersion 词表形式（types.rs
+ *  from_str_vocabulary 小写词表；raw 文本习惯写法 HTTP/1.1 需归一，否则
+ *  OutboundRequest serde 反序列化拒收 → send 卡 pending）。 */
+function normalizeVersionToken(token: string): string {
+  const t = token.trim().toUpperCase();
+  if (t === "HTTP/0.9") return "http/0.9";
+  if (t === "HTTP/1.0") return "http/1.0";
+  if (t === "HTTP/1.1" || t === "" || t === "HTTP") return "http/1.1";
+  if (t === "HTTP/2" || t === "HTTP/2.0") return "h2";
+  if (t === "HTTP/3" || t === "HTTP/3.0") return "h3";
+  return "http/1.1";
+}
+
 function parseRawToDraft(raw: string, fallback: OutboundDraft): OutboundDraft {
   const normalized = raw.replace(/\r\n/g, "\n");
   const splitAt = normalized.indexOf("\n\n");
@@ -115,7 +128,7 @@ function parseRawToDraft(raw: string, fallback: OutboundDraft): OutboundDraft {
   return {
     method: method.trim().toUpperCase() || "GET",
     target: target.trim() || "/",
-    version: version.trim() || "http/1.1",
+    version: normalizeVersionToken(version),
     headers,
     body: encodeDraftBody(bodyText),
     trailers: [],

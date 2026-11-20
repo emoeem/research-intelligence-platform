@@ -401,36 +401,86 @@ async fn run_send(a: Args) -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(pid_file, format!("{}\n", std::process::id()))?;
     }
 
-    // scope 规则源：wsw_session 行（缺行 = default deny——安全默认）。
-    let rules = store
-        .get_session(&session_id)?
-        .map(|s| ScopeRules::from_json(&s.scope_rules_json))
-        .transpose()?
-        .unwrap_or_default();
+    // 预飞面（rules 读取 / request-json 解析 / policy 解析 / sending 推进）：
+    // 任一失败 = send 行落 failed 终态再退出（六态收敛：禁 pending 悬挂——
+    // 此前解析坏输入直接 return Err，行永久滞留 pending；e2e 实测暴露面）。
+    let preflight = || -> Result<
+        (ScopeRules, wsw_message::serialize::OutboundRequest, wsw_runtime::sender::SendPolicy),
+        (String, String),
+    > {
+        // scope 规则源：wsw_session 行（缺行 = default deny——安全默认）。
+        let rules = store
+            .get_session(&session_id)
+            .map_err(|e| ("preflight_failed".to_string(), e.to_string()))?
+            .map(|s| ScopeRules::from_json(&s.scope_rules_json))
+            .transpose()
+            .map_err(|e| ("preflight_failed".to_string(), e.to_string()))?
+            .unwrap_or_default();
 
-    // 发送面：version-no 指定版本回放，否则 tab 最新版本（request-json 显式
-    // 优先——rp_server 已从版本行读出落盘）。
-    let request: wsw_message::serialize::OutboundRequest = if let Some(f) = &a.request_json {
-        serde_json::from_str(&std::fs::read_to_string(f)?)?
-    } else {
-        return Err("send requires --request-json".into());
+        // 发送面：request-json 显式优先——rp_server 已从版本行读出落盘。
+        let request: wsw_message::serialize::OutboundRequest = match &a.request_json {
+            Some(f) => {
+                let text = std::fs::read_to_string(f)
+                    .map_err(|e| ("request_invalid".to_string(), format!("read {}: {e}", f.display())))?;
+                serde_json::from_str(&text)
+                    .map_err(|e| ("request_invalid".to_string(), e.to_string()))?
+            }
+            None => {
+                return Err(("request_invalid".to_string(), "send requires --request-json".into()))
+            }
+        };
+        let policy = match &a.policy_file {
+            Some(f) => {
+                let text = std::fs::read_to_string(f)
+                    .map_err(|e| ("preflight_failed".to_string(), format!("read {}: {e}", f.display())))?;
+                wsw_runtime::sender::SendPolicy::from_json(&text)
+                    .map_err(|e| ("preflight_failed".to_string(), e.to_string()))?
+            }
+            None => wsw_runtime::sender::SendPolicy::default(),
+        };
+
+        // 发送中态推进。
+        store
+            .advance_send(
+                &send_id,
+                &persist::SendPatch {
+                    state: "sending",
+                    started_at: Some(persist::now_iso()),
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| ("preflight_failed".to_string(), e.to_string()))?;
+        Ok((rules, request, policy))
+    };
+    let (rules, request, policy) = match preflight() {
+        Ok(v) => v,
+        Err((code, reason)) => {
+            let o = wsw_runtime::sender::SendOutcome {
+                state: "failed",
+                error_code: Some(code),
+                reason: Some(reason.clone()),
+                response_status: None,
+                response_bytes: Vec::new(),
+                parsed: None,
+                redirect_chain: Vec::new(),
+                outbound_sha256: None,
+                outbound_bytes: Vec::new(),
+                remote_ip: None,
+                duration_ms: 0,
+                ttfb_ms: None,
+            };
+            wsw_runtime::sender::persist_send_failure(&store, &send_id, &o)?;
+            tracing_error!(class = "send_preflight",
+                error_code = %o.error_code.clone().unwrap_or_default(),
+                reason = %reason, send_id = %send_id, "send preflight failed (row landed failed)");
+            println!(
+                "{}",
+                serde_json::json!({"send_id": send_id, "state": "failed", "error_code": o.error_code})
+            );
+            return Err(format!("send preflight failed: {reason}").into());
+        }
     };
     let _ = version_no;
-
-    let policy = match &a.policy_file {
-        Some(f) => wsw_runtime::sender::SendPolicy::from_json(&std::fs::read_to_string(f)?)?,
-        None => wsw_runtime::sender::SendPolicy::default(),
-    };
-
-    // 发送中态推进。
-    store.advance_send(
-        &send_id,
-        &persist::SendPatch {
-            state: "sending",
-            started_at: Some(persist::now_iso()),
-            ..Default::default()
-        },
-    )?;
 
     // SIGTERM/SIGINT → cancelled watch（graceful：非终态时落 cancelled 终态）。
     let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);

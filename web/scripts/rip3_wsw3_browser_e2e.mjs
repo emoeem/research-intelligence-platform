@@ -102,8 +102,11 @@ function cleanup() {
 }
 process.on("exit", () => { if (!cleaning) cleanup(); });
 
+// 浏览器交互等待必须让 Node 事件环继续转（Atomics.wait 阻塞主线程会吞
+// page.on('request') 的 CDP 事件派发——防抖计数实测踩坑：阻塞期间事件入队、
+// page.off 先执行 → 计数恒 0）。改 async sleep。
 function waitMs(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  return new Promise((ok) => setTimeout(ok, ms));
 }
 
 // ---- chromium 探针（W2 e2e 同款）-------------------------------------------
@@ -161,24 +164,34 @@ function median(samples) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-// ---- 种子流量（经代理 socket 单连接顺序请求；absolute-form 代理语义）--------
-async function seedTraffic(count) {
+// ---- 种子流量（每请求一 socket 连接，curl -x 同型；absolute-form 代理语义）----
+// 实测依据（2026-11-20 e2e 调试）：local_range.py 为 BaseHTTPRequestHandler
+// 默认 protocol_version="HTTP/1.0"（scripts/local_range.py:34），上游每响应后
+// 关连接；代理转发面响应为 HTTP/1.0 + 无 CL + 无 chunked（EOF 定界）→
+// 客户端连接逐请求关闭。故单连接 keep-alive 种子模式不成立，改为连接-请求-
+// 关闭循环；响应定界 CL/chunked 快路径 + socket EOF 兜底（本靶场实态）。
+async function seedRequest(writeFn, tag) {
   const socket = netConnect({ host: "127.0.0.1", port: PROXY_PORT });
   await new Promise((ok, err) => {
     socket.once("connect", ok);
     socket.once("error", err);
   });
   let buffer = Buffer.alloc(0);
+  let eof = false;
+  const onEof = () => { eof = true; };
   socket.on("data", (chunk) => { buffer = Buffer.concat([buffer, chunk]); });
+  socket.on("close", onEof);
+  socket.on("end", onEof);
   const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
-  async function readResponse() {
+  try {
+    socket.write(writeFn());
     const deadline = Date.now() + 8000;
     for (;;) {
       const headEnd = buffer.indexOf("\r\n\r\n");
       if (headEnd >= 0) {
         const head = buffer.subarray(0, headEnd).toString("latin1");
-        // MITM tee 面：响应 CL 被移除由 hyper 重定界 → 客户端侧常见 chunked；
-        // 明文 CL 形态并存（靶场直连面）。两种定界都解析。
+        // MITM tee 面：响应 CL 被移除由 hyper 重定界 → 靶场经代理实态为
+        // HTTP/1.0 EOF 定界；明文 CL/chunked 形态并存（快路径都解析）。
         const chunked = /transfer-encoding:\s*chunked/i.test(head);
         const clMatch = head.match(/content-length:\s*(\d+)/i);
         let total = -1;
@@ -187,39 +200,38 @@ async function seedTraffic(count) {
           if (term >= 0) total = term + 5;
         } else if (clMatch) {
           total = headEnd + 4 + Number(clMatch[1]);
-        } else {
-          total = buffer.length; // EOF 定界兜底
         }
         if (total >= 0 && buffer.length >= total) {
-          const out = buffer.subarray(0, total);
-          buffer = buffer.subarray(total);
-          return out;
+          return buffer.subarray(0, total);
         }
       }
-      if (Date.now() > deadline) throw new Error("seed response timeout");
+      if (eof) return buffer; // EOF 定界（HTTP/1.0 上游面）
+      if (Date.now() > deadline) throw new Error(`seed response timeout (${tag})`);
       await wait(2);
     }
+  } finally {
+    socket.destroy();
   }
+}
+async function seedTraffic(count) {
   for (let i = 0; i < count; i += 1) {
     const variant = i % 6;
+    let writeFn;
     if (variant === 3) {
       // POST 变体（带体；靶场 501/404 均为可捕获状态面）。
       const body = `seed-payload-${i}`;
-      socket.write(
+      writeFn = () =>
         `POST http://127.0.0.1:${RANGE_PORT}/seed/${i} HTTP/1.1\r\n` +
         `Host: 127.0.0.1:${RANGE_PORT}\r\nContent-Type: text/plain\r\n` +
-        `Content-Length: ${body.length}\r\nConnection: keep-alive\r\n\r\n${body}`,
-      );
+        `Content-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`;
     } else {
       const path = variant === 0 ? "/p59c-marker" : variant === 1 ? "/" : `/seed/${i}`;
-      socket.write(
+      writeFn = () =>
         `GET http://127.0.0.1:${RANGE_PORT}${path} HTTP/1.1\r\n` +
-        `Host: 127.0.0.1:${RANGE_PORT}\r\nConnection: keep-alive\r\n\r\n`,
-      );
+        `Host: 127.0.0.1:${RANGE_PORT}\r\nConnection: close\r\n\r\n`;
     }
-    await readResponse();
+    await seedRequest(writeFn, `#${i}`);
   }
-  socket.destroy();
 }
 
 // ---- 静态服务（web/dist + /api 反代；W2 e2e 同款）--------------------------
@@ -306,7 +318,8 @@ try {
   const seedMs = Date.now() - tSeed0;
   await waitFor(async () => {
     const r = await fetchJson(`http://127.0.0.1:${API_PORT}/api/wsw/history?limit=1`);
-    return r.json && r.json.total >= SEED_COUNT ? true : `total=${r.json?.total}`;
+    // 未达标必须返回 falsy（真值字符串会被 waitFor 当满足条件首轮即解析）。
+    return r.json?.total >= SEED_COUNT;
   }, 30000, 400, "025 落库 total≥1000");
   const seedList = await fetchJson(`http://127.0.0.1:${API_PORT}/api/wsw/history?limit=1`);
   pass("种子流量与落库（≥1000 行 025 wsw_exchange）", seedList.json.total >= SEED_COUNT,

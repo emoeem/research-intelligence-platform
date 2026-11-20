@@ -414,3 +414,46 @@ fn latest_version_readback_for_editor() {
     assert_eq!(latest.origin, "from_history");
     assert_eq!(latest.source_exchange_id.as_deref(), Some("wsw-9-0-0001"));
 }
+
+#[test]
+fn insert_batch_throughput_measurement() {
+    // S9 落库吞吐实测（WSW-3-TASK §四.4：无预设门值，PLAN :754 禁预填——
+    // 数字打印进批次报告 F 节登记，不做吞吐断言）。临时文件库（WAL 开启
+    // 同 listener 实态）× 128 行/批 × 40 批 = 5120 行。
+    let dir = std::env::temp_dir().join(format!(
+        "wsw3-throughput-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = PersistStore::open_file(&dir.join("throughput.db")).expect("open file store");
+    store
+        .run_migrations(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations").as_path())
+        .unwrap();
+    let started = std::time::Instant::now();
+    const BATCHES: usize = 40;
+    const ROWS_PER_BATCH: usize = 128;
+    let mut seq = 0i64;
+    for _ in 0..BATCHES {
+        let rows: Vec<ExchangeRow> = (0..ROWS_PER_BATCH)
+            .map(|_| {
+                seq += 1;
+                minimal_row(
+                    &format!("wsw-{}-0-{seq:06}", std::process::id() % 100_000),
+                    seq,
+                )
+            })
+            .collect();
+        let outcome = store.insert_exchanges(&rows).expect("batch insert");
+        assert_eq!(outcome.inserted, ROWS_PER_BATCH);
+    }
+    let elapsed = started.elapsed();
+    let total = BATCHES * ROWS_PER_BATCH;
+    println!(
+        "insert throughput: {:.0} rows/s ({total} rows in {:.1}ms, {BATCHES} batches x {ROWS_PER_BATCH} rows, file WAL db)",
+        total as f64 / elapsed.as_secs_f64(),
+        elapsed.as_secs_f64() * 1000.0,
+    );
+    assert_eq!(store.exchange_count().unwrap(), total as u64);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -64,13 +64,21 @@ class RangeHandler(http.server.BaseHTTPRequestHandler):
         print(f"[{stamp}] {self.address_string()} {fmt % args}", flush=True)
 
 
+class ReusableThreadingTCPServer(socketserver.ThreadingTCPServer):
+    # WSW-3 e2e 实测面：HTTP/1.0 响应后服务端先关连接，子连接 TIME_WAIT
+    # 挂 18443 达 2×MSL，本类默认 allow_reuse_address=False → 60s 内重绑
+    # EADDRINUSE（e2e/复现脚本快速重跑即踩）。开 REUSEADDR 仅消除
+    # TIME_WAIT 重绑阻塞，不改变监听语义。
+    allow_reuse_address = True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="RIP3 P5-9c 本地靶场（loopback only）")
     parser.add_argument("--port", type=int, default=9443)
     args = parser.parse_args()
     # 纪律硬编码：只绑定 127.0.0.1，不提供 --host 覆盖（防误开外联面）。
     host = "127.0.0.1"
-    with socketserver.ThreadingTCPServer((host, args.port), RangeHandler) as httpd:
+    with ReusableThreadingTCPServer((host, args.port), RangeHandler) as httpd:
         print(f"[local-range] listening http://{host}:{args.port}/ （Ctrl-C 停）", flush=True)
         try:
             httpd.serve_forever()

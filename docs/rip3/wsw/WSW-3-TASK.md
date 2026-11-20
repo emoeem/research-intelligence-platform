@@ -3,7 +3,7 @@
 - 批次：WSW-3（PLAN §九 :605：History 列表详情、过滤搜索、请求编辑、重放、Tab 历史；**不包含大规模 Fuzz**）
 - 日期：2026-11-20
 - 上位：`docs/rip3/wsw/WSW-3-ADR.md`（本批八项裁决 W3-D1～D8，**表形状/分页协议/发送引擎/组件选型/Send 语义/写权分治以它为准**）、`docs/rip3/wsw/WSW-2-ADR.md`（W2-D4 exchange 表留 W3 / W2-D5 查点 B 帽接线留 W3 / W2-D9）、`docs/rip3/wsw/05-DESIGN-AND-THREAT-MODEL.md`（§1.2 Exchange 字段 / §3.2 表归属 / §3.4 retention 草案）、`docs/rip3/wsw/WSW-CONTINUATION-REDLINES.md`（八步循环 + 九条红线）、PLAN §4.2/§4.3/§5.3/§5.4/§6.3/§6.4/§7.2/§11.3/§11.6
-- 状态：设计定稿，待实施
+- 状态：已实施收口（2026-11-20；主体经中断点快照 `9aff134a` 入库，续跑定向门禁全绿 + e2e 21/21 + 性能实测 + 批次报告 `docs/rip3/batches/WSW-3-BATCH-REPORT.md`）
 - 硬验收口径声明：原手册 `/media/emo/code/pensting/WSW-CONTINUATION-WORKFLOW.md` 已丢失（`WSW-CONTINUATION-REDLINES.md:3-5` 固化结论），其"§4 W3 行"按 REDLINES 第 5 条从仓库内可考来源重建：PLAN §九 :605 + WSW-2-ADR W2-D4/D5/D9 + DESIGN §3.2 + 本任务书 §四。外部口径冲突以 PLAN / WSW-3-ADR / 本档为准。
 
 ---
