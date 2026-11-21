@@ -117,6 +117,21 @@ libsqlite3-sys-0.39.1.crate    14a5f01b87b92705d07b433c06f96cbc764637d81a0bffb57
   `use database::{rusqlite, Pool}` 模式使用（实测样例 `crates/agent-engine/src/store.rs:16-17`）。
 - 因此 bump 只改 workspace 根一行钉版 + Cargo.lock，代码修改面集中在 API 差异处（§2.2）。
 
+### 2.1.1 workspace 外独立工件：probe-cargo/（不在本批范围，登记为遗留观察项）
+
+- `probe-cargo/`（rp_probe 0.1.0，DEC-001 构建准入验证工件，CURRENT-ARCHITECTURE-INVENTORY.md §10
+  处置=保留历史验证证据）是 **workspace 外独立工程**：不在根 `Cargo.toml` members（:3-30 实测），
+  自带 `Cargo.lock`（rusqlite 0.32.1 / libsqlite3-sys 0.30.1，:88-90/:145-147 实测）、自带
+  `vendor/` 与 `.cargo/config.toml`（vendored-sources），**无 deny.toml、不在根
+  `cargo deny check advisories` 扫描面**。
+- 即根 lock 过修复线后，仓库内仍有一处 libsqlite3-sys 0.30.1（受影响区间）bundled 残留，
+  只是不被 advisories 门覆盖。定性：一次性验证工件（PROBE-RESULT.md 构建实测留证后即闲置），
+  非生产面、不发布、不参与 workspace 构建。
+- 处置登记（遗留观察项，不阻塞本批验收）：probe-cargo 若复活为活跃工程，须按本任务书 §1/§4
+  同口径 bump 至 rusqlite 0.41.1 + vendor 重写；若长期闲置，保留现状并接受其不受 deny 门
+  覆盖的事实（下次依赖安全批次开场核对一次其 lock 是否有变化）。本登记 2026-11-21 复核新增
+  （批次实施时 §2.1 只覆盖 workspace 面，评审后复核发现此遗漏，如实补记）。
+
 ### 2.2 rusqlite API 使用面（全仓 grep 实测汇总）
 
 ```
@@ -257,3 +272,11 @@ ignore = [
 - tarball 实测：libsqlite3-sys-0.39.1 `sqlite3/sqlite3.h:149 SQLITE_VERSION "3.54.1"`；
   0.39.0 同表 `3.54.0`；rusqlite-0.41.1 `rust-version = "1.89.0"`。
 - cargo-deny 0.20.2 `[advisories] v2 ignore` 语法：本批临时追加实测（§5.1）。
+- 复核（2026-11-21，裁决员会话）：rustsec.org RUSTSEC-2026-0459 页面重新 fetch 核实，affected
+  0.6.0–0.38.2（bundles SQLite 3.13.0–3.53.2）、patched ≥0.39.0（0.39.0=3.54.0、0.39.1=3.54.1）、
+  CVSS 6.8 MEDIUM（AV:L/AC:L/AT:N/PR:N/UI:P/VC:H）、CVE-2026-119375 / GHSA-72w2-rjgg-q729、
+  关联 rusqlite 0.41.0、MSRV 1.88/1.89——与本节及 §1.1 全部一致。补一点公告细节：`bundled-sqlcipher`
+  feature 在 0.39.0/0.39.1 仍捆绑 sqlcipher-src 419.0.6（SQLite 3.53.4）同样受影响；本仓 features
+  钉 `bundled, backup, cache, fallible_uint`（Cargo.toml:50），未启用 sqlcipher 分支，不受该细节影响。
+- 复核（2026-11-21，裁决员会话）：`cargo deny check advisories` 实跑 `advisories ok` exit 0
+  （实施批次收口后终态确认）；probe-cargo 遗漏面登记见 §2.1.1。

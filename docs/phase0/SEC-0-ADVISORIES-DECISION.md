@@ -82,8 +82,9 @@
 ### 3.1 消费面实测（与其他两条不同：这是 workspace 直接依赖链）
 
 - `cargo tree -i unsafe-libyaml`：唯一入边 `serde_yaml_ng v0.10.0`。
-- **serde_yaml_ng 是 workspace 直接依赖**（workspace 根 `Cargo.toml:50` 钉
-  `serde_yaml_ng = "0.10"`，P6-1 选型：dtolnay serde_yaml 0.9 的维护续作）。
+- **serde_yaml_ng 是 workspace 直接依赖**（workspace 根 Cargo.toml `[workspace.dependencies]`
+  段钉 `serde_yaml_ng = "0.10"`，P6-1 选型：dtolnay serde_yaml 0.9 的维护续作；
+  行号引用不写死——依赖批次插入声明会漂移，2026-11-21 实测声明已由 :50 漂至 :58）。
 - 源码使用面（grep 实测）：**10 文件 / 20 行，5 个 crate + tests**——
   `intel-db/src/parser.rs`、`mcp-server/src/dispatch.rs`、`plugin-registry/src/{lib,manifest}.rs`、
   `tool-engine/src/bin/{rp-tool-health,rp-image-pin}.rs`、`tool-registry/src/strict_json.rs`、
@@ -95,8 +96,11 @@
 - **升级路径无效**：crates.io sparse index 实测 `serde_yaml_ng` 最新线 0.9.35 / 0.9.36 /
   0.10.0 全部声明 `unsafe-libyaml ^0.2.11`——没有任何已发布版本换掉 unsafe-libyaml。
   bump serde_yaml_ng 解除不了本公告。
-- **公告推荐的真替代**：saphyr / serde-saphyr（安全 Rust YAML 解析系）；
-  公告明确不把 serde_yaml 各 fork 列为替代（它们都挂 unsafe-libyaml）。
+- **公告推荐的真替代**：saphyr / serde-saphyr / noyalib（安全 Rust YAML 解析系）；
+  公告替代名单未收录 serde_yaml 各 fork，并注明 serde_yaml 已弃用、fork（含 serde_yaml_ng）
+  仍依赖 unsafe-libyaml——与 crates.io 实测一致（0.9.35/0.9.36/0.10.0 全挂 ^0.2.11）。
+  （2026-11-21 复核：rustsec.org 页面 fetch 核实，原稿"公告明确不把 fork 列为替代"措辞过强，
+  实际是名单不收录 + 注明 fork 仍挂依赖，结论不变。）
 - **替换成本实测**：API 面 10 文件 / 20 行，看似小；但替换的是解析器语义面——
   Manifest YAML 的严格解析行为（重复键、类型强制、锚点/别名、多文档）需跨
   plugin-registry / tool-registry / tool-engine / intel-db / mcp-server 五处登记件解析
@@ -169,3 +173,27 @@ registry/index 查询不可达而未完成，**不得视为已核验**（WSW-1 �
 | RUSTSEC-2024-0436 | paste 1.0.15 | unmaintained | ignore，复查 2027-05-20 | 纯传递（tokenizers），proc-macro 无运行时暴露（§2） |
 | RUSTSEC-2024-0449 | unsafe-libyaml 0.2.11 | unmaintained | ignore（替换候选标记），复查 2027-05-20 | 直接依赖链但 bump 无效，真替换跨 5 crate 语义回归，独立批次候选（§3） |
 | （登记项） | email_address / filetime | index-failure | 复查项，不进 ignore | yanked 核验不可达 ≠ 已核验，恢复后复跑（§5） |
+
+---
+
+## 7. 范围澄清与复核记录（2026-11-21，裁决员复核会话）
+
+- **范围**：本裁决书与 deny.toml ignore 清单只覆盖 workspace（根 Cargo.lock + 根 deny.toml
+  扫描面）。`probe-cargo/`（rp_probe，workspace 外 DEC-001 验证工件）自带 lock/vendor、
+  无 deny.toml、不在任何 advisories 门覆盖内；其 libsqlite3-sys 0.30.1（RUSTSEC-2026-0459
+  受影响区间）残留登记在任务书 §2.1.1，不进本裁决书 ignore 体系（vulnerability 类不 ignore，
+  且该工件不在 deny 面内，登记性质为遗留观察项）。
+- **三条消费面复测**：`cargo tree -i chrono`（rmcp 3.10.0 ← mcp-server ← rp-mcp-parity +
+  schemars 1.2.3 ← rmcp）、`cargo tree -i paste`（tokenizers 0.21.4 ← context-broker）、
+  `cargo tree -i unsafe-libyaml`（serde_yaml_ng 0.10.0 ← intel-db/mcp-server/plugin-registry
+  及上游）与 §1.1/§2.1/§3.1 实测结论一致；chrono/paste workspace 源码直用复测 0 文件；
+  serde_yaml_ng 消费面复测 10 文件 / 20 行，逐值一致。
+- **三条公告外部核实**（rustsec.org fetch，2026-11-21）：RUSTSEC-2026-0543（chrono，替代
+  jiff/time，no patched，2026-09-14 报告/2026-11-17 发布）、RUSTSEC-2024-0436（paste，替代
+  pastey/with_builtin_macros，no patched）、RUSTSEC-2024-0449（unsafe-libyaml，替代
+  saphyr/serde-saphyr/noyalib，no patched，repo 2024-03-25 归档）——与 §1.2/§2.2/§3.2
+  替代评估全部一致（§3.2 fork 措辞按公告原文修准，见该节复核注）。
+- **终态确认**：`cargo deny check advisories` 实跑 `advisories ok` exit 0（libsqlite3-sys
+  0.39.1 已过修复线 + 三条 ignore 生效）；index-failure warning 当前为零（yanked 核验已随
+  advisory-db fetch 恢复完成，SEC-0-BATCH-REPORT.md G.2 口径），§5 复查项保留"下次依赖
+  安全批次开场复核一句"不撤。

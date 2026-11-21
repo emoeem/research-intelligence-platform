@@ -40,10 +40,11 @@ confidence-threshold = 0.93
 version = 2
 ignore = [
   # 三条 unmaintained 裁决（SEC-0，docs/phase0/SEC-0-ADVISORIES-DECISION.md，2026-11-20）：
-  # 均为 INFO 级无修复版本；替代面已逐条实测，见各条尾注。复查统一 2027-05-20。
-  "RUSTSEC-2026-0543", # chrono unmaintained：纯传递（rmcp 3.10.0），workspace 零直用；替代=跨 rmcp 生态（§1）
-  "RUSTSEC-2024-0436", # paste unmaintained：纯传递（tokenizers 0.21.4），proc-macro 无运行时暴露（§2）
-  "RUSTSEC-2024-0449", # unsafe-libyaml unmaintained：经 serde_yaml_ng（直接依赖）；bump 无效，serde-saphyr 替换属独立批次候选（§3）
+  # 均为 INFO 级无修复版本；替代面已逐条实测，见各条尾注（复查日期各条行尾，
+  # 触发条件见 decision 文档各节，单独调整某条复查日期只动该行）。
+  "RUSTSEC-2026-0543", # chrono unmaintained：纯传递（rmcp 3.10.0），workspace 零直用；替代=跨 rmcp 生态（§1）；复查 2027-05-20
+  "RUSTSEC-2024-0436", # paste unmaintained：纯传递（tokenizers 0.21.4），proc-macro 无运行时暴露（§2）；复查 2027-05-20
+  "RUSTSEC-2024-0449", # unsafe-libyaml unmaintained：经 serde_yaml_ng（直接依赖）；bump 无效，serde-saphyr 替换属独立批次候选（§3）；复查 2027-05-20
 ]
 # RUSTSEC-2026-0459（libsqlite3-sys / CVE-2026-119375）不 ignore：vulnerability 有修复线，
 # 由 SEC-0-TASK.md rusqlite 0.41.1 bump 消除，验收 = cargo deny check advisories exit 0。
