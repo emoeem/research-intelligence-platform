@@ -85,7 +85,41 @@
 - 其余为低价值/平台无关，登记不采纳。
 - MA-2/MA-3 任务书撰写时除 §三 R1~R8 外，增引本页 5.1（brain-mark 收据语义、reconciliation 人工确认）。
 
-## 四、核实记录（第一收获 2026-11-21 首屏两源；第二收获见 §五）
+
+## 六、第三收获（2026-11-21）：billion-context vs RIP context-broker 对比分析（用户点名）
+
+### 6.1 两侧定位（不同层，先说清再谈借鉴）
+
+| 维度 | billion-context（ranxianglei，MIT+署名条款） | RIP context-broker（P4，3319 行，P10-3 基线 assemble_ms 1.863） |
+|---|---|---|
+| 解决的问题 | **对话线程压缩**：数月级单会话（实测 18.76B 累计输入 token 零越窗） | **知识/工具上下文装配**：Agent 与知识库/工具库间唯一装配层（四级加载+预算+清单留痕） |
+| 作用对象 | 会话消息历史（折叠为分层多代摘要，可 decompress 还原） | 每请求从 knowledge/rtis/rulepack/registry/plugin/artifact 源装配（REF_ONLY 引用不预装正文） |
+| 形态 | 模型 API 代理（重写流式请求，三种宿主集成：插件/启动器/URL 前缀） | Rust 库 + manifest 持久化（三表只追加）+ BrokerCache（TTL 分源） |
+| 触发 | 增长间隔 nudge（每 ~50K token 温和提示）+ preflight 硬兜底（超窗前强制） | 静态 BudgetPolicy（组件份额 + borrow 规则），无动态触发 |
+| 可逆性 | compress 可 decompress 还原；只缩"发给模型的"，从不改写客户端本地历史 | expand(manifest_id, item_id) 按需展开引用项——语义同构，但对象是引用项不是压缩摘要 |
+
+### 6.2 诚实结论：三层重叠、四条可借鉴（逐条给落位）
+
+| # | billion-context 机制 | context-broker 现状 | 借鉴落位 |
+|---|---|---|---|
+| B1 | **模型驱动压缩**：注入 compress/decompress/search_context/acp_status 四工具，模型自己决定何时/压缩什么（非硬截断） | 无对话历史压缩面（broker 是逐请求装配，不管线程累积） | **CB-1 新模块（agent-engine 长跑转录折叠）**：长 workflow/agent 循环的 transcript 按增长间隔折叠为分层摘要 + 摘要可引用回查（对位 decompress）——落 agent-engine×context-broker 结合部，Phase 6/7 领域，独立批次 |
+| B2 | **前缀缓存友好装配**：健康会话缓存命中率 96-99%、压缩开销 ≤2%；摘要小区间写入保持前缀完整 | assemble 每请求全新装配，无前缀稳定性约束；BrokerCache 是 broker 侧缓存非 provider 侧 prompt cache | **CB-1 装配稳定性约束**：L0/L1 层确定性排序 + 最小差异重装配（同 session 相邻请求前缀不变量）+ 缓存失效归因报告（对位 /acp-cache 按 TTL/模型/密钥归因）——直接改进 broker，收益=provider 侧 token 费用 |
+| B3 | **两级触发**：增长间隔软提示 + preflight 硬兜底 | BudgetPolicy 静态份额，超限即 fail | broker 增动态触发：会话级累积增长到阈值先软收缩（摘要化低价值段）再硬预算兜底——配合 B1 |
+| B4 | **会话血缘**（派生子会话登记，decompress/search 沿父链回溯，深度帽 8） | workflow_run/agent_run 层级已有但无跨代回溯搜索面 | MA-2/MA-3 子任务谱系 + Phase 6 检索面参考（沿父链 search），登记不进 CB-1 必交付 |
+
+### 6.3 不借鉴面（如实登记）
+
+- **代理形态本身**：RIP 不做"重写模型 API 流式请求"的代理（broker 是装配层不是代理层；WSW 代理是 HTTP 抓包用途，性质不同）——压缩面以库/模块形式落 agent-engine 侧。
+- **MIT+署名条款**：只借鉴语义零代码引用，条款不触发。
+- **ZCode 宿主插件集成清单**（bili 支持 zcode）：形态不同不采纳。
+
+### 6.4 落位批次
+
+- **CB-1（新批次候选，Phase 6/7 域）**：B1 转录折叠 + B2 装配稳定性/缓存归因 + B3 两级触发——context-broker×agent-engine 结合部，中小大批；排位：MA-1 → MA-2 后与 WSW-4/MA-3 竞争（用户点名关注项，优先级上调）。
+- B4 血缘回溯登记 Phase 6 检索面观察池。
+- 本节为对比分析记录；CB-1 任务书撰写时引用本页 §6.2 为设计输入。
+
+## 四、核实记录（第一收获首屏两源；第二收获见 §五；第三收获 billion-context 对比见 §六）
 
 - 两源均为 2026-11-21 WebFetch 实抓（README_ZH 全文概要与目录站首屏 24 插件 + 23 分类计数）；dsh-agent-teams 版本 0.1.31 / 宿主 0.2.2-rc.5 / MIT；目录站 12352 声称收录量未核验（非本页结论依赖项）。
 - 本页为形态参考记录，无代码引用；后续 MA-2/MA-3 任务书撰写时把 §三各行作为"设计输入必读"引用本页。
