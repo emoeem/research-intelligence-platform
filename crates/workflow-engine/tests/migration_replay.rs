@@ -144,9 +144,9 @@ fn migration_017_replay_twice_is_idempotent() {
         !second.iter().any(|m| m.version == 18),
         "重放不应重复应用: {second:?}"
     );
-    // WSW-3 追加 025_wsw_exchange 后，当前链尾为 025（追加结构，workflow 面零改动）。
-    assert_eq!(version_1, 25);
-    assert_eq!(version_2, 25);
+    // MA-1 追加 026_caller 后，当前链尾为 026（追加结构，workflow 面零改动）。
+    assert_eq!(version_1, 26);
+    assert_eq!(version_2, 26);
     assert_eq!(tables_1, tables_2, "两次重放表清单一致（幂等）");
     assert!(tables_1.contains(&"workflow_definition".to_string()));
     assert!(tables_1.contains(&"workflow_run".to_string()));

@@ -164,8 +164,8 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version");
     assert_eq!(
-        version, 25,
-        "development copy must reach current chain tail 025 (023 re-applied after rollback)"
+        version, 26,
+        "development copy must reach current chain tail 026 (023 re-applied after rollback)"
     );
     pool.with_conn(|conn| -> Result<(), database::DbError> {
         let table_count: i64 = conn.query_row(
@@ -177,7 +177,7 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         Ok(())
     })
     .expect("verify migrated table");
-    assert_eq!(version, 25);
+    assert_eq!(version, 26);
     drop(pool);
 
     let source_sha_after = sha256_hex(&fs::read(&source).expect("re-read source DB read-only"));

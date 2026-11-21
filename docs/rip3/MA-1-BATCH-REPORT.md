@@ -84,13 +84,14 @@ MA-1 e2e legacy 对照：p50=1.94ms（增量参考差 +0.79ms）
 
 1. **phase6 门禁基线红（既有欠账，非本批）**：`selftest_phase6.sh` 第 10 节静态 grep `INSERT INTO|UPDATE plugin|DELETE FROM` 撞上 WSW-3 批次 W3-D7 授权的 rp_server.py Python 直写三处（本批后行号 3860/3882/4051：`INSERT INTO wsw_repeater_tab_version` / `INSERT INTO wsw_repeater_tab` ×2）。S1 基线即红（PASS=48 FAIL=1），本批零新增命中、零修复改动（selftest_phase6.sh 不在落点清单）。建议后续批收窄 grep 词表（如豁免 `wsw_` 前缀表）或把 W3-D7 直写面迁出。
 2. **任务书内数字矛盾**：D2「明文 `rp1_<43 位 base64url>`（32 字节 /dev/urandom → base64url 无填充）」数学上恒为全文 47 字符；§3 S4 却写「key 明文 48 字符」。按裁决表 D2 执行（47 字符），单测与 e2e 断言 47；若需 48 需改为带填充（违 D2「无填充」）或 33 字节熵（违 D2「32 字节」）。
-3. **链尾陈旧断言顺带更新（§2.1 落点外的最小必要改动）**：6 个测试文件硬编码迁移链尾 25（migration_idempotent.rs / backup_restore.rs / migrations_{context_broker,runtime_node,agent_data_plane,tool_contract}.rs），026 落地即红；已做链尾 25→26 + 注释同步的最小更新。该组测试是判据 1 的载体面，不更新则本批自破。
+3. **链尾陈旧断言顺带更新（§2.1 落点外的最小必要改动）**：14 个测试/源内断言位硬编码迁移链尾。本地门禁先更 6 个（migration_idempotent.rs / backup_restore.rs / migrations_{context_broker,runtime_node,agent_data_plane,tool_contract}.rs）；CI 首跑 fail-fast 又暴露 8 个未跑到的掩盖面：plugin-runtime `lifecycle_full_path.rs`（009 自钉重放计数 16→17）、workflow-engine `migration_replay.rs`、wsw-runtime `intercept_queue.rs` / `exchange_persist.rs` / src `persist.rs` `assert_watermark_25`（断言值 25→26，方法名沿用 025 批次命名先例不改）、wsw-message src `store.rs` 单测、wsw-message `cas_e2e.rs`（:167/:180 副本迁移后链尾；:129 源库 25 未触核对钉值不动）、agent-engine `migration_dev_copy_p7_3.rs`（dev-p7 副本 13..026）。均为全量共享 `migrations/` 直连面，026 落地即红；已做链尾 25→26（重放 16→17）+ 注释同步的最小更新，测试 fn 名沿用既有命名先例（intercept_queue `user_version_is_24` 断 25 同款）不改。该组测试是判据 1 的载体面，不更新则本批自破。
 4. **退出码口径**：任务书 A9/D6 记「退出码 0/1/2」，rp-admin 既有实现实际只有 0（成功/help）/2（参数与执行错误），无 exit 1 路径。按「口径不变」沿用既有 0/2，未发明新语义。
 5. **caller 停用无 CLI**：D6 定死五子命令，无 caller-revoke/caller-disable 运维入口；server join 判定已支持停用语义（判据 4/5 经测试面直写临时库验证），正式停用面建议 MA-2 登记 CLI 或 SQL 运维规程。
 6. **加载面内存映射与 D4「每请求直查」的关系澄清**：`_load_caller_keys` 的 key_hash→caller 映射仅作 026 在位健康探针与降级开关（表缺失/查询失败 → warn + legacy-only，server 不拒起，§7 口径）；鉴权判定一律走 `_resolve_caller_key` 每请求 mode=ro 直查（判据 5 无缓存语义），映射内容不参与任何判定。
 7. **parity.rs ensure_bin 与构建纪律冲突（环境项）**：parity 既有 e2e 期望 repo 默认 `target/debug/{rp-workflow,rp-mcp}` 在位，而本机纪律禁用默认 target。桥接：两二进制构建进 `/home/emo/rt3-target`，repo `target/debug/` 下放同名符号链接（gitignored 构建目录内，零默认 target 构建，parity.rs 零改动）。中途 clippy 红 2 处（caller_auth.rs 头注 `>` 触发 doc_lazy_continuation）已改写注释消除。
 8. **phase6 运行产物**：本次 phase6 的 playwright 步骤顺带重写 `web/qa/plugins/e2e-*.png` 4 张截图（运行产物、内容随每次运行变）；已还原，不在交付 diff 内。
 9. **中途测试面返工记录（如实）**：selftest 首跑 3 红（python `print(True)` 大写 / 停用 UPDATE 双连接未 commit / 401 行 caller 归属预期错——D5 语义下吊销 key 未过鉴权记 "-"，预期应为 "-"），均为测试侧错误，server 行为正确；caller_auth.rs 首版一处编译错（String 遮蔽后取 Value 键）修正后绿。最终两测试面全绿。
+10. **CI 首跑红 2 处已修（run 44938566213，如实）**：①parity job `cargo test -p rp-mcp-parity` 单独先跑时 rp-admin 二进制缺位——本地门禁顺序（`cargo test -p database` 先行顺带建 bins）掩盖了该顺序依赖，CI 无此前置；caller_auth.rs `rp_admin_bin()` 改为候选全缺位时按 parity.rs ensure_bin:81-92 同范式进程内 `cargo build --offline -q -p database --bin rp-admin` 补建，头注「不做进程内构建防死锁」的顾虑与 rp-workflow/rp-mcp 同范式既有 CI 过门事实矛盾，头注一并改写。②链尾陈旧断言 fail-fast 掩盖面 8 处，见坏消息 3 增补。
 
 ## 七、回滚登记（任务书 §7 落地）
 

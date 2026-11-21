@@ -10,10 +10,11 @@
 //! 401（判据 4，停用写面 = 测试夹具直写临时库，红线 3 只约束 server）；⑥
 //! 审计 JSONL caller 字段三态（D5）+ 多 key 校验 p95 < 5ms 计时粗断言（判据 8）。
 //!
-//! rp-admin 二进制解析顺序：RP_ADMIN_BIN env，其次 `$CARGO_TARGET_DIR/debug/
-//! rp-admin`，再次 repo `target/debug/rp-admin`（不做进程内 cargo 构建——外层
-//! cargo test 持构建锁，内层 cargo 会死锁；门禁顺序 `cargo test -p database`
-//! 先行保证二进制在位）。生产 platform*.db 零接触零写。
+//! rp-admin 二进制解析顺序：RP_ADMIN_BIN env → `$CARGO_TARGET_DIR/debug/
+//! rp-admin` → repo `target/debug/rp-admin` → 全缺位时按 parity.rs ensure_bin
+//! :81-92 同范式进程内 `cargo build --offline -q` 补建（cargo test 进入测试
+//! 执行段已释放构建锁；rp-workflow/rp-mcp 载具同路径 CI 已过门，ci.yml parity
+//! job 同口径）。生产 platform*.db 零接触零写。
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -48,7 +49,7 @@ fn free_port() -> u16 {
         .port()
 }
 
-/// rp-admin 二进制解析（见模块头注；缺位即 panic 给出可执行补救命令）。
+/// rp-admin 二进制解析（见模块头注；候选全缺位时按 ensure_bin 范式补建）。
 fn rp_admin_bin() -> PathBuf {
     if let Ok(p) = std::env::var("RP_ADMIN_BIN") {
         let path = PathBuf::from(p);
@@ -65,10 +66,20 @@ fn rp_admin_bin() -> PathBuf {
             return candidate.clone();
         }
     }
+    // parity.rs ensure_bin 同范式补建（--offline，vendored 面一致；测试执行段
+    // 无构建锁冲突——rp-workflow 载具同路径已在 CI parity job 过门）。
+    let status = Command::new("cargo")
+        .args(["build", "--offline", "-q", "-p", "database", "--bin", "rp-admin"])
+        .status()
+        .expect("cargo build rp-admin spawn");
+    assert!(status.success(), "cargo build rp-admin failed");
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.clone();
+        }
+    }
     panic!(
-        "rp-admin 二进制缺位（candidates: {:?}）：先跑 `cargo test --offline -p database` \
-         （集成测试会顺带构建 bins）或显式 `cargo build --offline -p database --bin rp-admin`，\
-         或用 RP_ADMIN_BIN 指向现成二进制",
+        "rp-admin 补建后仍缺位（candidates: {:?}）：可用 RP_ADMIN_BIN 指向现成二进制",
         candidates
     );
 }
