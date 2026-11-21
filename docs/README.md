@@ -78,4 +78,5 @@
 | Phase 2 | 完成（P2-1 批次 4139ed58 CI run 43708220905 success + P2-2 收口批，见本表 RELEASE 行） | 批次报告 [rip3/batches/P2-1-BATCH-REPORT.md](rip3/batches/P2-1-BATCH-REPORT.md) 与 [rip3/batches/P2-2-BATCH-REPORT.md](rip3/batches/P2-2-BATCH-REPORT.md)；实施面 [rip3/05-DOCUMENT-INTELLIGENCE.md](rip3/05-DOCUMENT-INTELLIGENCE.md)；ADR-0003 [rip3/decisions/](rip3/decisions/) |
 | Phase 3 | 完成（P3-1 到 P3-4 四批，CI 全绿） | 阶段总账 [releases/RELEASE_2026-11-15_RIP3-PHASE3.md](releases/RELEASE_2026-11-15_RIP3-PHASE3.md)；批次报告 [rip3/batches/](rip3/batches/)；遗留与队列见 [HANDOVER-RIP3-CONTINUATION.md](HANDOVER-RIP3-CONTINUATION.md) |
 | Phase 4 到 8 | 未开始 | 队列与验收基准见 [HANDOVER-RIP3-CONTINUATION.md](HANDOVER-RIP3-CONTINUATION.md) 第三节 |
+| MA 轨（多代理/多 AI 并发访问） | MA-0 规划入库（2026-11-21，用户需求四形态：单 AI 多子代理并行 / 多 AI 各自任务 / 多 AI 协作同任务 / 多 AI 供知识） | [rip3/MULTI-AGENT-ACCESS-PLAN.md](rip3/MULTI-AGENT-ACCESS-PLAN.md)（现状实测差距矩阵 + MA-1~MA-4 批次表 + 禁止事项；MA-1 排 RT-3 后最高优先） |
 
