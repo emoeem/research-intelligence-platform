@@ -1027,9 +1027,17 @@ fn resolve_python_worker_value(
         restart: RestartPolicy::Pooled,
         extra_env: Vec::new(),
         handshake_timeout: std::time::Duration::from_secs(10),
-        // RT-2 additive 字段；本构造点 runtime.venv 读取接线属 RT-3/RT-4 缝
-        // （任务书 §3.1 未列，正式 Manifest 现状零 venv 声明，行为面无差）。
-        venv_config: None,
+        // RT-2 additive 字段；缝 5 承接（RT-3 S5）：runtime.venv 在场时构造
+        // VenvConfig 注入（dispatch.rs:920-933 同款），venv 探测 fail-closed
+        // 五态拒绝由既有 venv::probe 面承载（零系统解释器回退）；未声明 venv
+        // 的 Manifest 行为零变化（正式 Manifest 现状零 venv 声明，RT-4 补录）。
+        venv_config: match runtime.get("venv") {
+            Some(v) if !v.is_null() => Some(
+                serde_json::from_value::<tool_engine::venv::VenvConfig>(v.clone())
+                    .map_err(|e| format!("manifest {tool_id} runtime.venv invalid: {e}"))?,
+            ),
+            _ => None,
+        },
         venv_identity: None,
     }))
 }

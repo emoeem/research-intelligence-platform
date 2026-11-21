@@ -35,6 +35,9 @@
 | RT-2 Python Worker 原生环境治理任务书（S1→S8、八项判据、八条红线） | [phase0/RT-2-TASK.md](phase0/RT-2-TASK.md) |
 | RT-2 venv 治理设计裁决（D1-D8：仓库级 venv 单例/uv 哈希 lock/探测面挂 C 范式/D4 三档解释器解析/VenvIdentity schema/D7 五态映射/对拍与五缝登记） | [phase0/RT-2-ADR-VENV-GOVERNANCE.md](phase0/RT-2-ADR-VENV-GOVERNANCE.md) |
 | RT-2 批次验收报告（venv 探测面 VenvIdentity/五态/指纹 + requirements lock 哈希钉定与 CI 完整性门 + adapter 三档解释器接线与 fail-closed 拒绝 + pack 面 .venv 排除 + v1.json/validate venv 声明块 + 八项判据测试与协议对拍；VenvIdentity 首探快照、供给命令段、偏差记账 6 条、RT-3/RT-4 前置登记） | [phase0/RT-2-BATCH-REPORT.md](phase0/RT-2-BATCH-REPORT.md) |
+| RT-3 Tool Runtime Policy Resolver 任务书（S1→S8、八项判据、八条红线；决策矩阵 144 格 totality + 不安全降级硬拒绝 N1-N10 + 决策可解释性输出） | [phase0/RT-3-TASK.md](phase0/RT-3-TASK.md) |
+| RT-3 设计裁决（D1-D10：决策层落 tool-engine 内 policy 模块/四维词表冻结与 InputRisk 别名映射/D3-D5 派生规则/R0-R7 有序瀑布 floor 合成/D7 硬拒绝矩阵与 RT3_ 码表/D8 输出 Schema/决策派发分离与缝 5 承接/宿主能力输入纪律与只读红线） | [phase0/RT-3-ADR-POLICY-RESOLVER.md](phase0/RT-3-ADR-POLICY-RESOLVER.md) |
+| RT-3 批次验收报告（PolicyResolver 纯函数决策面落地 + 144 格 totality/N1-N10 负例矩阵/29 份 Manifest 集成期望表（25 assign+3 inconsistent+1 not_applicable）+ 三档风险路由 + 缝 5 承接（rp-workflow venv 接线 + workflow 链探测拒绝 e2e）+ 八项判据实测对照；29 份 RuntimeDecision 快照、3 处 inconsistent gap 转 RT-4 登记、缝 5 解除登记） | [phase0/RT-3-BATCH-REPORT.md](phase0/RT-3-BATCH-REPORT.md) |
 | DI-0 P3-4 前提修订（Document Pack planned 裁定前提被 NATIVE-FIRST 与 RT-0.5 实测推翻；DI-1/2/3 入口） | [phase0/DI-0-P34-PREMISE-REVISION-ADR.md](phase0/DI-0-P34-PREMISE-REVISION-ADR.md) |
 | DI-1 Document Router 任务书（S0→S8、十项判据、十条红线） | [phase0/DI-1-TASK.md](phase0/DI-1-TASK.md) |
 | DI-1 设计裁决（D1-D8：新 crate 落位/通道表/手写嗅探/帽值表/错误映射；含 D3 调和裁决条目） | [phase0/DI-1-ADR-DOC-ROUTER.md](phase0/DI-1-ADR-DOC-ROUTER.md) |
