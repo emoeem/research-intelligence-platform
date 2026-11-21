@@ -125,9 +125,19 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
     let source_copy_version: i64 = pool
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version before migration");
+    // dev-b1.db 为 gitignored 开发副本：026 落地后本地遗留 25 态，CI 测试二进制并行
+    // 时序下也可能读到重建前状态——副本先幂等迁到当前链头再断言（migrate 只写副本；
+    // 023..026 建表全 IF NOT EXISTS、登记行全 INSERT OR IGNORE，回放安全）。
+    // 源文件零写入由 sha256 前后比对断言承载。
+    if source_copy_version < 26 {
+        migrate(&pool, &migrations_dir()).expect("bring disposable dev-b1 copy to chain tail");
+    }
+    let source_copy_version: i64 = pool
+        .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
+        .expect("read copied DB version after bring-up");
     assert_eq!(
-        source_copy_version, 25,
-        "current dev-b1 is already at schema version 025 (chain tail; tool-registry tests recreate it fresh, dev file is gitignored)"
+        source_copy_version, 26,
+        "disposable copy must reach current chain tail 026 before the rewind simulation"
     );
     let existing_table: i64 = pool
         .with_conn(|conn| {

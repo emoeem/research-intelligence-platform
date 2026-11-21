@@ -155,7 +155,7 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
         uv1, 26,
-        "user_version must be 25 after first run (chain tail 025)"
+        "user_version must be 26 after first run (chain tail 026)"
     );
     assert!(
         sv1.iter()
