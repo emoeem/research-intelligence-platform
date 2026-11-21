@@ -2,7 +2,7 @@
 
 - 日期：2026-11-22
 - 任务书：[MA-1-TASK.md](MA-1-TASK.md)（§0 裁决 D1-D8 / §3 步骤 S1-S6 / §4 八判据 / §5 测试面 / §6 红线，全部照办）
-- 状态：实施完成，工作树留待审查（未 commit / 未 push / 未 git add，按任务指令）
+- 状态：实施完成，已按任务书 §3 S6（显式 add → commit → push → CI watch）收口入库：main 三 commit——0b950345 收口 / 06d347f9 CI 修复批一 / 6233f127 CI 修复批二（HEAD=6233f127，2026-11-22 03:33+0800），工作树 `git status --porcelain` 干净（2026-11-22 复核实测）；本行原稿「工作树留待审查（未 commit / 未 push / 未 git add）」为收口前时点快照，随 CI 修复批登记修订失效
 - 环境：`CARGO_TARGET_DIR=/home/emo/rt3-target`，Rust 全部 `--offline`，测试 `--test-threads=1`
 
 ## 一、S1 基线核验记录
@@ -16,7 +16,7 @@
 | 扩展点行号实勘 | `_load_auth_token` rp_server.py:142-165 / `require_auth` :4255-4266 / `_finish_audit` :4296-4315 / `audit_api_access` :228-240——与任务书锚点 A2/A3/A6 无漂移 |
 | migrate.rs 幂等行为 | 复读确认：user_version 跳过 + 执行器补写 + 单行 ALTER ADD COLUMN 守卫（migrate.rs:62-105） |
 
-## 二、改动文件清单（git diff --numstat 实测）
+## 二、改动文件清单（三 commit 聚合 git diff --numstat 实测：0b950345^..6233f127，22 文件）
 
 | 文件 | 行数 | 说明 |
 |---|---|---|
@@ -24,15 +24,24 @@
 | `apps/server/rp_server.py` | +107 / -3 | 三扩展点：①`_load_auth_token` 后新增 `_load_caller_keys`（026 两表 mode=ro 直查内存映射 + 失败降级 legacy-only）与 `_resolve_caller_key`（sha256→主键直查→compare_digest 二道比对）；②`require_auth` 多 key 并存分支（legacy 分支逐字节不变，见四）；③`_finish_audit` 行尾追加 `caller` 三态字段 + 消费即清；头部注释两处同步（doc-only） |
 | `crates/database/src/bin/rp-admin.rs` | +542 / -3 | 五子命令 caller-add/caller-list/key-gen/key-list/key-revoke（enum Mode 变体 + usage + 手写解析 + JSON 输出 + 退出码口径 0/2 沿用）+ `/dev/urandom` 32B + base64url 无填充（data-encoding BASE64URL_NOPAD 既有依赖）+ sha256 hex（sha2 既有依赖）+ `#[cfg(test)]` 5 单测 |
 | `apps/server/selftest_auth.sh` | +128 / -0 | 尾部追加 MA-1 多 key 用例块（第 8 节）；**既有用例零改动**（numstat 0 删实证） |
-| `crates/rp-mcp-parity/tests/caller_auth.rs` | 新增 421 行 | Rust e2e（parity.rs:170-181 范式）：临时库 001..026 迁移 → rp-admin 预置双 caller 双 key → 真实 rp_server.py → 七项断言 + 判据 8 计时 |
+| `crates/rp-mcp-parity/tests/caller_auth.rs` | +432 / -0 | 聚合（收口 421 + CI 修复批一 ensure_bin 化 19/8 净 +11，坏消息 10①）：Rust e2e（parity.rs:170-181 范式）：临时库 001..026 迁移 → rp-admin 预置双 caller 双 key → 真实 rp_server.py → 七项断言 + 判据 8 计时 |
 | `crates/agent-engine/tests/migration_idempotent.rs` | +4 / -4 | 链尾陈旧断言顺带更新 25→26（坏消息 3） |
 | `crates/database/tests/backup_restore.rs` | +3 / -3 | 同上（Some(25)→Some(26) + 头注） |
 | `crates/database/tests/migrations_agent_data_plane.rs` | +6 / -6 | 同上（链尾名/uv 断言） |
-| `crates/database/tests/migrations_context_broker.rs` | +6 / -5 | 同上 |
+| `crates/database/tests/migrations_context_broker.rs` | +7 / -6 | 链尾断言（收口 6/5）+ 批二 :158 断言消息文本对齐 026（+1/-1，消息级勘误断言零改动，坏消息 11②） |
 | `crates/database/tests/migrations_runtime_node.rs` | +6 / -6 | 同上 |
-| `crates/database/tests/migrations_tool_contract.rs` | +6 / -5 | 同上 |
+| `crates/database/tests/migrations_tool_contract.rs` | +7 / -6 | 同上（链尾断言 6/5 + 批二消息文本对齐 1/1，坏消息 11②） |
+| `crates/agent-engine/tests/migration_dev_copy_p7_3.rs` | +5 / -5 | 批一（06d347f9）链尾断言顺带更新（坏消息 3 增补）：dev-p7 副本 13..026 |
+| `crates/plugin-runtime/tests/lifecycle_full_path.rs` | +4 / -4 | 批一：009 自钉重放计数 16→17 |
+| `crates/workflow-engine/tests/migration_replay.rs` | +3 / -3 | 批一：链尾断言顺带更新 |
+| `crates/wsw-message/src/store.rs` | +2 / -2 | 批一：src 内嵌迁移计数单测 |
+| `crates/wsw-message/tests/cas_e2e.rs` | +15 / -5 | 批一 3/3 链尾 + 批二 12/2 dev-b1 副本 bring-up 自足化（坏消息 11①） |
+| `crates/wsw-runtime/src/persist.rs` | +5 / -3 | 批一：`assert_watermark_25` 断言值 25→26（方法名沿用 025 批次命名先例不改） |
+| `crates/wsw-runtime/tests/exchange_persist.rs` | +2 / -2 | 批一：链尾断言顺带更新 |
+| `crates/wsw-runtime/tests/intercept_queue.rs` | +1 / -1 | 批一：链尾断言顺带更新 |
 | `docs/README.md` | +1 / -0 | MA-1 报告索引行（仿 RT-3 行格式） |
-| `docs/rip3/MA-1-BATCH-REPORT.md` | 新增 | 本报告 |
+| `docs/rip3/MA-1-BATCH-REPORT.md` | 新增（6233f127 时点聚合 +131） | 本报告；登记修订（含本表补行）发生在其后 commit，不并入该数 |
+| `docs/rip3/MA-1-TASK.md` | +121 / -0 | 治理文档：任务书定稿随批入库（0b950345；§2.1 落点清单登记的是交付改动面，任务书自身不在清单内，随本报告一并登记） |
 
 未触碰：`crates/tool-registry/`（红线 5）、既有 migrations 001-025（红线 6）、`Cargo.toml`/`Cargo.lock`（红线 1，git diff 空）、生产 `platform*.db`/`platform-dryrun.db`/`integrations/rtis/`（红线 7）、`selftest_phase6.sh`、`parity.rs` 既有用例。
 
@@ -84,7 +93,7 @@ MA-1 e2e legacy 对照：p50=1.94ms（增量参考差 +0.79ms）
 
 1. **phase6 门禁基线红（既有欠账，非本批）**：`selftest_phase6.sh` 第 10 节静态 grep `INSERT INTO|UPDATE plugin|DELETE FROM` 撞上 WSW-3 批次 W3-D7 授权的 rp_server.py Python 直写三处（本批后行号 3860/3882/4051：`INSERT INTO wsw_repeater_tab_version` / `INSERT INTO wsw_repeater_tab` ×2）。S1 基线即红（PASS=48 FAIL=1），本批零新增命中、零修复改动（selftest_phase6.sh 不在落点清单）。建议后续批收窄 grep 词表（如豁免 `wsw_` 前缀表）或把 W3-D7 直写面迁出。
 2. **任务书内数字矛盾**：D2「明文 `rp1_<43 位 base64url>`（32 字节 /dev/urandom → base64url 无填充）」数学上恒为全文 47 字符；§3 S4 却写「key 明文 48 字符」。按裁决表 D2 执行（47 字符），单测与 e2e 断言 47；若需 48 需改为带填充（违 D2「无填充」）或 33 字节熵（违 D2「32 字节」）。
-3. **链尾陈旧断言顺带更新（§2.1 落点外的最小必要改动）**：14 个测试/源内断言位硬编码迁移链尾。本地门禁先更 6 个（migration_idempotent.rs / backup_restore.rs / migrations_{context_broker,runtime_node,agent_data_plane,tool_contract}.rs）；CI 首跑 fail-fast 又暴露 8 个未跑到的掩盖面：plugin-runtime `lifecycle_full_path.rs`（009 自钉重放计数 16→17）、workflow-engine `migration_replay.rs`、wsw-runtime `intercept_queue.rs` / `exchange_persist.rs` / src `persist.rs` `assert_watermark_25`（断言值 25→26，方法名沿用 025 批次命名先例不改）、wsw-message src `store.rs` 单测、wsw-message `cas_e2e.rs`（:167/:180 副本迁移后链尾；:129 源库 25 未触核对钉值不动）、agent-engine `migration_dev_copy_p7_3.rs`（dev-p7 副本 13..026）。均为全量共享 `migrations/` 直连面，026 落地即红；已做链尾 25→26（重放 16→17）+ 注释同步的最小更新，测试 fn 名沿用既有命名先例（intercept_queue `user_version_is_24` 断 25 同款）不改。该组测试是判据 1 的载体面，不更新则本批自破。
+3. **链尾陈旧断言顺带更新（§2.1 落点外的最小必要改动）**：14 个测试/源内断言位硬编码迁移链尾。本地门禁先更 6 个（migration_idempotent.rs / backup_restore.rs / migrations_{context_broker,runtime_node,agent_data_plane,tool_contract}.rs）；CI 首跑 fail-fast 又暴露 8 个未跑到的掩盖面：plugin-runtime `lifecycle_full_path.rs`（009 自钉重放计数 16→17）、workflow-engine `migration_replay.rs`、wsw-runtime `intercept_queue.rs` / `exchange_persist.rs` / src `persist.rs` `assert_watermark_25`（断言值 25→26，方法名沿用 025 批次命名先例不改）、wsw-message src `store.rs` 单测、wsw-message `cas_e2e.rs`（:167/:180 副本迁移后链尾；:129 钉值后续批二已改写为 bring-up 构造性保障，见坏消息 11①）、agent-engine `migration_dev_copy_p7_3.rs`（dev-p7 副本 13..026）。均为全量共享 `migrations/` 直连面，026 落地即红；已做链尾 25→26（重放 16→17）+ 注释同步的最小更新，测试 fn 名沿用既有命名先例（intercept_queue `user_version_is_24` 断 25 同款）不改。该组测试是判据 1 的载体面，不更新则本批自破。
 4. **退出码口径**：任务书 A9/D6 记「退出码 0/1/2」，rp-admin 既有实现实际只有 0（成功/help）/2（参数与执行错误），无 exit 1 路径。按「口径不变」沿用既有 0/2，未发明新语义。
 5. **caller 停用无 CLI**：D6 定死五子命令，无 caller-revoke/caller-disable 运维入口；server join 判定已支持停用语义（判据 4/5 经测试面直写临时库验证），正式停用面建议 MA-2 登记 CLI 或 SQL 运维规程。
 6. **加载面内存映射与 D4「每请求直查」的关系澄清**：`_load_caller_keys` 的 key_hash→caller 映射仅作 026 在位健康探针与降级开关（表缺失/查询失败 → warn + legacy-only，server 不拒起，§7 口径）；鉴权判定一律走 `_resolve_caller_key` 每请求 mode=ro 直查（判据 5 无缓存语义），映射内容不参与任何判定。
@@ -92,10 +101,11 @@ MA-1 e2e legacy 对照：p50=1.94ms（增量参考差 +0.79ms）
 8. **phase6 运行产物**：本次 phase6 的 playwright 步骤顺带重写 `web/qa/plugins/e2e-*.png` 4 张截图（运行产物、内容随每次运行变）；已还原，不在交付 diff 内。
 9. **中途测试面返工记录（如实）**：selftest 首跑 3 红（python `print(True)` 大写 / 停用 UPDATE 双连接未 commit / 401 行 caller 归属预期错——D5 语义下吊销 key 未过鉴权记 "-"，预期应为 "-"），均为测试侧错误，server 行为正确；caller_auth.rs 首版一处编译错（String 遮蔽后取 Value 键）修正后绿。最终两测试面全绿。
 10. **CI 首跑红 2 处已修（run 44938566213，如实）**：①parity job `cargo test -p rp-mcp-parity` 单独先跑时 rp-admin 二进制缺位——本地门禁顺序（`cargo test -p database` 先行顺带建 bins）掩盖了该顺序依赖，CI 无此前置；caller_auth.rs `rp_admin_bin()` 改为候选全缺位时按 parity.rs ensure_bin:81-92 同范式进程内 `cargo build --offline -q -p database --bin rp-admin` 补建，头注「不做进程内构建防死锁」的顾虑与 rp-workflow/rp-mcp 同范式既有 CI 过门事实矛盾，头注一并改写。②链尾陈旧断言 fail-fast 掩盖面 8 处，见坏消息 3 增补。
+11. **CI 修复批二（6233f127）全批补登（如实；报告此前仅登记至批一）**：①`cas_e2e.rs` `dev_b1_copy_applies_migration_023` precondition 钉「dev-b1 副本恰在链尾 25」在 026 落地后必红（CI run 44940771882，cas_e2e.rs:128 panic；根因：本地 gitignored 副本停在 25，CI 测试二进制并行时序同样可能读到重建前状态）——钉值断言改为构造性保障：副本 `user_version < 26` 时先 `migrate()` 幂等迁至链头再断言 26（+12/-2；023..026 建表全 IF NOT EXISTS、登记行全 INSERT OR IGNORE，回放安全；只写副本，源文件零写入仍由 sha256 前后比对承载）。该改动超出坏消息 3「纯计数断言顺带更新」性质（新增 bring-up 逻辑面），故单独登记；坏消息 3 原「:129 钉值不动」条款随之失效，以本条为准。②`migrations_context_broker.rs` / `migrations_tool_contract.rs` 各 +1/-1：断言值本已是 26，仅消息文本残留 025 字样，对齐（消息级勘误，断言零改动）。本地复验（rt3-target --offline）：wsw-message 3/3 ok、database 测试套件维持绿。
 
 ## 七、回滚登记（任务书 §7 落地）
 
-- 整批：单次交付未 commit，`git checkout -- <文件>` + 删除两个新文件即可整批撤销；若未来以 commit 交付则 `git revert`。
+- 整批：已按 S6 入库为三 commit（0b950345 / 06d347f9 / 6233f127）——整批撤销 = `git revert 6233f127 06d347f9 0b950345`（任务书 §7 revert 口径不变；任务书「单 commit 交付」实际为三 commit，如实登记）。原工作树期「`git checkout -- <文件>` + 删除两个新文件」指引随入库失效，仅存档备查。
 - 026 对已迁移库残留两空表（无害）；彻底清除：
   ```sql
   DROP INDEX IF EXISTS ix_api_key_caller;
