@@ -61,6 +61,10 @@
 4. 禁止多 AI 直接共享写同一 ResearchTask 行（协作走节点角色与 Claim，禁止自由写竞争）。
 5. 禁止跳过既有 RTIS/knowledge 治理面直写知识库。
 
+## 六.五、外部参考（dsh-agent-teams 与 DSH 插件生态，用户 2026-11-21 推荐）
+
+外部形态参考已核实并逐条映射：dsh-agent-teams（队长-团队协作协议：原子领取/邮箱消息/attempt 模型/toolPolicies 裁剪/审批流/review 任务/异构成员）与 awesome-dsh-plugin 目录生态。九条可借鉴点（R1~R9）与四条 dsh 弱点（RIP 超越点：事务化并发/多团队/引擎侧记账/预算化嵌套）详见 [MA-DSH-REFERENCE.md](MA-DSH-REFERENCE.md)，其中 R1~R8 作为 MA-2/MA-3 任务书的必读设计输入；插件市场形态（E1/E4）登记 Plugin Center 观察池不进 MA 轨。实现纪律：只借鉴语义，零代码引用，Rust-First 既有栈。
+
 ## 七、与既有轨的关系
 
 - **RT-3 Policy Resolver**（在跑）：其 per-caller 并发帽是 MA-2 的输入面（Resolver 输出 constraints 扩 caller 维度），RT-3 设计已按纯函数留扩展位，无返工。
