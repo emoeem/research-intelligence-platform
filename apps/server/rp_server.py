@@ -65,6 +65,8 @@
                       rate_limited/auth_enabled），行形状与
                       migrations/019_external_api_audit.sql 的
                       external_api_audit 表列一一对应（供消费侧装载）；
+                      MA-1 起行尾追加 caller 字段三态（default=legacy 单令牌
+                      /caller_id=多 key 命中/"-"=匿名未过鉴权），019 表零 ALTER；
                       本文件零 SQL 写（Phase 6 静态门禁）不变
 """
 
@@ -165,6 +167,87 @@ def _load_auth_token() -> str | None:
 AUTH_TOKEN = _load_auth_token()
 AUTH_ENABLED = AUTH_TOKEN is not None
 
+# MA-1 多 key 加载面（D3/D4）：legacy 单令牌之上并存 026 caller/api_key 两表
+# 的多 key 通道（写入一律走 rp-admin CLI，本文件零写红线 3 不变）。
+_caller_key_warned = False
+
+
+def _load_caller_keys() -> dict | None:
+    """多 key 加载面：直查 RP_DB_PATH 同库 026 两表（mode=ro，复用既有读面
+    惯例），构建 key_hash→caller 内存映射。任一环节失败（库缺/表缺/查询错）
+    记 warn 后返回 None 降级 legacy-only——server 不会因 026 缺表拒起
+    （§7 回滚口径）。映射仅作加载面健康探针；鉴权判定一律走
+    _resolve_caller_key 的每请求直查（无缓存，吊销即时生效，D4/判据 5）。"""
+    if not os.path.isfile(DB_PATH):
+        print(f"[rp-server] 多 key 加载面跳过（库不存在，legacy 单令牌模式）：{DB_PATH}",
+              file=sys.stderr)
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+        try:
+            conn.execute("PRAGMA query_only = ON")
+            rows = conn.execute(
+                "SELECT ak.key_hash, ak.caller_id, c.display_name, c.permission_level"
+                " FROM api_key AS ak JOIN caller AS c ON c.caller_id = ak.caller_id"
+                " WHERE ak.revoked_at IS NULL AND c.revoked_at IS NULL"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        print(f"[rp-server] 多 key 加载面失败，降级 legacy-only（026 两表缺失或不可读）：{exc}",
+              file=sys.stderr)
+        return None
+    return {
+        row[0]: {"caller_id": row[1], "display_name": row[2], "permission_level": row[3]}
+        for row in rows
+    }
+
+
+CALLER_KEYS = _load_caller_keys()
+
+
+def _resolve_caller_key(supplied: str) -> str | None:
+    """多 key 校验路径（D2/D4）：sha256(请求 key) → api_key 主键单行直查
+    （JOIN caller 吊销/停用判定）→ hmac.compare_digest 二道比对（对齐既有
+    require_auth 常时比较口径）。返回 caller_id 或 None（None 走既有 401
+    形状 + 节流）。每请求直查零缓存：key-revoke / caller 停用下一请求即
+    生效（判据 5）；查询失败不崩 server，记一次 warn 后按未命中处理
+    （多 key 路径失败自动落 legacy 分支，§7）。"""
+    global _caller_key_warned
+    if CALLER_KEYS is None or not supplied.startswith("Bearer "):
+        return None
+    token = supplied[len("Bearer "):]
+    if not token:
+        return None
+    key_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    try:
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+        try:
+            conn.execute("PRAGMA query_only = ON")
+            row = conn.execute(
+                "SELECT ak.key_hash, ak.caller_id"
+                " FROM api_key AS ak JOIN caller AS c ON c.caller_id = ak.caller_id"
+                " WHERE ak.key_hash = ? AND ak.revoked_at IS NULL AND c.revoked_at IS NULL",
+                (key_hash,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        if not _caller_key_warned:
+            print(f"[rp-server] 多 key 直查失败（降级 legacy-only，告警仅一次）：{exc}",
+                  file=sys.stderr)
+            _caller_key_warned = True
+        return None
+    if row is None:
+        return None
+    stored_hash, caller_id = row[0], row[1]
+    if not hmac.compare_digest(
+        key_hash.encode("utf-8"), str(stored_hash).encode("utf-8")
+    ):
+        return None
+    return str(caller_id)
+
+
 MAX_LIMIT = 200
 DEFAULT_LIMIT = 50
 REVIEWS_PER_QUEUE_CAP = 100
@@ -229,7 +312,9 @@ def audit_api_access(record: dict) -> None:
     """对外访问审计：追加一行 JSON 到 RP_API_AUDIT_LOG（缺省关闭）。
     本文件零 SQL 写（Phase 6 selftest 静态门禁），审计落盘走 JSONL 流，
     行形状与 migrations/019_external_api_audit.sql 的 external_api_audit
-    表列一一对应（rate_limited/auth_enabled 以 0/1 记，供装载对账）。"""
+    表列一一对应（rate_limited/auth_enabled 以 0/1 记，供装载对账）；
+    MA-1（D5）起行尾追加 caller 字段（default/caller_id/"-"=匿名未过
+    鉴权），019 表列形状零改动（external_api_audit 由 Rust 面写入）。"""
     if not API_AUDIT_LOG:
         return
     try:
@@ -4253,7 +4338,13 @@ class RpHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def require_auth(self) -> None:
-        """Bearer Token 校验：constant-time 比较，失败统一 401 + 节流。"""
+        """Bearer Token 校验：constant-time 比较，失败统一 401 + 节流。
+        MA-1（D3/D4/D5）：legacy 单令牌分支在最前且行为不变；其后并存多 key
+        直查分支（sha256→api_key 主键查询→compare_digest 二道比对→caller
+        解析），任一命中即通过。审计 caller 三态在此登记：legacy 命中记
+        "default"，多 key 命中记 caller_id，未过鉴权（含鉴权关闭模式）保持
+        None → _finish_audit 记 "-"。"""
+        self._audit_caller = None
         if not AUTH_ENABLED:
             return
         supplied = self.headers.get("Authorization", "").strip()
@@ -4261,6 +4352,11 @@ class RpHandler(BaseHTTPRequestHandler):
         if supplied.startswith("Bearer ") and hmac.compare_digest(
             supplied.encode("utf-8"), expected.encode("utf-8")
         ):
+            self._audit_caller = "default"
+            return
+        caller_id = _resolve_caller_key(supplied)
+        if caller_id is not None:
+            self._audit_caller = caller_id
             return
         time.sleep(AUTH_FAIL_DELAY)
         raise ApiError(401, "unauthorized", "缺少或无效的访问令牌")
@@ -4294,7 +4390,11 @@ class RpHandler(BaseHTTPRequestHandler):
     # -- verbs --------------------------------------------------------------
 
     def _finish_audit(self, method: str, parsed_path: str, t0: float) -> None:
-        """P9-3 对外访问审计收尾：/api/* 请求落一行 JSONL（缺省关闭）。"""
+        """P9-3 对外访问审计收尾：/api/* 请求落一行 JSONL（缺省关闭）。
+        MA-1（D5）：行追加 caller 字段三态——"default"（legacy 单令牌）/
+        caller_id（多 key 命中）/"-"（匿名未过鉴权，含鉴权关闭模式）；
+        external_api_audit 表（019）零 ALTER，JSONL 行形状超集（装载侧
+        兼容：019 对应前缀列序不变，caller 为追加列）。"""
         if not API_AUDIT_LOG or not parsed_path.startswith("/api/"):
             return
         audit_api_access({
@@ -4309,7 +4409,11 @@ class RpHandler(BaseHTTPRequestHandler):
             "correlation_id": getattr(self, "_audit_correlation_id", None),
             "rate_limited": 1 if getattr(self, "_audit_rate_limited", False) else 0,
             "auth_enabled": 1 if AUTH_ENABLED else 0,
+            "caller": getattr(self, "_audit_caller", None) or "-",  # MA-1 D5 三态
         })
+        # 消费即清（keep-alive 同连接串行多请求防串：429 等未过 require_auth
+        # 的请求也记 "-" 而非残留上一请求身份）。
+        self._audit_caller = None
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)

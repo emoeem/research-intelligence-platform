@@ -82,4 +82,5 @@
 | Phase 3 | 完成（P3-1 到 P3-4 四批，CI 全绿） | 阶段总账 [releases/RELEASE_2026-11-15_RIP3-PHASE3.md](releases/RELEASE_2026-11-15_RIP3-PHASE3.md)；批次报告 [rip3/batches/](rip3/batches/)；遗留与队列见 [HANDOVER-RIP3-CONTINUATION.md](HANDOVER-RIP3-CONTINUATION.md) |
 | Phase 4 到 8 | 未开始 | 队列与验收基准见 [HANDOVER-RIP3-CONTINUATION.md](HANDOVER-RIP3-CONTINUATION.md) 第三节 |
 | MA 轨（多代理/多 AI 并发访问） | MA-0 规划入库（2026-11-21，用户需求四形态：单 AI 多子代理并行 / 多 AI 各自任务 / 多 AI 协作同任务 / 多 AI 供知识） | [rip3/MULTI-AGENT-ACCESS-PLAN.md](rip3/MULTI-AGENT-ACCESS-PLAN.md)（现状实测差距矩阵 + MA-1~MA-4 批次表 + 禁止事项；MA-1 排 RT-3 后最高优先） |
+| MA-1 批次验收报告（Caller 身份与多密钥鉴权：SQLite 026 caller/api_key 两表纯新增幂等 + rp_server 三扩展点多 key→caller 兼容单 Token（sha256 主键直查零缓存吊销即时生效）+ per-caller 访问审计 JSONL caller 三态 + rp-admin 五子命令 key 管理面（rp1_+base64url 明文一次性输出/库中仅 sha256）；八判据实测对照 + selftest_auth.sh 既有 11 例零改动 + caller_auth.rs e2e；phase6 既有 1 红偏差单列） | [rip3/MA-1-BATCH-REPORT.md](rip3/MA-1-BATCH-REPORT.md) |
 
