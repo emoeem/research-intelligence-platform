@@ -44,7 +44,48 @@
 4. Plugin Center 扩展（E1/E4/E5）登记观察池，不进 MA 轨范围。
 5. 引用纪律：外部形态参考只借鉴语义；实现全部 Rust-First 既有栈，零新依赖方向（dsh 是 npm/TS，代码零复制）。
 
-## 四、核实记录
+
+## 五、第二收获（2026-11-21 深挖：mnemon 全设计 + 目录站可消费面）
+
+### 5.1 dsh-mnemon（omdsh-dev/dsh-mnemon，MIT，1.1k stars）——分层记忆系统，Phase 6/7 与 context-broker 的高价值参考
+
+| 机制 | 内容 | RIP 映射 | 处置 |
+|---|---|---|---|
+| 三层记忆 | Runtime memory（每轮注入 USER.md/MEMORY.md）/ Project Documents（先搜后读）/ Memory Spaces（持久事实+决策+实体关系，Provider 化按需召回） | context-broker（P4）已有检索/装配面（P10-3 基线 assemble_ms 1.863）；Phase 7 知识回流的分层组织参考 | Phase 7 批次设计输入：分层口径（常驻层/按需层/召回层）+ "本轮不可变 View"钉住语义 |
+| Strategy 机制 | Layered（默认）/General/auto-capture/light-context/scoped，决定各 Source 参与每轮方式 | context-broker 装配策略扩展位 | Phase 7 参考（策略词表化） |
+| 知识图谱 | 提及相同实体的记忆互连；Ask Agent 引用依据记忆作答 | rip-knowledge 关联面（P5 已有 evidence 双帧）；Phase 7 实体关联参考 | Phase 7 参考 |
+| brain-mark 一键保存 | 会话后任务 Agent 去重提炼写入合适 Space 并给收据 | **MA-3 知识供体面的 UX 原型**：外部 AI 供知识=起草→去重→入 Space→回执（RTIS 治理面上收据=审计行） | MA-3 采纳（收据语义进供体面） |
+| Git 同步 + reconciliation | Pack 发布到自管仓库供多机拉取；冲突生成 reconciliation 计划人工确认才应用 | 多机/多 AI 知识同步冲突治理参考——对位 MA-3 并发写冲突治理（人工确认语义与 RTIS 审核面一致） | MA-3 参考 |
+| Skills 自进化 | 后台审阅已完成对话→起草新 SKILL.md→回测后采纳（默认手动可自动） | Phase 7 知识回流"从对话中沉淀"参考；回测门=质量闸先例 | Phase 7 参考 |
+| 信任边界声明 | Sources/Strategies 是非沙箱可信进程内 JS；"Remembered history never outranks current instructions" | 记忆不越权当前指令的优先级规则——对位 RIP 知识候选 vs 已确认事实两级（RTIS 五态），优先级规则写进 Phase 7 设计 | Phase 7 参考 |
+
+### 5.2 其余插件逐个判定（第二屏 + 深挖可及面）
+
+| 插件 | 判定 | RIP 映射/处置 |
+|---|---|---|
+| vectorize-io/hindsight | 同域记忆（按仓库隔离记忆银行、自动召回/保存、深度反思） | Phase 7 参考（按项目隔离口径对位 knowledge.governance） |
+| xmanrui/dsh-im | 9 渠道 IM 机器人（飞书/微信/钉钉/Slack/Telegram…） | **MA-4 事件推送的通知渠道路径**：SSE/WS 之外，IM webhook 作为可选输出通道（正式做法=统一 EventBus 后接 IM adapter，登记 MA-4 扩展项不进必交付） |
+| zhu1090093659/dsh-task-board | 多列任务看板 UI，卡片交给真实会话执行，支持 cron | MA-4 Runs/看板 UI 参考（卡片→真实 run 绑定语义与 RIP TaskClaim 对齐）+ cron 面对照既有调度 |
+| DDDMUC/dsh-free-search | 42 引擎聚合 + 回退链 + 多 key 轮换 | search-engine crate 的**回退链 + key 轮换**模式参考（登记 search-engine 后续批观察项） |
+| liustack/modlens | 图片→结构化 JSON 证据（OCR/版面/语义） | **DI 轨证据 Schema 参考**：DI-2 OCR 输出已有置信度/语言；"证据化 JSON 输出"口径对位 DI 归一化 Schema——登记 DI 后续批观察项 |
+| ranxianglei/billion-context、bowenliang123/dsh-context | 超长会话压缩 / Context 仪表盘 | context-broker 压缩与仪表盘参考（P4 已有面；仪表盘形态登记 Phase 6 报告智能观察项） |
+| kenryu42/cc-safety-net | 破坏性命令/机密访问拦截清单 | 已登记（§二 E5）；对照 RT-3 负例词表 |
+| dsh-market / skill-explorer / skills-manager | 市场内浏览安装/技能分级管理 | Plugin Center 观察池（E1/E4 沿用） |
+| dsh-remote / dsh-mobile-plugin / better-sidebar | SSH 多主机/移动访问/侧边栏工作台 | 低价值：RIP 已有 REST/MCP 远程面 + Web 移动视口（P9 实测）；登记不采纳 |
+| dsh-pet/wallpaper/Balance-Whale/cost-meter/WorkBuddy | 娱乐/外观/费用 | 平台无关或费用面（本机实验台无计费需求），不采纳 |
+
+### 5.3 生态消费渠道
+
+目录站 catalog JSON 可经 jsDelivr 订阅（页面明示）——Plugin Center 观察池若后续立项，可用 catalog JSON 做定期程序化 harvesting（登记为 Plugin Center 立项时的输入渠道，不进 MA 轨）。
+
+### 5.4 结论更新
+
+- **高价值参考新增 2 项**：dsh-mnemon（Phase 6/7 + MA-3 供体 UX）、dsh-im（MA-4 通知渠道路径）。
+- **中价值登记 4 项**：task-board（MA-4 UI）、free-search（search-engine 回退链）、modlens（DI 证据 Schema）、hindsight（Phase 7 隔离口径）。
+- 其余为低价值/平台无关，登记不采纳。
+- MA-2/MA-3 任务书撰写时除 §三 R1~R8 外，增引本页 5.1（brain-mark 收据语义、reconciliation 人工确认）。
+
+## 四、核实记录（第一收获 2026-11-21 首屏两源；第二收获见 §五）
 
 - 两源均为 2026-11-21 WebFetch 实抓（README_ZH 全文概要与目录站首屏 24 插件 + 23 分类计数）；dsh-agent-teams 版本 0.1.31 / 宿主 0.2.2-rc.5 / MIT；目录站 12352 声称收录量未核验（非本页结论依赖项）。
 - 本页为形态参考记录，无代码引用；后续 MA-2/MA-3 任务书撰写时把 §三各行作为"设计输入必读"引用本页。
