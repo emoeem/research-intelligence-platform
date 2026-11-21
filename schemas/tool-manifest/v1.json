@@ -139,6 +139,7 @@
         {
           "if": { "properties": { "type": { "const": "python_worker" } } },
           "then": {
+            "description": "RT-2 additive（docs/phase0/RT-2-ADR-VENV-GOVERNANCE.md D5）：可选 venv 对象为项目级 venv 治理声明块。在场即触发执行面强制（venv 探测 fail-closed，PREPARING 拒绝，零系统解释器回退）；未声明走现状裸名路径行为零改动。词表零新增值，16 份既有 Manifest 语义零 diff（venv 声明补录属 RT-4）。",
             "required": ["protocol_version", "worker_name", "command"],
             "properties": {
               "protocol_version": { "type": "string", "const": "1" },
@@ -149,7 +150,19 @@
               },
               "command": { "type": "array", "minItems": 1, "items": { "type": "string" } },
               "working_dir": { "description": "repo:// 或 artifact:// 前缀。", "type": "string" },
-              "restart": { "type": "string", "enum": ["pooled", "per_run"], "default": "pooled" }
+              "restart": { "type": "string", "enum": ["pooled", "per_run"], "default": "pooled" },
+              "venv": {
+                "description": "项目级 venv 声明块（RT-2 ADR D5 形状冻结）：path 必填（working_dir 相对或绝对，禁 ..）；direct_deps 必填非空字符串数组（capset 覆盖检查触发器）；interpreter/requirements_lock 可选（venv 根内解释器相对路径，缺省 bin/python；lock 文件路径在场即做 sha256 对账）。",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "direct_deps"],
+                "properties": {
+                  "path": { "description": "venv 根路径（working_dir 相对或绝对；禁 ..）。", "type": "string", "minLength": 1 },
+                  "interpreter": { "description": "venv 根内解释器相对路径，缺省 bin/python。绝对路径（/、\\、盘符前缀）与 .. 穿越禁止——绝对值在执行面 Path::join 语义下整体替换 venv base，派发目标逃出 venv 根而 capset/lock 对账仍按 venv 面通过（RT-2 ADR D5 冻结形状；validate.rs 与 venv.rs probe 双面同规则）。", "type": "string", "minLength": 1, "allOf": [ { "pattern": "^[^\\\\/]" }, { "not": { "pattern": "^[A-Za-z]:" } }, { "not": { "pattern": "(^|/)\\.\\.(/|$)" } } ] },
+                  "requirements_lock": { "description": "lock 文件路径（working_dir 相对或绝对），在场即做 sha256 对账（C §5.3 stale fail-closed）。", "type": "string", "minLength": 1 },
+                  "direct_deps": { "description": "直接依赖非空字符串数组（dist-info capset 覆盖检查触发器）。", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+                }
+              }
             }
           }
         },

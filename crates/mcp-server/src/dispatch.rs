@@ -887,6 +887,10 @@ fn lexical_normalize(path: &std::path::Path) -> PathBuf {
 /// python_worker 适配器装配（worker_name / command 取自 Manifest runtime
 /// 块，rp-workflow resolve_python_worker 同款口径；repo:// 前缀按当前
 /// 目录落地，由调用方保证仓库根执行纪律）。
+///
+/// RT-2 additive：`runtime.venv` 声明块在场时构造 VenvConfig 注入（RT-2 ADR
+/// D5——未声明走现状路径零改动；声明后的探测强制与 fail-closed 拒绝由
+/// adapter ensure_ready 承载）。
 fn build_python_adapter(
     manifest: &Value,
     working_dir: Option<PathBuf>,
@@ -911,6 +915,13 @@ fn build_python_adapter(
     if command.is_empty() {
         return Err("manifest runtime.command is empty".to_string());
     }
+    let venv_config = match runtime.get("venv") {
+        Some(v) if !v.is_null() => Some(
+            serde_json::from_value::<tool_engine::venv::VenvConfig>(v.clone())
+                .map_err(|e| format!("manifest runtime.venv invalid: {e}"))?,
+        ),
+        _ => None,
+    };
     Ok(PythonWorkerAdapter::new(PythonWorkerConfig {
         worker_name,
         command,
@@ -918,6 +929,8 @@ fn build_python_adapter(
         restart: RestartPolicy::Pooled,
         extra_env: Vec::new(),
         handshake_timeout: Duration::from_secs(10),
+        venv_config,
+        venv_identity: None,
     }))
 }
 

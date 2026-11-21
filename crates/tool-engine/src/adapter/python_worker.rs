@@ -11,7 +11,7 @@
 //! 「stdin/stdout 各一行 JSON」（D-TC-03）。
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
@@ -21,8 +21,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
-use crate::adapter::{map_worker_code, AdapterFailure, AdapterOutcome};
+use crate::adapter::{map_worker_code, AdapterFailure, AdapterOutcome, EnvelopeOverride};
 use crate::envelope::{self, EnvelopeError};
+use crate::venv::{self, VenvConfig, VenvIdentity, VenvProbeFailure};
 use crate::{DriveOutcome, Engine, EngineError, TerminalParts};
 use domain::ToolRunStatus;
 
@@ -42,6 +43,13 @@ pub struct PythonWorkerConfig {
     pub extra_env: Vec<(String, String)>,
     /// 握手超时（默认 10s）。
     pub handshake_timeout: Duration,
+    /// venv 治理声明（Manifest runtime.venv additive 投影，RT-2 ADR D5）；
+    /// None = 未声明，解释器解析走现状路径（D4 第三档，行为零改动）。
+    pub venv_config: Option<VenvConfig>,
+    /// 预探测身份缓存（构造点可注入既有探测结果；None 则 ensure_ready 现场探测）。
+    /// 在场时其 lock sha256 作为重探对账 expected（C §5.3 stale fail-closed 面）；
+    /// 无论是否在场，声明 venv 的 ensure_ready 一律现场重探（fail-closed 口径）。
+    pub venv_identity: Option<VenvIdentity>,
 }
 
 /// 重启策略（Manifest runtime.restart 词表）。
@@ -68,6 +76,18 @@ impl Drop for PooledWorker {
     }
 }
 
+/// 解释器解析三档结果（RT-2 ADR D4：Manifest 显式绝对路径 > venv 探测 > 现状裸名；
+/// Venv 档 Box 包装守 clippy large_enum_variant 门）。
+#[derive(Debug, Clone, PartialEq)]
+enum InterpreterResolution {
+    /// 第一档：command[0] 为绝对路径 → 直用不探测（RT-1 D3 钉值同精神）。
+    Explicit(PathBuf),
+    /// 第二档：声明 venv 且探测 available → `<venv>/<interpreter>` 绝对派发路径。
+    Venv(Box<VenvIdentity>),
+    /// 第三档：未声明 venv → 裸名保持现状 PATH 解析（零改动）。
+    BareName,
+}
+
 /// python_worker 派发器。
 pub struct PythonWorkerAdapter {
     config: PythonWorkerConfig,
@@ -75,6 +95,10 @@ pub struct PythonWorkerAdapter {
     next_id: AtomicI64,
     exec_lock: Mutex<()>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
+    /// 解释器解析缓存（ensure_ready 填充，spawn 消费；惰性路径同样落缓存）。
+    interpreter_cache: Mutex<Option<InterpreterResolution>>,
+    /// 最近一次 venv 探测身份（记录面；零 Registry/Manifest 写入）。
+    venv_identity_cache: Mutex<Option<VenvIdentity>>,
 }
 
 impl PythonWorkerAdapter {
@@ -86,6 +110,8 @@ impl PythonWorkerAdapter {
             next_id: AtomicI64::new(1),
             exec_lock: Mutex::new(()),
             stderr_lines: Arc::new(Mutex::new(Vec::new())),
+            interpreter_cache: Mutex::new(None),
+            venv_identity_cache: Mutex::new(None),
         }
     }
 
@@ -97,9 +123,35 @@ impl PythonWorkerAdapter {
             .clone()
     }
 
-    /// PREPARING 期握手预热：pooled 池为空则拉起进程并握手；per_run 为 no-op
-    /// （进程在 execute 时拉起，握手失败同样映射 INFRA）。
+    /// 最近一次解析出的派发解释器（venv 档 = `<venv>/<interpreter>` 绝对路径；
+    /// 探测失败/未解析 = None——fail-closed 观察面，argv 断言用）。
+    pub fn resolved_interpreter(&self) -> Option<String> {
+        self.interpreter_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|res| match res {
+                InterpreterResolution::Explicit(p) => p.to_string_lossy().into_owned(),
+                InterpreterResolution::Venv(id) => {
+                    id.interpreter_path.to_string_lossy().into_owned()
+                }
+                InterpreterResolution::BareName => self.config.command[0].clone(),
+            })
+    }
+
+    /// 最近一次 venv 探测身份副本（记录面；venv 未声明或未探测 = None）。
+    pub fn venv_identity(&self) -> Option<VenvIdentity> {
+        self.venv_identity_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// PREPARING 期握手预热：venv 声明在场则前置探测（fail-closed，RT-2 D5）；
+    /// pooled 池为空则拉起进程并握手；per_run 为 no-op（进程在 execute 时拉起，
+    /// 握手失败同样映射 INFRA）。
     pub fn ensure_ready(&self) -> Result<(), AdapterFailure> {
+        self.prepare_interpreter()?;
         match self.config.restart {
             RestartPolicy::Pooled => {
                 let mut guard = self
@@ -112,6 +164,55 @@ impl PythonWorkerAdapter {
                 Ok(())
             }
             RestartPolicy::PerRun => Ok(()),
+        }
+    }
+
+    /// 解释器解析与 venv 探测（PREPARING 期；RT-2 D4 三档 + D5 探测前置）。
+    ///
+    /// 声明 venv 的 Manifest 每次调用现场重探（fail-closed：解释器 sha256 /
+    /// pyvenv.cfg / 依赖集 / lock 任一漂移即在 PREPARING 拒绝，C §5.3 stale
+    /// 口径）；探测失败按 D7 五态映射拒绝，零系统解释器回退。
+    fn prepare_interpreter(&self) -> Result<(), AdapterFailure> {
+        let resolution = self.resolve_interpreter()?;
+        if let InterpreterResolution::Venv(identity) = &resolution {
+            *self
+                .venv_identity_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some((**identity).clone());
+        }
+        *self
+            .interpreter_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(resolution);
+        Ok(())
+    }
+
+    /// D4 三档解析：显式绝对路径 > venv 探测（available 必要）> 现状裸名。
+    fn resolve_interpreter(&self) -> Result<InterpreterResolution, AdapterFailure> {
+        if let Some(first) = self.config.command.first() {
+            if Path::new(first).is_absolute() {
+                // 第一档：Manifest 显式绝对路径直用（不探测 venv，RT-2 D4）。
+                return Ok(InterpreterResolution::Explicit(PathBuf::from(first)));
+            }
+        }
+        match &self.config.venv_config {
+            Some(venv_cfg) => {
+                // 第二档：venv 探测；expected lock sha256 取自预探测缓存（在位时），
+                // 实现 lock 漂移的 fail-closed 对账。
+                let expected_lock = self
+                    .config
+                    .venv_identity
+                    .as_ref()
+                    .and_then(|id| id.requirements_lock_sha256.clone());
+                let identity = venv::probe(
+                    venv_cfg,
+                    self.config.working_dir.as_deref(),
+                    expected_lock.as_deref(),
+                )
+                .map_err(venv_rejection)?;
+                Ok(InterpreterResolution::Venv(Box::new(identity)))
+            }
+            None => Ok(InterpreterResolution::BareName),
         }
     }
 
@@ -250,7 +351,9 @@ impl PythonWorkerAdapter {
         if self.config.command.is_empty() {
             return Err(AdapterFailure::new("empty worker command"));
         }
-        let mut cmd = Command::new(&self.config.command[0]);
+        // D4/D5：解释器解析缓存消费；未预热路径惰性解析（探测失败同样 fail-closed）。
+        let interpreter = self.spawn_interpreter()?;
+        let mut cmd = Command::new(&interpreter);
         cmd.args(&self.config.command[1..])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -358,6 +461,39 @@ impl PythonWorkerAdapter {
         Ok(worker)
     }
 
+    /// spawn 解释器值（command[0] 替换面）：venv 档 = 探测身份的
+    /// `<venv>/<interpreter>` 绝对路径；显式档 = Manifest 绝对路径原样；
+    /// 裸名档 = 现状值原样（零改动）。argv 其余项原样保留（`-I` 在内）。
+    fn spawn_interpreter(&self) -> Result<String, AdapterFailure> {
+        let cached = self
+            .interpreter_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let resolution = match cached {
+            Some(res) => res,
+            None => {
+                let res = self.resolve_interpreter()?;
+                *self
+                    .interpreter_cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(res.clone());
+                if let InterpreterResolution::Venv(identity) = &res {
+                    *self
+                        .venv_identity_cache
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = Some((**identity).clone());
+                }
+                res
+            }
+        };
+        Ok(match resolution {
+            InterpreterResolution::Explicit(p) => p.to_string_lossy().into_owned(),
+            InterpreterResolution::Venv(id) => id.interpreter_path.to_string_lossy().into_owned(),
+            InterpreterResolution::BareName => self.config.command[0].clone(),
+        })
+    }
+
     /// 单方法同步调用（握手期专用；execute 的异步响应读循环独立实现）。
     fn call_method(
         &self,
@@ -392,6 +528,29 @@ impl PythonWorkerAdapter {
             }
         }
     }
+}
+
+/// 协议响应行的解析结果（目标 id 匹配时才有值）。
+/// venv 探测失败 → AdapterFailure（D7 五态映射信封覆写；fail-closed，
+/// 不伪装成执行失败、不回退系统解释器）。
+fn venv_rejection(failure: VenvProbeFailure) -> AdapterFailure {
+    let (category, code, retryable) = failure.kind.envelope_mapping();
+    AdapterFailure::new(format!(
+        "venv probe rejected [{category}] ({}): {}",
+        failure.status.as_str(),
+        failure.detail
+    ))
+    .with_envelope(EnvelopeOverride {
+        category: category.to_string(),
+        code,
+        message: failure.detail,
+        retryable,
+        summary: format!(
+            "venv 探测拒绝（{} / {}，fail-closed）",
+            failure.status.as_str(),
+            category
+        ),
+    })
 }
 
 /// 协议响应行的解析结果（目标 id 匹配时才有值）。
@@ -522,7 +681,9 @@ pub fn execute_via_engine(call: AdapterCall<'_>) -> Result<DriveOutcome, EngineE
     )?;
     transcript.push(ToolRunStatus::Preparing);
     if let Err(failure) = call.adapter.ensure_ready() {
-        // 第 7 行：PREPARING → FAILED（握手/进程失败，INFRA）。
+        // 第 7 行：PREPARING → FAILED（握手/进程失败，INFRA；RT-2 venv 探测
+        // 拒绝面经 envelope_override 按 D7 五态映射交付，状态仍落 FAILED——
+        // 状态机 PREPARING→FAILED 为唯一合法终局，fail-closed 不回退）。
         engine.advance(
             call.run_id,
             ToolRunStatus::Preparing,
@@ -530,19 +691,35 @@ pub fn execute_via_engine(call: AdapterCall<'_>) -> Result<DriveOutcome, EngineE
             true,
         )?;
         transcript.push(ToolRunStatus::Failed);
+        let (category, code, message, retryable, summary) = match failure.envelope_override {
+            Some(override_shape) => (
+                override_shape.category,
+                override_shape.code,
+                override_shape.message,
+                override_shape.retryable,
+                Some(override_shape.summary),
+            ),
+            None => (
+                "INFRA".to_string(),
+                json!("WORKER_HANDSHAKE_FAILED"),
+                failure.message,
+                true,
+                Some("worker 握手失败（INFRA）".to_string()),
+            ),
+        };
         let envelope = engine.build_envelope(
             &row,
             ToolRunStatus::Failed,
             TerminalParts {
                 result: None,
                 error: Some(EnvelopeError {
-                    category: "INFRA".to_string(),
-                    code: json!("WORKER_HANDSHAKE_FAILED"),
-                    message: failure.message,
-                    retryable: true,
+                    category,
+                    code,
+                    message,
+                    retryable,
                     detail_ref: None,
                 }),
-                summary: Some("worker 握手失败（INFRA）".to_string()),
+                summary,
                 artifacts: Vec::new(),
                 truncated: false,
                 cached: false,

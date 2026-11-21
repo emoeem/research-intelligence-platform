@@ -307,7 +307,10 @@ fn cmd_validate(path: &str) -> i32 {
     let issues = validate_definition(&def);
     if !issues.is_empty() {
         for issue in &issues {
-            println!("{}", serde_json::json!({"kind": issue.kind.as_str(), "node": issue.node, "edge": issue.edge, "message": issue.message}));
+            println!(
+                "{}",
+                serde_json::json!({"kind": issue.kind.as_str(), "node": issue.node, "edge": issue.edge, "message": issue.message})
+            );
         }
         println!(
             "{}",
@@ -357,7 +360,10 @@ fn cmd_put(args: &[String]) -> i32 {
     let issues = validate_definition(&def);
     if !issues.is_empty() {
         for issue in &issues {
-            println!("{}", serde_json::json!({"kind": issue.kind.as_str(), "node": issue.node, "edge": issue.edge, "message": issue.message}));
+            println!(
+                "{}",
+                serde_json::json!({"kind": issue.kind.as_str(), "node": issue.node, "edge": issue.edge, "message": issue.message})
+            );
         }
         println!(
             "{}",
@@ -366,12 +372,10 @@ fn cmd_put(args: &[String]) -> i32 {
         return 1;
     }
     let store = open_store(&db, &migrations_dir);
-    let outcome = store
-        .put(&doc, "rp-workflow-put")
-        .unwrap_or_else(|e| {
-            eprintln!("{e}");
-            exit(1);
-        });
+    let outcome = store.put(&doc, "rp-workflow-put").unwrap_or_else(|e| {
+        eprintln!("{e}");
+        exit(1);
+    });
     println!(
         "{}",
         serde_json::json!({
@@ -605,7 +609,9 @@ impl ToolRunDriver for PythonWorkerToolDriver {
                 )
                 .map_err(database::DbError::Sqlite)
             })
-            .map_err(|e| tool_engine::EngineError::Storage(format!("tool_run lookup failed: {e}")))?;
+            .map_err(|e| {
+                tool_engine::EngineError::Storage(format!("tool_run lookup failed: {e}"))
+            })?;
         let manifest = find_manifest_value(&self.manifest_dirs, &tool_id)
             .map_err(tool_engine::EngineError::Storage)?;
         let rtype = manifest["runtime"]["type"].as_str().unwrap_or("");
@@ -647,7 +653,9 @@ impl PythonWorkerToolDriver {
         let image = manifest["runtime"]["image"]
             .as_str()
             .ok_or_else(|| {
-                tool_engine::EngineError::Storage(format!("manifest {tool_id} runtime.image missing"))
+                tool_engine::EngineError::Storage(format!(
+                    "manifest {tool_id} runtime.image missing"
+                ))
             })?
             .to_string();
         let entrypoint: Vec<String> = manifest["runtime"]["entrypoint"]
@@ -847,7 +855,10 @@ impl AgentLoopDriver {
             evidence,
             audit,
             LoopConfig {
-                workspace_id: request.workspace_id.clone().unwrap_or_else(|| self.workspace.clone()),
+                workspace_id: request
+                    .workspace_id
+                    .clone()
+                    .unwrap_or_else(|| self.workspace.clone()),
                 max_tool_calls: self.max_tool_calls,
             },
         );
@@ -859,7 +870,9 @@ impl AgentLoopDriver {
                     planner: Box::new(agent_engine::KeywordSearchPlanner),
                     confirmer: Box::new(self.build_confirmer()?),
                 };
-                loop_.resume(&mut req).map_err(|e| format!("agent resume failed: {e}"))?
+                loop_
+                    .resume(&mut req)
+                    .map_err(|e| format!("agent resume failed: {e}"))?
             }
             _ => {
                 // fresh run：run_id 钉定（受理面以此 id 落行）。
@@ -874,7 +887,9 @@ impl AgentLoopDriver {
                     planner: Box::new(agent_engine::KeywordSearchPlanner),
                     confirmer: Box::new(self.build_confirmer()?),
                 };
-                loop_.run(&mut req).map_err(|e| format!("agent run failed: {e}"))?
+                loop_
+                    .run(&mut req)
+                    .map_err(|e| format!("agent run failed: {e}"))?
             }
         };
         match report.state.as_str() {
@@ -928,16 +943,14 @@ impl AgentLoopDriver {
                 eprintln!("intent config: {e}");
                 exit(1);
             });
-        let index = context_broker::ManifestIndex::from_dirs(&self.manifest_dirs)
-            .unwrap_or_else(|e| {
+        let index =
+            context_broker::ManifestIndex::from_dirs(&self.manifest_dirs).unwrap_or_else(|e| {
                 eprintln!("manifest index: {e}");
                 exit(1);
             });
-        let registry_source = RegistrySource::new(
-            tool_registry::Registry::open(self.pool.clone()),
-            index,
-        )
-        .with_cache(cache.clone(), "policy-1");
+        let registry_source =
+            RegistrySource::new(tool_registry::Registry::open(self.pool.clone()), index)
+                .with_cache(cache.clone(), "policy-1");
         let mut sources: Vec<Box<dyn context_broker::ContextSource>> = vec![
             Box::new(rulepack),
             Box::new(registry_source),
@@ -1014,13 +1027,20 @@ fn resolve_python_worker_value(
         restart: RestartPolicy::Pooled,
         extra_env: Vec::new(),
         handshake_timeout: std::time::Duration::from_secs(10),
+        // RT-2 additive 字段；本构造点 runtime.venv 读取接线属 RT-3/RT-4 缝
+        // （任务书 §3.1 未列，正式 Manifest 现状零 venv 声明，行为面无差）。
+        venv_config: None,
+        venv_identity: None,
     }))
 }
 
 /// Knowledge 节点检索面：rp-agent build_broker_link 同款装配（rulepack +
 /// registry + artifact + 库内 plugin 全源 + 缓存 + 审计 + 引用证据固化）。
 fn build_broker(flags: &RunFlags, pool: &Pool) -> Arc<context_broker::Broker> {
-    use context_broker::{ArtifactSource, Broker, BrokerCache, IntentConfig, ManifestStore, PluginSource, RegistrySource, RulepackSource};
+    use context_broker::{
+        ArtifactSource, Broker, BrokerCache, IntentConfig, ManifestStore, PluginSource,
+        RegistrySource, RulepackSource,
+    };
     let cache_dir = std::env::var("RIP_DATA_DIR")
         .map(|d| PathBuf::from(d).join("runtime").join("broker-cache"))
         .unwrap_or_else(|_| BrokerCache::default_dir());
@@ -1036,14 +1056,13 @@ fn build_broker(flags: &RunFlags, pool: &Pool) -> Arc<context_broker::Broker> {
         eprintln!("intent config: {e}");
         exit(1);
     });
-    let index = context_broker::ManifestIndex::from_dirs(&flags.manifest_dirs)
-        .unwrap_or_else(|e| {
+    let index =
+        context_broker::ManifestIndex::from_dirs(&flags.manifest_dirs).unwrap_or_else(|e| {
             eprintln!("manifest index: {e}");
             exit(1);
         });
-    let registry_source =
-        RegistrySource::new(tool_registry::Registry::open(pool.clone()), index)
-            .with_cache(cache.clone(), "policy-1");
+    let registry_source = RegistrySource::new(tool_registry::Registry::open(pool.clone()), index)
+        .with_cache(cache.clone(), "policy-1");
     let mut sources: Vec<Box<dyn context_broker::ContextSource>> = vec![
         Box::new(rulepack),
         Box::new(registry_source),
@@ -1235,18 +1254,20 @@ fn cmd_nodes(args: &[String]) -> i32 {
     };
     let pool = open_pool(&flags.db, &flags.migrations_dir);
     let executor = WorkflowExecutor::new(pool);
-    let runs = workflow_engine::RunStore::new(match Pool::open(PoolConfig {
-        path: DbPath::File(flags.db.clone()),
-        readonly: false,
-        max_connections: 1,
-        busy_timeout: std::time::Duration::from_secs(5),
-    }) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("open: {e}");
-            exit(1);
-        }
-    });
+    let runs = workflow_engine::RunStore::new(
+        match Pool::open(PoolConfig {
+            path: DbPath::File(flags.db.clone()),
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: std::time::Duration::from_secs(5),
+        }) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("open: {e}");
+                exit(1);
+            }
+        },
+    );
     match executor.status(&run_id) {
         Ok((_row, nodes)) => {
             for n in &nodes {

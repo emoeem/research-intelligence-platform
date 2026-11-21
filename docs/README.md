@@ -32,6 +32,9 @@
 | RT-1 Native Rust Adapter 任务书（S1→S8、八项判据、八条红线） | [phase0/RT-1-TASK.md](phase0/RT-1-TASK.md) |
 | RT-1 Native Adapter 设计裁决（D1-D8：allowlist/env 白名单/进程组 kill/五态映射） | [phase0/RT-1-ADR-NATIVE-ADAPTER.md](phase0/RT-1-ADR-NATIVE-ADAPTER.md) |
 | RT-1 批次验收报告（NativeRustAdapter + Capability Provider 最小接线落地；八项判据实测对照、门禁命令原文、实现口径裁决 17 条——含评审修订 6 条全 applied 与门禁复测记录、DI-1 前置登记） | [phase0/RT-1-BATCH-REPORT.md](phase0/RT-1-BATCH-REPORT.md) |
+| RT-2 Python Worker 原生环境治理任务书（S1→S8、八项判据、八条红线） | [phase0/RT-2-TASK.md](phase0/RT-2-TASK.md) |
+| RT-2 venv 治理设计裁决（D1-D8：仓库级 venv 单例/uv 哈希 lock/探测面挂 C 范式/D4 三档解释器解析/VenvIdentity schema/D7 五态映射/对拍与五缝登记） | [phase0/RT-2-ADR-VENV-GOVERNANCE.md](phase0/RT-2-ADR-VENV-GOVERNANCE.md) |
+| RT-2 批次验收报告（venv 探测面 VenvIdentity/五态/指纹 + requirements lock 哈希钉定与 CI 完整性门 + adapter 三档解释器接线与 fail-closed 拒绝 + pack 面 .venv 排除 + v1.json/validate venv 声明块 + 八项判据测试与协议对拍；VenvIdentity 首探快照、供给命令段、偏差记账 6 条、RT-3/RT-4 前置登记） | [phase0/RT-2-BATCH-REPORT.md](phase0/RT-2-BATCH-REPORT.md) |
 | DI-0 P3-4 前提修订（Document Pack planned 裁定前提被 NATIVE-FIRST 与 RT-0.5 实测推翻；DI-1/2/3 入口） | [phase0/DI-0-P34-PREMISE-REVISION-ADR.md](phase0/DI-0-P34-PREMISE-REVISION-ADR.md) |
 | DI-1 Document Router 任务书（S0→S8、十项判据、十条红线） | [phase0/DI-1-TASK.md](phase0/DI-1-TASK.md) |
 | DI-1 设计裁决（D1-D8：新 crate 落位/通道表/手写嗅探/帽值表/错误映射；含 D3 调和裁决条目） | [phase0/DI-1-ADR-DOC-ROUTER.md](phase0/DI-1-ADR-DOC-ROUTER.md) |

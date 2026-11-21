@@ -96,6 +96,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # RT-2 lock 完整性静态校验（纯 stdlib，零安装面保持——A11 分工纪律）：
+      # 校验 requirements.lock.txt 每包 ≥1 sha256 哈希、直接依赖与 .in 钉定一致、无 .. 穿越。
+      # CI 不装依赖、不跑 uv、不碰 venv（RT-2-ADR-VENV-GOVERNANCE.md D8.2）。
+      - name: lock 完整性校验（RT-2）
+        working-directory: workers/python
+        run: python -m unittest tests.test_lock_integrity -v
+
       - name: 运行 worker 测试
         working-directory: workers/python
         run: python -m unittest discover -s tests -v

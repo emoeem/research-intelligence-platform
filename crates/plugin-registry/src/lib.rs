@@ -30,7 +30,7 @@ pub mod validate;
 
 pub use checksums::{
     verify_checksums, write_checksums, ChecksumError, ChecksumIssue, ChecksumManifest,
-    CHECKSUMS_FILENAME,
+    CHECKSUMS_FILENAME, VENV_DIRNAME,
 };
 pub use lock::{
     now_unix, read_lock, write_lock, LockError, PinnedRef, PluginLock, TrustLevel,

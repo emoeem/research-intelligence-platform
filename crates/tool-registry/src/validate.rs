@@ -776,6 +776,82 @@ fn rule4_runtime(
                     return Err(err4(format!("runtime.restart {s:?} not pooled/per_run")));
                 }
             }
+            // RT-2 ADR D5：可选 venv 声明块 additive 校验（登记面兼容——未声明
+            // 不校验，旧形状登记不破；执行面强制由 tool-engine ensure_ready
+            // venv 探测 fail-closed 承载）。形状冻结：path/direct_deps 必填，
+            // interpreter/requirements_lock 可选，词表外字段拒绝，全路径面禁 ..。
+            if let Some(v) = runtime.get("venv") {
+                let obj = v
+                    .as_object()
+                    .ok_or_else(|| err4("runtime.venv must be an object".to_string()))?;
+                const VENV_FIELDS: [&str; 4] =
+                    ["path", "interpreter", "requirements_lock", "direct_deps"];
+                for key in obj.keys() {
+                    if !VENV_FIELDS.contains(&key.as_str()) {
+                        return Err(err4(format!(
+                            "runtime.venv.{key} is not in the frozen field vocabulary \
+                             (path/interpreter/requirements_lock/direct_deps)"
+                        )));
+                    }
+                }
+                let path = req_str(obj, "path").map_err(err4)?;
+                if path.is_empty() {
+                    return Err(err4("runtime.venv.path must be non-empty".to_string()));
+                }
+                if path.split(['/', '\\']).any(|seg| seg == "..") {
+                    return Err(err4(format!(
+                        "runtime.venv.path {path:?} must not contain `..` (traversal rejected)"
+                    )));
+                }
+                for optional_key in ["interpreter", "requirements_lock"] {
+                    if let Some(val) = obj.get(optional_key) {
+                        let s = val.as_str().ok_or_else(|| {
+                            err4(format!("runtime.venv.{optional_key} must be a string"))
+                        })?;
+                        if s.is_empty() {
+                            return Err(err4(format!(
+                                "runtime.venv.{optional_key} must be non-empty"
+                            )));
+                        }
+                        if s.split(['/', '\\']).any(|seg| seg == "..") {
+                            return Err(err4(format!(
+                                "runtime.venv.{optional_key} {s:?} must not contain `..` \
+                                 (traversal rejected)"
+                            )));
+                        }
+                        // RT-2 ADR D5 冻结形状：interpreter 必须 venv 根内相对路径。
+                        // 绝对值在执行面 `Path::join` 语义下整体替换 venv base——派发
+                        // 目标逃出 venv 根而 capset/lock 对账仍按 venv 面通过（venv.rs
+                        // probe 纵深防御同规则）。requirements_lock 允许 working_dir
+                        // 相对或绝对（D5 声明块原语义），不受此约束。
+                        if optional_key == "interpreter"
+                            && (s.starts_with('/')
+                                || s.starts_with('\\')
+                                || (s.len() >= 2
+                                    && s.as_bytes()[1] == b':'
+                                    && s.as_bytes()[0].is_ascii_alphabetic()))
+                        {
+                            return Err(err4(format!(
+                                "runtime.venv.interpreter {s:?} must be a venv-root-relative \
+                                 path (absolute interpreter escapes the venv root under \
+                                 Path::join; traversal/escape rejected)"
+                            )));
+                        }
+                    }
+                }
+                let deps = req_arr(obj, "direct_deps").map_err(err4)?;
+                if deps.is_empty()
+                    || deps
+                        .iter()
+                        .any(|d| !d.is_string() || d.as_str().unwrap_or_default().is_empty())
+                {
+                    return Err(err4(
+                        "runtime.venv.direct_deps must be a non-empty array of \
+                         non-empty strings"
+                            .to_string(),
+                    ));
+                }
+            }
         }
         "native_rust" => {
             // RT-1 ADR D3：登记面 additive 增强。旧两字段形态（binary + subcommand，

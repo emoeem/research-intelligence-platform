@@ -71,6 +71,9 @@ fn adapter_for(manifest: &Value, cache_dir: &Path) -> PythonWorkerAdapter {
             cache_dir.to_string_lossy().to_string(),
         )],
         handshake_timeout: Duration::from_secs(10),
+        // RT-2 additive 字段（未声明 venv 走现状路径零改动）。
+        venv_config: None,
+        venv_identity: None,
     })
 }
 

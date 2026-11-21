@@ -308,6 +308,15 @@ fn resolve_python_worker(
             }
             // repo:// 前缀落到仓库根（本 CLI 约定从仓库根运行，即 CWD）。
             let working_dir = std::env::current_dir().ok();
+            // RT-2 additive：runtime.venv 声明块在场时构造 VenvConfig 注入
+            // （RT-2 ADR D5 同 dispatch.rs build_python_adapter 口径）。
+            let venv_config = match runtime.get("venv") {
+                Some(v) if !v.is_null() => Some(
+                    serde_json::from_value::<tool_engine::venv::VenvConfig>(v.clone())
+                        .map_err(|e| format!("manifest {tool_id} runtime.venv invalid: {e}"))?,
+                ),
+                _ => None,
+            };
             return Ok(PythonWorkerAdapter::new(PythonWorkerConfig {
                 worker_name,
                 command,
@@ -315,6 +324,8 @@ fn resolve_python_worker(
                 restart: RestartPolicy::Pooled,
                 extra_env: Vec::new(),
                 handshake_timeout: Duration::from_secs(10),
+                venv_config,
+                venv_identity: None,
             }));
         }
     }

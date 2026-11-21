@@ -30,6 +30,10 @@ pub use podman_host::{
 pub use python_worker::{
     execute_via_engine, AdapterCall, PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };
+// RT-2 venv 治理面 re-export（探测面挂 adapter 邻位，构造点接线消费）。
+pub use crate::venv::{
+    probe as probe_venv, InterpreterIdentity, VenvConfig, VenvIdentity, VenvStatus,
+};
 
 use serde_json::Value;
 
@@ -68,18 +72,45 @@ pub enum AdapterOutcome {
     },
 }
 
+/// 非 INFRA 面失败的信封覆写（RT-2 venv 探测五态拒绝等；None = 默认
+/// INFRA/WORKER_HANDSHAKE_FAILED）。category 仍受信封九类词表校验约束。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvelopeOverride {
+    /// §5.3 类别（九类词表内）。
+    pub category: String,
+    /// 错误码（venv 面为 VENV_ 前缀串或 -32002 数值，D7 表）。
+    pub code: Value,
+    /// 消息。
+    pub message: String,
+    /// 类别可重试性。
+    pub retryable: bool,
+    /// summary 文案（信封终局面）。
+    pub summary: String,
+}
+
 /// 传输/握手层失败（INFRA 面：信封以 category=INFRA、retryable=true 交付）。
+/// envelope_override 为 Box 包装（AdapterFailure 高频作为 Result::Err 返回，
+/// 保持小尺寸以守 clippy result_large_err 门）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AdapterFailure {
     /// 失败说明。
     pub message: String,
+    /// 非 INFRA 信封覆写（RT-2 venv 拒绝面等；None = 默认 INFRA）。
+    pub envelope_override: Option<Box<EnvelopeOverride>>,
 }
 
 impl AdapterFailure {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            envelope_override: None,
         }
+    }
+
+    /// 附加信封覆写（additive 构造面；默认路径不受影响）。
+    fn with_envelope(mut self, envelope_override: EnvelopeOverride) -> Self {
+        self.envelope_override = Some(Box::new(envelope_override));
+        self
     }
 }
 

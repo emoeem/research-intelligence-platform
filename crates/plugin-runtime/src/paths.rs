@@ -311,7 +311,9 @@ fn safe_component(component: &str, field: &str) -> Result<(), PathsError> {
     Ok(())
 }
 
-/// 递归复制目录树（跳过 checksums.sha256 与 plugin.lock，安装时重新生成）。
+/// 递归复制目录树（跳过 checksums.sha256 与 plugin.lock，安装时重新生成；
+/// RT-2 起跳过 `.venv` 目录——venv 快照不属 Pack 身份面，目标机由 lock 文件
+/// + 供给命令重建，RT-2-ADR-VENV-GOVERNANCE.md D1）。
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), PathsError> {
     for entry in
         fs::read_dir(src).map_err(|e| io_err(&format!("read_dir {:?}", src.display()), e))?
@@ -321,6 +323,7 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), PathsError> {
         let name = entry.file_name();
         if name == plugin_registry::CHECKSUMS_FILENAME
             || name == plugin_registry::PLUGIN_LOCK_FILENAME
+            || name == plugin_registry::VENV_DIRNAME
         {
             continue;
         }
@@ -335,4 +338,34 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), PathsError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RT-2 D1：pack 打包复制面排除 `.venv` 目录（venv 快照不随 Pack 分发）。
+    #[test]
+    fn copy_tree_skips_venv_snapshot() {
+        let seq = std::sync::atomic::AtomicU32::new(0);
+        let seq = seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let src =
+            std::env::temp_dir().join(format!("rt2-pack-skip-src-{}-{seq}", std::process::id()));
+        let dst =
+            std::env::temp_dir().join(format!("rt2-pack-skip-dst-{}-{seq}", std::process::id()));
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&dst);
+        fs::create_dir_all(&dst).unwrap();
+        fs::create_dir_all(src.join("workers")).unwrap();
+        fs::write(src.join("worker.py"), b"print('x')\n").unwrap();
+        fs::create_dir_all(src.join(".venv/bin")).unwrap();
+        fs::write(src.join(".venv/pyvenv.cfg"), b"version = 3.14.9\n").unwrap();
+        fs::write(src.join(".venv/bin/python"), b"elf-blob").unwrap();
+        copy_tree(&src, &dst).expect("copy_tree ok");
+        assert!(dst.join("worker.py").is_file());
+        assert!(dst.join("workers").is_dir());
+        assert!(!dst.join(".venv").exists(), ".venv must not be copied");
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&dst);
+    }
 }

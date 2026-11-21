@@ -452,3 +452,147 @@ fn sk3_native_rust_allowlist_registers_end_to_end() {
     });
     let _ = std::fs::remove_file(&db);
 }
+
+// ---------------------------------------------------------------------------
+// RT-2 python_worker venv 声明块（RT-2-ADR-VENV-GOVERNANCE.md D5；正负例矩阵）
+// ---------------------------------------------------------------------------
+
+/// python_worker 底座构造器（同 native_rust_doc 口径：既有 Manifest 换 runtime
+/// 面，rule1/3/5/6/8 全链参与；venv 试点声明只存在于测试 fixture——正式
+/// Manifest 零 diff 红线）。
+fn python_worker_doc() -> serde_json::Value {
+    let mut doc = load_json("rip.doc.parse");
+    doc["runtime"] = serde_json::json!({
+        "type": "python_worker",
+        "protocol_version": "1",
+        "worker_name": "parsing-worker",
+        "command": ["python3", "-I", "workers/python/parsing_worker.py"],
+        "working_dir": "repo://research-platform",
+        "restart": "pooled"
+    });
+    doc
+}
+
+#[test]
+fn sk3_python_worker_venv_shapes_accept() {
+    // 正例：D5 形状冻结全量（path + interpreter + requirements_lock + direct_deps）。
+    let mut full = python_worker_doc();
+    full["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/python/.venv",
+        "interpreter": "bin/python",
+        "requirements_lock": "workers/python/requirements.lock.txt",
+        "direct_deps": ["numpy", "onnxruntime", "tokenizers"]
+    });
+    validate_static(&full, &Options::default())
+        .unwrap_or_else(|e| panic!("venv full shape rejected: {e}"));
+
+    // 正例：缺省可选字段（interpreter/requirements_lock 不在场）。
+    let mut minimal = python_worker_doc();
+    minimal["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/python/.venv",
+        "direct_deps": ["numpy"]
+    });
+    validate_static(&minimal, &Options::default())
+        .unwrap_or_else(|e| panic!("venv minimal shape rejected: {e}"));
+
+    // 正例：绝对路径形态。
+    let mut absolute = python_worker_doc();
+    absolute["runtime"]["venv"] = serde_json::json!({
+        "path": "/media/emo/code/pensting/research-platform/workers/python/.venv",
+        "direct_deps": ["numpy"]
+    });
+    validate_static(&absolute, &Options::default())
+        .unwrap_or_else(|e| panic!("venv absolute path rejected: {e}"));
+
+    // 未声明 venv 的现状形状仍接受（登记面兼容，零回归面）。
+    let bare = python_worker_doc();
+    validate_static(&bare, &Options::default())
+        .unwrap_or_else(|e| panic!("bare python_worker rejected: {e}"));
+}
+
+#[test]
+fn sk3_python_worker_venv_negative_matrix() {
+    // `..` 路径穿越拒绝（path 面）。
+    let mut traversal = python_worker_doc();
+    traversal["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/../escape/.venv",
+        "direct_deps": ["numpy"]
+    });
+    let err = validate_static(&traversal, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains(".."),
+        "venv.path traversal must be rejected: {err}"
+    );
+
+    // direct_deps 空数组拒绝。
+    let mut empty_deps = python_worker_doc();
+    empty_deps["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/python/.venv",
+        "direct_deps": []
+    });
+    let err = validate_static(&empty_deps, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("direct_deps"),
+        "empty direct_deps must be rejected: {err}"
+    );
+
+    // direct_deps 非字符串元素拒绝。
+    let mut bad_elem = python_worker_doc();
+    bad_elem["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/python/.venv",
+        "direct_deps": ["numpy", 42]
+    });
+    let err = validate_static(&bad_elem, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("direct_deps"),
+        "non-string direct_deps element must be rejected: {err}"
+    );
+
+    // 词表外字段拒绝（additionalProperties: false 同语义）。
+    let mut extra_field = python_worker_doc();
+    extra_field["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/python/.venv",
+        "direct_deps": ["numpy"],
+        "prefer": true
+    });
+    let err = validate_static(&extra_field, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("prefer"),
+        "out-of-vocabulary field must be rejected: {err}"
+    );
+
+    // path 缺失拒绝（required 面）。
+    let mut no_path = python_worker_doc();
+    no_path["runtime"]["venv"] = serde_json::json!({
+        "direct_deps": ["numpy"]
+    });
+    let err = validate_static(&no_path, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("path"),
+        "missing venv.path must be rejected: {err}"
+    );
+
+    // interpreter 绝对路径拒绝（D5 冻结形状：venv 根内相对性。绝对值在执行面
+    // Path::join 语义下整体替换 venv base——派发目标逃出 venv 根而 capset/lock
+    // 对账仍按 venv 面通过；validate.rs / venv.rs probe / v1.json pattern 三面同规则）。
+    let mut absolute_interp = python_worker_doc();
+    absolute_interp["runtime"]["venv"] = serde_json::json!({
+        "path": "workers/python/.venv",
+        "interpreter": "/usr/bin/python3",
+        "direct_deps": ["numpy"]
+    });
+    let err = validate_static(&absolute_interp, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("interpreter"),
+        "absolute venv.interpreter (/usr/bin/python3) must be rejected: {err}"
+    );
+
+    // venv 非对象拒绝。
+    let mut not_object = python_worker_doc();
+    not_object["runtime"]["venv"] = serde_json::json!("workers/python/.venv");
+    let err = validate_static(&not_object, &Options::default()).unwrap_err();
+    assert!(
+        err.to_string().contains("must be an object"),
+        "venv non-object must be rejected: {err}"
+    );
+}

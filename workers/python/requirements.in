@@ -1,0 +1,9 @@
+# RT-2 直接依赖钉定首版（RT-2-ADR-VENV-GOVERNANCE.md D2）。
+# 钉定值 = workers/python/.venv 实测工作版本（2026-11-21 快照，任务书 A3）。
+# 禁止无约束解析：ADR D2 论据（无约束 .in 解析出 numpy 2.5.5 / onnxruntime 1.32.0 静默升级面）。
+# 升级属独立供给决策，不在 RT-2 批次内。
+# 供给链（作者动作，非测试动作）：uv pip compile requirements.in --generate-hashes -o requirements.lock.txt
+# 消费面（venv 重建）：python3 -m venv <root> && <root>/bin/python -m pip install --require-hashes -r requirements.lock.txt
+numpy==2.5.4
+onnxruntime==1.29.0
+tokenizers==0.23.3

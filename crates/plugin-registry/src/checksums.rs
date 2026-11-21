@@ -21,6 +21,10 @@ use tool_registry::hash::sha256_hex;
 /// 校验和清单文件名（PLUGIN-CONTRACT §8 目录骨架）。
 pub const CHECKSUMS_FILENAME: &str = "checksums.sha256";
 
+/// venv 目录名（RT-2：venv 快照不属 Pack 身份面——打包复制与校验和清单面
+/// 一致排除，RT-2-ADR-VENV-GOVERNANCE.md D1）。
+pub const VENV_DIRNAME: &str = ".venv";
+
 /// 校验和错误（机器可读）。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ChecksumError {
@@ -139,6 +143,11 @@ fn walk_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), ChecksumError> {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if path.is_dir() {
+            // RT-2：`.venv` 目录整体不入校验和清单面（pack 身份面不含 venv 快照，
+            // RT-2-ADR-VENV-GOVERNANCE.md D1；写入与未列检查同面排除）。
+            if name == VENV_DIRNAME {
+                continue;
+            }
             walk_inner(&path, out)?;
         } else if !skip_file(&name) {
             out.push(path);
@@ -332,6 +341,26 @@ mod tests {
         );
         verify_checksums(&dir)
             .unwrap_or_else(|(e, issues)| panic!("verify failed: {e} {issues:?}"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// RT-2 D1：`.venv` 目录整体不入校验和清单面（pack 身份面不含 venv 快照），
+    /// 且盘上 .venv 文件不触发 Unlisted fail-closed（verify walk 同面排除）。
+    #[test]
+    fn venv_dir_excluded_from_checksum_face() {
+        let dir = make_pkg("venv-skip");
+        fs::create_dir_all(dir.join(".venv/lib")).unwrap();
+        fs::write(dir.join(".venv/pyvenv.cfg"), b"version = 3.14.9\n").unwrap();
+        fs::write(dir.join(".venv/lib/blob.bin"), b"binary-blob").unwrap();
+        let manifest = write_checksums(&dir).unwrap();
+        assert_eq!(manifest.entries.len(), 2, "only a.txt + nested/b.bin");
+        assert!(
+            !manifest.entries.keys().any(|k| k.starts_with(".venv/")),
+            "venv entries must not appear"
+        );
+        // 未列检查同面：.venv 文件在盘但不 Unlisted
+        verify_checksums(&dir)
+            .unwrap_or_else(|(e, issues)| panic!("verify must not flag .venv: {e} {issues:?}"));
         let _ = fs::remove_dir_all(&dir);
     }
 
