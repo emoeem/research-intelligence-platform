@@ -1259,8 +1259,22 @@ impl RunChannel {
                     }
                     if !status.success() {
                         let tail: String = stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n");
+                        // run FAILED 终态的失败原因在 stdout 的 outcome JSON（exit 1
+                        // 约定），error 分支一并透传尾部供远端诊断（stderr 只承载
+                        // panic/静态校验面，run 失败面 stderr 为空）。
+                        let out_tail: String = stdout
+                            .lines()
+                            .rev()
+                            .take(3)
+                            .collect::<Vec<_>>()
+                            .join("\n");
                         return Err(err_payload(
-                            &format!("rp-agent exited {}: {}", status, tail),
+                            &format!(
+                                "rp-agent exited {} stderr=[{}] stdout_tail=[{}]",
+                                status,
+                                tail,
+                                out_tail
+                            ),
                             "EXECUTION",
                         ));
                     }
