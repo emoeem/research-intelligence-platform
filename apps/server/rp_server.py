@@ -4977,7 +4977,81 @@ def _wsw_post_route_wsw56(rest: str, body: dict) -> dict:
         return _wsw_decode(body)
     if rest == "compare":
         return _wsw_compare(body)
+    if rest == "scan":
+        return _wsw_scan(body)
     return None
+
+
+# ---------------------------------------------------------------------------
+# WSW-7 Scanner 独立入口面（D7②两端点）：POST /api/wsw/scan（rp-wsw scan
+# 子进程委派——:4766 _wsw_rp_wsw_json 先例同型，spawn timeout 透出词形 504）
+# / GET /api/wsw/scan/providers（只读投影——rp-wsw scan providers 子进程
+# 委派，投影逻辑单源 wsw-runtime scanner.rs providers_projection，Rust-First
+# 红线 1：投影/五态判定全 Rust，Python 只承载 API 面）。SSE 面零改动。
+# ---------------------------------------------------------------------------
+
+_WSW_SCAN_PROVIDERS = ("nuclei", "zap", "rtis")
+_WSW_SCAN_API_TIMEOUT_CAP = 900
+
+
+def _wsw_scan(body: dict) -> dict:
+    """POST /api/wsw/scan：三 provider 扫描委派（rp-wsw scan 子进程同步
+    委派；nuclei/zap 真实容器派发——预算双闸/族并发 1 在子进程链内承载；
+    timeout_api_s 可调默认 120 帽 900，超时 504 rp_wsw_timeout 透出词形）。"""
+    provider = body.get("provider")
+    if provider not in _WSW_SCAN_PROVIDERS:
+        raise ApiError(400, "bad_provider",
+                       f"provider 词表外（nuclei/zap/rtis）：{provider!r}")
+    args = ["scan", provider]
+    if provider in ("nuclei", "zap"):
+        url = body.get("url")
+        if not isinstance(url, str) or not url:
+            raise ApiError(400, "bad_url",
+                           "scan nuclei/zap 需要 url（egress host 派生源——P3-2 契约）")
+        args += ["--url", url]
+        if provider == "nuclei":
+            if body.get("template_ref"):
+                args += ["--template-ref", str(body["template_ref"])]
+            if body.get("template_file"):
+                args += ["--template-file", str(body["template_file"])]
+            if body.get("rate") is not None:
+                args += ["--rate", str(int(body["rate"]))]
+            if body.get("max_requests") is not None:
+                args += ["--max-requests", str(int(body["max_requests"]))]
+        if provider == "zap" and body.get("alert_budget") is not None:
+            args += ["--alert-budget", str(int(body["alert_budget"]))]
+        if body.get("timeout_s") is not None:
+            args += ["--timeout-s", str(int(body["timeout_s"]))]
+    else:  # rtis：poc get/use 两接口委派（零扫描执行面）
+        poc_id = body.get("poc_id")
+        if not isinstance(poc_id, int) or poc_id <= 0:
+            raise ApiError(400, "bad_poc_id", f"scan rtis 需要 poc_id（正整数）：{poc_id!r}")
+        target = body.get("target")
+        if not isinstance(target, str) or not target:
+            raise ApiError(400, "bad_target", "scan rtis 需要 target（回填 used_on）")
+        args += ["--poc-id", str(poc_id), "--target", target]
+    if body.get("task_id"):
+        args += ["--task-id", str(body["task_id"])]
+    if body.get("trace_id"):
+        args += ["--trace-id", str(body["trace_id"])]
+    if body.get("run_id"):
+        args += ["--run-id", str(body["run_id"])]
+    args += ["--db", WSW_DB_PATH]
+    try:
+        timeout_api_s = int(body.get("timeout_api_s") or 120)
+    except (TypeError, ValueError):
+        raise ApiError(400, "bad_timeout", f"timeout_api_s 须为整数秒：{body.get('timeout_api_s')!r}")
+    timeout_api_s = max(5, min(timeout_api_s, _WSW_SCAN_API_TIMEOUT_CAP))
+    payload = _wsw_rp_wsw_json(args, timeout_s=timeout_api_s)
+    return {"provider": provider, "scan": payload}
+
+
+def _wsw_scan_providers(_conn, _params) -> dict:
+    """GET /api/wsw/scan/providers：三 adapter 契约面只读投影（rp-wsw scan
+    providers 子进程委派——manifest 直读防漂移 + plugin catalog 只读计数，
+    D8 零新插件包；Bearer 同面由 do_GET 顶部既有调用承载）。"""
+    projection = _wsw_rp_wsw_json(["scan", "providers"], timeout_s=30)
+    return projection
 
 
 # ---------------------------------------------------------------------------
@@ -5521,6 +5595,8 @@ API_ROUTES = {
     "/api/wsw/ws/frames": _wsw_ws_frames_list,
     "/api/wsw/passive/hits": _wsw_passive_hits_list,
     "/api/wsw/passive/rules": _wsw_passive_rules,
+    # WSW-7 Scanner 独立入口面（D7②）：providers 只读投影（Bearer 同面）。
+    "/api/wsw/scan/providers": _wsw_scan_providers,
     "/api/wsw/status": _wsw_history_stats,
     "/api/plugins": handle_plugins_list,
     "/api/plugins/trust-policy": handle_plugin_trust_policy,

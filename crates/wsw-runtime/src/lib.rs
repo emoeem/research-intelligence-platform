@@ -23,6 +23,7 @@ pub mod fuzz;
 pub mod listener;
 pub mod passive;
 pub mod persist;
+pub mod scanner;
 pub mod scope;
 pub mod sender;
 pub mod wsframe;

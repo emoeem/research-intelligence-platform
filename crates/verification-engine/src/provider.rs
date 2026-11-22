@@ -15,6 +15,11 @@
 //!   container_required=true（rip-nuclei 镜像族，digest 钉死台账见
 //!   containerfiles/）；Manifest `rip.security.nuclei`。不可用时
 //!   [`ErrorCategory::ToolUnavailable`] 分类，不伪装成功。
+//! - [`ZapProvider`]：成熟扫描 Provider（WSW-7 批接入，execute_nuclei 同型
+//!   派发链），transport=tool_engine，container_required=true（rip-zap 镜像
+//!   族，容器内 zap.sh 内联扫描 + 镜像内 python3 解析 JSON 报告，零 daemon
+//!   零 API 端口）；Manifest `rip.security.zap`；idempotent=false（主动扫描
+//!   改变靶机状态，与 nuclei 模板检测语义差异如实标注）。
 //!
 //! 统一契约测试（tests/provider.rs）：capability 文档过
 //! schemas/verification/provider-capability.v1.json；执行输出过信封分类
@@ -405,6 +410,174 @@ impl VerificationProvider for NucleiProvider {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ZAP Provider（tool_engine；rip.security.zap Manifest + 镜像族，WSW-7 D1②）
+// ---------------------------------------------------------------------------
+
+/// ZAP Manifest 钉定面（rip.security.zap.yaml 同源三处：镜像/入口/族）。
+/// 基础镜像 = ghcr.io/zaproxy/zaproxy:weekly（owasp/zap2docker-weekly 已下架
+/// ——hub.docker.com 实测 object not found，官方源迁移 ghcr.io/zaproxy；
+/// digest 实拉后钉，台账 containerfiles/README.md）。
+pub const ZAP_IMAGE: &str =
+    "localhost/rip-zap@sha256:0000000000000000000000000000000000000000000000000000000000000000";
+pub const ZAP_ENTRYPOINT: [&str; 1] = ["/usr/local/bin/rip-zap-wrapper"];
+pub const ZAP_FAMILY: &str = "network";
+pub const ZAP_TOOL_ID: &str = "rip.security.zap";
+/// egress 端口白名单（Manifest network.egress.ports 同源）。
+pub const ZAP_EGRESS_PORTS: [u16; 4] = [80, 443, 8080, 8443];
+
+/// ZAP Provider（执行经 Tool Engine；本层只适配，不直调宿主 Shell）。
+pub struct ZapProvider;
+
+impl ZapProvider {
+    /// Manifest 输入形状（rip.security.zap input_schema）。`url` 字段是
+    /// podman_host Adapter egress allowlist 的 host 派生源（P3-2 契约：
+    /// NetworkPlan::EgressAllowlist 从 input.url 派生白名单 host）。
+    /// scan_mode 词表单值 baseline（深扫扩展归观察池——D1②/D2）。
+    pub fn build_input(target: &str, timeout_seconds: i64, alert_budget: i64) -> Value {
+        json!({
+            "url": target,
+            "target": target,
+            "scan_mode": "baseline",
+            "timeout_seconds": timeout_seconds.clamp(1, 600),
+            "alert_budget": alert_budget.clamp(1, 1000),
+        })
+    }
+}
+
+/// ZAP 基线扫描端到端执行（submit_correlated → 容器派发 → ProviderOutcome；
+/// execute_nuclei :241 同型：submit 受理（D-TC-05）→ podman_host Adapter
+/// 容器执行（digest 钉死镜像 + egress 白名单 + pasta:-T 代理）→ 信封交付。
+/// 容器内编排：zap.sh 内联 baseline 扫描 + 镜像内 python3 解析 JSON 报告 →
+/// stdout 第一行 D-TC-03 result 帧（零 daemon 零 API 端口暴露）。
+/// idempotent=false（主动扫描改变靶机状态）：submit_key 仅审计锚（引擎受理
+/// 无 submit_key 去重面），重复扫描语义如实留给调用方。
+pub fn execute_zap(
+    engine: &Engine,
+    adapter: &PodmanHostAdapter,
+    target: &str,
+    timeout_budget_s: i64,
+    alert_budget: i64,
+    run_id: &str,
+    options: DispatchOptions<'_>,
+) -> Result<ProviderOutcome, (ErrorCategory, String)> {
+    let input = ZapProvider::build_input(target, timeout_budget_s, alert_budget);
+    let mut request = json!({
+        "protocol_version": "1",
+        "tool_id": ZAP_TOOL_ID,
+        "run_id": run_id,
+        "submit_key": format!("scan:zap:{run_id}"),
+        "input": input,
+        "workspace_id": "ws-verify",
+        "budget": {
+            "timeout_seconds": timeout_budget_s.clamp(1, 600),
+            "max_output_bytes": 8388608
+        },
+        "result_schema_version": "1"
+    });
+    if let Some(task) = options.task_id {
+        request["task_id"] = json!(task);
+    }
+    let submitted = engine
+        .submit_correlated(&request, options.trace_id)
+        .map_err(|e| (ErrorCategory::ToolUnavailable, format!("submit rejected: {e}")))?;
+    let call = ContainerCall {
+        engine,
+        run_id: &submitted.run_id,
+        adapter,
+        image: ZAP_IMAGE,
+        // wrapper 承载容器内编排（zap.sh 内联扫描 + JSON 报告解析）；此处传
+        // wrapper 参数面（目标/超时/alert 帽），与 nuclei -u/-rate-limit 同型。
+        entrypoint: &[
+            "-u".to_string(),
+            target.to_string(),
+            "-t".to_string(),
+            timeout_budget_s.clamp(1, 600).to_string(),
+            "-b".to_string(),
+            alert_budget.clamp(1, 1000).to_string(),
+        ],
+        family: ZAP_FAMILY,
+        network: options.network,
+        caller: None,
+        caller_cap: None,
+    };
+    let started = std::time::Instant::now();
+    let outcome = execute_container_via_engine(call)
+        .map_err(|e| (ErrorCategory::ToolUnavailable, format!("drive failed: {e}")))?;
+    let duration = started.elapsed().as_millis();
+    let envelope = &outcome.envelope;
+    let status_word = envelope.status.as_str().to_owned();
+    let (result, error_category, summary) = match envelope.status {
+        ToolRunStatus::Succeeded => (
+            envelope.result.clone(),
+            None::<String>,
+            envelope.summary.clone().unwrap_or_default(),
+        ),
+        ToolRunStatus::TimedOut => (
+            None::<Value>,
+            Some(ErrorCategory::Timeout.as_str().to_owned()),
+            envelope.summary.clone().unwrap_or_default(),
+        ),
+        ToolRunStatus::Cancelled => (
+            None::<Value>,
+            Some(ErrorCategory::Unknown.as_str().to_owned()),
+            envelope.summary.clone().unwrap_or_default(),
+        ),
+        _ => {
+            // FAILED：信封 error code/category 映射 §5.9 分类
+            let (category, message) = envelope
+                .error
+                .as_ref()
+                .map(|e| (map_envelope_category(e), e.message.clone()))
+                .unwrap_or((ErrorCategory::Unknown, "unknown failure".to_owned()));
+            (None::<Value>, Some(category.as_str().to_owned()), message)
+        }
+    };
+    let outcome = ProviderOutcome {
+        provider_id: "zap".to_owned(),
+        provider_version: "0.1.0".to_owned(),
+        status_word,
+        tool_run_id: Some(envelope.run_id.clone()),
+        trace_id: options.trace_id.map(str::to_owned),
+        result,
+        summary,
+        error_category,
+        tool_version: Some(envelope.tool_version.clone()),
+        rule_ref: None,
+        duration_ms: duration,
+    };
+    outcome
+        .validate()
+        .map_err(|e| (ErrorCategory::Unknown, e))?;
+    Ok(outcome)
+}
+
+impl VerificationProvider for ZapProvider {
+    fn capability(&self) -> Value {
+        json!({
+            "schema_version": 1,
+            "provider_id": "zap",
+            "provider_version": "0.1.0",
+            "detection_kinds": ["config-audit", "info-leak"],
+            "risk_class": "low_impact",
+            "execution": {
+                "transport": "tool_engine",
+                "container_required": true,
+                "output_schema": "result-normalized-v1"
+            },
+            "manifest_ref": "manifests/tools/rip.security.zap.yaml"
+        })
+    }
+
+    fn provider_id(&self) -> &'static str {
+        "zap"
+    }
+
+    fn provider_version(&self) -> &'static str {
+        "0.1.0"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,10 +619,66 @@ mod tests {
         validate_capability_doc(&rtis.capability()).unwrap();
         let nuclei = NucleiProvider;
         validate_capability_doc(&nuclei.capability()).unwrap();
+        let zap = ZapProvider;
+        validate_capability_doc(&zap.capability()).unwrap();
         // 词表与版本一致性
         assert_eq!(rtis.provider_id(), "rtis-poc");
         assert_eq!(nuclei.provider_id(), "nuclei");
+        assert_eq!(zap.provider_id(), "zap");
         assert_eq!(rtis.capability()["provider_id"], "rtis-poc");
+        assert_eq!(zap.capability()["provider_id"], "zap");
+    }
+
+    #[test]
+    fn zap_input_shape_matches_manifest_schema() {
+        let input = ZapProvider::build_input("http://127.0.0.1:8080", 300, 100);
+        assert_eq!(input["url"], "http://127.0.0.1:8080");
+        assert_eq!(input["target"], "http://127.0.0.1:8080");
+        assert_eq!(input["scan_mode"], "baseline");
+        assert_eq!(input["timeout_seconds"], 300);
+        assert_eq!(input["alert_budget"], 100);
+        // 预算裁剪面（clamp 双向；input_schema max 600/1000 同源）
+        let clamped = ZapProvider::build_input("http://127.0.0.1:8080", 5000, 9999);
+        assert_eq!(clamped["timeout_seconds"], 600);
+        assert_eq!(clamped["alert_budget"], 1000);
+        let floored = ZapProvider::build_input("http://127.0.0.1:8080", 0, 0);
+        assert_eq!(floored["timeout_seconds"], 1);
+        assert_eq!(floored["alert_budget"], 1);
+        // zap Manifest json 与 .yaml 孪生在场且 id/family/runtime.image 同源
+        // （D2 孪生纪律；YAML 通道解析由 rp-tool validate YAML 面承载——本
+        // crate 依赖纪律禁 dev-dep 新增 yaml 包，D4 裁决）。
+        let manifest: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../manifests/tools/rip.security.zap.json"),
+            )
+            .expect("zap manifest json 在场"),
+        )
+        .expect("zap manifest json 合法");
+        let yaml_text = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../manifests/tools/rip.security.zap.yaml"),
+        )
+        .expect("zap manifest yaml 孪生在场");
+        assert!(
+            yaml_text.contains("id: \"rip.security.zap\"")
+                && yaml_text.contains("image: \"localhost/rip-zap@sha256:"),
+            "yaml 孪生 id/image 面在场"
+        );
+        assert_eq!(manifest["id"], "rip.security.zap");
+        assert_eq!(manifest["runtime"]["type"], "podman_host");
+        assert_eq!(manifest["runtime"]["image"], ZAP_IMAGE, "image 常量同源");
+        assert_eq!(manifest["runtime"]["entrypoint"][0], ZAP_ENTRYPOINT[0]);
+        assert_eq!(manifest["family"], ZAP_FAMILY);
+        assert_eq!(manifest["idempotent"], false, "主动扫描改变靶机状态");
+        assert_eq!(manifest["permission_level"], "T1");
+        let ports: Vec<u16> = manifest["network"]["egress"]["ports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u16)
+            .collect();
+        assert_eq!(ports, ZAP_EGRESS_PORTS.to_vec());
     }
 
     #[test]

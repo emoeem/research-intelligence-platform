@@ -111,8 +111,8 @@ fn acceptance_no_stuffing_full_surface_and_rtis_scale() {
         }
     }
     assert_eq!(
-        registered, 34,
-        "登记面口径（T01..T10 的 14 + Phase 3 两包 6 + SK-3 四工具 4 + RIP3 P5-5 rip.security.nuclei + DI-1 文档四工具 4 + DI-2 三通道五工具 5）"
+        registered, 35,
+        "登记面口径（T01..T10 的 14 + Phase 3 两包 6 + SK-3 四工具 4 + RIP3 P5-5 rip.security.nuclei + WSW-7 rip.security.zap + DI-1 文档四工具 4 + DI-2 三通道五工具 5）"
     );
     pool.with_conn(|c| c.execute("UPDATE tool SET lifecycle = 'ENABLED'", []))
         .unwrap();

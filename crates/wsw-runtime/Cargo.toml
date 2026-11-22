@@ -86,3 +86,16 @@ database = { workspace = true }
 regex = { version = "=1.13.1" }
 # 消息面：CAS 正文（wsw_body_blob 登记）+ 脱敏（日志投影）+ Exchange ID 形状。
 wsw-message = { path = "../wsw-message" }
+# WSW-7 批（D4）：verification-engine path 依赖（workspace 内部零外部包——
+# [[package]] 399 恒定实证；三 scanner adapter 派发面 execute_nuclei/
+# execute_zap/RtisPocProvider + evaluator::evaluate 五态投影复用，rp-verify
+# :523 同型；其依赖 tool-engine/tool-registry/domain/database 全在 lock）。
+verification-engine = { path = "../verification-engine" }
+# WSW-7 批（D3）：tool-engine workspace 依赖（scanner 统一入口签名面所需
+# Engine/PodmanHostAdapter 类型——rp-verify :523 同型装配；workspace 内部
+# path 依赖零外部包，[[package]] 399 恒定；D4 单行词形的同族扩展注记见
+# WSW-7-BATCH-REPORT 坏消息节）。
+tool-engine = { workspace = true }
+# WSW-7 批（D3/D7）：tool-registry workspace 依赖（scan 运行库 Engine 装配
+# Registry::open + query-first 幂等登记——rp-verify engine_with_nuclei 先例）。
+tool-registry = { workspace = true }

@@ -1,0 +1,115 @@
+# ZAP 基线扫描 Provider（WSW-7 批登记文件，docs/rip3/wsw/WSW-7-TASK.md D1②/D2）。
+# ZAP 是成熟扫描 Provider（OWASP ZAP，Apache-2.0；ghcr.io/zaproxy/zaproxy weekly
+# 镜像钉定——owasp/zap2docker-weekly 已下架，官方源迁移 ghcr.io/zaproxy），
+# 按「成熟库优先」纪律接入而非自研扫描引擎；容器内 zap.sh 内联扫描 +
+# 镜像内 python3 解析 JSON 报告 → D-TC-03 result 帧（零 daemon 零 API 端口）。
+# 执行面：tool_engine → runtime-gateway podman host Adapter（execute_container_
+# via_engine 链，execute_nuclei 同型），输出 JSON 报告经 evaluator 五态判定
+# （命中 ≠ CONFIRMED）；主动扫描改变靶机状态，idempotent=false 如实标注。
+schema_version: "1"
+id: "rip.security.zap"
+name: "ZAP Baseline Scanner"
+version: "0.1.0"
+kind: "tool"
+family: "network"
+description: "ZAP 基线扫描 Provider：对目标执行受控 baseline 扫描（容器内 zap.sh 内联 + 镜像内 python3 解析 JSON 报告 → D-TC-03 result 帧，零 daemon 零 API 端口），主动扫描改变靶机状态（idempotent=false 如实标注），预算双闸（Manifest resources + run budget）"
+runtime:
+  type: "podman_host"
+  image: "localhost/rip-zap@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  entrypoint: ["/usr/local/bin/rip-zap-wrapper"]
+  mounts:
+    - role: "output"
+      path: "/task/out"
+      mode: "rw"
+input_schema:
+  type: "object"
+  required: ["target", "url"]
+  additionalProperties: false
+  properties:
+    url:
+      type: "string"
+      minLength: 1
+      maxLength: 512
+      description: "目标 URL（egress allowlist host 派生源，P3-2 NetworkPlan::EgressAllowlist 契约）"
+    target:
+      type: "string"
+      minLength: 1
+      maxLength: 512
+      description: "规范化目标（URL 或 host，调用面 target）"
+    scan_mode:
+      type: "string"
+      enum: ["baseline"]
+      default: "baseline"
+      description: "扫描模式（本批词表单值 baseline；深扫扩展归观察池——WSW-7-TASK 交付物 8）"
+    timeout_seconds:
+      type: "integer"
+      minimum: 1
+      maximum: 600
+      default: 300
+      description: "单项超时秒数（与 budget_json.timeout_s 同源；baseline 快扫描面默认 300）"
+    alert_budget:
+      type: "integer"
+      minimum: 1
+      maximum: 1000
+      default: 100
+      description: "alerts 摘录预算（报告 alerts 数超此帽时 alerts_excerpt 截断；matched_count 仍为全量计数）"
+output_schema:
+  type: "object"
+  required: ["matched_count"]
+  properties:
+    matched_count:
+      type: "integer"
+      description: "JSON 报告 alerts 计数（ZAP 报告 alerts 数；命中 ≠ CONFIRMED，五态判定在 evaluator）"
+    alerts_excerpt:
+      type: "string"
+      description: "alerts 尾部摘录（alert_budget 帽截断，全文走 artifact zap-report.json）"
+    zap_version:
+      type: "string"
+      description: "工具版本（Provider 输出保留工具版本纪律）"
+resources:
+  cpu: "1"
+  memory: "1Gi"
+  timeout_seconds: 600
+  max_output_bytes: 8388608
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80, 443, 8080, 8443]
+    domains: []
+    note: "HTTP/HTTPS 常规端口白名单（本地靶场与常规 web 面）；allowlist 域名在派发面按计划项 target 派生临时条目，run 结束失效（P3-2 EgressProxy 同款）"
+secrets: []
+permission_level: "T1"
+idempotent: false
+health:
+  probe:
+    type: "worker_ping"
+    timeout_ms: 2000
+    interval_seconds: 300
+    degraded_after: 1
+    broken_after: 3
+  on_run_recover: true
+provenance:
+  origin: "opensource"
+  image_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  source_path: "ghcr.io/zaproxy/zaproxy@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  license: "Apache-2.0"
+  dependencies:
+    - "ghcr.io/zaproxy/zaproxy:weekly（基础镜像 digest 钉定，containerfiles/rip-zap/Containerfile；owasp/zap2docker-weekly 已下架——hub.docker.com 实测 object not found，官方源迁移 ghcr.io/zaproxy，台账流程同款重取）"
+    - "tool-engine podman_host Adapter（execute_container_via_engine 派发链）"
+  known_limits:
+    - "baseline 单模式（深扫 scan_mode 词表扩展归观察池——WSW-7-TASK 交付物 8）"
+    - "主动扫描改变靶机状态：idempotent=false（与 nuclei 模板检测语义差异如实标注——D-TC-03 幂等键语义面）"
+    - "命中数（alerts）不等于 Finding；结果经 evaluator 五态判定（命中 ≠ CONFIRMED）"
+    - "出站代理注入键以镜像内 zap.sh -help 实拍为准（D1 两核实项之二）；plugin-runtime tool_register egress fail-closed 词形——ZAP manifest 走 tool-registry 直登记路径（D8 注记）"
+  tested: "2026-11-23 本批实拍：镜像 -version / zap.sh -help 入档（S3）；本地靶场端到端随本批 S7 登记"
+context:
+  summary: "ZAP 基线扫描 Provider（容器内内联扫描 + JSON 报告解析 + 预算双闸）"
+  docs: "docs/rip3/wsw/WSW-7-TASK.md D1②/D2"
+  tags: ["security", "scanner", "zap", "provider"]
+examples:
+  - input:
+      url: "http://127.0.0.1:18080"
+      target: "http://127.0.0.1:18080"
+      scan_mode: "baseline"
+      timeout_seconds: 300
+      alert_budget: 100

@@ -3840,9 +3840,12 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls",
+ "tool-engine",
+ "tool-registry",
  "tower-service",
  "tracing",
  "tracing-subscriber",
+ "verification-engine",
  "webpki-roots 1.0.12",
  "wsw-message",
 ]

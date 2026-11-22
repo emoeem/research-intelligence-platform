@@ -17,6 +17,10 @@
 //! - `ca status|export|regenerate`：CA 状态/导出/重生成（导出与重生成均为
 //!   显式用户动作——API 带 confirm 语义，本面不静默安装、不碰系统代理/信任库）。
 //! - `db migrate`：迁移执行（只在开发库副本/测试内存库；platform*.db 禁触）。
+//! - `scan nuclei|zap|rtis`：三 Scanner Adapter 统一入口（WSW-7 D7①；
+//!   wsw_runtime::scanner 既有派发链消费——execute_nuclei/execute_zap 经
+//!   tool-engine Engine+podman_host Adapter 容器链、rtis 走 rt.py poc
+//!   get/use 两接口；五态投影 = evaluator::evaluate 复用，命中 ≠ CONFIRMED）。
 //!
 //! 用法示例（S8 实拍）：
 //! `rp-wsw listener --bind 127.0.0.1:3128 --db rip-data/wsw-e2e.db
@@ -47,8 +51,8 @@ const TAG: &str = "[rp-wsw]";
 
 use tracing::error as tracing_error;
 
-fn usage() -> ! {
-    eprintln!(
+fn usage_text() -> String {
+    format!(
         "{TAG} usage:\n  rp-wsw listener --bind 127.0.0.1:3128 [--db <path>] [--ca-dir <dir>] \
 [--rules-json <json>] [--scope-rules-file <path>] [--intercept] [--matcher-hosts a,b] \
 [--matcher-paths /p59c] [--queue-ttl <secs>] [--status-file <path>] [--pid-file <path>] \
@@ -74,8 +78,19 @@ rp-wsw ca status [--ca-dir <dir>]\n  \
 rp-wsw ca export [--ca-dir <dir>] --out <path>\n  \
 rp-wsw ca regenerate [--ca-dir <dir>]\n  \
 rp-wsw db migrate --db <path>\n  \
+rp-wsw scan nuclei --url <u> [--template-ref rtis-poc:N | --template-file <p>] \
+[--rate N --max-requests N --timeout-s S] [--db <path>] [--task-id <id>] [--trace-id <id>] \
+[--run-id <id>]（WSW-7；rate 与 max-requests 同钮——P5 request_budget 单钮语义，同发 max-requests 优先）\n  \
+rp-wsw scan zap --url <u> [--timeout-s S] [--alert-budget N] [--db <path>] [--task-id <id>] \
+[--trace-id <id>] [--run-id <id>]（WSW-7；scan_mode 词表单值 baseline）\n  \
+rp-wsw scan rtis --poc-id N --target <t>（WSW-7；poc get 元数据锚 + poc use 回填——零扫描执行面）\n  \
 rp-wsw redact-headers（stdin 头数组 JSON → stdout 脱敏投影）"
-    );
+    )
+}
+
+/// 误用面（stderr + exit 2；P9-3 统一口径）。
+fn usage() -> ! {
+    eprintln!("{}", usage_text());
     std::process::exit(2);
 }
 
@@ -133,6 +148,17 @@ struct Args {
     normalize_key_regexes: Option<String>,
     save_artifact: bool,
     out_file: Option<PathBuf>,
+    // scan 子命令（WSW-7 D7①）
+    poc_id: Option<i64>,
+    rate: Option<i64>,
+    max_requests: Option<i64>,
+    timeout_s: Option<i64>,
+    alert_budget: Option<i64>,
+    template_ref: Option<String>,
+    template_file: Option<PathBuf>,
+    task_id: Option<String>,
+    trace_id: Option<String>,
+    run_id: Option<String>,
 }
 
 fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
@@ -185,6 +211,16 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
         normalize_key_regexes: None,
         save_artifact: false,
         out_file: None,
+        poc_id: None,
+        rate: None,
+        max_requests: None,
+        timeout_s: None,
+        alert_budget: None,
+        template_ref: None,
+        template_file: None,
+        task_id: None,
+        trace_id: None,
+        run_id: None,
     };
     while let Some(arg) = next.next() {
         let mut take = |what: &str| -> String {
@@ -256,6 +292,21 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
             }
             "--save-artifact" => a.save_artifact = true,
             "--out-file" => a.out_file = Some(take("--out-file").into()),
+            // scan 子命令旗标（WSW-7 D7①）
+            "--poc-id" => a.poc_id = Some(take("--poc-id").parse().expect("poc id")),
+            "--rate" => a.rate = Some(take("--rate").parse().expect("rate")),
+            "--max-requests" => {
+                a.max_requests = Some(take("--max-requests").parse().expect("max requests"))
+            }
+            "--timeout-s" => a.timeout_s = Some(take("--timeout-s").parse().expect("timeout s")),
+            "--alert-budget" => {
+                a.alert_budget = Some(take("--alert-budget").parse().expect("alert budget"))
+            }
+            "--template-ref" => a.template_ref = Some(take("--template-ref")),
+            "--template-file" => a.template_file = Some(take("--template-file").into()),
+            "--task-id" => a.task_id = Some(take("--task-id")),
+            "--trace-id" => a.trace_id = Some(take("--trace-id")),
+            "--run-id" => a.run_id = Some(take("--run-id")),
             other => {
                 eprintln!("{TAG} unknown arg {other}");
                 usage();
@@ -1429,6 +1480,226 @@ fn run_compare(a: Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// WSW-7 scan 子命令（D7①：三 provider 分派；wsw_runtime::scanner 既有
+// 派发链消费——零第二派发实现，D3④ Resolver 闸维持 mcp-server 单点）
+// ---------------------------------------------------------------------------
+
+/// 仓库根锚（rp-verify.rs repo_root 同款：RP_REPO_ROOT 优先，缺省编译期锚）。
+fn scan_repo_root() -> PathBuf {
+    if let Ok(root) = std::env::var("RP_REPO_ROOT") {
+        return PathBuf::from(root);
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// scan 运行库 Engine（文件库落库面——判据 1 tool_run/artifact 行对账载体；
+/// registry query-first 复用登记：首次 register rp-verify engine_with_nuclei
+/// 先例，重跑复用既有登记——rule 2 幂等面）。
+fn scan_engine(db: &Path, repo_root: &Path) -> Result<tool_engine::Engine, String> {
+    let pool = database::Pool::open(database::PoolConfig {
+        path: database::DbPath::File(db.to_path_buf()),
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: std::time::Duration::from_secs(5),
+    })
+    .map_err(|e| format!("pool open: {e}"))?;
+    database::migrate(&pool, &repo_root.join("migrations")).map_err(|e| format!("migrate: {e}"))?;
+    let registry = tool_registry::Registry::open(pool.clone());
+    for (tool_id, manifest_rel) in [
+        (
+            "rip.security.nuclei",
+            "manifests/tools/rip.security.nuclei.json",
+        ),
+        ("rip.security.zap", "manifests/tools/rip.security.zap.json"),
+    ] {
+        if registry.query(tool_id).is_ok() {
+            continue; // 已登记复用（同 content_hash 重登记被 rule 2 拒——幂等面）
+        }
+        let text = std::fs::read_to_string(repo_root.join(manifest_rel))
+            .map_err(|e| format!("manifest read {manifest_rel}: {e}"))?;
+        let manifest: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| format!("manifest parse {manifest_rel}: {e}"))?;
+        registry
+            .register(&manifest)
+            .map_err(|e| format!("register {tool_id}: {e}"))?;
+    }
+    Ok(tool_engine::Engine::open(pool, registry))
+}
+
+/// scan 运行 ID（--run-id 显式锚优先；缺省时间微秒唯一面）。
+fn scan_run_id(a: &Args) -> String {
+    a.run_id.clone().unwrap_or_else(|| {
+        format!(
+            "rn-wsw7-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros()
+        )
+    })
+}
+
+/// scan 运行库打开失败结构化 JSON（stdout 词形回传 + exit 1）。
+fn emit_scan_error(scan_error: &wsw_runtime::scanner::ScanError) {
+    let payload = serde_json::json!({
+        "error": {
+            "category": scan_error.category,
+            "message": scan_error.message,
+        }
+    });
+    println!("{payload}");
+}
+
+/// 成功/失败 outcome 统一投影帧（provider 面 + 五态投影 normalize——
+/// evaluator::evaluate 复用，命中 ≠ CONFIRMED）。
+fn scan_outcome_payload(
+    outcome: &verification_engine::provider::ProviderOutcome,
+    normalized: &verification_engine::evaluator::NormalizedResult,
+) -> serde_json::Value {
+    serde_json::json!({
+        "provider_id": outcome.provider_id,
+        "provider_version": outcome.provider_version,
+        "status_word": outcome.status_word,
+        "tool_run_id": outcome.tool_run_id,
+        "trace_id": outcome.trace_id,
+        "result": outcome.result,
+        "summary": outcome.summary,
+        "error_category": outcome.error_category,
+        "tool_version": outcome.tool_version,
+        "rule_ref": outcome.rule_ref,
+        "duration_ms": outcome.duration_ms,
+        "normalized": {
+            "schema_version": normalized.schema_version,
+            "result_status": normalized.result_status,
+            "result_reason": normalized.result_reason,
+            "error_category": normalized.error_category,
+        }
+    })
+}
+
+/// `scan nuclei`（D7①）：真实扫描派发（local_range 靶机面——e2e 判据 1）。
+fn run_scan_nuclei(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let repo_root = scan_repo_root();
+    let db = a.db.clone().ok_or("scan nuclei requires --db <path>")?;
+    let url = a.url.clone().ok_or("scan nuclei requires --url <u>")?;
+    // 预算装配（P5 单钮语义：max_requests 优先；缺省 10/60 与 manifest default 同源）
+    let max_requests = a.max_requests.unwrap_or(a.rate.unwrap_or(10));
+    let timeout_s = a.timeout_s.unwrap_or(60);
+    let params = wsw_runtime::scanner::NucleiScanParams {
+        target: url.clone(),
+        template_ref: a.template_ref.clone(),
+        template_file: a.template_file.clone(),
+        max_requests,
+        timeout_s,
+    };
+    let engine = scan_engine(&db, &repo_root)?;
+    let adapter = tool_engine::adapter::podman_host::PodmanHostAdapter::new(
+        tool_engine::adapter::podman_host::PodmanHostConfig::default(),
+    );
+    let run_id = scan_run_id(&a);
+    match wsw_runtime::scanner::scan_nuclei(
+        &engine,
+        &adapter,
+        &params,
+        &run_id,
+        a.task_id.as_deref(),
+        a.trace_id.as_deref(),
+    ) {
+        Ok(outcome) => {
+            let normalized = wsw_runtime::scanner::project_normalized(&outcome);
+            let payload = scan_outcome_payload(&outcome, &normalized);
+            println!("{payload}");
+            Ok(())
+        }
+        Err(scan_error) => {
+            emit_scan_error(&scan_error);
+            Err(format!("scan nuclei failed: {}", scan_error.message).into())
+        }
+    }
+}
+
+/// `scan zap`（D7①）：baseline 真实扫描派发（scan_mode 词表单值）。
+fn run_scan_zap(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let repo_root = scan_repo_root();
+    let db = a.db.clone().ok_or("scan zap requires --db <path>")?;
+    let url = a.url.clone().ok_or("scan zap requires --url <u>")?;
+    let timeout_s = a.timeout_s.unwrap_or(300);
+    let alert_budget = a.alert_budget.unwrap_or(100);
+    let engine = scan_engine(&db, &repo_root)?;
+    let adapter = tool_engine::adapter::podman_host::PodmanHostAdapter::new(
+        tool_engine::adapter::podman_host::PodmanHostConfig::default(),
+    );
+    let run_id = scan_run_id(&a);
+    let params = wsw_runtime::scanner::ZapScanParams {
+        target: url,
+        timeout_s,
+        alert_budget,
+    };
+    match wsw_runtime::scanner::scan_zap(
+        &engine,
+        &adapter,
+        &params,
+        &run_id,
+        a.task_id.as_deref(),
+        a.trace_id.as_deref(),
+    ) {
+        Ok(outcome) => {
+            let normalized = wsw_runtime::scanner::project_normalized(&outcome);
+            let payload = scan_outcome_payload(&outcome, &normalized);
+            println!("{payload}");
+            Ok(())
+        }
+        Err(scan_error) => {
+            emit_scan_error(&scan_error);
+            Err(format!("scan zap failed: {}", scan_error.message).into())
+        }
+    }
+}
+
+/// `scan rtis`（D7①）：poc get 元数据锚 + poc use 回填委派（零扫描执行面；
+/// 真实库缺位 = rt.py 结构化失败透出——V-9 gitignore 运行时数据词形）。
+fn run_scan_rtis(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let repo_root = scan_repo_root();
+    let poc_id = a.poc_id.ok_or("scan rtis requires --poc-id N")?;
+    let target = a.target.clone().ok_or("scan rtis requires --target <t>")?;
+    let provider = verification_engine::provider::RtisPocProvider::from_repo_root(&repo_root);
+    match wsw_runtime::scanner::scan_rtis(&provider, poc_id, &target) {
+        Ok(frame) => {
+            let normalized = wsw_runtime::scanner::project_rtis(&frame);
+            let payload = serde_json::json!({
+                "rtis": frame,
+                "normalized": normalized,
+            });
+            println!("{payload}");
+            Ok(())
+        }
+        Err(scan_error) => {
+            emit_scan_error(&scan_error);
+            Err(format!("scan rtis failed: {}", scan_error.message).into())
+        }
+    }
+}
+
+/// `scan providers`（D7②）：三 adapter 契约面只读投影（manifest 直读 +
+/// plugin catalog 只读计数——投影逻辑单源 wsw_runtime::scanner::
+/// providers_projection；GET /api/wsw/scan/providers 子进程委派载体）。
+fn run_scan_providers() -> Result<(), Box<dyn std::error::Error>> {
+    let repo_root = scan_repo_root();
+    match wsw_runtime::scanner::providers_projection(&repo_root) {
+        Ok(projection) => {
+            println!("{projection}");
+            Ok(())
+        }
+        Err(message) => {
+            let payload =
+                serde_json::json!({"error": {"category": "tool_unavailable", "message": message}});
+            println!("{payload}");
+            Err(format!("scan providers failed: {message}").into())
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // 日志可见面：拒绝记录/五态/捕获计数落 stderr 单行（PLAN :528）。
@@ -1436,7 +1707,14 @@ async fn main() {
         .with_writer(std::io::stderr)
         .with_max_level(tracing::Level::INFO)
         .init();
-    let mut args = std::env::args().skip(1);
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    // P9-3 帮助面统一口径（rp-tool 先例）：显式 --help/-h = usage 到
+    // stdout + exit 0（rp-wsw scan --help / scan nuclei --help 判据 9 面）。
+    if argv.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", usage_text());
+        std::process::exit(0);
+    }
+    let mut args = argv.into_iter();
     let Some(cmd) = args.next() else {
         usage();
     };
@@ -1461,6 +1739,15 @@ async fn main() {
         },
         "decode" => run_decode(parse_args(&mut args)),
         "compare" => run_compare(parse_args(&mut args)),
+        "scan" => match args.next().as_deref() {
+            Some("nuclei") => run_scan_nuclei(parse_args(&mut args)),
+            Some("zap") => run_scan_zap(parse_args(&mut args)),
+            Some("rtis") => run_scan_rtis(parse_args(&mut args)),
+            // D7②：provider 契约面只读投影（GET /api/wsw/scan/providers 的
+            // Rust 载体——投影逻辑单源 scanner.rs providers_projection）。
+            Some("providers") => run_scan_providers(),
+            _ => usage(),
+        },
         "redact-headers" => run_redact_headers(),
         _ => usage(),
     };

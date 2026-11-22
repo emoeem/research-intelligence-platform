@@ -1,0 +1,44 @@
+# ============================================================================
+# rip-zap：ZAP 扫描 Provider 镜像族（RIP3 WSW-7 批次交付物，D1②）
+# ============================================================================
+# 【WSW-7 收口状态：D1 选项 B——镜像未建成】2026-11-23 实测：任务书原文
+#   docker.io/owasp/zap2docker-weekly 已下架（hub.docker.com API object not
+#   found + registry 匿名拉取 401 双证），官方源迁移 ghcr.io/zaproxy/zaproxy
+#   （manifest 可读、小 blob 可下）；但大层传输坐死——624MB 层三次尝试
+#   （podman pull ×2 + curl -C - 续传）速率 21-30KB/s 且反复停滞（
+#   --speed-limit 10KB/s/90s abort 循环实录，WSW-7-BATCH-REPORT 坏消息节），
+#   估算 8h+ 不可达批次窗口。FROM digest 占位 64 零按 D2 词形维持（S3 实拉
+#   后回钉——manifest 与镜像同 commit 纪律；核销路径见批次报告 §恢复）。
+# 成熟库优先（AGENTS.md 硬约束）：ZAP 是 OWASP 官方维护的扫描器（Apache-2.0），
+# 作为 Provider 接入而非自研扫描引擎（PLAN :310「复用现有 Nuclei、ZAP、RTIS
+# POC Adapter」）。基础镜像 digest 固定（计划 §5.4「镜像固定版本和 digest」）：
+#   ghcr.io/zaproxy/zaproxy:weekly
+#   平台 manifest（amd64）digest = sha256:20c112032eeb1f42c2d5103c9d77e49c3995627d61b3a63c802a5d311709e2fc
+#   （2026-11-23 registry manifest 实读；本机 pull 未完成——传输坐死实录；
+#    完成后按 containerfiles/README.md digest 台账流程回钉本行）
+# 运行面约束（keep-id 非 root 写面）：HOME 钉到 /task/out（Adapter 只挂载
+#   workspaces/<run_id>/out 可写，配置/session/report 写面收敛到任务目录，
+#   根文件系统只读由 Adapter --read-only 注入；zap.sh -dir 旗标显式承载）。
+#   zap2docker 镜像自带 Java + python3（容器内自足，宿主零安装红线满足）。
+# 编排面（D-TC-03 帧协议，零 daemon 零 API 端口暴露）：wrapper 容器内内联
+#   执行 zap.sh baseline 快扫（-cmd -quickurl -quickout）+ 镜像内 python3
+#   解析 JSON 报告 → stdout 第一行 result 帧；zap 进程 stdout/stderr 静默
+#   落 /task/out/zap.log（artifact 承载——nuclei wrapper :24-26 同问题域）。
+#   wrapper 旗标词形 = 公开 baseline.py 口径（-cmd/-dir/-quickurl/-quickout
+#   + connection.proxy.chain.* 上游代理链）；镜像内 zap.sh -help 实拍核实
+#   （D1 两核实项之二）随镜像建成补录。
+# 构建命令（宿主机零安装，镜像属运行时数据；digest 回钉后执行）：
+#   podman build -t localhost/rip-zap:latest -f containerfiles/rip-zap/Containerfile containerfiles/rip-zap/
+FROM ghcr.io/zaproxy/zaproxy@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+ENV HOME=/task/out \
+    XDG_CONFIG_HOME=/task/out/.config \
+    XDG_CACHE_HOME=/task/out/.cache
+
+COPY wrapper.sh /usr/local/bin/rip-zap-wrapper
+RUN chmod +x /usr/local/bin/rip-zap-wrapper && mkdir -p /task/out
+
+# 镜像入口 = wrapper（Adapter 以 args-after-image 方式组装命令，见
+# podman_host.rs run_command：entrypoint 段是追加参数不是 --entrypoint；
+# wrapper 调 zap.sh 内联扫描承载真正的 ZAP 调用面）
+ENTRYPOINT ["/usr/local/bin/rip-zap-wrapper"]
