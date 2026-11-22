@@ -313,6 +313,8 @@ pub fn execute_nuclei(
         .collect::<Vec<String>>(),
         family: NUCLEI_FAMILY,
         network: options.network,
+        caller: None,
+        caller_cap: None,
     };
     let started = std::time::Instant::now();
     let outcome = execute_container_via_engine(call)

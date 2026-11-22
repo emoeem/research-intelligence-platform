@@ -316,6 +316,8 @@ fn same_image_second_dispatch_hits_cache() {
             entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
             family: "utility",
             network: NetworkPlan::None,
+            caller: None,
+            caller_cap: None,
         })
         .unwrap_or_else(|e| panic!("{run_id} container run failed: {e}"));
         assert_eq!(outcome.envelope.status, ToolRunStatus::Succeeded);
@@ -383,6 +385,8 @@ fn budget_timeout_registers_partial_artifact() {
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("timeout run");
     assert!(
@@ -469,6 +473,8 @@ fn oversized_output_is_truncated_with_artifact_carrier() {
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("truncation run");
     let env = &outcome.envelope;
@@ -491,6 +497,156 @@ fn oversized_output_is_truncated_with_artifact_carrier() {
         env.artifacts.iter().any(|a| a.uri.ends_with("result.json")
             && a.sha256 == tool_registry::hash::sha256_hex(&bytes)),
         "out/ raw artifact must be collected untruncated"
+    );
+    let _ = std::fs::remove_dir_all(&ws_root);
+}
+
+// ---------------------------------------------------------------------------
+// MA-2（D7）FamilyLimiter per-caller 双层判定（判据 7）：族内 default_limit
+// 既有逻辑零改动 + caller 顶层帽独立生效；caller=None 路径行为不变。
+// ---------------------------------------------------------------------------
+
+/// 双层判定面：族内满 → None；caller 顶层满 → None；另一 caller 同族可进；
+/// caller=None 直通（try_acquire 既有路径）；caller 记账随 Guard Drop 释放。
+#[test]
+fn family_limiter_acquire_for_two_layer_verdict() {
+    // 族内满（族基线 1）：caller-a 占族槽后，同族再进无论 caller 帽宽窄都 None。
+    let limiter = FamilyLimiter::new(1);
+    let ga = limiter
+        .try_acquire_for("utility", Some("caller-1"), Some(4))
+        .expect("first slot for caller-1");
+    assert!(
+        limiter
+            .try_acquire_for("utility", Some("caller-2"), Some(4))
+            .is_none(),
+        "family slot full must deny even with a fresh caller (family layer first)"
+    );
+    assert!(
+        limiter.try_acquire("utility").is_none(),
+        "legacy try_acquire path unchanged (None when family full)"
+    );
+    drop(ga);
+    assert!(
+        limiter
+            .try_acquire_for("utility", Some("caller-2"), Some(4))
+            .is_some(),
+        "family slot freed by guard drop must admit caller-2"
+    );
+
+    // caller 顶层满：族基线放宽到 3，caller-1 帽 2 —— 占两族后跨族第三
+    // 槽被 caller 帽拒；caller-2 同族可进（顶层帽互不抢占，判据 4 末句）。
+    let limiter2 = FamilyLimiter::new(3);
+    let a1 = limiter2
+        .try_acquire_for("family_a", Some("caller-1"), Some(2))
+        .expect("caller-1 family_a (slot 1 of cap 2)");
+    let a2 = limiter2
+        .try_acquire_for("family_b", Some("caller-1"), Some(2))
+        .expect("caller-1 family_b (slot 2 of cap 2)");
+    assert!(
+        limiter2
+            .try_acquire_for("family_c", Some("caller-1"), Some(2))
+            .is_none(),
+        "caller top cap 2 must deny the third family for caller-1"
+    );
+    let b1 = limiter2
+        .try_acquire_for("family_a", Some("caller-2"), Some(2))
+        .expect("caller-2 must not be blocked by caller-1's top cap");
+    assert_eq!(limiter2.caller_active("caller-1"), 2);
+    assert_eq!(limiter2.caller_active("caller-2"), 1);
+    drop(a1);
+    drop(a2);
+    drop(b1);
+    assert_eq!(limiter2.caller_active("caller-1"), 0, "guard drop releases caller ledger");
+    assert_eq!(limiter2.caller_active("caller-2"), 0);
+
+    // caller 帽 1 的严格面：第二族即拒（顶层帽跨族记账）。
+    let limiter_strict = FamilyLimiter::new(3);
+    let s1 = limiter_strict
+        .try_acquire_for("family_a", Some("caller-strict"), Some(1))
+        .expect("strict caller first slot");
+    assert!(
+        limiter_strict
+            .try_acquire_for("family_b", Some("caller-strict"), Some(1))
+            .is_none(),
+        "strict cap 1 must deny the second family"
+    );
+    drop(s1);
+
+    // caller_cap=None = 顶层不限（族内判定照旧）。
+    let limiter3 = FamilyLimiter::new(2);
+    let g1 = limiter3
+        .try_acquire_for("utility", Some("caller-x"), None)
+        .expect("no cap = unlimited top layer");
+    let g2 = limiter3
+        .try_acquire_for("utility", Some("caller-x"), None)
+        .expect("second slot within family limit 2");
+    assert!(limiter3.try_acquire_for("utility", Some("caller-x"), None).is_none());
+    drop(g1);
+    drop(g2);
+
+    // 阻塞 acquire_for：caller 顶层帽满时等待，帽位释放后进入（子线程
+    // 持有 300ms 后释放；既有 acquire 同款 Condvar 口径）。
+    let limiter4 = FamilyLimiter::new(2);
+    let holder = limiter4
+        .try_acquire_for("utility", Some("caller-hold"), Some(1))
+        .unwrap();
+    let waiter = limiter4.clone();
+    let t = std::thread::spawn(move || {
+        waiter.acquire_for("utility", Some("caller-hold"), Some(1))
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    drop(holder);
+    let guard = t.join().expect("blocking acquire_for must proceed after release");
+    assert_eq!(limiter4.caller_active("caller-hold"), 1);
+    drop(guard);
+    assert_eq!(limiter4.caller_active("caller-hold"), 0);
+}
+
+/// ContainerCall.caller=None 挂点直通：execute_container_via_engine 的
+/// caller None 路径与既有行为逐字节一致（真实 podman 载具，V-9 同款守卫）。
+#[test]
+fn container_call_none_caller_uses_legacy_acquire_path() {
+    if !podman_available() {
+        eprintln!("SKIP: podman unavailable (V-9，容器端到端保持本地执行)");
+        return;
+    }
+    let _e2e = E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    if ensure_image().is_none() {
+        return;
+    }
+    let image = image_ref();
+    let (_pool, engine, ws_root) = fresh_env("ma2-none-caller");
+    let wrapper = make_podman_wrapper(&ws_root);
+    let config = PodmanHostConfig {
+        workspace_root: ws_root.clone(),
+        podman_bin: wrapper.to_string_lossy().to_string(),
+        ..PodmanHostConfig::default()
+    };
+    let adapter = PodmanHostAdapter::new(config);
+    submit(
+        &engine,
+        "rn-ma2-none",
+        json!({"echo": "ma2 none caller"}),
+        json!({"timeout_seconds": 60, "max_output_bytes": 1048576}),
+    );
+    let outcome = execute_container_via_engine(ContainerCall {
+        engine: &engine,
+        run_id: "rn-ma2-none",
+        adapter: &adapter,
+        image: &image,
+        entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
+        family: "utility",
+        network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
+    })
+    .expect("none-caller container run");
+    assert_eq!(
+        outcome.envelope.status,
+        ToolRunStatus::Succeeded,
+        "none-caller run must succeed; error: {:?} stderr-hint: run in {}",
+        outcome.envelope.error,
+        ws_root.display()
     );
     let _ = std::fs::remove_dir_all(&ws_root);
 }

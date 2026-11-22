@@ -727,6 +727,8 @@ impl PythonWorkerToolDriver {
             entrypoint: &entrypoint,
             family: &family,
             network,
+            caller: None,
+            caller_cap: None,
         })
         .map_err(|failure| {
             tool_engine::EngineError::Storage(format!("podman_host dispatch failed: {failure}"))
@@ -884,6 +886,7 @@ impl AgentLoopDriver {
                     trace_id: Some(request.run_id.clone()),
                     run_id: Some(request.agent_run_id.clone()),
                     input: None,
+                    caller_id: None,
                     planner: Box::new(agent_engine::KeywordSearchPlanner),
                     confirmer: Box::new(self.build_confirmer()?),
                 };

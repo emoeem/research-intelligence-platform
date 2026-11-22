@@ -578,6 +578,8 @@ impl RerankWorkerProvider {
             entrypoint: &entrypoint,
             family: &family,
             network,
+            caller: None,
+            caller_cap: None,
         })
         .map_err(|e| RerankErr(format!("container run: {e}")))?;
         if outcome.envelope.status != ToolRunStatus::Succeeded {

@@ -33,6 +33,7 @@
 use crate::error::AgentError;
 use crate::state::RunStateStore;
 use crate::store::AgentStore;
+use database::rusqlite;
 use domain::{AgentDefinition, AgentRun, AgentRunState};
 use serde_json::Value;
 use tool_registry::hash::sha256_hex;
@@ -55,11 +56,39 @@ pub mod actions {
     pub const RETRY: &str = "agent.run.retry";
     /// 规划步骤为已执行调用重复，跳过执行。
     pub const STEP_DUPLICATE: &str = "agent.step.duplicate";
-    /// 护栏停机（stall/drift/budget/duplicate_exhausted）。
+    /// 护栏停机（stall/drift/budget/duplicate_exhausted/budget_caller_*）。
     pub const GUARDRAIL: &str = "agent.run.guardrail";
+    /// MA-2 R5 预检面（D8）：并行 fan-out 前预估留痕（任务数/并发帽/窗口
+    /// 余量实测数据进 audit_event + RunReport.warnings）。
+    pub const PARALLEL_PLAN: &str = "agent.run.parallel_plan";
 }
 
-/// 运行控制配置（护栏参数；默认值即低并发纪律的最严面）。
+/// per-caller 预算面（MA-2 D2：027 caller_budget 表的内存投影）。
+///
+/// 帽值解析点 = 装配层（rp-agent / 测试装配启动时经
+/// [`load_caller_budgets`] 一次性读入，引擎不直查配置表——D7 分层纪律）。
+/// 语义不对称是有意的：并行是新增放开面（最严 = 关，0 = 禁并行，缺行同）；
+/// 并发/速率帽是新增限制面（缺省不限 = 既有 caller 行为零变化，显式
+/// budget-set 才收紧）。
+#[derive(Debug, Clone)]
+pub struct CallerBudget {
+    /// caller 归属（027 caller_budget 主键，caller- 前缀）。
+    pub caller_id: String,
+    /// fan-out 并发帽（0 = 禁并行；缺行同）。
+    pub max_parallel_subtasks: usize,
+    /// 跨 run 受理并发帽（0 = 不限）。
+    pub max_concurrent_runs: usize,
+    /// 速率窗口毫秒（> 0，缺省 60000）。
+    pub rate_window_ms: u64,
+    /// 窗口速率帽（0 = 不限）。
+    pub rate_max_steps: usize,
+    /// caller 级单 run 总步数帽（0 = 沿用 LoopConfig::max_tool_calls 既有）。
+    pub budget_max_steps_per_run: usize,
+}
+
+/// 运行控制配置（护栏参数；默认值即低并发纪律的最严面）。MA-2：新增
+/// caller 预算面字段 `caller_budgets`（空表 = 既有六字段语义零改动，
+/// 红线 1——`RunControlConfig::default()` 既有字段值不变）。
 #[derive(Debug, Clone)]
 pub struct RunControlConfig {
     /// 单次 run 规划轮次上限（预算面；0 = 不限）。
@@ -74,8 +103,13 @@ pub struct RunControlConfig {
     /// 墙钟预算（毫秒，0 = 不限；步间检查）。
     pub max_elapsed_ms: u64,
     /// 并行子任务开关：默认 false（低并发纪律，ROADMAP §8.5 风险 1）；
-    /// false 时单轮多步骤一律串行执行并在报告留痕。
+    /// false 时单轮多步骤一律串行执行并在报告留痕。MA-2：true 且 caller
+    /// 预算面齐备（caller_id + budget 行 + 帽 ≥ 2）才走并行支路（D3 放行
+    /// 三与条件，任一不满足仍串行）。
     pub allow_parallel_subtasks: bool,
+    /// per-caller 预算面（027 caller_budget 表内存投影；空表 = 缺行口径 =
+    /// 并行关、帽不限，现状零回归）。
+    pub caller_budgets: std::collections::HashMap<String, CallerBudget>,
 }
 
 impl Default for RunControlConfig {
@@ -87,8 +121,59 @@ impl Default for RunControlConfig {
             min_evidence_hint: 1,
             max_elapsed_ms: 0,
             allow_parallel_subtasks: false,
+            caller_budgets: std::collections::HashMap::new(),
         }
     }
+}
+
+/// 装配层读取面（MA-2 D7）：027 caller_budget 表一次性读入内存映射
+/// （rp-agent 启动时调用；帽值解析点在装配层，引擎不直查配置表）。
+/// caller 已停用（revoked_at 非空）的 budget 行不装配（D6：caller 停用即
+/// budget 行随之失效，校验面 join 判定语义沿用 026 口径）。
+pub fn load_caller_budgets(
+    pool: &database::Pool,
+) -> Result<std::collections::HashMap<String, CallerBudget>, AgentError> {
+    let rows: Vec<(String, i64, i64, i64, i64, i64)> = pool
+        .with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT b.caller_id, b.max_parallel_subtasks, b.max_concurrent_runs,
+                        b.rate_window_ms, b.rate_max_steps, b.budget_max_steps_per_run
+                 FROM caller_budget b JOIN caller c ON c.caller_id = b.caller_id
+                 WHERE c.revoked_at IS NULL",
+            )?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                        r.get::<_, i64>(3)?,
+                        r.get::<_, i64>(4)?,
+                        r.get::<_, i64>(5)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+            Ok::<_, rusqlite::Error>(rows)
+        })
+        .map_err(AgentError::from)?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(caller_id, parallel, concurrent, window, rate, total)| {
+                (
+                    caller_id.clone(),
+                    CallerBudget {
+                        caller_id,
+                        max_parallel_subtasks: usize::try_from(parallel).unwrap_or(0),
+                        max_concurrent_runs: usize::try_from(concurrent).unwrap_or(0),
+                        rate_window_ms: u64::try_from(window).unwrap_or(60_000),
+                        rate_max_steps: usize::try_from(rate).unwrap_or(0),
+                        budget_max_steps_per_run: usize::try_from(total).unwrap_or(0),
+                    },
+                )
+            },
+        )
+        .collect())
 }
 
 /// 暂停请求结果。
@@ -199,8 +284,11 @@ impl RunControl {
             vec![],
         )?;
         // P7-5：重试链继承源 run 的 trace_id（跨 run 关联同链，迁移 015；
-        // 源 run 无关联列即新 run 同样 NULL，不伪造）。
-        self.store.create_run(&replay, stored.trace_id.as_deref())?;
+        // 源 run 无关联列即新 run 同样 NULL，不伪造）。MA-2（D4③）：caller
+        // 归属同链继承——新 run 继承源 run caller_id（027 列；None 同样
+        // 如实 NULL，不伪造）。
+        self.store
+            .create_run(&replay, stored.trace_id.as_deref(), stored.caller_id.as_deref())?;
         self.state.set_retry_of(new_run_id.as_str(), run_id)?;
         Ok(RetryOutcome {
             new_run_id: new_run_id.as_str().to_string(),

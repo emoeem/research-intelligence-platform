@@ -97,6 +97,12 @@ fn default_workspace_root() -> PathBuf {
 ///
 /// 族槽位在容器进入 RUNNING 前占用，run 终局信封组装后随 Guard Drop 释放；
 /// 同族超限的 run 在 PREPARING 停留等待（阻塞式 acquire），不伪装失败。
+///
+/// MA-2（D7）per-caller 顶层帽扩展：[`FamilyLimiter::acquire_for`] /
+/// [`FamilyLimiter::try_acquire_for`] 在族内既有判定（default_limit 逻辑
+/// 零改动）之外叠加「同 caller 跨族在飞容器数 ≤ caller_cap」独立顶层帽。
+/// 族基线（family_concurrency_default）不随 caller 帽缩放（红线 2）；
+/// caller=None 路径与既有行为逐字节一致（族内判定直通，无 caller 记账）。
 #[derive(Clone)]
 pub struct FamilyLimiter {
     inner: Arc<LimiterInner>,
@@ -105,6 +111,11 @@ pub struct FamilyLimiter {
 struct LimiterInner {
     slots: Mutex<HashMap<String, Slot>>,
     default_limit: usize,
+    /// caller 顶层帽记账：caller_id → 跨族在飞容器数（MA-2 D7；锁序恒为
+    /// slots → caller_active，FamilyGuard Drop 同序释放）。
+    caller_active: Mutex<HashMap<String, usize>>,
+    /// caller 顶层帽等待队列（caller 槽位满时阻塞等待）。
+    caller_cv: Condvar,
 }
 
 struct Slot {
@@ -112,10 +123,12 @@ struct Slot {
     cv: Arc<Condvar>,
 }
 
-/// 族槽位占用凭据：Drop 即释放（超时/取消/失败四路径统一）。
+/// 族槽位占用凭据：Drop 即释放（超时/取消/失败四路径统一）。MA-2：持有
+/// caller 归属时 Drop 同步释放 caller 顶层记账（caller=None 行为不变）。
 pub struct FamilyGuard {
     inner: Arc<LimiterInner>,
     family: String,
+    caller: Option<String>,
 }
 
 impl Drop for FamilyGuard {
@@ -124,6 +137,20 @@ impl Drop for FamilyGuard {
         if let Some(slot) = slots.get_mut(&self.family) {
             slot.active = slot.active.saturating_sub(1);
             slot.cv.notify_one();
+        }
+        if let Some(caller) = &self.caller {
+            let mut caller_active = self
+                .inner
+                .caller_active
+                .lock()
+                .expect("family limiter caller mutex");
+            if let Some(count) = caller_active.get_mut(caller) {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    caller_active.remove(caller);
+                }
+            }
+            self.inner.caller_cv.notify_one();
         }
     }
 }
@@ -135,6 +162,8 @@ impl FamilyLimiter {
             inner: Arc::new(LimiterInner {
                 slots: Mutex::new(HashMap::new()),
                 default_limit: default_limit.max(1),
+                caller_active: Mutex::new(HashMap::new()),
+                caller_cv: Condvar::new(),
             }),
         }
     }
@@ -161,6 +190,7 @@ impl FamilyLimiter {
             Some(FamilyGuard {
                 inner: Arc::clone(inner),
                 family: family.to_string(),
+                caller: None,
             })
         } else {
             None
@@ -182,6 +212,7 @@ impl FamilyLimiter {
                     return FamilyGuard {
                         inner: Arc::clone(&self.inner),
                         family: family.to_string(),
+                        caller: None,
                     };
                 }
                 Arc::clone(&slot.cv)
@@ -192,6 +223,113 @@ impl FamilyLimiter {
                 .expect("family limiter condvar");
             slots = guard;
         }
+    }
+
+    /// caller 感知非阻塞占位（MA-2 D7 双层判定）：第一层 caller 顶层帽
+    /// （caller 归属且 caller_cap Some 时，同 caller 跨族在飞容器数须
+    /// < caller_cap；None = 不限），第二层族内 default_limit 既有判定
+    /// （[`Self::try_locked`]，逻辑零改动）。两层在同一临界区原子判定，
+    /// 全过才同时占位；任一层拒绝即整体 None（不占任何槽位）。
+    pub fn try_acquire_for(
+        &self,
+        family: &str,
+        caller: Option<&str>,
+        caller_cap: Option<usize>,
+    ) -> Option<FamilyGuard> {
+        let mut slots = self.inner.slots.lock().expect("family limiter mutex");
+        let mut caller_active = self
+            .inner
+            .caller_active
+            .lock()
+            .expect("family limiter caller mutex");
+        if let Some(cid) = caller {
+            if let Some(cap) = caller_cap {
+                let active = caller_active.get(cid).copied().unwrap_or(0);
+                if active >= cap {
+                    return None;
+                }
+            }
+        }
+        let mut guard = Self::try_locked(&self.inner, &mut slots, family)?;
+        if let Some(cid) = caller {
+            *caller_active.entry(cid.to_string()).or_insert(0) += 1;
+            guard.caller = Some(cid.to_string());
+        }
+        Some(guard)
+    }
+
+    /// caller 感知阻塞占位（MA-2 D7，生产路径）：双层判定全过即占位；
+    /// caller 顶层帽满在该 caller 的 Condvar 上等待，族内满在族 Condvar
+    /// 上等待（500ms 超时回退防错过通知，既有 acquire 同口径）。等待期
+    /// 释放 slots 锁（caller_active 锁仅在判定/占位临界区内持有，锁序恒
+    /// slots → caller_active）。
+    pub fn acquire_for(
+        &self,
+        family: &str,
+        caller: Option<&str>,
+        caller_cap: Option<usize>,
+    ) -> FamilyGuard {
+        loop {
+            let mut slots = self.inner.slots.lock().expect("family limiter mutex");
+            let mut caller_active = self
+                .inner
+                .caller_active
+                .lock()
+                .expect("family limiter caller mutex");
+            let caller_full = match (caller, caller_cap) {
+                (Some(cid), Some(cap)) => caller_active.get(cid).copied().unwrap_or(0) >= cap,
+                _ => false,
+            };
+            if !caller_full {
+                let slot = slots.entry(family.to_string()).or_insert_with(|| Slot {
+                    active: 0,
+                    cv: Arc::new(Condvar::new()),
+                });
+                if slot.active < self.inner.default_limit.max(1) {
+                    slot.active += 1;
+                    if let Some(cid) = caller {
+                        *caller_active.entry(cid.to_string()).or_insert(0) += 1;
+                    }
+                    return FamilyGuard {
+                        inner: Arc::clone(&self.inner),
+                        family: family.to_string(),
+                        caller: caller.map(str::to_string),
+                    };
+                }
+            }
+            let (guard, _) = if caller_full {
+                // 等待前显式释放 caller_active（wait_timeout 只归还 slots 锁，
+                // 持双锁等待会阻塞 Drop 侧释放路径）。
+                drop(caller_active);
+                self.inner
+                    .caller_cv
+                    .wait_timeout(slots, Duration::from_millis(500))
+                    .expect("family limiter condvar")
+            } else {
+                drop(caller_active);
+                let cv = {
+                    let slot = slots.entry(family.to_string()).or_insert_with(|| Slot {
+                        active: 0,
+                        cv: Arc::new(Condvar::new()),
+                    });
+                    Arc::clone(&slot.cv)
+                };
+                cv.wait_timeout(slots, Duration::from_millis(500))
+                    .expect("family limiter condvar")
+            };
+            slots = guard;
+        }
+    }
+
+    /// caller 顶层在飞容器数读面（测试与观测用）。
+    pub fn caller_active(&self, caller: &str) -> usize {
+        self.inner
+            .caller_active
+            .lock()
+            .expect("family limiter caller mutex")
+            .get(caller)
+            .copied()
+            .unwrap_or(0)
     }
 }
 
@@ -215,7 +353,10 @@ pub struct WorkspacePaths {
     pub tmp_dir: PathBuf,
 }
 
-/// 容器执行调用（含引擎接缝与 Manifest runtime 分支字段）。
+/// 容器执行调用（含引擎接缝与 Manifest runtime 分支字段）。MA-2（D7）：
+/// caller 归属与 caller 顶层帽由装配层传入（帽值解析点在装配层，D7 分层
+/// 纪律——adapter/引擎层不做 SQL 配置查询）；caller None = 现行为逐字节
+/// 不变（族内 acquire 直通，无 caller 记账）。
 pub struct ContainerCall<'a> {
     /// 引擎（同一测试库上的受理/状态机/信封面）。
     pub engine: &'a Engine,
@@ -233,6 +374,10 @@ pub struct ContainerCall<'a> {
     /// egress_allowlist 走 [`EgressProxy`]，host 由 Adapter 从 input.url
     /// 派生临时 allowlist，Policy Resolver 职责最小化）。
     pub network: NetworkPlan,
+    /// caller 归属（MA-2 D7；None = legacy 直通路径）。
+    pub caller: Option<&'a str>,
+    /// caller 顶层帽（同 caller 跨族在飞容器数上限；None = 不限）。
+    pub caller_cap: Option<usize>,
 }
 
 impl PodmanHostAdapter {
@@ -757,8 +902,16 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
         .map_err(|f| EngineError::Storage(f.message))?;
 
     // 每工具族并发默认 1（ADR §7）：RUNNING 前占族内槽位，Guard 随本函数
-    // 返回释放（超时/取消/失败路径统一）。
-    let _family_guard = call.adapter.limiter.acquire(call.family);
+    // 返回释放（超时/取消/失败路径统一）。MA-2（D7）：caller 归属时改用
+    // caller 感知 acquire（族内判定之上叠加 caller 顶层帽；caller None =
+    // 既有 acquire 直通路径逐字节不变）。
+    let _family_guard = match call.caller {
+        Some(caller) => call
+            .adapter
+            .limiter
+            .acquire_for(call.family, Some(caller), call.caller_cap),
+        None => call.adapter.limiter.acquire(call.family),
+    };
 
     // egress_allowlist 执行面（P3-2）：host 从 input.url 派生临时 allowlist
     // （Policy Resolver 最小化，TOOL-CONTRACT §9.1 note），端口限 Manifest

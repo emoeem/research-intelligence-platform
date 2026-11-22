@@ -887,16 +887,16 @@ fn validate_send_state(state: &str) -> Result<(), DbError> {
 }
 
 impl PersistStore {
-    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，MA-1 后为 26）。
+    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，MA-2 后为 27）。
     /// 方法名保留 025 批次命名（intercept_queue 测试 fn 名同款先例），随链尾演进
     /// 仅更新断言值。
     pub fn assert_watermark_25(&self) -> DbResult<()> {
         let v: i64 = self
             .pool
             .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if v != 26 {
+        if v != 27 {
             return Err(DbError::Validation(format!(
-                "026 chain head expected user_version=26, got {v}"
+                "027 chain head expected user_version=27, got {v}"
             )));
         }
         Ok(())

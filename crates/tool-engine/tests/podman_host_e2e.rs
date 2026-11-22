@@ -222,6 +222,8 @@ fn smoke_run_succeeds_with_keep_id_and_artifacts() {
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("container e2e run");
     let env = &outcome.envelope;
@@ -348,6 +350,8 @@ fn inspect_constraints_and_cooperative_cancel() {
                 entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
                 family: "utility",
                 network: NetworkPlan::None,
+                caller: None,
+                caller_cap: None,
             })
         });
 
@@ -528,6 +532,8 @@ fn budget_timeout_terminates_container() {
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("timeout run");
     assert!(
@@ -572,6 +578,8 @@ fn tag_ref_image_rejected_in_preparing() {
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("tag-ref run must be handled, not panic");
     assert_eq!(outcome.envelope.status, ToolRunStatus::Failed);

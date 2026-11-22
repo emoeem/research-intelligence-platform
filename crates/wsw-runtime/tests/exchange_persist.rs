@@ -1,6 +1,6 @@
 //! 025 exchange 落库链路集成测试（WSW-3-TASK §四.2 断言矩阵 S2/S3 面）：
 //!
-//! - 链尾水位断言（assert_watermark_25 方法 + user_version 直查，MA-1 后链尾 026）；
+//! - 链尾水位断言（assert_watermark_25 方法 + user_version 直查，MA-2 后链尾 027）；
 //! - 单行纪律：同请求+响应落一行；响应中断 → 响应体 NULL + parse_status
 //!   ='partial'（W3-D1/D2.1）；
 //! - 批量落行（insert_exchanges 单事务 + salvage 计数）；
@@ -82,7 +82,7 @@ fn watermark_25_and_four_tables() {
     let uv: i64 = s
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(uv, 26, "026 chain head");
+    assert_eq!(uv, 27, "027 chain head");
     for table in [
         "wsw_exchange",
         "wsw_repeater_tab",

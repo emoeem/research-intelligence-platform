@@ -150,6 +150,7 @@ fn e2e_run_writes_one_trace_across_all_families_and_both_query_directions_work()
             trace_id: Some("tr-p75-e2e".to_string()),
             run_id: None,
             input: None,
+            caller_id: None,
             planner: Box::new(KeywordSearchPlanner),
             confirmer: Box::new(FirstFamilyConfirmer::new(
                 context_broker::IntentConfig::from_dir(&repo_root().join("rulepacks/rip-rules"))

@@ -366,6 +366,8 @@ fn egress_allowlisted_get_succeeds_through_proxy() {
             network: NetworkPlan::EgressAllowlist {
                 ports: vec![80, 443],
             },
+            caller: None,
+            caller_cap: None,
         })
         .expect("egress e2e run");
         let env = outcome.envelope;
@@ -473,6 +475,8 @@ fn non_allowlisted_host_connect_rejected_structured() {
             network: NetworkPlan::EgressAllowlist {
                 ports: vec![80, 443],
             },
+            caller: None,
+            caller_cap: None,
         })
         .expect("deny e2e run handled, not panic");
         let env = outcome.envelope;
@@ -573,6 +577,8 @@ fn egress_env_injection_frozen_via_live_inspect() {
                 ],
                 family: "web_http",
                 network: NetworkPlan::EgressAllowlist { ports: vec![443] },
+                caller: None,
+                caller_cap: None,
             })
         });
 
@@ -700,6 +706,8 @@ fn network_none_dispatch_stays_isolated() {
         entrypoint: &["python3".to_string(), "/app/http_inspector.py".to_string()],
         family: "web_http",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("none-mode run handled");
     assert_eq!(

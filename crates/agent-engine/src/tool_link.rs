@@ -17,7 +17,12 @@ use tool_engine::mock_runner::MockRunner;
 use tool_engine::{DriveOutcome, Engine};
 
 /// 驱动端口：把一个 QUEUED 的 tool_run 推到终态并交付信封（运行面注入点）。
-pub trait RunDriver {
+///
+/// MA-2（D3 并行支路）：Send + Sync 超界使驱动可跨线程共享（fan-out
+/// 子步经 scoped threads 并发执行，写面经 Pool 串行化，node_parallel.rs
+/// 语义先例同源）；既有三个实现（MockDriver/PythonWorkerDriver/测试
+/// CountingDriver）均为纯数据持有，天然满足。
+pub trait RunDriver: Send + Sync {
     /// 驱动到终态。
     fn drive(
         &self,
@@ -90,6 +95,11 @@ pub struct ToolCallSpec {
     /// 链路追踪 ID（P7-5：经 [`ToolLink::call`] 走 tool-engine
     /// `submit_correlated` 落 tool_run.trace_id 列，迁移 015；None = 无关联）。
     pub trace_id: Option<String>,
+    /// caller 归属（MA-2 D4：全 Rust 参数面传递，经 [`ToolLink::call`] 走
+    /// tool-engine `submit_for_caller` 落 tool_run.caller_id 列，027；
+    /// None = legacy/default，行为零变化。caller 不进 ToolCallRequest
+    /// JSON——冻结契约零改动，计划 :60 禁止事项 3）。
+    pub caller_id: Option<String>,
 }
 
 /// 调用结果。
@@ -124,6 +134,9 @@ impl ToolLink {
     /// 都按 [`AgentError::Tool`] 上抛；工具业务失败（信封 FAILED/TIMED_OUT）
     /// 属正常交付，由调用方按信封判定。trace_id 经 submit_correlated 落
     /// tool_run 行（P7-5；冻结契约 JSON 不动，关联列平台侧承载）。
+    /// MA-2（D4）：spec.caller_id 为 Some 时改走 `submit_for_caller` 落
+    /// tool_run.caller_id（027）；None 时既有 submit_correlated 路径
+    /// 逐字节不变。
     pub fn call(&self, spec: &ToolCallSpec) -> Result<ToolCallOutcome, AgentError> {
         let run_id = new_id("rn");
         let request = json!({
@@ -136,9 +149,16 @@ impl ToolLink {
             "workspace_id": spec.workspace_id,
             "task_id": spec.task_id,
         });
-        let submitted = self
-            .engine
-            .submit_correlated(&request, spec.trace_id.as_deref())?;
+        let submitted = match spec.caller_id.as_deref() {
+            Some(caller) => self.engine.submit_for_caller(
+                &request,
+                spec.trace_id.as_deref(),
+                Some(caller),
+            )?,
+            None => self
+                .engine
+                .submit_correlated(&request, spec.trace_id.as_deref())?,
+        };
         let outcome = self.driver.drive(&self.engine, &submitted.run_id)?;
         Ok(ToolCallOutcome {
             run_id: submitted.run_id,
@@ -192,6 +212,7 @@ mod tests {
                 workspace_id: "ws-default".to_string(),
                 submit_key: None,
                 trace_id: None,
+                caller_id: None,
             })
             .unwrap_err();
         assert!(err.to_string().contains("unknown tool"), "err: {err}");
@@ -222,6 +243,7 @@ mod tests {
                 workspace_id: "ws-default".to_string(),
                 submit_key: Some("agent:arn-x:0".to_string()),
                 trace_id: Some("tr-link-1".to_string()),
+                caller_id: None,
             })
             .unwrap();
         // P7-5：trace_id 经 submit_correlated 落 tool_run 行。

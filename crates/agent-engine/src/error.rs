@@ -26,6 +26,9 @@ pub enum AgentError {
     },
     /// 规划/护栏拒绝（能力绑定外的工具、无步骤等）。
     Plan(String),
+    /// per-caller 预算面硬拒（MA-2 D5.4 受理面跨 run 并发帽超限；run 不落
+    /// 行，additive 变体）。
+    BudgetDenied(String),
     /// Broker 装配/展开失败（ContextBrokerError 原文）。
     Broker(String),
     /// Tool Engine 受理/驱动失败（EngineError 原文）。
@@ -46,6 +49,7 @@ impl std::fmt::Display for AgentError {
                 write!(f, "agent run {run_id} transition {from} -> {to} rejected")
             }
             AgentError::Plan(r) => write!(f, "plan rejected: {r}"),
+            AgentError::BudgetDenied(r) => write!(f, "budget denied: {r}"),
             AgentError::Broker(r) => write!(f, "context broker error: {r}"),
             AgentError::Tool(r) => write!(f, "tool engine error: {r}"),
             AgentError::Storage(r) => write!(f, "storage error: {r}"),

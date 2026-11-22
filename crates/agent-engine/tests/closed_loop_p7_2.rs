@@ -156,6 +156,7 @@ fn builtin_agent_closes_loop_with_broker_knowledge_and_tool_evidence() {
             trace_id: None,
             run_id: None,
             input: None,
+            caller_id: None,
             planner: Box::new(KeywordSearchPlanner),
             confirmer: Box::new(FirstFamilyConfirmer::new(
                 context_broker::IntentConfig::from_dir(
@@ -364,6 +365,7 @@ fn guardrail_rejects_step_tool_outside_capability_refs() {
             trace_id: None,
             run_id: None,
             input: None,
+            caller_id: None,
             planner: Box::new(RoguePlanner),
             confirmer: Box::new(DeclineConfirmer),
         })

@@ -184,6 +184,8 @@ fn dispatch_and_run(
         network: NetworkPlan::EgressAllowlist {
             ports: vec![80, 443],
         },
+        caller: None,
+        caller_cap: None,
     })
     .expect("container run via gateway-dispatched queue")
 }

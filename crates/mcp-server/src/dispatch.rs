@@ -678,6 +678,8 @@ impl RunChannel {
             entrypoint: &entrypoint,
             family: &family,
             network,
+            caller: None,
+            caller_cap: None,
         };
         execute_container_via_engine(call)
             .map_err(|e| err_payload(&format!("container drive failed: {e}"), "INFRA"))

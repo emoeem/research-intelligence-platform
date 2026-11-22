@@ -315,6 +315,8 @@ fn drill3_boundary_negative_mount_whitelist_and_sensitive_faces() {
         entrypoint: &["python3".to_string(), "/app/smoke_tool.py".to_string()],
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .unwrap();
     assert_eq!(outcome.envelope.status, ToolRunStatus::Succeeded);

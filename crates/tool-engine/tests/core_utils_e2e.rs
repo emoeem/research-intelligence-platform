@@ -189,6 +189,8 @@ fn dispatch_and_run(
         entrypoint: &entrypoint,
         family: "utility",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("container run")
 }

@@ -37,6 +37,12 @@ use domain::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Instant;
+use database::rusqlite;
 
 /// 闭环配置。
 #[derive(Debug, Clone)]
@@ -164,6 +170,11 @@ pub struct RunRequest {
     pub run_id: Option<String>,
     /// 显式工具入参（覆盖规划器推导；合工具 input_schema）。
     pub input: Option<Value>,
+    /// caller 归属（MA-2 D4①：None = legacy/default，行为零变化——串行
+    /// 路径、既有护栏、NULL 落列逐字节现状；Some 且 caller_budget 有行时
+    /// 受理面跨 run 并发帽硬拒（D5.4）+ 速率/总预算闸（D5.2/D5.3）+ 并行
+    /// 支路放行三与条件（D3）。caller 是运行时维度，不进任何 JSON 契约）。
+    pub caller_id: Option<String>,
     /// 规划器。
     pub planner: Box<dyn Planner>,
     /// 意图确认者（ambiguous 回路）。
@@ -249,6 +260,94 @@ struct DriveParams<'a> {
     executed_keys: Vec<String>,
     /// 已见证据哈希（停滞检测；resume 由轨迹重建）。
     seen_hashes: Vec<String>,
+    /// caller 归属（MA-2 D4：run 全程传递——agent_run.caller_id 落列、
+    /// tool_run.caller_id 归属、预算面闸与并行支路放行判定共用；None =
+    /// legacy/default 零回归路径）。
+    caller_id: Option<&'a str>,
+}
+
+/// MA-2 速率窗口进程内计数复核器（D5.2：std AtomicUsize + Instant，零新
+/// 依赖）。窗口过期即滑动复位；计数口径 = 本 run 已派发步数（与 027
+/// tool_run.caller_id 行 COUNT 互补：DB 计数跨 run 权威、进程计数覆盖
+/// fan-out 线程组内提交行尚未落库可见的窗口内漏计，取 max 复核）。
+struct CallerRateTracker {
+    window_ms: u64,
+    window_start: Mutex<Instant>,
+    steps: AtomicUsize,
+}
+
+impl CallerRateTracker {
+    fn new(window_ms: u64) -> Self {
+        Self {
+            window_ms,
+            window_start: Mutex::new(Instant::now()),
+            steps: AtomicUsize::new(0),
+        }
+    }
+
+    /// 当前窗口内步数（窗口过期即复位清零）。
+    fn count(&self) -> usize {
+        let mut start = self.window_start.lock().expect("rate tracker mutex");
+        if start.elapsed().as_millis() as u64 >= self.window_ms {
+            *start = Instant::now();
+            self.steps.store(0, Ordering::SeqCst);
+            0
+        } else {
+            self.steps.load(Ordering::SeqCst)
+        }
+    }
+
+    /// 派发一步即计数（fan-out 派发器主线程调用）。
+    fn bump(&self) {
+        self.steps.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// 并行支路单轮停止语义（drive 主循环据此收敛）。
+enum ParallelStop {
+    /// 控制消费（协作式取消/暂停）：跃迁已在消费点完成，drive 收敛到该态。
+    Control(AgentRunState),
+    /// 护栏/预算硬停（finish_reason 已定，审计已落）。
+    Reason(String),
+}
+
+/// 并行支路单轮产出（drive 主循环合并进既有轮变量）。
+struct ParallelRoundOut {
+    executed_in_round: usize,
+    duplicates_in_round: usize,
+    any_failed: bool,
+    stop: Option<ParallelStop>,
+}
+
+/// fan-out 子步共享依赖（scoped threads 借用；各字段 Sync——ToolLink
+/// Engine/驱动与 EvidenceRegistrar 均为 Pool/纯数据持有，写面经 Pool
+/// 串行化，node_parallel.rs 先例同源）。
+struct ParallelDeps<'a> {
+    tool: &'a ToolLink,
+    evidence: &'a EvidenceRegistrar,
+    run_id: &'a RunId,
+    agent_id: &'a str,
+    trace_id: Option<&'a str>,
+    task_id: Option<&'a str>,
+    caller_id: Option<&'a str>,
+    workspace_id: &'a str,
+}
+
+/// fan-out 派发队列形状：共享 VecDeque（None = 关闭毒丸）+ Condvar
+/// （空队列等待派发；worker 退出只认毒丸，防派发间隙误判关闭提前退出）。
+type DispatchQueue<T> = (Mutex<VecDeque<Option<T>>>, Condvar);
+
+/// fan-out 子步产出（主线程收齐终态后按 plan 顺序统一落：D3 收敛语义）。
+struct ParallelStepOut {
+    /// plan 内派发序（确定性 seq = steps.len() + ordinal）。
+    ordinal: usize,
+    /// 预派发 seq（UNIQUE(run_id, seq) 确定性，014:99）。
+    seq: usize,
+    record: StepRecord,
+    /// Evidence 登记产出（主线程 memory 记账用；登记失败为 None + warning）。
+    reg: Option<crate::evidence::RegisteredOutcome>,
+    /// 子线程侧降级 warning（evidence 登记失败等）。
+    warnings: Vec<String>,
 }
 
 /// Agent 执行闭环。
@@ -332,6 +431,23 @@ impl AgentLoop {
             Some(pinned) => RunId::try_new(pinned.clone())?,
             None => AgentStore::new_run_id(),
         };
+        // MA-2（D5.4）受理面跨 run 并发帽：caller 有 budget 行且
+        // max_concurrent_runs > 0 时，名下在飞 run 数（QUEUED/RUNNING 记账，
+        // D1 公式）已达帽即 BudgetDenied 硬拒——run 不落任何行（create_run
+        // 前置）。
+        if let Some(caller) = req.caller_id.as_deref() {
+            if let Some(budget) = self.control.caller_budgets.get(caller) {
+                if budget.max_concurrent_runs > 0 {
+                    let active = self.store.count_active_runs_by_caller(caller)?;
+                    if active >= budget.max_concurrent_runs {
+                        return Err(AgentError::BudgetDenied(format!(
+                            "caller {caller} concurrent runs {active} at cap {} (max_concurrent_runs); new run rejected before create_run",
+                            budget.max_concurrent_runs
+                        )));
+                    }
+                }
+            }
+        }
         let run = AgentRun::try_new(
             run_id.clone(),
             req.task_id.clone(),
@@ -340,16 +456,23 @@ impl AgentLoop {
             AgentRunState::Queued,
             vec![],
         )?;
-        self.store.create_run(&run, Some(&trace_id))?;
+        self.store
+            .create_run(&run, Some(&trace_id), req.caller_id.as_deref())?;
         let run_id_str = run_id.as_str().to_string();
         let actor = format!("agent-engine:{agent_id}");
         self.state.ensure_control_row(&run_id_str, &req.goal)?;
+        // 受理留痕：caller 归属仅在 Some 时进 payload（None = legacy 行
+        // 逐字节现状，不添键）。
+        let mut accepted_detail = json!({"agent_id": agent_id, "goal": req.goal, "trace_id": trace_id});
+        if let Some(caller) = req.caller_id.as_deref() {
+            accepted_detail["caller_id"] = json!(caller);
+        }
         self.audit_emit(
             "agent.run.accepted",
             &run_id_str,
             Some(&trace_id),
             &actor,
-            json!({"agent_id": agent_id, "goal": req.goal, "trace_id": trace_id}),
+            accepted_detail,
         );
         self.store
             .transition_run(&run_id_str, AgentRunState::Running)?;
@@ -372,6 +495,7 @@ impl AgentLoop {
             resumed: false,
             executed_keys: Vec::new(),
             seen_hashes: Vec::new(),
+            caller_id: req.caller_id.as_deref(),
         })
     }
 
@@ -459,14 +583,31 @@ impl AgentLoop {
             resumed: true,
             executed_keys,
             seen_hashes,
+            // MA-2：resume 沿用源 run 的 caller 归属（agent_run 行读列，
+            // 与 trace_id 续接同口径）。
+            caller_id: stored.caller_id.as_deref(),
         })
     }
 
     /// 执行尾（run / resume 共用）：装配 → 展开 → 规划执行（步间控制消费
     /// + 九类护栏）→ 终态落库 → 报告。
+    ///
+    /// MA-2：caller 预算面（D5）——有 budget 行时每轮前过 caller 总预算闸
+    /// 与速率闸；并行支路（D3）按放行三与条件在单轮内 fork-join（串行路径
+    /// 逻辑零改动）。
     fn drive(&self, p: DriveParams<'_>) -> Result<RunReport, AgentError> {
         let started_at = std::time::Instant::now();
         let cfg = self.control.clone();
+
+        // MA-2（D7/D2）：caller 预算面解析（装配层内存映射查行；缺行 =
+        // 现状零回归：并行关、帽不限）+ 速率窗口进程内计数复核器
+        // （std AtomicUsize + Instant，零新依赖；窗口过期即滑动复位）。
+        let caller_budget: Option<&crate::control::CallerBudget> = p
+            .caller_id
+            .and_then(|c| cfg.caller_budgets.get(c));
+        let rate_tracker = caller_budget
+            .filter(|b| b.rate_max_steps > 0)
+            .map(|b| CallerRateTracker::new(b.rate_window_ms));
 
         // 第 2 步：Context Broker 装配（ambiguous 确认回路）。
         let task_id = p
@@ -579,6 +720,55 @@ impl AgentLoop {
                 );
                 break 'rounds;
             }
+            // MA-2（D5.3）caller 总预算闸：caller 级单 run 总步数帽（0 =
+            // 沿用 LoopConfig::max_tool_calls 既有）；已执行步数到位即整轮
+            // 硬停（规划步数不执行，超帽步骤不进入本轮）。
+            if let Some(budget) = caller_budget {
+                if budget.budget_max_steps_per_run > 0
+                    && steps.len() >= budget.budget_max_steps_per_run
+                {
+                    finish_reason = format!(
+                        "guardrail: caller total budget (budget_max_steps_per_run={}) reached",
+                        budget.budget_max_steps_per_run
+                    );
+                    self.audit_emit(
+                        control::actions::GUARDRAIL,
+                        p.run_id_str,
+                        p.trace_id.as_deref(),
+                        p.actor,
+                        json!({"kind": "budget_caller_total", "caller_id": budget.caller_id,
+                               "limit": budget.budget_max_steps_per_run, "steps_done": steps.len()}),
+                    );
+                    break 'rounds;
+                }
+            }
+            // MA-2（D5.2）caller 速率闸：窗口（rate_window_ms）内该 caller
+            // 步数 ≥ rate_max_steps 即 fan-out/单步前整轮硬停，超帽步骤不
+            // 执行。窗口计数 = tool_run.caller_id 行 COUNT（027 数据源）+
+            // 进程内计数复核（AtomicUsize + Instant，取两者较大值防并发
+            // 提交行尚未可见的窗口内漏计）。
+            if let (Some(budget), Some(tracker)) = (caller_budget, rate_tracker.as_ref()) {
+                if budget.rate_max_steps > 0 {
+                    let db_count =
+                        self.count_caller_window_steps(&budget.caller_id, budget.rate_window_ms)?;
+                    let effective = db_count.max(tracker.count());
+                    if effective >= budget.rate_max_steps {
+                        finish_reason = "guardrail: caller rate budget".to_string();
+                        self.audit_emit(
+                            control::actions::GUARDRAIL,
+                            p.run_id_str,
+                            p.trace_id.as_deref(),
+                            p.actor,
+                            json!({"kind": "budget_caller_rate", "caller_id": budget.caller_id,
+                                   "window_ms": budget.rate_window_ms,
+                                   "limit": budget.rate_max_steps,
+                                   "window_steps": db_count,
+                                   "proc_window_steps": tracker.count()}),
+                        );
+                        break 'rounds;
+                    }
+                }
+            }
             // 预算：步数上限（P7-2 既有护栏）。
             if steps.len() >= self.config.max_tool_calls {
                 finish_reason = format!(
@@ -607,9 +797,16 @@ impl AgentLoop {
                         finish_reason = "planner produced no executable steps".to_string();
                         break 'rounds;
                     }
-                    // 资源限制：并行子任务默认关闭（低并发纪律），单轮多步骤
-                    // 串行执行并留痕。
-                    if plan_steps.len() > 1 && !cfg.allow_parallel_subtasks {
+                    // MA-2（D3）并行支路放行三与条件：allow_parallel_subtasks
+                    // && caller_id=Some && caller_budget.max_parallel_subtasks
+                    // ≥ 2。任一不满足走既有串行路径（含既有 warning 留痕）；
+                    // 单轮单步骤恒走串行（无 fork 收益，路径零 diff）。
+                    let parallel_ready = cfg.allow_parallel_subtasks
+                        && p.caller_id.is_some()
+                        && caller_budget
+                            .map(|b| b.max_parallel_subtasks >= 2)
+                            .unwrap_or(false);
+                    if plan_steps.len() > 1 && !parallel_ready {
                         warnings.push(format!(
                             "parallel subtasks disabled (low-concurrency policy): {} planned steps of round {round} serialized",
                             plan_steps.len()
@@ -621,6 +818,47 @@ impl AgentLoop {
                     }
                     let mut executed_in_round = 0usize;
                     let mut duplicates_in_round = 0usize;
+                    if parallel_ready && plan_steps.len() > 1 {
+                        // ---- MA-2 并行支路（fork-join，node_parallel.rs 语义
+                        // 先例：声明面并发度、引擎不放大、写面经 Pool 串行化、
+                        // 确定性顺序合并）----
+                        let budget = caller_budget.expect("budget present when parallel_ready");
+                        let parallelism = plan_steps
+                            .len()
+                            .min(budget.max_parallel_subtasks)
+                            .max(1);
+                        let round_out = self.run_round_parallel(
+                            &p,
+                            round,
+                            &plan_steps,
+                            parallelism,
+                            budget,
+                            rate_tracker.as_ref(),
+                            &surface,
+                            &context,
+                            started_at,
+                            &mut steps,
+                            &mut executed_keys,
+                            &mut seen_hashes,
+                            &mut warnings,
+                            &mut no_progress_streak,
+                            &mut drift_streak,
+                        )?;
+                        executed_in_round = round_out.executed_in_round;
+                        duplicates_in_round = round_out.duplicates_in_round;
+                        any_failed = any_failed || round_out.any_failed;
+                        match round_out.stop {
+                            Some(ParallelStop::Control(state)) => {
+                                control_state = Some(state);
+                                break 'rounds;
+                            }
+                            Some(ParallelStop::Reason(reason)) => {
+                                finish_reason = reason;
+                                break 'rounds;
+                            }
+                            None => {}
+                        }
+                    } else {
                     for step in plan_steps {
                         // 每步控制消费（步间粒度；cancel 先于 pause）。消费点
                         // 立即完成 CAS 跃迁，审计随跃迁落。
@@ -750,6 +988,7 @@ impl AgentLoop {
                             p.agent_id,
                             &step,
                             p.task_id.as_deref(),
+                            p.caller_id,
                             &context,
                             &mut warnings,
                         );
@@ -808,6 +1047,7 @@ impl AgentLoop {
                             break 'rounds;
                         }
                         executed_in_round += 1;
+                    }
                     }
                     // 整轮全是重复跳步：无可执行进展，停（防规划器死循环）。
                     if finish_reason.is_empty() && executed_in_round == 0 && duplicates_in_round > 0
@@ -921,6 +1161,466 @@ impl AgentLoop {
         })
     }
 
+    /// MA-2（D5.2）速率窗口计数：tool_run.caller_id 行 COUNT（027 数据源），
+    /// 窗口 = [now - rate_window_ms, now]，created_at 与窗口下界均为秒级
+    /// ISO8601（domain::time 口径），字典序可比。
+    fn count_caller_window_steps(
+        &self,
+        caller_id: &str,
+        window_ms: u64,
+    ) -> Result<usize, AgentError> {
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let cutoff = domain::time::format_epoch_secs(now_secs.saturating_sub(window_ms / 1000));
+        let count: i64 = self
+            .store
+            .pool()
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT COUNT(*) FROM tool_run WHERE caller_id = ?1 AND created_at >= ?2",
+                    rusqlite::params![caller_id, cutoff],
+                    |r| r.get(0),
+                )
+            })
+            .map_err(AgentError::from)?;
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
+    /// MA-2（D3/D5/D8）并行支路单轮执行器：fork-join（node_parallel.rs 语义
+    /// 先例——声明面并发度 = min(plan_steps.len(), max_parallel_subtasks)，
+    /// 帽以上排队不并行非拒绝；每子步独立 tool_run/agent_run_step 行；写面
+    /// 经 Pool 串行化；结果按 plan 顺序确定性合并）。每步仍过既有步闸：
+    /// max_tool_calls / 能力绑定闸 / 重复检测 / 目标偏移（容限内放行留痕）
+    /// / 墙钟 / 速率复核（派发间隙）；cancel/pause 在 fan-out 前与派发间隙
+    /// 消费；任一子步失败按既有 fail-fast 收敛，主线程收齐终态后统一落
+    /// agent_run_step（seq = steps.len() + ordinal，UNIQUE(run_id, seq)
+    /// 确定性）与审计。
+    #[allow(clippy::too_many_arguments)]
+    fn run_round_parallel(
+        &self,
+        p: &DriveParams<'_>,
+        round: usize,
+        plan_steps: &[PlanStep],
+        parallelism: usize,
+        budget: &crate::control::CallerBudget,
+        rate_tracker: Option<&CallerRateTracker>,
+        surface: &Option<Vec<String>>,
+        context: &AssembledContext,
+        started_at: Instant,
+        steps: &mut Vec<StepRecord>,
+        executed_keys: &mut Vec<String>,
+        seen_hashes: &mut Vec<String>,
+        warnings: &mut Vec<String>,
+        no_progress_streak: &mut usize,
+        drift_streak: &mut usize,
+    ) -> Result<ParallelRoundOut, AgentError> {
+        let cfg = self.control.clone();
+        let mut duplicates_in_round = 0usize;
+        let mut executed_keys_in_round: Vec<String> = Vec::new();
+
+        // ---- 阶段 A：派发过滤（主线程 plan 顺序，确定性）——既有步闸镜像。
+        // max_tool_calls / 能力绑定 / 偏移 / 重复在派发前判定；硬停即整轮
+        // 收敛（不再派发，超帽步骤不执行）。(reason, any_failed) 元组：
+        // 能力绑定闸拒绝 = fail-fast（any_failed 语义）。
+        let mut filter_stop: Option<(String, bool)> = None;
+        let mut dispatch: Vec<(usize, &PlanStep, String)> = Vec::new(); // (plan 序, step, call_key)
+        for (plan_i, step) in plan_steps.iter().enumerate() {
+            // 步数预算（串行路径同口径：步数到位即停，超帽步骤不执行）。
+            if steps.len() + dispatch.len() >= self.config.max_tool_calls {
+                filter_stop = Some((
+                    format!(
+                        "guardrail: max_tool_calls={} reached",
+                        self.config.max_tool_calls
+                    ),
+                    false,
+                ));
+                break;
+            }
+            // 能力绑定闸：绑定外工具拒绝（防规划器漂移出能力面）。
+            if !p
+                .capability_refs
+                .iter()
+                .any(|r| r.tool_id() == step.tool_id)
+            {
+                filter_stop = Some((
+                    format!(
+                        "guardrail: plan step tool {:?} is not in capability_refs",
+                        step.tool_id
+                    ),
+                    true,
+                ));
+                break;
+            }
+            // 目标偏移检测：初始计划面外跳转计偏移事件，连续偏移超过容限
+            // 即停（容限内放行并留痕；跨轮 streak 与串行路径共用）。
+            let surface_ref = surface
+                .as_deref()
+                .expect("surface captured before step dispatch");
+            if control::drift_step(surface_ref, &step.tool_id) {
+                *drift_streak += 1;
+                if *drift_streak > cfg.drift_tolerance {
+                    let reason = format!(
+                        "guardrail: goal drift detected (tool {:?} outside initial plan surface, {drift_streak} consecutive drifted steps)",
+                        step.tool_id
+                    );
+                    self.audit_emit(
+                        control::actions::GUARDRAIL,
+                        p.run_id_str,
+                        p.trace_id.as_deref(),
+                        p.actor,
+                        json!({"kind": "goal_drift", "tool_id": step.tool_id,
+                               "drift_streak": drift_streak, "tolerance": cfg.drift_tolerance}),
+                    );
+                    filter_stop = Some((reason, false));
+                    break;
+                }
+                warnings.push(format!(
+                    "goal drift event: tool {:?} outside initial plan surface (round {round}); within tolerance {}",
+                    step.tool_id, cfg.drift_tolerance
+                ));
+            } else {
+                *drift_streak = 0;
+            }
+            // 重复调用检测：(tool_id, 规范化 input) 已执行即跳过（含同轮
+            // 派发集合内重复，串行路径 executed_keys 递增语义同源）。
+            let call_key = control::canonical_call_key(&step.tool_id, &step.input);
+            if executed_keys.iter().any(|k| k == &call_key)
+                || executed_keys_in_round.iter().any(|k| k == &call_key)
+            {
+                duplicates_in_round += 1;
+                warnings.push(format!(
+                    "duplicate call detected: tool {:?} with identical canonical input already executed; skipped",
+                    step.tool_id
+                ));
+                self.audit_emit(
+                    control::actions::STEP_DUPLICATE,
+                    p.run_id_str,
+                    p.trace_id.as_deref(),
+                    p.actor,
+                    json!({"tool_id": step.tool_id, "round": round}),
+                );
+                continue;
+            }
+            executed_keys_in_round.push(call_key.clone());
+            dispatch.push((plan_i, step, call_key));
+        }
+        if let Some((reason, failed)) = &filter_stop {
+            return Ok(ParallelRoundOut {
+                executed_in_round: 0,
+                duplicates_in_round,
+                any_failed: *failed,
+                stop: Some(ParallelStop::Reason(reason.clone())),
+            });
+        }
+
+        // ---- 阶段 B：R5 预检面（D8）+ fan-out 派发（帽以上排队）。
+        let db_window_count =
+            self.count_caller_window_steps(&budget.caller_id, budget.rate_window_ms)?;
+        let rate_limit = if budget.rate_max_steps > 0 {
+            Some(budget.rate_max_steps)
+        } else {
+            None
+        };
+        let rate_remaining = rate_limit.map(|limit| {
+            limit.saturating_sub(db_window_count.max(rate_tracker.map(|t| t.count()).unwrap_or(0)))
+        });
+        // 预估留痕（实测数据非提示）：warnings + audit_event（D8）。
+        warnings.push(format!(
+            "parallel fan-out plan: {} tasks, concurrency cap {}, rate window remaining {} steps (caller {}, round {round})",
+            dispatch.len(),
+            parallelism,
+            rate_remaining
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "unlimited".to_string()),
+            budget.caller_id,
+        ));
+        self.audit_emit(
+            control::actions::PARALLEL_PLAN,
+            p.run_id_str,
+            p.trace_id.as_deref(),
+            p.actor,
+            json!({"tasks": dispatch.len(), "cap": parallelism,
+                   "rate_window_remaining": rate_remaining,
+                   "caller_id": budget.caller_id, "round": round}),
+        );
+        // 帽以上排队（帽语义非拒绝）：GUARDRAIL kind=budget_caller_parallel。
+        if dispatch.len() > parallelism {
+            self.audit_emit(
+                control::actions::GUARDRAIL,
+                p.run_id_str,
+                p.trace_id.as_deref(),
+                p.actor,
+                json!({"kind": "budget_caller_parallel", "tasks": dispatch.len(),
+                       "cap": parallelism, "queued": dispatch.len() - parallelism,
+                       "caller_id": budget.caller_id}),
+            );
+        }
+
+        let deps = ParallelDeps {
+            tool: &self.tool,
+            evidence: &self.evidence,
+            run_id: p.run_id,
+            agent_id: p.agent_id,
+            trace_id: p.trace_id.as_deref(),
+            task_id: p.task_id.as_deref(),
+            caller_id: p.caller_id,
+            workspace_id: &self.config.workspace_id,
+        };
+        let deps_ref = &deps;
+        // 派发队列（共享 deque + Condvar：帽以上步骤排队不并行——并发度 =
+        // worker 池大小 = parallelism，队列深度即排队面；Option None =
+        // 关闭毒丸；空队列 ≠ 关闭——worker 在 Condvar 等待派发，防派发间隙
+        // 误判关闭提前退出）。
+        let queue: Arc<DispatchQueue<(usize, usize, PlanStep)>> =
+            Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
+        let (out_tx, out_rx) = mpsc::channel::<ParallelStepOut>();
+        let mut collected: Vec<ParallelStepOut> = Vec::new();
+        let mut control_stop: Option<AgentRunState> = None;
+        let mut gap_stop: Option<String> = None;
+
+        std::thread::scope(|scope| -> Result<(), AgentError> {
+            for _ in 0..parallelism {
+                let queue = Arc::clone(&queue);
+                let out_tx = out_tx.clone();
+                scope.spawn(move || loop {
+                    let mut pending = queue.0.lock().expect("parallel dispatch queue mutex");
+                    let item = loop {
+                        match pending.pop_front() {
+                            Some(item) => break item,
+                            // 空队列：等待派发（Condvar；派发器每 push 通知）。
+                            None => {
+                                pending = queue
+                                    .1
+                                    .wait(pending)
+                                    .expect("parallel dispatch queue condvar");
+                            }
+                        }
+                    };
+                    match item {
+                        Some((ordinal, seq, step)) => {
+                            drop(pending);
+                            let out = execute_parallel_step(deps_ref, ordinal, seq, round, &step);
+                            let _ = out_tx.send(out);
+                        }
+                        // 关闭毒丸：worker 退出（out_tx 克隆端随线程结束
+                        // 释放，主线程收集循环随之收敛）。
+                        None => break,
+                    }
+                });
+            }
+
+            // 派发循环（主线程 = 派发器）：派发间隙消费 cancel/pause、
+            // 墙钟与速率复核；入队即计数（进程内复核口径 = 已派发步数）。
+            'dispatch: for (ordinal, (_plan_i, step, _call_key)) in dispatch.iter().enumerate() {
+                if self.state.consume_cancel_request(p.run_id_str)? {
+                    control_stop = Some(AgentRunState::Cancelled);
+                    gap_stop = Some(format!(
+                        "cancelled (cooperative, D-TC-04): request consumed during parallel dispatch (before dispatch item {ordinal}, {ordinal} dispatched)"
+                    ));
+                    break 'dispatch;
+                }
+                if self.state.consume_pause_request(p.run_id_str)? {
+                    control_stop = Some(AgentRunState::Paused);
+                    gap_stop = Some(format!(
+                        "paused (cooperative): request consumed during parallel dispatch (before dispatch item {ordinal}, {ordinal} dispatched); resume via AgentLoop::resume"
+                    ));
+                    break 'dispatch;
+                }
+                if control::elapsed_over_budget(started_at, cfg.max_elapsed_ms) {
+                    gap_stop = Some(format!(
+                        "guardrail: budget max_elapsed_ms={} reached",
+                        cfg.max_elapsed_ms
+                    ));
+                    self.audit_emit(
+                        control::actions::GUARDRAIL,
+                        p.run_id_str,
+                        p.trace_id.as_deref(),
+                        p.actor,
+                        json!({"kind": "budget_elapsed", "limit_ms": cfg.max_elapsed_ms}),
+                    );
+                    break 'dispatch;
+                }
+                // 速率复核（D5.2 进程内计数复核点）：窗口内步数
+                // （DB COUNT + 派发计数取大）达帽即停派发，超帽步骤不执行。
+                if let (Some(limit), Some(tracker)) = (rate_limit, rate_tracker) {
+                    let db =
+                        self.count_caller_window_steps(&budget.caller_id, budget.rate_window_ms)?;
+                    let effective = db.max(tracker.count());
+                    if effective >= limit {
+                        gap_stop = Some("guardrail: caller rate budget".to_string());
+                        self.audit_emit(
+                            control::actions::GUARDRAIL,
+                            p.run_id_str,
+                            p.trace_id.as_deref(),
+                            p.actor,
+                            json!({"kind": "budget_caller_rate", "caller_id": budget.caller_id,
+                                   "window_ms": budget.rate_window_ms, "limit": limit,
+                                   "window_steps": db, "proc_window_steps": tracker.count(),
+                                   "phase": "dispatch_gap"}),
+                        );
+                        break 'dispatch;
+                    }
+                }
+                let seq = steps.len() + ordinal;
+                {
+                    let mut q = queue.0.lock().expect("parallel dispatch queue mutex");
+                    q.push_back(Some((ordinal, seq, (*step).clone())));
+                    queue.1.notify_one();
+                }
+                if let Some(tracker) = rate_tracker {
+                    tracker.bump();
+                }
+            }
+            // 关闭毒丸 × worker 数：未消费的排队项（cancel/rate 停派发后的
+            // 残余）按序留队不被执行（超帽/超预算步骤不执行），worker 取到
+            // 毒丸即退出。
+            {
+                let mut q = queue.0.lock().expect("parallel dispatch queue mutex");
+                for _ in 0..parallelism {
+                    q.push_back(None);
+                }
+                queue.1.notify_all();
+            }
+            drop(out_tx);
+            // 收齐终态（join 收敛顺序与完成顺序解耦，node_parallel 先例）。
+            while let Ok(out) = out_rx.recv() {
+                collected.push(out);
+            }
+            Ok(())
+        })?;
+
+        // ---- 阶段 C：主线程按 plan 顺序统一落（D3：收齐终态后统一落）。
+        collected.sort_by_key(|out| out.ordinal);
+        let mut any_failed = false;
+        let mut stall_fired: Option<String> = None;
+        for (ordinal, out) in collected.iter().enumerate() {
+            let (_plan_i, step, call_key) = &dispatch[ordinal];
+            debug_assert_eq!(out.ordinal, ordinal, "parallel result order");
+            // 子线程降级 warning 并入（evidence 登记失败等）。
+            for w in &out.warnings {
+                warnings.push(w.clone());
+            }
+            // 轨迹落库（seq 确定性）。
+            self.persist_step_trajectory(p.run_id, out.seq, round, step, &out.record, warnings);
+            // memory_refs 记账 + 三类 Memory 落账（与串行 execute_step 的
+            // Ok 分支同实现）。
+            if let Some(reg) = &out.reg {
+                let mem_refs = vec![
+                    format!("mem://manifest/{}", context.manifest_id),
+                    format!("mem://artifact/{}", reg.artifact_id),
+                    format!("mem://evidence/{}", reg.evidence_id),
+                ];
+                if let Err(e) = self.store.append_memory_refs(p.run_id.as_str(), &mem_refs) {
+                    warnings.push(format!("memory_refs append failed: {e}"));
+                }
+                self.record_step_memory(
+                    p.run_id,
+                    round,
+                    p.task_id.as_deref(),
+                    reg,
+                    step,
+                    &out.record.tool_run_id,
+                    &out.record.tool_version,
+                    warnings,
+                );
+            }
+            executed_keys.push(call_key.clone());
+            if out.record.status != "SUCCEEDED" {
+                any_failed = true;
+            }
+            // 停滞检测记账（连续无新证据哈希；窗口语义与串行同口径）。
+            if control::step_has_new_evidence(&out.record, seen_hashes) {
+                *no_progress_streak = 0;
+                if let Some(h) = &out.record.content_hash {
+                    seen_hashes.push(h.clone());
+                }
+            } else {
+                *no_progress_streak += 1;
+            }
+            steps.push(out.record.clone());
+            self.audit_emit(
+                "agent.step.completed",
+                p.run_id_str,
+                p.trace_id.as_deref(),
+                p.actor,
+                json!({
+                    "tool_id": step.tool_id,
+                    "seq": out.seq,
+                    "round": round,
+                    "status": out.record.status,
+                    "tool_run_id": out.record.tool_run_id,
+                    "artifact_id": out.record.artifact_id,
+                    "evidence_id": out.record.evidence_id,
+                    "steps_done": steps.len(),
+                }),
+            );
+            if stall_fired.is_none()
+                && cfg.stall_window > 0
+                && *no_progress_streak >= cfg.stall_window
+            {
+                stall_fired = Some(format!(
+                    "guardrail: stall detected ({no_progress_streak} steps without new evidence hash)"
+                ));
+                self.audit_emit(
+                    control::actions::GUARDRAIL,
+                    p.run_id_str,
+                    p.trace_id.as_deref(),
+                    p.actor,
+                    json!({"kind": "stall", "streak": no_progress_streak,
+                           "window": cfg.stall_window}),
+                );
+            }
+        }
+
+        // ---- 收敛：控制消费（跃迁与审计在收齐后落，派发间隙只消费请求位）。
+        if let Some(state) = control_stop {
+            self.store.transition_run(p.run_id_str, state)?;
+            let action = if state == AgentRunState::Cancelled {
+                control::actions::CANCELLED
+            } else {
+                control::actions::PAUSED
+            };
+            self.audit_emit(
+                action,
+                p.run_id_str,
+                p.trace_id.as_deref(),
+                p.actor,
+                json!({"before_step": steps.len(), "round": round,
+                       "cooperative": state == AgentRunState::Cancelled}),
+            );
+            return Ok(ParallelRoundOut {
+                executed_in_round: collected.len(),
+                duplicates_in_round,
+                any_failed,
+                stop: Some(ParallelStop::Control(state)),
+            });
+        }
+        if let Some(reason) = gap_stop {
+            return Ok(ParallelRoundOut {
+                executed_in_round: collected.len(),
+                duplicates_in_round,
+                any_failed,
+                stop: Some(ParallelStop::Reason(reason)),
+            });
+        }
+        if let Some(reason) = stall_fired {
+            return Ok(ParallelRoundOut {
+                executed_in_round: collected.len(),
+                duplicates_in_round,
+                any_failed,
+                stop: Some(ParallelStop::Reason(reason)),
+            });
+        }
+        Ok(ParallelRoundOut {
+            executed_in_round: collected.len(),
+            duplicates_in_round,
+            any_failed,
+            stop: None,
+        })
+    }
+
     /// Research Memory 落账（P7-3 可选接线）：回链 = L3 展开条目（manifest
     /// item）+ 各步骤登记的 artifact/evidence；回链不足（无任何可解析引用）
     /// 如实拒绝不伪造，run memory_refs 追加 `mem://memory/{id}`。
@@ -993,7 +1693,8 @@ impl AgentLoop {
 
     /// 执行单步：受理 + 驱动 + Artifact/Evidence 登记 + 步骤轨迹落库
     /// （agent_run_step，resume 续接权威面）+ memory_refs 记账 + 三类
-    /// Memory 落账（可选接线，写失败降级 warning 不炸 run）。
+    /// Memory 落账（可选接线，写失败降级 warning 不炸 run）。MA-2：新增
+    /// caller_id 传参（串行路径 None = 既有行为零变化）。
     #[allow(clippy::too_many_arguments)]
     fn execute_step(
         &self,
@@ -1004,6 +1705,7 @@ impl AgentLoop {
         agent_id: &str,
         step: &PlanStep,
         task_id: Option<&str>,
+        caller_id: Option<&str>,
         context: &AssembledContext,
         warnings: &mut Vec<String>,
     ) -> StepRecord {
@@ -1035,6 +1737,9 @@ impl AgentLoop {
             )),
             // P7-5：tool_run 行 trace_id 同链落列（迁移 015）。
             trace_id: trace_id.map(str::to_string),
+            // MA-2（D4④）：caller 归属经 submit_for_caller 落 tool_run
+            // .caller_id 列（027）；None = legacy 直通路径零变化。
+            caller_id: caller_id.map(str::to_string),
         };
         let called = match self.tool.call(&spec) {
             Ok(called) => called,
@@ -1205,6 +1910,97 @@ impl AgentLoop {
             audit.emit_best_effort(event);
         }
     }
+}
+
+/// MA-2（D3）fan-out 子步执行（worker 线程内跑）：受理 + 驱动 + Artifact/
+/// Evidence 登记；轨迹落库 / memory 记账 / 审计由主线程收齐终态后按 plan
+/// 顺序统一落（[`AgentLoop::run_round_parallel`] 阶段 C）。受理拒绝记
+/// SUBMIT_REJECTED（与串行 execute_step 同口径）；写面经 Pool 串行化。
+fn execute_parallel_step(
+    deps: &ParallelDeps<'_>,
+    ordinal: usize,
+    seq: usize,
+    round: usize,
+    step: &PlanStep,
+) -> ParallelStepOut {
+    let _ = round;
+    let record = StepRecord {
+        tool_id: step.tool_id.clone(),
+        tool_version: String::new(),
+        tool_run_id: String::new(),
+        status: "SUBMIT_REJECTED".to_string(),
+        artifact_id: None,
+        evidence_id: None,
+        content_hash: None,
+        summary: None,
+        error: None,
+        elapsed_ms: 0,
+    };
+    let mut out = ParallelStepOut {
+        ordinal,
+        seq,
+        record,
+        reg: None,
+        warnings: Vec::new(),
+    };
+    let spec = ToolCallSpec {
+        tool_id: step.tool_id.clone(),
+        version: step.version.clone(),
+        input: step.input.clone(),
+        task_id: deps.task_id.map(str::to_string),
+        workspace_id: deps.workspace_id.to_string(),
+        // 幂等提交键按步序区分（与串行 execute_step 同构；seq 确定性
+        // 保证同 run 两子步不共享键）。
+        submit_key: Some(format!(
+            "agent:{}:{}:{}",
+            deps.run_id.as_str(),
+            seq,
+            step.tool_id
+        )),
+        trace_id: deps.trace_id.map(str::to_string),
+        caller_id: deps.caller_id.map(str::to_string),
+    };
+    let called = match deps.tool.call(&spec) {
+        Ok(called) => called,
+        Err(e) => {
+            out.record.error = Some(e.to_string());
+            return out;
+        }
+    };
+    out.record.tool_run_id = called.run_id.clone();
+    out.record.tool_version = called.tool_version.clone();
+    out.record.status = called.envelope.status.as_str().to_string();
+    out.record.summary = called.envelope.summary.clone();
+    out.record.elapsed_ms = called.envelope.usage.elapsed_ms;
+    if let Some(err) = &called.envelope.error {
+        out.record.error = Some(err.message.clone());
+    }
+    // Artifact/Evidence 登记（SUCCEEDED 取 result，失败取错误对象；同哈希
+    // 对账——与串行 execute_step 同实现）。登记失败降级 warning 不炸 run。
+    let payload = called.envelope.result.clone().unwrap_or_else(|| {
+        json!({
+            "error_category": called.envelope.error.as_ref().map(|e| e.category.clone()),
+            "error_message": called.envelope.error.as_ref().map(|e| e.message.clone()),
+        })
+    });
+    match deps.evidence.register_tool_result(&Registration {
+        agent_id: deps.agent_id.to_string(),
+        task_id: deps.task_id.map(str::to_string),
+        tool_run_id: called.run_id.clone(),
+        tool_id: step.tool_id.clone(),
+        tool_version: called.tool_version.clone(),
+        payload,
+        trace_id: deps.trace_id.map(str::to_string),
+    }) {
+        Ok(reg_out) => {
+            out.record.artifact_id = Some(reg_out.artifact_id.clone());
+            out.record.evidence_id = Some(reg_out.evidence_id.clone());
+            out.record.content_hash = Some(reg_out.content_hash.clone());
+            out.reg = Some(reg_out);
+        }
+        Err(e) => out.warnings.push(format!("evidence registration failed: {e}")),
+    }
+    out
 }
 
 /// 内置测试规划器（内置测试 Agent 的最小确定性规划面）：

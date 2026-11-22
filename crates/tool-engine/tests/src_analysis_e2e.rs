@@ -191,6 +191,8 @@ fn dispatch_and_run(
         entrypoint: &entrypoint,
         family: "source_code",
         network: NetworkPlan::None,
+        caller: None,
+        caller_cap: None,
     })
     .expect("container run")
 }

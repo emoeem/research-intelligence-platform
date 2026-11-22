@@ -62,6 +62,8 @@ fn usage_text() -> &'static str {
      \x20 run-steps <run_id> [--db <path>] [--out <path>]  (AgentRun 步骤轨迹, P7-7)\n\
      \x20 trace <id> [--db <path>] [--out <path>]  (按任一关联 ID 汇全链, P7-5)\n\
      \x20 run <agent_id> 追加: [--trace-id <id>]  (自定义链路追踪 ID)\n\
+     \x20   [--caller-id <id>]  (caller 归属, MA-2 预算面; 027 caller_budget 表)\n\
+     \x20   [--allow-parallel]  (并行子任务开关, 需 caller 预算面齐备才生效, D3)\n\
      \n\
      help: rp-agent --help（stdout, exit 0）"
 }
@@ -91,6 +93,8 @@ struct Flags {
     policy: String,
     caps: String,
     trace_id: Option<String>,
+    caller_id: Option<String>,
+    allow_parallel: bool,
 }
 
 fn parse_flags(args: &[String]) -> Flags {
@@ -116,6 +120,8 @@ fn parse_flags(args: &[String]) -> Flags {
         policy: "{}".to_string(),
         caps: String::new(),
         trace_id: None,
+        caller_id: None,
+        allow_parallel: false,
     };
     let mut iter = args.iter();
     while let Some(flag) = iter.next() {
@@ -146,6 +152,8 @@ fn parse_flags(args: &[String]) -> Flags {
             "--policy" => flags.policy = value(&mut iter),
             "--caps" => flags.caps = value(&mut iter),
             "--trace-id" => flags.trace_id = Some(value(&mut iter)),
+            "--caller-id" => flags.caller_id = Some(value(&mut iter)),
+            "--allow-parallel" => flags.allow_parallel = true,
             _ => {}
         }
     }
@@ -636,6 +644,20 @@ fn run() -> i32 {
                 None => EvidenceRegistrar::new(pool.clone()),
             };
             let audit = Some(audit_engine::AuditEngine::new(pool.clone()));
+            // MA-2（D7）帽值解析点：caller_budget 表启动一次性读入内存映射
+            // （引擎不直查配置表）。读取失败降级串行并记一次 warn
+            // （rp_server.py:236-239 降级告警先例同源），不炸 run。
+            let caller_budgets = match agent_engine::control::load_caller_budgets(&pool) {
+                Ok(map) => map,
+                Err(e) => {
+                    eprintln!(
+                        "{}",
+                        serde_json::json!({"warning": "caller_budget load failed; parallel disabled (serial fallback)",
+                                           "error": e.to_string()})
+                    );
+                    std::collections::HashMap::new()
+                }
+            };
             let loop_ = agent_engine::agent_loop::AgentLoop::new(
                 store,
                 broker_link,
@@ -646,7 +668,12 @@ fn run() -> i32 {
                     workspace_id: flags.workspace.clone(),
                     max_tool_calls: flags.max_tool_calls,
                 },
-            );
+            )
+            .with_control(agent_engine::control::RunControlConfig {
+                allow_parallel_subtasks: flags.allow_parallel,
+                caller_budgets,
+                ..agent_engine::control::RunControlConfig::default()
+            });
             let confirmer = FirstFamilyConfirmer::new(
                 context_broker::IntentConfig::from_dir(&flags.rulepack_dir).unwrap_or_else(|e| {
                     eprintln!("intent config: {e}");
@@ -661,6 +688,7 @@ fn run() -> i32 {
                 trace_id: flags.trace_id.clone(),
                 run_id: None,
                 input: flags.input.clone(),
+                caller_id: flags.caller_id.clone(),
                 planner: Box::new(agent_engine::KeywordSearchPlanner),
                 confirmer: Box::new(confirmer),
             };

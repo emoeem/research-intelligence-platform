@@ -241,6 +241,8 @@ impl EmbedWorkerProvider {
             entrypoint: &entrypoint,
             family: &family,
             network,
+            caller: None,
+            caller_cap: None,
         })
         .map_err(|e| ParserErr(format!("container run: {e}")))?;
         if outcome.envelope.status != ToolRunStatus::Succeeded {

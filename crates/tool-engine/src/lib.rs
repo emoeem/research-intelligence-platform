@@ -159,6 +159,17 @@ impl Engine {
 
     /// D-TC-05 提交校验 + QUEUED 落行。拒绝时不产生任何行（§3.2 第 1 行）。
     pub fn submit(&self, request: &Value) -> Result<Submitted, EngineError> {
+        self.submit_with_caller(request, None)
+    }
+
+    /// 带 caller 归属的受理内核（MA-2 D4/D5.2）：与 [`Self::submit`] 同一
+    /// 受理校验面，INSERT tool_run 扩 caller_id 列（027）。caller_id 为
+    /// None 时行内列落 NULL（与既有 submit 行形状逐字节一致，零回归）。
+    fn submit_with_caller(
+        &self,
+        request: &Value,
+        caller_id: Option<&str>,
+    ) -> Result<Submitted, EngineError> {
         let req: SubmitRequest = request::structural_check(request)?;
         // Registry 面：工具存在。
         let detail = self.registry.query(&req.tool_id).map_err(|e| match e {
@@ -255,8 +266,8 @@ impl Engine {
                 c.execute(
                     "INSERT INTO tool_run (run_id, tool_id, tool_version, task_id, workspace_id,
                      submit_key, input_hash, status, permission_ctx, budget_json, input_refs_json,
-                     replay_json, created_at, updated_at, schema_version)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'QUEUED', ?8, ?9, ?10, ?11, ?12, ?12, 1)",
+                     replay_json, caller_id, created_at, updated_at, schema_version)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'QUEUED', ?8, ?9, ?10, ?11, ?12, ?13, ?13, 1)",
                     database::rusqlite::params![
                         req.run_id,
                         req.tool_id,
@@ -269,6 +280,7 @@ impl Engine {
                         budget_json.to_string(),
                         input_refs_json,
                         replay_json.to_string(),
+                        caller_id,
                         now
                     ],
                 )?;
@@ -308,6 +320,49 @@ impl Engine {
                 .map_err(EngineError::from)?;
         }
         Ok(submitted)
+    }
+
+    /// caller 归属提交（MA-2 D4/D5.2）：与 [`Self::submit_correlated`] 同一
+    /// 受理校验面（冻结契约 request-v1.json 不动，caller 是运行时维度不进
+    /// 契约 JSON，计划 :60 禁止事项 3），受理落行时经 INSERT tool_run
+    /// caller_id 列归属（027；caller_id 为 None 时与 submit_correlated
+    /// 完全等价，行内列维持 NULL）。Agent 步骤驱动经 agent-engine
+    /// ToolLink 传入；工具直调方（不经 Agent 的 RunLink 面）传 None。
+    pub fn submit_for_caller(
+        &self,
+        request: &Value,
+        trace_id: Option<&str>,
+        caller_id: Option<&str>,
+    ) -> Result<Submitted, EngineError> {
+        let submitted = self.submit_with_caller(request, caller_id)?;
+        if let Some(trace_id) = trace_id {
+            let validated = domain::TraceId::try_new(trace_id)
+                .map_err(|e| EngineError::Storage(e.to_string()))?;
+            self.pool
+                .with_conn(|c| {
+                    c.execute(
+                        "UPDATE tool_run SET trace_id = ?2 WHERE run_id = ?1",
+                        database::rusqlite::params![submitted.run_id, validated.as_str()],
+                    )
+                })
+                .map_err(EngineError::from)?;
+        }
+        Ok(submitted)
+    }
+
+    /// 读 run 行 caller 归属（MA-2 关联查询面；行不存在返回 Ok(None)）。
+    pub fn caller_id_of(&self, run_id: &str) -> Result<Option<String>, EngineError> {
+        let caller_id: Option<String> = self
+            .pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT caller_id FROM tool_run WHERE run_id = ?1",
+                    [run_id],
+                    |r| r.get(0),
+                )
+            })
+            .map_err(EngineError::from)?;
+        Ok(caller_id)
     }
 
     /// 读 run 行链路追踪 ID（P7-5 关联查询面；行不存在返回 Ok(None)）。

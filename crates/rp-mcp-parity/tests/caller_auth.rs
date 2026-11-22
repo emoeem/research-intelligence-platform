@@ -198,7 +198,7 @@ fn caller_multi_key_auth_e2e() {
     let main_db = dir.join("main.db");
     let admin = rp_admin_bin();
 
-    // 临时库全量迁移 001..026（判据 1 载体：链尾 026 = MA-1 两表）。
+    // 临时库全量迁移 001..027（判据 1 载体：链尾 027 = MA-2 caller 归属列与 caller_budget）。
     {
         let pool = database::Pool::open(database::PoolConfig::writable_file(&main_db))
             .expect("open temp db");
@@ -206,8 +206,8 @@ fn caller_multi_key_auth_e2e() {
             database::migrate(&pool, &repo_root().join("migrations")).expect("migrate temp db");
         assert_eq!(
             applied.last().map(|m| m.version),
-            Some(26),
-            "真实迁移链必须应用到 026 链尾（MA-1 caller/api_key）"
+            Some(27),
+            "真实迁移链必须应用到 027 链尾（MA-2 caller 归属列与 caller_budget）"
         );
     }
 

@@ -11,6 +11,12 @@
 //! rp-admin key-gen        --db PATH --caller-id ID [--label LABEL]
 //! rp-admin key-list       --db PATH [--caller-id ID] [--include-revoked]
 //! rp-admin key-revoke     --db PATH --key-hash HASH
+//! rp-admin budget-set     --db PATH --caller-id ID [--max-parallel-subtasks N]
+//!                         [--max-concurrent-runs N] [--rate-window-ms MS]
+//!                         [--rate-max-steps N] [--budget-max-steps-per-run N]
+//! rp-admin budget-show    --db PATH --caller-id ID
+//! rp-admin budget-clear   --db PATH --caller-id ID
+//! rp-admin caller-revoke  --db PATH --caller-id ID
 //! ```
 //!
 //! - `backup`：Online Backup API 在线快照 + tar 归档（成员：库快照、extras、
@@ -83,6 +89,28 @@ enum Mode {
         db: PathBuf,
         key_hash: String,
     },
+    // MA-2（D6）caller 预算面四子命令（027 caller_budget 表唯一写入口）。
+    BudgetSet {
+        db: PathBuf,
+        caller_id: String,
+        max_parallel_subtasks: usize,
+        max_concurrent_runs: usize,
+        rate_window_ms: u64,
+        rate_max_steps: usize,
+        budget_max_steps_per_run: usize,
+    },
+    BudgetShow {
+        db: PathBuf,
+        caller_id: String,
+    },
+    BudgetClear {
+        db: PathBuf,
+        caller_id: String,
+    },
+    CallerRevoke {
+        db: PathBuf,
+        caller_id: String,
+    },
 }
 
 fn usage() -> &'static str {
@@ -106,6 +134,11 @@ key-gen        生成 key：明文 rp1_<43 位 base64url> 仅在 JSON key 字段
                （库中仅存 sha256 hex，D2；先校验 caller 存在且未停用）
 key-list       列 key（只列 key_hash/label/时刻，永不回明文；默认只列在用）
 key-revoke     吊销 key（幂等：重复 revoke 非致命；key-revoke 后下一请求 401）
+budget-set     per-caller 预算面 upsert（MA-2 D2/D6；帽缺省 0 = 并行关/帽不限/
+               沿用 LoopConfig；rate_window_ms 缺省 60000；先校验 caller 在用）
+budget-show    读 caller_budget 行（JSON；无行 exit 2）
+budget-clear   删 caller_budget 行（幂等：无行 already_present=false 亦 exit 0）
+caller-revoke  停用 caller（幂等：重复 revoke 非致命；名下 key 与 budget 随停用失效）
 
 exit: ok=0, 运行失败=2（error + usage 到 stderr）
 help: rp-admin --help（stdout, exit 0）"
@@ -133,9 +166,13 @@ fn parse_args() -> Result<Mode, String> {
             | "key-gen"
             | "key-list"
             | "key-revoke"
+            | "budget-set"
+            | "budget-show"
+            | "budget-clear"
+            | "caller-revoke"
     ) {
         return Err(format!(
-            "unknown mode {mode}: expected backup|restore|verify-archive|reten-archive|caller-add|caller-list|key-gen|key-list|key-revoke"
+            "unknown mode {mode}: expected backup|restore|verify-archive|reten-archive|caller-add|caller-list|key-gen|key-list|key-revoke|budget-set|budget-show|budget-clear|caller-revoke"
         ));
     }
     let mut db: Option<PathBuf> = None;
@@ -152,6 +189,12 @@ fn parse_args() -> Result<Mode, String> {
     let mut label: Option<String> = None;
     let mut key_hash: Option<String> = None;
     let mut include_revoked = false;
+    // MA-2 budget 面参数（缺省 0 = 并行关/帽不限/沿用 LoopConfig，D2）。
+    let mut max_parallel_subtasks: Option<usize> = None;
+    let mut max_concurrent_runs: Option<usize> = None;
+    let mut rate_window_ms: Option<u64> = None;
+    let mut rate_max_steps: Option<usize> = None;
+    let mut budget_max_steps_per_run: Option<usize> = None;
     let need_value = |argv: &[String], i: &mut usize, flag: &str| -> Result<String, String> {
         *i += 1;
         argv.get(*i)
@@ -188,6 +231,36 @@ fn parse_args() -> Result<Mode, String> {
             "--label" => label = Some(need_value(&argv, &mut i, "--label")?),
             "--key-hash" => key_hash = Some(need_value(&argv, &mut i, "--key-hash")?),
             "--include-revoked" => include_revoked = true,
+            "--max-parallel-subtasks" => {
+                let value = need_value(&argv, &mut i, "--max-parallel-subtasks")?;
+                max_parallel_subtasks = Some(value.parse().map_err(|_| {
+                    format!("--max-parallel-subtasks must be usize >= 0, got {value}")
+                })?);
+            }
+            "--max-concurrent-runs" => {
+                let value = need_value(&argv, &mut i, "--max-concurrent-runs")?;
+                max_concurrent_runs = Some(value.parse().map_err(|_| {
+                    format!("--max-concurrent-runs must be usize >= 0, got {value}")
+                })?);
+            }
+            "--rate-window-ms" => {
+                let value = need_value(&argv, &mut i, "--rate-window-ms")?;
+                rate_window_ms = Some(value.parse().map_err(|_| {
+                    format!("--rate-window-ms must be u64 > 0, got {value}")
+                })?);
+            }
+            "--rate-max-steps" => {
+                let value = need_value(&argv, &mut i, "--rate-max-steps")?;
+                rate_max_steps = Some(value.parse().map_err(|_| {
+                    format!("--rate-max-steps must be usize >= 0, got {value}")
+                })?);
+            }
+            "--budget-max-steps-per-run" => {
+                let value = need_value(&argv, &mut i, "--budget-max-steps-per-run")?;
+                budget_max_steps_per_run = Some(value.parse().map_err(|_| {
+                    format!("--budget-max-steps-per-run must be usize >= 0, got {value}")
+                })?);
+            }
             other => return Err(format!("unknown flag {other}")),
         }
         i += 1;
@@ -258,6 +331,41 @@ fn parse_args() -> Result<Mode, String> {
                 return Err("key-hash 须为 64 位小写 hex（sha256，key-list 输出形状）".into());
             }
             Ok(Mode::KeyRevoke { db, key_hash })
+        }
+        "budget-set" => {
+            let db = db.ok_or("budget-set requires --db")?;
+            let caller_id = caller_id.ok_or("budget-set requires --caller-id")?;
+            if !caller_id.starts_with("caller-") {
+                return Err(format!("--caller-id must start with 'caller-'（026 CHECK），got {caller_id}"));
+            }
+            let rate_window_ms = rate_window_ms.unwrap_or(60_000);
+            if rate_window_ms == 0 {
+                return Err("--rate-window-ms must be > 0（D2 口径，缺省 60000）".into());
+            }
+            Ok(Mode::BudgetSet {
+                db,
+                caller_id,
+                max_parallel_subtasks: max_parallel_subtasks.unwrap_or(0),
+                max_concurrent_runs: max_concurrent_runs.unwrap_or(0),
+                rate_window_ms,
+                rate_max_steps: rate_max_steps.unwrap_or(0),
+                budget_max_steps_per_run: budget_max_steps_per_run.unwrap_or(0),
+            })
+        }
+        "budget-show" => {
+            let db = db.ok_or("budget-show requires --db")?;
+            let caller_id = caller_id.ok_or("budget-show requires --caller-id")?;
+            Ok(Mode::BudgetShow { db, caller_id })
+        }
+        "budget-clear" => {
+            let db = db.ok_or("budget-clear requires --db")?;
+            let caller_id = caller_id.ok_or("budget-clear requires --caller-id")?;
+            Ok(Mode::BudgetClear { db, caller_id })
+        }
+        "caller-revoke" => {
+            let db = db.ok_or("caller-revoke requires --db")?;
+            let caller_id = caller_id.ok_or("caller-revoke requires --caller-id")?;
+            Ok(Mode::CallerRevoke { db, caller_id })
         }
         _ => {
             let db = db.ok_or("reten-archive requires --db")?;
@@ -588,9 +696,202 @@ fn run(mode: Mode) -> Result<(), String> {
                 .map_err(|e| e.to_string())?
             );
         }
+        Mode::BudgetSet {
+            db,
+            caller_id,
+            max_parallel_subtasks,
+            max_concurrent_runs,
+            rate_window_ms,
+            rate_max_steps,
+            budget_max_steps_per_run,
+        } => {
+            let pool = open_writable_migrated(&db)?;
+            // caller 存在性 + 未停用（停用 caller 不设预算，D6 停用即失效口径）。
+            let revoked: Option<Option<String>> = pool
+                .with_conn(|c| {
+                    c.query_row(
+                        "SELECT revoked_at FROM caller WHERE caller_id = ?1",
+                        rusqlite::params![caller_id],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .map(Some)
+                    .or_else(|err| match err {
+                        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                        other => Err(other),
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            match revoked {
+                None => return Err(format!("caller 不存在：{caller_id}（先 caller-add）")),
+                Some(Some(revoked_at)) => {
+                    return Err(format!(
+                        "caller {caller_id} 已停用（revoked_at={revoked_at}），不设预算"
+                    ))
+                }
+                Some(None) => {}
+            }
+            let updated_at: String = pool
+                .with_conn(|c| -> rusqlite::Result<String> {
+                    let ts: String = c.query_row(
+                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                        [],
+                        |r| r.get(0),
+                    )?;
+                    c.execute(
+                        "INSERT INTO caller_budget (caller_id, max_parallel_subtasks,
+                         max_concurrent_runs, rate_window_ms, rate_max_steps,
+                         budget_max_steps_per_run, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                         ON CONFLICT(caller_id) DO UPDATE SET
+                           max_parallel_subtasks = excluded.max_parallel_subtasks,
+                           max_concurrent_runs = excluded.max_concurrent_runs,
+                           rate_window_ms = excluded.rate_window_ms,
+                           rate_max_steps = excluded.rate_max_steps,
+                           budget_max_steps_per_run = excluded.budget_max_steps_per_run,
+                           updated_at = excluded.updated_at",
+                        rusqlite::params![
+                            caller_id,
+                            max_parallel_subtasks as i64,
+                            max_concurrent_runs as i64,
+                            rate_window_ms as i64,
+                            rate_max_steps as i64,
+                            budget_max_steps_per_run as i64,
+                            ts
+                        ],
+                    )?;
+                    Ok(ts)
+                })
+                .map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "caller_id": caller_id,
+                    "max_parallel_subtasks": max_parallel_subtasks,
+                    "max_concurrent_runs": max_concurrent_runs,
+                    "rate_window_ms": rate_window_ms,
+                    "rate_max_steps": rate_max_steps,
+                    "budget_max_steps_per_run": budget_max_steps_per_run,
+                    "updated_at": updated_at,
+                }))
+                .map_err(|e| e.to_string())?
+            );
+        }
+        Mode::BudgetShow { db, caller_id } => {
+            let pool = open_writable_migrated(&db)?;
+            let row: Option<BudgetRow> = pool
+                .with_conn(|c| {
+                    let mut stmt = c.prepare(
+                        "SELECT caller_id, max_parallel_subtasks, max_concurrent_runs,
+                                rate_window_ms, rate_max_steps, budget_max_steps_per_run, updated_at
+                         FROM caller_budget WHERE caller_id = ?1",
+                    )?;
+                    let row = stmt
+                        .query_row(rusqlite::params![caller_id], |r| {
+                            Ok(BudgetRow {
+                                caller_id: r.get(0)?,
+                                max_parallel_subtasks: r.get(1)?,
+                                max_concurrent_runs: r.get(2)?,
+                                rate_window_ms: r.get(3)?,
+                                rate_max_steps: r.get(4)?,
+                                budget_max_steps_per_run: r.get(5)?,
+                                updated_at: r.get(6)?,
+                            })
+                        })
+                        .map(Some)
+                        .or_else(|err| match err {
+                            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                            other => Err(other),
+                        })?;
+                    Ok::<_, rusqlite::Error>(row)
+                })
+                .map_err(|e| e.to_string())?;
+            match row {
+                Some(row) => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&row).map_err(|e| e.to_string())?
+                ),
+                None => {
+                    return Err(format!(
+                        "caller {caller_id} 无 budget 行（缺行 = 并行关、帽不限，D2 缺省口径）"
+                    ))
+                }
+            }
+        }
+        Mode::BudgetClear { db, caller_id } => {
+            let pool = open_writable_migrated(&db)?;
+            let deleted: usize = pool
+                .with_conn(|c| {
+                    c.execute(
+                        "DELETE FROM caller_budget WHERE caller_id = ?1",
+                        rusqlite::params![caller_id],
+                    )
+                })
+                .map_err(|e| e.to_string())?;
+            // 幂等（D6）：无行亦 exit 0（already_present=false）。
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "caller_id": caller_id,
+                    "cleared": deleted > 0,
+                }))
+                .map_err(|e| e.to_string())?
+            );
+        }
+        Mode::CallerRevoke { db, caller_id } => {
+            let pool = open_writable_migrated(&db)?;
+            let (updated, ts): (usize, String) = pool
+                .with_conn(|c| -> rusqlite::Result<(usize, String)> {
+                    let now: String = c.query_row(
+                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                        [],
+                        |r| r.get(0),
+                    )?;
+                    let n = c.execute(
+                        "UPDATE caller SET revoked_at = ?2 WHERE caller_id = ?1 AND revoked_at IS NULL",
+                        rusqlite::params![caller_id, now],
+                    )?;
+                    Ok((n, now))
+                })
+                .map_err(|e| e.to_string())?;
+            // 幂等（D6，key-revoke 同款）：重复 revoke 非致命记
+            // already_revoked=true；完全不存在的 caller 仍报错（exit 2）。
+            let already_revoked = if updated == 0 {
+                let exists: Option<bool> = pool
+                    .with_conn(|c| {
+                        c.query_row(
+                            "SELECT 1 FROM caller WHERE caller_id = ?1",
+                            rusqlite::params![caller_id],
+                            |_| Ok(true),
+                        )
+                        .map(Some)
+                        .or_else(|err| match err {
+                            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                            other => Err(other),
+                        })
+                    })
+                    .map_err(|e| e.to_string())?;
+                if exists.is_none() {
+                    return Err(format!("caller 不存在：{caller_id}（caller-list 查看）"));
+                }
+                true
+            } else {
+                false
+            };
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "caller_id": caller_id,
+                    "already_revoked": already_revoked,
+                    "revoked_at": if already_revoked { serde_json::Value::Null } else { serde_json::json!(ts) },
+                }))
+                .map_err(|e| e.to_string())?
+            );
+        }
     }
     Ok(())
 }
+
+
 
 // ---------------------------------------------------------------------------
 // MA-1（D6）caller/key 管理面：写连接（自动迁移）+ key 生成 + 行投影
@@ -683,6 +984,18 @@ struct CallerRow {
     revoked_at: Option<String>,
 }
 
+/// budget-show 行投影（027 caller_budget 行形状直出）。
+#[derive(serde::Serialize)]
+struct BudgetRow {
+    caller_id: String,
+    max_parallel_subtasks: i64,
+    max_concurrent_runs: i64,
+    rate_window_ms: i64,
+    rate_max_steps: i64,
+    budget_max_steps_per_run: i64,
+    updated_at: String,
+}
+
 /// key-list 行投影：只列 key_hash/label/时刻，永不回明文（库中零明文，判据 6）。
 #[derive(serde::Serialize)]
 struct KeyRow {
@@ -750,6 +1063,132 @@ mod tests {
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
             "key_hash 必须为 64 位小写 hex：{h}"
         );
+    }
+
+    /// MA-2（D6/D2）预算面四子命令：budget-set upsert / budget-show /
+    /// budget-clear 幂等 / caller-revoke 幂等 + 停用后 budget-set 拒绝
+    /// （临时库 + 真实迁移链 001..027；JSON 输出走 stdout 不参与断言，
+    /// 库内行形状直查对账）。
+    #[test]
+    fn ma2_budget_subcommands_roundtrip_and_revoke_idempotent() {
+        let db = std::env::temp_dir().join(format!(
+            "rp-admin-ma2-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&db);
+        let caller = "caller-ma2budget";
+        run(Mode::CallerAdd {
+            db: db.clone(),
+            name: "MA-2 budget e2e".into(),
+            level: "T1".into(),
+            caller_id: Some(caller.into()),
+        })
+        .expect("caller-add");
+        run(Mode::BudgetSet {
+            db: db.clone(),
+            caller_id: caller.into(),
+            max_parallel_subtasks: 3,
+            max_concurrent_runs: 2,
+            rate_window_ms: 60_000,
+            rate_max_steps: 5,
+            budget_max_steps_per_run: 7,
+        })
+        .expect("budget-set");
+        let pool = database::Pool::open(database::PoolConfig::writable_file(&db))
+            .expect("open for verify");
+        let row: (i64, i64, i64, i64, i64) = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT max_parallel_subtasks, max_concurrent_runs, rate_window_ms,
+                            rate_max_steps, budget_max_steps_per_run
+                     FROM caller_budget WHERE caller_id = ?1",
+                    rusqlite::params![caller],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )
+            })
+            .expect("budget row");
+        assert_eq!(row, (3, 2, 60_000, 5, 7));
+        // upsert：二次 set 覆盖（写入口唯一，无缓存陈旧——下一次装配读表即见）。
+        run(Mode::BudgetSet {
+            db: db.clone(),
+            caller_id: caller.into(),
+            max_parallel_subtasks: 4,
+            max_concurrent_runs: 0,
+            rate_window_ms: 30_000,
+            rate_max_steps: 0,
+            budget_max_steps_per_run: 0,
+        })
+        .expect("budget-set upsert");
+        let row2: i64 = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT max_parallel_subtasks FROM caller_budget WHERE caller_id = ?1",
+                    rusqlite::params![caller],
+                    |r| r.get(0),
+                )
+            })
+            .expect("budget row after upsert");
+        assert_eq!(row2, 4);
+        run(Mode::BudgetShow {
+            db: db.clone(),
+            caller_id: caller.into(),
+        })
+        .expect("budget-show");
+        run(Mode::BudgetClear {
+            db: db.clone(),
+            caller_id: caller.into(),
+        })
+        .expect("budget-clear");
+        // 幂等：无行 clear 亦成功。
+        run(Mode::BudgetClear {
+            db: db.clone(),
+            caller_id: caller.into(),
+        })
+        .expect("budget-clear idempotent");
+        let count: i64 = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT COUNT(*) FROM caller_budget WHERE caller_id = ?1",
+                    rusqlite::params![caller],
+                    |r| r.get(0),
+                )
+            })
+            .expect("budget row count");
+        assert_eq!(count, 0);
+        // caller-revoke：幂等（重复 revoke 非致命）。
+        run(Mode::CallerRevoke {
+            db: db.clone(),
+            caller_id: caller.into(),
+        })
+        .expect("caller-revoke");
+        run(Mode::CallerRevoke {
+            db: db.clone(),
+            caller_id: caller.into(),
+        })
+        .expect("caller-revoke idempotent");
+        // 停用 caller：budget-set 拒绝（D6 停用即失效写侧镜像）；
+        // budget-show 不存在的 caller 报错（exit 2 口径）。
+        assert!(run(Mode::BudgetSet {
+            db: db.clone(),
+            caller_id: caller.into(),
+            max_parallel_subtasks: 1,
+            max_concurrent_runs: 0,
+            rate_window_ms: 60_000,
+            rate_max_steps: 0,
+            budget_max_steps_per_run: 0,
+        })
+        .is_err());
+        assert!(run(Mode::BudgetShow {
+            db: db.clone(),
+            caller_id: "caller-ghost".into(),
+        })
+        .is_err());
+        drop(pool);
+        let _ = std::fs::remove_file(&db);
     }
 
     /// caller_id 形状：caller- 前缀（026 CHECK）+ 进程内唯一。

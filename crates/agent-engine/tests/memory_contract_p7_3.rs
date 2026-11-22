@@ -167,6 +167,7 @@ fn compression_and_eviction_keep_all_evidence_and_artifact_refs_resolvable() {
             trace_id: None,
             run_id: None,
             input: None,
+            caller_id: None,
             planner: Box::new(KeywordSearchPlanner),
             confirmer: Box::new(FirstFamilyConfirmer::new(confirmer_config)),
         })
