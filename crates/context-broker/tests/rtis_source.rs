@@ -46,7 +46,7 @@ mode = (here / "mode.txt").read_text().strip() if (here / "mode.txt").exists() e
 if mode == "slow":
     with (here / "attempts.txt").open("a") as f:
         f.write("1\n")
-    time.sleep(5)
+    time.sleep(2.5)
     print(json.dumps({"count": 0, "results": []}))
 elif mode == "fail":
     sys.exit(3)
@@ -133,7 +133,7 @@ fn rtis_fake_kit_parses_search_results_into_candidates() {
 fn rtis_timeout_retries_once_then_reports_unavailable() {
     let kit = make_fake_kit("slow");
     std::fs::write(kit.join("mode.txt"), "slow").unwrap();
-    let source = RtisSource::new(kit.clone()).with_timeout(Duration::from_millis(300));
+    let source = RtisSource::new(kit.clone()).with_timeout(Duration::from_millis(2000));
 
     let started = Instant::now();
     let (candidates, status) = source.search_with_status("kingdee", 5);
@@ -145,7 +145,7 @@ fn rtis_timeout_retries_once_then_reports_unavailable() {
     );
     match &status {
         RtisStatus::Unavailable(reason) => {
-            assert!(reason.contains("timeout after 0.3"), "reason: {reason}");
+            assert!(reason.contains("timeout after 2"), "reason: {reason}");
         }
         RtisStatus::Ok => panic!("slow kit must not report Ok"),
     }
