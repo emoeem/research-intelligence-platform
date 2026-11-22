@@ -135,6 +135,17 @@ fn tools_list_names(proc_: &mut McpProc) -> Vec<String> {
 
 #[test]
 fn mcp_subtask_roundtrip_and_caller_attribution() {
+    // V-9 受控环境端到端（first_batch_b2.rs:103-109 同口径）：goal 的
+    // keyword_search worker（rip_kb_search.py:14）硬编码只读打开
+    // migrations/platform.db——gitignore 的运行时数据，CI/全新 checkout 无此
+    // 文件（sqlite3 unable to open database file，CI 45007685259 实证）。
+    // 有 platform.db 的受控环境真跑（selftest_ma3.sh 硬验收②承载）。
+    if !repo_root().join("migrations/platform.db").exists() {
+        eprintln!(
+            "SKIP: migrations/platform.db 不在本地（gitignore 运行时数据），keyword_search worker 无法打开库（V-9，first_batch_b2 同口径受控环境端到端）"
+        );
+        return;
+    }
     let agent_bin = target_bin("rp-agent");
     if !agent_bin.exists() {
         eprintln!("SKIP: rp-agent 构建产物不在位（cargo test --workspace 全量先构建全部 bin，收口门必然实跑）");
