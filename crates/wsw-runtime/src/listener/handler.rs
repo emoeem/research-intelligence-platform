@@ -281,6 +281,12 @@ pub struct Counters {
     pub persist_dropped_total: AtomicU64,
     /// exchange 行已入 channel 计数（worker 消费面；吞吐实测分母）。
     pub persist_enqueued_total: AtomicU64,
+    /// WS 连接握手行计数（WSW-5：protocol='ws' 行 = 连接面事实，D3）。
+    pub ws_connections_total: AtomicU64,
+    /// WS 帧行已入 channel 计数（WSW-5 帧捕获对账分母，D3）。
+    pub ws_frames_captured_total: AtomicU64,
+    /// WS 帧行满载丢弃（WSW-5 帧通道有界丢弃计数可见，D3 同 W3-D2.2 口径）。
+    pub ws_frames_dropped_total: AtomicU64,
     /// 五态错误计数（index = ProxyErrorClass as_str）。
     pub errors: Mutex<BTreeMap<&'static str, u64>>,
 }
@@ -326,6 +332,10 @@ pub struct ListenerShared {
     /// exchange 行 listener 内单调序号（UNIQUE(listener_id, sequence_no)；
     /// 启动时由 worker 侧 MAX+1 恢复）。
     persist_sequence: AtomicU64,
+    /// WS 帧落库通道发送端（persist 在场才挂；WSW-5 D3 有界 mpsc(2048) 同型）。
+    wsframe_tx: Option<tokio::sync::mpsc::Sender<persist::WsFrameRow>>,
+    /// WS 帧落库通道接收端（listener start 取走 spawn worker；取一次）。
+    wsframe_rx: Mutex<Option<tokio::sync::mpsc::Receiver<persist::WsFrameRow>>>,
     /// 在途 capture 组装器登记（worker 清扫面：超龄未推行的 partial 行兜底
     /// 落库——连接中断且双侧流末都未触发时的可见性保证）。
     pub pending_captures: Mutex<BTreeMap<String, Arc<ExchangeCapture>>>,
@@ -351,6 +361,12 @@ impl ListenerShared {
         } else {
             (None, None)
         };
+        let (wsframe_tx, wsframe_rx) = if persist.is_some() {
+            let (tx, rx) = tokio::sync::mpsc::channel(2048);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
         Self {
             policy: OutOfScopePolicy::parse(&options.out_of_scope_policy),
             rules: options.scope_rules.clone(),
@@ -361,6 +377,8 @@ impl ListenerShared {
             persist,
             exchange_tx,
             persist_rx: Mutex::new(persist_rx),
+            wsframe_tx,
+            wsframe_rx: Mutex::new(wsframe_rx),
             persist_sequence: AtomicU64::new(0),
             pending_captures: Mutex::new(BTreeMap::new()),
             consecutive_downstream_tls: AtomicU64::new(0),
@@ -376,6 +394,40 @@ impl ListenerShared {
     /// 取走 exchange 落库通道接收端（worker spawn 用；二次调用 None）。
     pub fn take_persist_rx(&self) -> Option<tokio::sync::mpsc::Receiver<ExchangeRow>> {
         self.persist_rx.lock().expect("persist rx mutex").take()
+    }
+
+    /// 取走 WS 帧落库通道接收端（worker spawn 用；二次调用 None）。
+    pub fn take_wsframe_rx(&self) -> Option<tokio::sync::mpsc::Receiver<persist::WsFrameRow>> {
+        self.wsframe_rx.lock().expect("wsframe rx mutex").take()
+    }
+
+    /// WS 帧行 try_send（满载 → 丢行 + 计数 + 结构化日志，不等待不重试；
+    /// WSW-5 D3 同 W3-D2.2 口径：帧透传热路径零阻塞零等待）。返回 false =
+    /// 无落库通道或满载丢弃。
+    pub fn push_ws_frame_row(&self, row: persist::WsFrameRow) -> bool {
+        let Some(tx) = &self.wsframe_tx else {
+            return false; // 纯内存面：无落库通道
+        };
+        match tx.try_send(row) {
+            Ok(()) => {
+                self.counters
+                    .ws_frames_captured_total
+                    .fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                self.counters
+                    .ws_frames_dropped_total
+                    .fetch_add(1, Ordering::Relaxed);
+                tracing_error!(
+                    class = "parse_framing",
+                    error_code = "ws_frame_channel_full_drop",
+                    "ws frame row dropped: bounded wsframe channel full (2048); forward path unblocked"
+                );
+                false
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+        }
     }
 
     /// exchange 行 try_send（满载 → 丢行 + 计数 + 结构化日志，不等待不重试；
@@ -611,7 +663,10 @@ impl ExchangeCapture {
     /// 测试面：起始时刻改写（清扫判龄断言用）。
     #[doc(hidden)]
     pub fn __test_set_started_ms(&self, ms: u64) {
-        self.inner.lock().expect("exchange capture mutex").started_ms = ms;
+        self.inner
+            .lock()
+            .expect("exchange capture mutex")
+            .started_ms = ms;
     }
 
     /// 请求入口 snapshot（W3-D2.1：exchange_id/method/scheme/authority/path/
@@ -786,7 +841,10 @@ impl ExchangeCapture {
     /// 起始时刻 ms（清扫面判龄）。
     #[doc(hidden)]
     pub fn started_ms(&self) -> u64 {
-        self.inner.lock().expect("exchange capture mutex").started_ms
+        self.inner
+            .lock()
+            .expect("exchange capture mutex")
+            .started_ms
     }
 
     /// 行组装（列映射 = W3-D1 表形状；capture_fidelity=degraded_no_wire——
@@ -794,11 +852,7 @@ impl ExchangeCapture {
     /// completed_at/duration_ms = 行定型时刻（响应侧流末 push 或 worker 清扫
     /// 时刻；partial 行同面落定型时刻，不伪造响应完成态——ADR W3-D2.1 修订
     /// 批口径，partial 识别面 = parse_status='partial' + 响应列缺口）。
-    fn build_row(
-        &self,
-        inner: &ExchangeCaptureInner,
-        completed_ms: u64,
-    ) -> ExchangeRow {
+    fn build_row(&self, inner: &ExchangeCaptureInner, completed_ms: u64) -> ExchangeRow {
         let request_truncated = inner
             .request_body
             .as_ref()
@@ -1175,8 +1229,7 @@ impl futures::Stream for TeeBody {
                 // 流末注册：小任务做 CAS 写 + 024 blob 行 + exchange 体产出
                 // 登记（异步面；W3-D2.1 join 点 = capture_finish 同点）。
                 tokio::spawn(async move {
-                    let outcome =
-                        capture_body_outcome(&shared, &meta, &buf, truncated, cap as u64);
+                    let outcome = capture_body_outcome(&shared, &meta, &buf, truncated, cap as u64);
                     if let Some(acc) = &meta.accum {
                         if meta.direction == "request" {
                             acc.register_request_body(outcome);
@@ -1494,6 +1547,26 @@ pub struct WswHandler {
     shared: Arc<ListenerShared>,
     /// 当前连接的最近请求目标（响应方向捕获/关联用）。
     current: Option<Arc<CurrentExchange>>,
+    /// WS 帧捕获状态（WSW-5 D3；Arc 跨 Clone 共享——hudsucker 每连接克隆
+    /// handler，双侧泵各持一份克隆，连接登记面必须共享）。
+    ws_state: Arc<WsCaptureState>,
+}
+
+/// WS 连接捕获登记（endpoint+client_addr 键 → 连接组装面；握手行懒建——
+/// hudsucker WebSocketHandler 无连接开启钩子，首帧到达 = 连接面事实起点，
+/// D3 挂点单点纪律）。
+struct WsCaptureState {
+    conns: Mutex<BTreeMap<String, Arc<WsConnCapture>>>,
+}
+
+/// 单 WS 连接的捕获面（exchange_id 一次定型 + 帧序号单调）。
+struct WsConnCapture {
+    /// 握手行 exchange_id（protocol='ws'）。
+    exchange_id: String,
+    /// 帧序号（连接内单调，UNIQUE(connection_exchange_id, sequence_no) 锚）。
+    next_seq: AtomicU64,
+    /// 连接 scope 三态（握手时刻查点 A 投影，帧行同值落列）。
+    scope_decision: Option<&'static str>,
 }
 
 #[derive(Clone)]
@@ -1512,6 +1585,9 @@ impl WswHandler {
         Self {
             shared,
             current: None,
+            ws_state: Arc::new(WsCaptureState {
+                conns: Mutex::new(BTreeMap::new()),
+            }),
         }
     }
 
@@ -1656,10 +1732,7 @@ impl HttpHandler for WswHandler {
         // WSW-3 请求入口 snapshot（W3-D2.1）：exchange 行固定列一次定型；
         // sequence_no 单调分配；无落库通道时组装器缺省（capture 行为零开销跳过）。
         let accum = if self.shared.exchange_tx.is_some() {
-            let seq = self
-                .shared
-                .persist_sequence
-                .fetch_add(1, Ordering::Relaxed) as i64;
+            let seq = self.shared.persist_sequence.fetch_add(1, Ordering::Relaxed) as i64;
             let started_ms = now_ms();
             let scheme = req.uri().scheme_str().unwrap_or("http").to_string();
             let http_version = match req.version() {
@@ -2096,19 +2169,295 @@ fn port_of(parts: &hudsucker::hyper::http::request::Parts) -> u16 {
 }
 
 impl WebSocketHandler for WswHandler {
-    /// WS 帧透传挂载（W5 Workbench 留；本批只证明挂载面，POC 先例 main.rs:131-140）。
+    /// WS 帧结构化捕获 + 透传挂载（WSW-5 D3：opcode/payload/masked 提取 →
+    /// CAS payload → 030 帧行通道投递；Some 透传语义不变——POC 先例
+    /// main.rs:131-140 同型，捕获在透传路径零旁路零第二 WS 栈）。
     async fn handle_message(&mut self, ctx: &WebSocketContext, msg: Message) -> Option<Message> {
-        let endpoint = match ctx {
-            WebSocketContext::ClientToServer { dst, .. } => dst.to_string(),
-            WebSocketContext::ServerToClient { src, .. } => src.to_string(),
+        let (direction, endpoint, client_addr) = match ctx {
+            WebSocketContext::ClientToServer { src, dst, .. } => {
+                ("client_to_server", dst.clone(), *src)
+            }
+            WebSocketContext::ServerToClient { src, dst, .. } => {
+                ("server_to_client", src.clone(), *dst)
+            }
         };
+        let Some(opcode) = crate::wsframe::opcode_of(&msg) else {
+            // Frame 变体不透出（读取面永不产出）——防御面直接透传。
+            return Some(msg);
+        };
+        let conn = self.ws_conn_entry(&endpoint, client_addr);
+        let sequence_no = conn.next_seq.fetch_add(1, Ordering::Relaxed) as i64;
+        let payload = crate::wsframe::payload_of(&msg);
+        let captured_at = persist::now_iso();
+        let scope_decision = conn.scope_decision;
+        let exchange_id = conn.exchange_id.clone();
+
+        // CAS payload（W3-D2 同型：text→'text/plain'、binary/控制帧→
+        // 'application/octet-stream'；空帧/超帽 fidelity 词形如实标注）。
+        let (payload_sha, payload_uri, payload_len_col, payload_fidelity) =
+            self.store_ws_payload(&exchange_id, opcode, &payload, captured_at.as_str());
+
+        // 030 帧行投递（有界通道；满载丢行计数可见，热路径零阻塞）。
+        let row = persist::WsFrameRow {
+            frame_id: persist::generate_frame_id(),
+            connection_exchange_id: exchange_id.clone(),
+            direction,
+            sequence_no,
+            opcode: opcode.as_str(),
+            payload_len: payload.len() as i64,
+            payload_body_sha256: payload_sha,
+            payload_body_uri: payload_uri,
+            payload_body_len: payload_len_col,
+            payload_body_fidelity: payload_fidelity,
+            masked: crate::wsframe::masked_by_direction(direction),
+            captured_at,
+            scope_decision,
+        };
+        self.shared.push_ws_frame_row(row);
+
         tracing::info!(
             class = "capture",
             ws_endpoint = %endpoint,
             ws_frame = %msg.len(),
-            "ws frame passthrough (mounted; workbench W5)"
+            ws_opcode = opcode.as_str(),
+            ws_exchange = %exchange_id,
+            ws_sequence = sequence_no,
+            "ws frame passthrough (captured; workbench W5)"
         );
         Some(msg)
+    }
+}
+
+impl WswHandler {
+    /// WS 连接登记懒建（endpoint+client_addr 键；首帧 = 连接面事实起点）。
+    /// 新键：分配 exchange_id + sequence 基线 + 同步落握手行（protocol='ws'，
+    /// 030 帧行 FK 引用前置——握手行先于帧行在库，帧 worker 无乱序窗口）。
+    fn ws_conn_entry(
+        &self,
+        endpoint: &hudsucker::hyper::Uri,
+        client_addr: std::net::SocketAddr,
+    ) -> Arc<WsConnCapture> {
+        let key = format!("{client_addr}|{endpoint}");
+        let mut conns = self.ws_state.conns.lock().expect("ws capture mutex");
+        if let Some(existing) = conns.get(&key) {
+            return Arc::clone(existing);
+        }
+        let exchange_id = new_exchange_id();
+        let scope_decision = self.ws_handshake_scope(endpoint);
+        let capture = Arc::new(WsConnCapture {
+            exchange_id: exchange_id.clone(),
+            next_seq: AtomicU64::new(0),
+            scope_decision,
+        });
+        self.push_ws_handshake_row(&exchange_id, endpoint, scope_decision);
+        conns.insert(key, Arc::clone(&capture));
+        capture
+    }
+
+    /// WS 连接 scope 三态投影（030/wsw_exchange scope_decision 同列语义，
+    /// 判据 8：ws/wss scheme 映射 http/https 复走既有查点 A 词形——scope.rs
+    /// 零 diff，纯调用面）。
+    fn ws_handshake_scope(&self, endpoint: &hudsucker::hyper::Uri) -> Option<&'static str> {
+        let host = endpoint.host().unwrap_or("");
+        let port = endpoint.port_u16().unwrap_or(match endpoint.scheme_str() {
+            Some("wss") => 443,
+            _ => 80,
+        });
+        let path = endpoint.path();
+        let mapped_scheme = match endpoint.scheme_str() {
+            Some("wss") => "https",
+            _ => "http",
+        };
+        let target = ScopeTarget {
+            scheme: mapped_scheme,
+            host,
+            port,
+            path,
+        };
+        match scope::check(&self.shared.rules, &target) {
+            scope::ScopeDecision::Allowed { .. } => Some("in_scope"),
+            scope::ScopeDecision::Blocked { .. } => Some("out_of_scope_blocked"),
+        }
+    }
+
+    /// WS 握手行落库（025 面复用 insert_exchanges；同步单行——030 帧行 FK
+    /// 前置；无落库通道/纯内存面跳过）。行形状：protocol='ws' +
+    /// source='proxy_capture'（025:54 词形直用）+ capture_fidelity=
+    /// degraded_no_wire（握手头区不经本挂点透出——W2-D9 实态如实落库）。
+    fn push_ws_handshake_row(
+        &self,
+        exchange_id: &str,
+        endpoint: &hudsucker::hyper::Uri,
+        scope_decision: Option<&'static str>,
+    ) {
+        if self.shared.exchange_tx.is_none() {
+            return;
+        }
+        let seq = self.shared.persist_sequence.fetch_add(1, Ordering::Relaxed) as i64;
+        let now = persist::now_iso();
+        let authority = endpoint
+            .authority()
+            .map(|a| a.as_str().to_string())
+            .unwrap_or_default();
+        let row = ExchangeRow {
+            exchange_id: exchange_id.to_string(),
+            session_id: self.shared.options.session_id.clone(),
+            listener_id: self.shared.options.listener_id.clone(),
+            sequence_no: seq,
+            direction: "client_to_server",
+            source: "proxy_capture",
+            protocol: "ws",
+            http_version: None,
+            tls_version: None,
+            alpn: None,
+            // RFC6455 §4.1 握手定义性为 GET（协议事实非观测伪造）。
+            method: Some("GET".to_string()),
+            scheme: endpoint.scheme_str().map(|s| match s {
+                "wss" => "wss".to_string(),
+                _ => "ws".to_string(),
+            }),
+            authority: Some(authority),
+            path: Some(endpoint.path().to_string()),
+            response_status: None,
+            request_headers_json: None,
+            response_headers_json: None,
+            request_body_sha256: None,
+            request_body_uri: None,
+            request_body_len: None,
+            request_mime: None,
+            request_body_fidelity: None,
+            response_body_sha256: None,
+            response_body_uri: None,
+            response_body_len: None,
+            response_mime: None,
+            response_body_fidelity: None,
+            started_at: Some(now.clone()),
+            completed_at: Some(now),
+            duration_ms: None,
+            ttfb_ms: None,
+            remote_ip: None,
+            scope_decision,
+            edited: false,
+            tags_json: "[]".to_string(),
+            notes: None,
+            trace_id: None,
+            task_id: None,
+            tool_run_id: None,
+            artifact_id: None,
+            evidence_id: None,
+            capture_fidelity: "degraded_no_wire",
+            parse_status: "ok",
+            error_code: None,
+            search_text: None,
+        };
+        self.shared
+            .counters
+            .ws_connections_total
+            .fetch_add(1, Ordering::Relaxed);
+        // 握手行同步单行落库（不走通道——030 帧行 FK 引用 wsw_exchange 行
+        // 前置：Pool foreign_keys=ON，帧行 worker 与 exchange worker 双通道
+        // 无顺序保证，握手行必须先于首帧行在库；fsync 成本 = 每连接一次，
+        // 非帧热路径）。失败仅计数——透传行为不变。
+        if let Some(store) = self.shared.persist() {
+            if let Err(e) = store.insert_exchanges(&[row]) {
+                self.shared
+                    .counters
+                    .ws_connections_total
+                    .fetch_sub(1, Ordering::Relaxed);
+                tracing_error!(
+                    class = "parse_framing",
+                    error_code = "ws_handshake_row_insert_failed",
+                    cause = %e,
+                    exchange_id = %exchange_id,
+                    "ws handshake row insert failed (frames for this connection will be dropped by FK)"
+                );
+            }
+        } else {
+            // 无 persist 面：握手行无落库点（纯内存模式帧行通道也不存在）。
+            self.shared
+                .counters
+                .ws_connections_total
+                .fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
+    /// WS 帧 payload CAS 落账（store_body 023 链 + wsw_body_blob 行；空帧 →
+    /// NULL 派生列 + len=0 如实在行；capture_cas=false → NULL 派生列）。
+    fn store_ws_payload(
+        &self,
+        exchange_id: &str,
+        opcode: crate::wsframe::WsOpcode,
+        payload: &[u8],
+        _captured_at: &str,
+    ) -> (
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        Option<&'static str>,
+    ) {
+        if payload.is_empty() || !self.shared.options.capture_cas {
+            return (
+                None,
+                None,
+                if payload.is_empty() { Some(0) } else { None },
+                if payload.is_empty() {
+                    Some("full")
+                } else {
+                    None
+                },
+            );
+        }
+        let cap = self.shared.options.config.max_body_bytes as u64;
+        let mime = crate::wsframe::payload_mime(opcode);
+        match wsw_message::cas::store_body(&self.shared.options.artifacts_root, payload, cap) {
+            Ok(body_ref) => {
+                let fidelity = match body_ref.fidelity {
+                    wsw_message::types::CaptureFidelity::Truncated => "truncated",
+                    _ => "full",
+                };
+                if let Some(store) = self.shared.persist() {
+                    let row = wsw_message::store::BodyBlobRow {
+                        sha256: body_ref.sha256.clone(),
+                        uri: body_ref.uri.clone(),
+                        size_bytes: body_ref.size as i64,
+                        mime_type: mime.to_string(),
+                        first_seen_exchange_id: Some(exchange_id.to_string()),
+                        created_at: persist::now_iso(),
+                    };
+                    if let Err(e) =
+                        store.with_conn(|conn| wsw_message::store::register_body_blob(conn, &row))
+                    {
+                        tracing_error!(
+                            class = "parse_framing",
+                            error_code = "blob_register_failed",
+                            cause = %e,
+                            exchange_id = %exchange_id,
+                            "wsw_body_blob register failed (ws frame payload)"
+                        );
+                    }
+                }
+                self.shared
+                    .counters
+                    .captures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                (
+                    Some(body_ref.sha256),
+                    Some(body_ref.uri),
+                    Some(body_ref.size as i64),
+                    Some(fidelity),
+                )
+            }
+            Err(e) => {
+                tracing_error!(
+                    class = "parse_framing",
+                    error_code = "cas_store_failed",
+                    cause = %e,
+                    exchange_id = %exchange_id,
+                    "ws frame payload CAS store failed"
+                );
+                (None, None, Some(payload.len() as i64), None)
+            }
+        }
     }
 }
 

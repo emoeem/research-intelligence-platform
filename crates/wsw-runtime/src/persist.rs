@@ -29,9 +29,9 @@
 use crate::{InterceptState, ListenerState};
 use database::{DbError, DbPath, DbResult, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
-use tracing::error as tracing_error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::error as tracing_error;
 
 /// `&dyn ToSql` 数组字面量宏（rusqlite execute/query_map 直传形态）。
 macro_rules! sql_params {
@@ -819,13 +819,25 @@ fn validate_exchange_row(row: &ExchangeRow) -> Result<(), DbError> {
         )));
     }
     if !matches!(row.direction, "client_to_server" | "server_to_client") {
-        return Err(DbError::Validation(format!("invalid direction: {:?}", row.direction)));
+        return Err(DbError::Validation(format!(
+            "invalid direction: {:?}",
+            row.direction
+        )));
     }
-    if !matches!(row.source, "proxy_capture" | "repeater" | "fuzzer" | "import") {
-        return Err(DbError::Validation(format!("invalid source: {:?}", row.source)));
+    if !matches!(
+        row.source,
+        "proxy_capture" | "repeater" | "fuzzer" | "import"
+    ) {
+        return Err(DbError::Validation(format!(
+            "invalid source: {:?}",
+            row.source
+        )));
     }
     if !matches!(row.protocol, "http" | "ws") {
-        return Err(DbError::Validation(format!("invalid protocol: {:?}", row.protocol)));
+        return Err(DbError::Validation(format!(
+            "invalid protocol: {:?}",
+            row.protocol
+        )));
     }
     if !matches!(
         row.capture_fidelity,
@@ -843,8 +855,13 @@ fn validate_exchange_row(row: &ExchangeRow) -> Result<(), DbError> {
         )));
     }
     if let Some(d) = row.scope_decision {
-        if !matches!(d, "in_scope" | "out_of_scope_passive" | "out_of_scope_blocked") {
-            return Err(DbError::Validation(format!("invalid scope_decision: {d:?}")));
+        if !matches!(
+            d,
+            "in_scope" | "out_of_scope_passive" | "out_of_scope_blocked"
+        ) {
+            return Err(DbError::Validation(format!(
+                "invalid scope_decision: {d:?}"
+            )));
         }
     }
     if let Some(t) = &row.started_at {
@@ -882,21 +899,23 @@ fn validate_send_state(state: &str) -> Result<(), DbError> {
     ) {
         Ok(())
     } else {
-        Err(DbError::Validation(format!("invalid send state: {state:?}")))
+        Err(DbError::Validation(format!(
+            "invalid send state: {state:?}"
+        )))
     }
 }
 
 impl PersistStore {
-    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，MA-3 后为 29）。
+    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，WSW-5/6 后为 30）。
     /// 方法名去数字收口（原 assert_watermark_25 名 25 断言 27 双漂移既有债，
     /// WSW-4-TASK A13/S3 裁决改名；随链尾演进仅更新断言值）。
     pub fn assert_watermark(&self) -> DbResult<()> {
         let v: i64 = self
             .pool
             .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if v != 29 {
+        if v != 30 {
             return Err(DbError::Validation(format!(
-                "029 chain head expected user_version=29, got {v}"
+                "030 chain head expected user_version=30, got {v}"
             )));
         }
         Ok(())
@@ -1107,8 +1126,14 @@ impl PersistStore {
         if row.version_no < 1 {
             return Err(DbError::Validation("version_no must be >= 1".into()));
         }
-        if !matches!(row.origin.as_str(), "manual" | "from_history" | "restore" | "send_snapshot") {
-            return Err(DbError::Validation(format!("invalid origin: {:?}", row.origin)));
+        if !matches!(
+            row.origin.as_str(),
+            "manual" | "from_history" | "restore" | "send_snapshot"
+        ) {
+            return Err(DbError::Validation(format!(
+                "invalid origin: {:?}",
+                row.origin
+            )));
         }
         if row.request_json.len() > 8_388_608 {
             return Err(DbError::Validation(
@@ -1141,28 +1166,34 @@ impl PersistStore {
     }
 
     /// 取版本行（发送面回放依据）。
-    pub fn get_tab_version(&self, tab_id: &str, version_no: i64) -> DbResult<Option<TabVersionRow>> {
-        self.pool.with_conn(|conn| -> DbResult<Option<TabVersionRow>> {
-            let mut stmt = conn.prepare(
+    pub fn get_tab_version(
+        &self,
+        tab_id: &str,
+        version_no: i64,
+    ) -> DbResult<Option<TabVersionRow>> {
+        self.pool
+            .with_conn(|conn| -> DbResult<Option<TabVersionRow>> {
+                let mut stmt = conn.prepare(
                 "SELECT tab_id, version_no, request_json, source_exchange_id, origin, created_at \
                  FROM wsw_repeater_tab_version WHERE tab_id=?1 AND version_no=?2",
             )?;
-            let mut rows = stmt.query_map(sql_params![tab_id, version_no], map_version_row)?;
-            Ok(rows.next().transpose()?)
-        })
+                let mut rows = stmt.query_map(sql_params![tab_id, version_no], map_version_row)?;
+                Ok(rows.next().transpose()?)
+            })
     }
 
     /// 最新版本行（tab 打开面回填编辑器）。
     pub fn latest_tab_version(&self, tab_id: &str) -> DbResult<Option<TabVersionRow>> {
-        self.pool.with_conn(|conn| -> DbResult<Option<TabVersionRow>> {
-            let mut stmt = conn.prepare(
+        self.pool
+            .with_conn(|conn| -> DbResult<Option<TabVersionRow>> {
+                let mut stmt = conn.prepare(
                 "SELECT tab_id, version_no, request_json, source_exchange_id, origin, created_at \
                  FROM wsw_repeater_tab_version WHERE tab_id=?1 \
                  ORDER BY version_no DESC LIMIT 1",
             )?;
-            let mut rows = stmt.query_map(sql_params![tab_id], map_version_row)?;
-            Ok(rows.next().transpose()?)
-        })
+                let mut rows = stmt.query_map(sql_params![tab_id], map_version_row)?;
+                Ok(rows.next().transpose()?)
+            })
     }
 
     /// 版本历史（append-only 全序列；version_no DESC）。
@@ -1341,9 +1372,7 @@ fn map_tab_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result<
     })
 }
 
-fn map_version_row(
-    row: &database::rusqlite::Row<'_>,
-) -> database::rusqlite::Result<TabVersionRow> {
+fn map_version_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result<TabVersionRow> {
     Ok(TabVersionRow {
         tab_id: row.get(0)?,
         version_no: row.get(1)?,
@@ -1378,7 +1407,6 @@ fn map_send_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // WSW-4 fuzz store（028 两表：wsw_fuzz_job / wsw_fuzz_case；WSW-4-TASK D2/D5）。
 // 状态机词表逐字 = PLAN :502-503；迁移合法性 Rust 侧查表拒 + SQL WHERE
@@ -1388,14 +1416,26 @@ fn map_send_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result
 
 /// Fuzzer Job 九态词表（PLAN :502 逐字；028 CHECK 同源）。
 pub const FUZZ_JOB_STATES: [&str; 9] = [
-    "CREATED", "QUEUED", "RUNNING", "PAUSED", "CANCELLING", "CANCELLED",
-    "COMPLETED", "FAILED", "BUDGET_EXHAUSTED",
+    "CREATED",
+    "QUEUED",
+    "RUNNING",
+    "PAUSED",
+    "CANCELLING",
+    "CANCELLED",
+    "COMPLETED",
+    "FAILED",
+    "BUDGET_EXHAUSTED",
 ];
 
 /// Fuzzer Case 七态词表（PLAN :503 逐字；028 CHECK 同源）。
 pub const FUZZ_CASE_STATES: [&str; 7] = [
-    "PENDING", "SENT", "RESPONDED", "TIMEOUT", "NETWORK_ERROR",
-    "SKIPPED_SCOPE", "SKIPPED_BUDGET",
+    "PENDING",
+    "SENT",
+    "RESPONDED",
+    "TIMEOUT",
+    "NETWORK_ERROR",
+    "SKIPPED_SCOPE",
+    "SKIPPED_BUDGET",
 ];
 
 /// Job 九态合法迁移表（Rust 侧强制；终态无出边）：
@@ -1533,7 +1573,9 @@ pub struct FuzzCasePatch {
     pub completed_at: Option<String>,
 }
 
-fn fuzz_job_row_from(row: &database::rusqlite::Row<'_>) -> Result<FuzzJobRow, database::rusqlite::Error> {
+fn fuzz_job_row_from(
+    row: &database::rusqlite::Row<'_>,
+) -> Result<FuzzJobRow, database::rusqlite::Error> {
     Ok(FuzzJobRow {
         job_id: row.get(0)?,
         session_id: row.get(1)?,
@@ -1559,7 +1601,9 @@ fn fuzz_job_row_from(row: &database::rusqlite::Row<'_>) -> Result<FuzzJobRow, da
     })
 }
 
-fn fuzz_case_row_from(row: &database::rusqlite::Row<'_>) -> Result<FuzzCaseRow, database::rusqlite::Error> {
+fn fuzz_case_row_from(
+    row: &database::rusqlite::Row<'_>,
+) -> Result<FuzzCaseRow, database::rusqlite::Error> {
     Ok(FuzzCaseRow {
         case_id: row.get(0)?,
         job_id: row.get(1)?,
@@ -1885,6 +1929,517 @@ impl PersistStore {
                 sql_params![job_id],
                 |r| r.get(0),
             )
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WSW-5/6 帧与被动候选 store（030 两表：wsw_ws_frame / wsw_passive_hit；
+// WSW-5-6-TASK D2/D3/D7）。帧行 = WS 连接帧元数据行（PLAN :283「不把
+// WebSocket 帧与普通 HTTP Request 混成同一种实体」——不入 wsw_exchange）；
+// payload 大内容不入行（CAS BodyRef 四派生列 = 025 Body 列同型）。UNIQUE
+// (connection_exchange_id, sequence_no) / UNIQUE(exchange_id, rule_id) 幂等
+// 锚 INSERT OR IGNORE（重放/重分析不重复落行，可见计数承载）。
+// 写权 = rp-wsw listener / rp-wsw ws 子进程 Rust-only（W3-D7 分治延续）。
+// ---------------------------------------------------------------------------
+
+/// 030 opcode CHECK 词表（PLAN :276/:678 text/binary/ping/pong/close 五词形）。
+pub const WS_FRAME_OPCODES: [&str; 5] = ["text", "binary", "ping", "pong", "close"];
+
+/// 030 direction CHECK 词表。
+pub const WS_FRAME_DIRECTIONS: [&str; 2] = ["client_to_server", "server_to_client"];
+
+/// `wsw_ws_frame` 行（030 表；PLAN :283 帧独立实体）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WsFrameRow {
+    /// `wsw-fr-` 前缀 ID（UNIQUE 幂等键）。
+    pub frame_id: String,
+    /// WS 握手行引用（protocol='ws' 的 wsw_exchange 行）。
+    pub connection_exchange_id: String,
+    /// 两词表（client_to_server/server_to_client）。
+    pub direction: &'static str,
+    /// 连接内单调序号（UNIQUE(connection_exchange_id, sequence_no) 锚）。
+    pub sequence_no: i64,
+    /// 五词表（text/binary/ping/pong/close）。
+    pub opcode: &'static str,
+    /// 原始 payload 字节数。
+    pub payload_len: i64,
+    /// CAS 派生四列（空帧/超帽 = NULL + fidelity 标注）。
+    pub payload_body_sha256: Option<String>,
+    pub payload_body_uri: Option<String>,
+    pub payload_body_len: Option<i64>,
+    /// 'full'/'truncated'。
+    pub payload_body_fidelity: Option<&'static str>,
+    /// 线缆掩码面（RFC6455 方向词形承载：client_to_server=1）。
+    pub masked: bool,
+    /// ISO8601 UTC 带毫秒。
+    pub captured_at: String,
+    /// 三态沿用 wsw_exchange 同列语义；None = Unknown。
+    pub scope_decision: Option<&'static str>,
+}
+
+/// `wsw_passive_hit` 行（030 表；PLAN :307-309/:504/:565 候选语义——
+/// 零 evidence_id 列零 Finding 提升面）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PassiveHitRow {
+    /// `wsw-pah-` 前缀 ID。
+    pub hit_id: String,
+    /// exchange 行引用。
+    pub exchange_id: String,
+    /// listener 引用（`wsw-lis-`）。
+    pub listener_id: String,
+    /// 规则词表（passive.rs 注册表 14 规则逐字；030 CHECK 同源）。
+    pub rule_id: &'static str,
+    /// 规则版本。
+    pub rule_version: i64,
+    /// 四词表（info/low/medium/high）。
+    pub severity: &'static str,
+    /// 命中明细 JSON（8MiB 帽由 SQL CHECK 强制）。
+    pub match_detail_json: Option<String>,
+    /// ISO8601 UTC 带毫秒。
+    pub created_at: String,
+}
+
+/// 生成 `wsw-fr-<micros>-<seq>-<rand4>` 帧行 ID（ids.rs:9 范式）。
+pub fn generate_frame_id() -> String {
+    format!("wsw-fr-{}", generic_unique_suffix())
+}
+
+/// 生成 `wsw-pah-<micros>-<seq>-<rand4>` 候选命中行 ID（ids.rs:9 范式）。
+pub fn generate_hit_id() -> String {
+    format!("wsw-pah-{}", generic_unique_suffix())
+}
+
+/// 帧行校验（030 CHECK 双保险：ID 前缀 + 词表 + sha256 形状 + ISO8601 ms）。
+fn validate_ws_frame_row(row: &WsFrameRow) -> Result<(), DbError> {
+    if !row.frame_id.starts_with("wsw-fr-") {
+        return Err(DbError::Validation(format!(
+            "frame_id must start with wsw-fr-: {:?}",
+            row.frame_id
+        )));
+    }
+    if !row.connection_exchange_id.starts_with("wsw-") {
+        return Err(DbError::Validation(format!(
+            "connection_exchange_id must start with wsw-: {:?}",
+            row.connection_exchange_id
+        )));
+    }
+    if !WS_FRAME_DIRECTIONS.contains(&row.direction) {
+        return Err(DbError::Validation(format!(
+            "invalid direction: {:?}",
+            row.direction
+        )));
+    }
+    if !WS_FRAME_OPCODES.contains(&row.opcode) {
+        return Err(DbError::Validation(format!(
+            "invalid opcode: {:?}",
+            row.opcode
+        )));
+    }
+    if row.sequence_no < 0 || row.payload_len < 0 {
+        return Err(DbError::Validation(
+            "negative sequence_no/payload_len".into(),
+        ));
+    }
+    if let Some(sha) = &row.payload_body_sha256 {
+        if !wsw_message::cas::is_valid_sha256(sha) {
+            return Err(DbError::Validation("bad payload_body_sha256".into()));
+        }
+    }
+    if let Some(f) = row.payload_body_fidelity {
+        if !matches!(f, "full" | "truncated") {
+            return Err(DbError::Validation(format!(
+                "invalid payload_body_fidelity: {f:?}"
+            )));
+        }
+    }
+    if let Some(d) = row.scope_decision {
+        if !matches!(
+            d,
+            "in_scope" | "out_of_scope_passive" | "out_of_scope_blocked"
+        ) {
+            return Err(DbError::Validation(format!(
+                "invalid scope_decision: {d:?}"
+            )));
+        }
+    }
+    if iso_to_epoch_ms(&row.captured_at).is_none() {
+        return Err(DbError::Validation(
+            "captured_at must be ISO8601 UTC ms".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// 命中行校验（030 CHECK 双保险：ID 前缀 + 词表 + ISO8601 ms）。
+fn validate_passive_hit_row(row: &PassiveHitRow) -> Result<(), DbError> {
+    if !row.hit_id.starts_with("wsw-pah-") {
+        return Err(DbError::Validation(format!(
+            "hit_id must start with wsw-pah-: {:?}",
+            row.hit_id
+        )));
+    }
+    if !row.exchange_id.starts_with("wsw-") {
+        return Err(DbError::Validation(format!(
+            "exchange_id must start with wsw-: {:?}",
+            row.exchange_id
+        )));
+    }
+    if !row.listener_id.starts_with("wsw-lis-") {
+        return Err(DbError::Validation(format!(
+            "listener_id must start with wsw-lis-: {:?}",
+            row.listener_id
+        )));
+    }
+    if !crate::passive::PASSIVE_RULES
+        .iter()
+        .any(|r| r.id == row.rule_id)
+    {
+        return Err(DbError::Validation(format!(
+            "invalid rule_id: {:?}",
+            row.rule_id
+        )));
+    }
+    if !matches!(row.severity, "info" | "low" | "medium" | "high") {
+        return Err(DbError::Validation(format!(
+            "invalid severity: {:?}",
+            row.severity
+        )));
+    }
+    if row.rule_version < 0 {
+        return Err(DbError::Validation("negative rule_version".into()));
+    }
+    if iso_to_epoch_ms(&row.created_at).is_none() {
+        return Err(DbError::Validation(
+            "created_at must be ISO8601 UTC ms".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn ws_frame_row_from(
+    row: &database::rusqlite::Row<'_>,
+) -> Result<WsFrameRow, database::rusqlite::Error> {
+    Ok(WsFrameRow {
+        frame_id: row.get(0)?,
+        connection_exchange_id: row.get(1)?,
+        direction: row.get::<_, String>(2)?.leak() as &'static str,
+        sequence_no: row.get(3)?,
+        opcode: row.get::<_, String>(4)?.leak() as &'static str,
+        payload_len: row.get(5)?,
+        payload_body_sha256: row.get(6)?,
+        payload_body_uri: row.get(7)?,
+        payload_body_len: row.get(8)?,
+        payload_body_fidelity: row.get::<_, Option<String>>(9)?.map(|s| match s.as_str() {
+            "truncated" => "truncated",
+            _ => "full",
+        }),
+        masked: row.get::<_, i64>(10)? != 0,
+        captured_at: row.get(11)?,
+        scope_decision: row.get::<_, Option<String>>(12)?.map(|s| match s.as_str() {
+            "out_of_scope_passive" => "out_of_scope_passive",
+            "out_of_scope_blocked" => "out_of_scope_blocked",
+            _ => "in_scope",
+        }),
+    })
+}
+
+fn passive_hit_row_from(
+    row: &database::rusqlite::Row<'_>,
+) -> Result<PassiveHitRow, database::rusqlite::Error> {
+    Ok(PassiveHitRow {
+        hit_id: row.get(0)?,
+        exchange_id: row.get(1)?,
+        listener_id: row.get(2)?,
+        rule_id: row.get::<_, String>(3)?.leak() as &'static str,
+        rule_version: row.get(4)?,
+        severity: row.get::<_, String>(5)?.leak() as &'static str,
+        match_detail_json: row.get(6)?,
+        created_at: row.get(7)?,
+    })
+}
+
+/// exchange 行全列读取（replay 目标还原面；列映射 = insert 同形）。
+fn map_exchange_row_full(
+    row: &database::rusqlite::Row<'_>,
+) -> Result<ExchangeRow, database::rusqlite::Error> {
+    Ok(ExchangeRow {
+        exchange_id: row.get(0)?,
+        session_id: row.get(1)?,
+        listener_id: row.get(2)?,
+        sequence_no: row.get(3)?,
+        direction: row.get::<_, String>(4)?.leak() as &'static str,
+        source: row.get::<_, String>(5)?.leak() as &'static str,
+        protocol: row.get::<_, String>(6)?.leak() as &'static str,
+        http_version: row.get(7)?,
+        tls_version: row.get(8)?,
+        alpn: row.get(9)?,
+        method: row.get(10)?,
+        scheme: row.get(11)?,
+        authority: row.get(12)?,
+        path: row.get(13)?,
+        response_status: row.get(14)?,
+        request_headers_json: row.get(15)?,
+        response_headers_json: row.get(16)?,
+        request_body_sha256: row.get(17)?,
+        request_body_uri: row.get(18)?,
+        request_body_len: row.get(19)?,
+        request_mime: row.get(20)?,
+        request_body_fidelity: row.get::<_, Option<String>>(21)?.map(|s| match s.as_str() {
+            "truncated" => "truncated",
+            "degraded_no_wire" => "degraded_no_wire",
+            "import" => "import",
+            _ => "full",
+        }),
+        response_body_sha256: row.get(22)?,
+        response_body_uri: row.get(23)?,
+        response_body_len: row.get(24)?,
+        response_mime: row.get(25)?,
+        response_body_fidelity: row.get::<_, Option<String>>(26)?.map(|s| match s.as_str() {
+            "truncated" => "truncated",
+            "degraded_no_wire" => "degraded_no_wire",
+            "import" => "import",
+            _ => "full",
+        }),
+        started_at: row.get(27)?,
+        completed_at: row.get(28)?,
+        duration_ms: row.get(29)?,
+        ttfb_ms: row.get(30)?,
+        remote_ip: row.get(31)?,
+        scope_decision: row.get::<_, Option<String>>(32)?.map(|s| match s.as_str() {
+            "out_of_scope_passive" => "out_of_scope_passive",
+            "out_of_scope_blocked" => "out_of_scope_blocked",
+            _ => "in_scope",
+        }),
+        edited: row.get::<_, i64>(33)? != 0,
+        tags_json: row.get(34)?,
+        notes: row.get(35)?,
+        trace_id: row.get(36)?,
+        task_id: row.get(37)?,
+        tool_run_id: row.get(38)?,
+        artifact_id: row.get(39)?,
+        evidence_id: row.get(40)?,
+        capture_fidelity: row.get::<_, String>(41)?.leak() as &'static str,
+        parse_status: row.get::<_, String>(42)?.leak() as &'static str,
+        error_code: row.get(43)?,
+        search_text: row.get(44)?,
+    })
+}
+
+impl PersistStore {
+    /// 批量落帧行（INSERT OR IGNORE：UNIQUE(connection_exchange_id,
+    /// sequence_no) 幂等锚——重复捕获同帧不重复落行，幂等命中计入 failed
+    /// 外的可见口径由调用面日志承载）。
+    pub fn insert_ws_frames(&self, rows: &[WsFrameRow]) -> DbResult<BatchInsertOutcome> {
+        let mut outcome = BatchInsertOutcome::default();
+        self.pool.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for row in rows {
+                if let Err(e) = validate_ws_frame_row(row) {
+                    tracing_error!(
+                        class = "parse_framing",
+                        error_code = "ws_frame_row_invalid",
+                        cause = %e,
+                        frame_id = %row.frame_id,
+                        "ws frame row rejected by pre-insert validation"
+                    );
+                    outcome.failed += 1;
+                    continue;
+                }
+                match tx.execute(
+                    "INSERT OR IGNORE INTO wsw_ws_frame \
+                     (frame_id, connection_exchange_id, direction, sequence_no, opcode, \
+                      payload_len, payload_body_sha256, payload_body_uri, payload_body_len, \
+                      payload_body_fidelity, masked, captured_at, scope_decision) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                    sql_params![
+                        row.frame_id,
+                        row.connection_exchange_id,
+                        row.direction,
+                        row.sequence_no,
+                        row.opcode,
+                        row.payload_len,
+                        row.payload_body_sha256,
+                        row.payload_body_uri,
+                        row.payload_body_len,
+                        row.payload_body_fidelity,
+                        row.masked as i64,
+                        row.captured_at,
+                        row.scope_decision
+                    ],
+                ) {
+                    Ok(1) => outcome.inserted += 1,
+                    Ok(_) => outcome.failed += 1, // 幂等命中（同 conn+seq 已在）
+                    Err(e) => {
+                        tracing_error!(
+                            class = "parse_framing",
+                            error_code = "ws_frame_row_insert_failed",
+                            cause = %e,
+                            frame_id = %row.frame_id,
+                            "ws frame row insert failed (row salvaged out of batch)"
+                        );
+                        outcome.failed += 1;
+                    }
+                }
+            }
+            tx.commit()?;
+            Ok::<(), database::rusqlite::Error>(())
+        })?;
+        Ok(outcome)
+    }
+
+    /// 取帧行（帧详情/replay 读面）。
+    pub fn get_ws_frame(&self, frame_id: &str) -> DbResult<Option<WsFrameRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Option<WsFrameRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT frame_id, connection_exchange_id, direction, sequence_no, opcode, \
+                        payload_len, payload_body_sha256, payload_body_uri, payload_body_len, \
+                        payload_body_fidelity, masked, captured_at, scope_decision \
+                 FROM wsw_ws_frame WHERE frame_id=?1",
+            )?;
+            let mut rows = stmt.query_map(sql_params![frame_id], ws_frame_row_from)?;
+            Ok(rows.next().transpose()?)
+        })
+    }
+
+    /// 按连接列帧行（sequence 序；direction 词表过滤可选；replay 按序重放
+    /// 依据）。
+    pub fn list_frames_by_exchange(
+        &self,
+        connection_exchange_id: &str,
+        direction: Option<&str>,
+        limit: i64,
+    ) -> DbResult<Vec<WsFrameRow>> {
+        let dir = direction.filter(|d| WS_FRAME_DIRECTIONS.contains(d));
+        self.pool.with_conn(|conn| -> DbResult<Vec<WsFrameRow>> {
+            let cols = "SELECT frame_id, connection_exchange_id, direction, sequence_no, opcode, \
+                        payload_len, payload_body_sha256, payload_body_uri, payload_body_len, \
+                        payload_body_fidelity, masked, captured_at, scope_decision \
+                 FROM wsw_ws_frame ";
+            let (sql, n) = if dir.is_some() {
+                (cols.to_string() + "WHERE connection_exchange_id=?1 AND direction=?2 ORDER BY sequence_no LIMIT ?3", 3)
+            } else {
+                (cols.to_string() + "WHERE connection_exchange_id=?1 ORDER BY sequence_no LIMIT ?2", 2)
+            };
+            let lim = limit.min(5000);
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = if n == 3 {
+                let d = dir.unwrap();
+                stmt.query_map(
+                    sql_params![connection_exchange_id, d, lim],
+                    ws_frame_row_from,
+                )?
+                .collect::<Result<Vec<_>, database::rusqlite::Error>>()?
+            } else {
+                stmt.query_map(
+                    sql_params![connection_exchange_id, lim],
+                    ws_frame_row_from,
+                )?
+                .collect::<Result<Vec<_>, database::rusqlite::Error>>()?
+            };
+            Ok(rows)
+        })
+    }
+
+    /// 取连接握手行（replay 目标还原依据；列映射 = insert 同形）。
+    pub fn get_exchange_row(&self, exchange_id: &str) -> DbResult<Option<ExchangeRow>> {
+        self.pool.with_conn(|conn| -> DbResult<Option<ExchangeRow>> {
+            let mut stmt = conn.prepare(
+                "SELECT exchange_id, session_id, listener_id, sequence_no, direction, source, \
+                        protocol, http_version, tls_version, alpn, method, scheme, authority, path, \
+                        response_status, request_headers_json, response_headers_json, \
+                        request_body_sha256, request_body_uri, request_body_len, request_mime, \
+                        request_body_fidelity, response_body_sha256, response_body_uri, \
+                        response_body_len, response_mime, response_body_fidelity, \
+                        started_at, completed_at, duration_ms, ttfb_ms, remote_ip, scope_decision, \
+                        edited, tags_json, notes, trace_id, task_id, tool_run_id, artifact_id, \
+                        evidence_id, capture_fidelity, parse_status, error_code, search_text \
+                 FROM wsw_exchange WHERE exchange_id=?1",
+            )?;
+            let mut rows = stmt.query_map(sql_params![exchange_id], map_exchange_row_full)?;
+            Ok(rows.next().transpose()?)
+        })
+    }
+
+    /// 帧行计数（对账面）。
+    pub fn ws_frame_count(&self) -> DbResult<u64> {
+        self.pool
+            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM wsw_ws_frame", [], |r| r.get(0)))
+    }
+
+    /// 批量落候选命中行（INSERT OR IGNORE：UNIQUE(exchange_id, rule_id) 幂等
+    /// 锚——重分析不重复落候选；candidate 词形零 evidence 写面）。
+    pub fn insert_passive_hits(&self, rows: &[PassiveHitRow]) -> DbResult<BatchInsertOutcome> {
+        let mut outcome = BatchInsertOutcome::default();
+        self.pool.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for row in rows {
+                if let Err(e) = validate_passive_hit_row(row) {
+                    tracing_error!(
+                        class = "parse_framing",
+                        error_code = "passive_hit_row_invalid",
+                        cause = %e,
+                        hit_id = %row.hit_id,
+                        "passive hit row rejected by pre-insert validation"
+                    );
+                    outcome.failed += 1;
+                    continue;
+                }
+                match tx.execute(
+                    "INSERT OR IGNORE INTO wsw_passive_hit \
+                     (hit_id, exchange_id, listener_id, rule_id, rule_version, severity, \
+                      match_detail_json, created_at) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    sql_params![
+                        row.hit_id,
+                        row.exchange_id,
+                        row.listener_id,
+                        row.rule_id,
+                        row.rule_version,
+                        row.severity,
+                        row.match_detail_json,
+                        row.created_at
+                    ],
+                ) {
+                    Ok(1) => outcome.inserted += 1,
+                    Ok(_) => outcome.failed += 1, // 幂等命中（同 exchange+rule 已在）
+                    Err(e) => {
+                        tracing_error!(
+                            class = "parse_framing",
+                            error_code = "passive_hit_row_insert_failed",
+                            cause = %e,
+                            hit_id = %row.hit_id,
+                            "passive hit row insert failed (row salvaged out of batch)"
+                        );
+                        outcome.failed += 1;
+                    }
+                }
+            }
+            tx.commit()?;
+            Ok::<(), database::rusqlite::Error>(())
+        })?;
+        Ok(outcome)
+    }
+
+    /// 命中行计数（对账面）。
+    pub fn passive_hit_count(&self) -> DbResult<u64> {
+        self.pool.with_conn(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM wsw_passive_hit", [], |r| r.get(0))
+        })
+    }
+
+    /// 命中行列行（created_at DESC；工具/测试对账面）。
+    pub fn list_passive_hits(&self, limit: i64) -> DbResult<Vec<PassiveHitRow>> {
+        self.pool.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT hit_id, exchange_id, listener_id, rule_id, rule_version, severity, \
+                        match_detail_json, created_at \
+                 FROM wsw_passive_hit ORDER BY created_at DESC, hit_id DESC LIMIT ?1",
+            )?;
+            let rows = stmt
+                .query_map(sql_params![limit.min(5000)], passive_hit_row_from)?
+                .collect::<Result<Vec<_>, database::rusqlite::Error>>()?;
+            Ok::<Vec<PassiveHitRow>, database::rusqlite::Error>(rows)
         })
     }
 }

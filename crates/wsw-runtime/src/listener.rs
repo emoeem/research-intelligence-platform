@@ -18,13 +18,13 @@ pub mod handler;
 
 use crate::authority::WswAuthority;
 use crate::persist::ExchangeRow;
+use crate::persist::PersistStore;
 use crate::scope::{self, ScopeRules};
 use crate::{ConfigError, ListenerState, StateError};
 pub use handler::{
     InterceptCoordinator, InterceptResolution, ListenerShared, OutOfScopePolicy, ProxyErrorClass,
     RuntimeOptions,
 };
-use crate::persist::PersistStore;
 use hudsucker::rustls::crypto::aws_lc_rs;
 use hudsucker::rustls::pki_types::{pem::PemObject, CertificateDer};
 use hudsucker::rustls::ClientConfig;
@@ -333,7 +333,9 @@ pub(crate) async fn persist_exchange_worker(
 }
 
 /// 批量落行（salvage 语义：insert_exchanges 单行失败只计数；整批失败
-/// 全计数——persist 失败放行，客户端可见行为不变）。
+/// 全计数——persist 失败放行，客户端可见行为不变）。落库成功后接
+/// Passive Audit 旁路逐行分析（WSW-6 D7：worker 侧，listener 转发路径
+/// 零同步调用——W3-D2.3 单 worker 串联面，分析失败只计数不炸 worker）。
 fn flush_exchange_batch(
     shared: &Arc<ListenerShared>,
     store: &PersistStore,
@@ -347,6 +349,27 @@ fn flush_exchange_batch(
                     .counters
                     .persist_dropped_total
                     .fetch_add(outcome.failed as u64, std::sync::atomic::Ordering::Relaxed);
+            }
+            if outcome.inserted > 0 {
+                match crate::passive::analyze_and_persist(store, batch) {
+                    Ok(hit_outcome) => {
+                        tracing::debug!(
+                            class = "passive",
+                            analyzed = outcome.inserted,
+                            hits = hit_outcome.inserted,
+                            failed = hit_outcome.failed,
+                            "passive audit analyzed exchange batch (bypass worker)"
+                        );
+                    }
+                    Err(e) => {
+                        tracing_error!(
+                            class = "passive",
+                            error_code = "passive_analyze_persist_failed",
+                            cause = %e,
+                            "passive audit bypass failed (batch rows unaffected)"
+                        );
+                    }
+                }
             }
             tracing::debug!(
                 class = "capture",
@@ -372,12 +395,77 @@ fn flush_exchange_batch(
     batch.clear();
 }
 
+/// WS 帧落库单 worker（WSW-5 D3：批量事务落行，每批 ≤128 行或 50ms 窗口
+/// flush；payload CAS 已由捕获侧落账——本面只落 030 元数据行。结束条件 =
+/// 通道关闭；落库失败只计数不影响透传）。
+pub(crate) async fn persist_wsframe_worker(
+    store: PersistStore,
+    mut rx: tokio::sync::mpsc::Receiver<crate::persist::WsFrameRow>,
+) {
+    let mut flush = tokio::time::interval(std::time::Duration::from_millis(50));
+    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut batch: Vec<crate::persist::WsFrameRow> = Vec::new();
+    loop {
+        tokio::select! {
+            item = rx.recv() => {
+                match item {
+                    Some(row) => {
+                        batch.push(row);
+                        if batch.len() >= 128 {
+                            flush_wsframe_batch(&store, &mut batch);
+                        }
+                    }
+                    None => {
+                        if !batch.is_empty() {
+                            flush_wsframe_batch(&store, &mut batch);
+                        }
+                        tracing::info!(class = "capture", "wsframe persist worker drained and exited");
+                        break;
+                    }
+                }
+            }
+            _ = flush.tick() => {
+                if !batch.is_empty() {
+                    flush_wsframe_batch(&store, &mut batch);
+                }
+            }
+        }
+    }
+}
+
+/// WS 帧批量落行（salvage 语义同 exchange 面）。
+fn flush_wsframe_batch(store: &PersistStore, batch: &mut Vec<crate::persist::WsFrameRow>) {
+    match store.insert_ws_frames(batch) {
+        Ok(outcome) => {
+            tracing::debug!(
+                class = "capture",
+                inserted = outcome.inserted,
+                failed = outcome.failed,
+                "ws frame batch persisted"
+            );
+        }
+        Err(e) => {
+            tracing_error!(
+                class = "parse_framing",
+                error_code = "ws_frame_batch_persist_failed",
+                cause = %e,
+                batch = batch.len(),
+                "ws frame batch persist failed (rows dropped, forward path unaffected)"
+            );
+        }
+    }
+    batch.clear();
+}
+
 /// 超龄 partial 行清扫（双侧流末都未触发的静默死亡连接兜底；10s 判龄）。
 fn sweep_stale_captures(shared: &Arc<ListenerShared>) {
     let now = handler::now_ms_pub();
     let mut stale: Vec<std::sync::Arc<handler::ExchangeCapture>> = Vec::new();
     {
-        let mut pending = shared.pending_captures.lock().expect("pending captures mutex");
+        let mut pending = shared
+            .pending_captures
+            .lock()
+            .expect("pending captures mutex");
         pending.retain(|_, cap| {
             if now.saturating_sub(cap.started_ms()) >= 10_000 {
                 stale.push(std::sync::Arc::clone(cap));
@@ -430,6 +518,12 @@ pub struct ListenerStatus {
     pub persist_dropped_total: u64,
     /// exchange 行已入通道数（worker 吞吐分母）。
     pub persist_enqueued_total: u64,
+    /// WS 连接握手行计数（WSW-5 D3 连接面事实）。
+    pub ws_connections_total: u64,
+    /// WS 帧行已入通道数（WSW-5 帧捕获对账分母）。
+    pub ws_frames_captured_total: u64,
+    /// WS 帧行满载丢弃数（WSW-5 有界通道可见丢弃）。
+    pub ws_frames_dropped_total: u64,
     /// 错误五态计数。
     pub error_counts: std::collections::BTreeMap<String, u64>,
     /// 启动时刻（ISO8601 UTC）。
@@ -515,6 +609,18 @@ impl WswListener {
             let shared_for_worker = Arc::clone(&shared);
             tokio::spawn(async move {
                 persist_exchange_worker(shared_for_worker, store, rx).await;
+            });
+        }
+
+        // WS 帧落库 worker（WSW-5 D3；persist 在场才挂，payload CAS 已由
+        // 捕获侧落账——本面只落 030 元数据行）。
+        if let Some(ws_rx) = shared.take_wsframe_rx() {
+            let ws_store = shared
+                .persist()
+                .cloned()
+                .expect("persist store present when wsframe channel present");
+            tokio::spawn(async move {
+                persist_wsframe_worker(ws_store, ws_rx).await;
             });
         }
 
@@ -680,6 +786,9 @@ impl WswListener {
             captures_total: counters.captures_total.load(Ordering::Relaxed),
             persist_dropped_total: counters.persist_dropped_total.load(Ordering::Relaxed),
             persist_enqueued_total: counters.persist_enqueued_total.load(Ordering::Relaxed),
+            ws_connections_total: counters.ws_connections_total.load(Ordering::Relaxed),
+            ws_frames_captured_total: counters.ws_frames_captured_total.load(Ordering::Relaxed),
+            ws_frames_dropped_total: counters.ws_frames_dropped_total.load(Ordering::Relaxed),
             error_counts: counters.error_counts(),
             started_at: self.shared.started_at.clone(),
         }

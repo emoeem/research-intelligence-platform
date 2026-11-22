@@ -17,11 +17,15 @@
 #![forbid(unsafe_code)]
 
 pub mod authority;
+pub mod comparer;
+pub mod decoder;
 pub mod fuzz;
 pub mod listener;
+pub mod passive;
 pub mod persist;
 pub mod scope;
 pub mod sender;
+pub mod wsframe;
 
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};

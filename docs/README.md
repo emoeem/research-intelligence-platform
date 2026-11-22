@@ -54,6 +54,7 @@
 | Burp / Yakit 风格 Web 安全工作台扩展 | [rip3/WEB-SECURITY-WORKBENCH-PLAN.md](rip3/WEB-SECURITY-WORKBENCH-PLAN.md)（Proxy / MITM、HTTP History、Repeater、Web Fuzzer、WebSocket、插件与 Rust-First 规划） |
 | WSW-1 HTTP Message Foundation 批次收口 | [rip3/wsw/WSW-1-BATCH-REPORT.md](rip3/wsw/WSW-1-BATCH-REPORT.md)（Rust 消息模型、HTTP 解析/序列化、CAS、023 迁移与 conformance fixtures） |
 | WSW-4 Web Fuzzer / Intruder 批次收口 | [rip3/wsw/WSW-4-BATCH-REPORT.md](rip3/wsw/WSW-4-BATCH-REPORT.md)（Rust 引擎：Payload 位置/mutator/processor/Job 调度/响应差异/预算控制，028 迁移与 028 真实靶机 selftest；UI 不入批） |
+| WSW-5+6 WebSocket Workbench + Decoder/Comparer/Passive Audit 批次收口 | [rip3/wsw/WSW-5-6-BATCH-REPORT.md](rip3/wsw/WSW-5-6-BATCH-REPORT.md)（WS 帧捕获/存储/重放 030 两表 + rp-wsw ws/decode/compare 子命令 + rp_server 七端点 + 真实 WS 会话 selftest 42 断言；UI 不入批，Gzip/Deflate/Brotli 裁剪登记） |
 | SK-1 摄取接线裁决 | [adr/SK1-INGEST-ADR.md](adr/SK1-INGEST-ADR.md)（指针：[phase6/SK1-INGEST-ADR.md](phase6/SK1-INGEST-ADR.md)） |
 | 现状架构盘点     | [phase0/CURRENT-ARCHITECTURE-INVENTORY.md](phase0/CURRENT-ARCHITECTURE-INVENTORY.md) |
 | 可登记工具清单   | [phase0/TOOL-INVENTORY.md](phase0/TOOL-INVENTORY.md)                   |

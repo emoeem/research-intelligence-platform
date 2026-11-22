@@ -7,6 +7,13 @@
 //! - `send`：Repeater 发送（W3-D4）：Outbound → serialize → h1 字节写 →
 //!   parse_wire；SIGTERM → cancelled 终态落行；pending→sending→终态自落
 //!   wsw_repeater_send 行 + source=repeater exchange 行 + outbound CAS。
+//! - `ws connect`：主动 WS 客户端连靶机发单帧（WSW-5 D4；scope 闸前置，
+//!   ws/wss scheme 映射 http/https 复走既有查点 A 词形——scope.rs 零 diff）。
+//! - `ws replay`：读 030 帧行与靶机直连重发单帧（编辑/原样两态，D4）。
+//! - `decode`：Decoder 变换链单步/多级执行（WSW-6 D5；词表 12/17 项，
+//!   mutator.rs 既有 pub 纯函数面消费 + 逆变换 std 纯函数）。
+//! - `compare`：Comparer 两对象 diff（WSW-6 D6；text/json/header/hex 四面 +
+//!   regex 忽略维，diff 原语零 diff 消费）。
 //! - `ca status|export|regenerate`：CA 状态/导出/重生成（导出与重生成均为
 //!   显式用户动作——API 带 confirm 语义，本面不静默安装、不碰系统代理/信任库）。
 //! - `db migrate`：迁移执行（只在开发库副本/测试内存库；platform*.db 禁触）。
@@ -19,9 +26,19 @@
 //! `rp-wsw send --db rip-data/wsw-e2e.db --session-id wsw-ses-cli-0001
 //!   --tab-id wsw-rpt-1 --send-id wsw-snd-1 --version-no 1
 //!   --request-json /tmp/outbound.json --policy /tmp/policy.json`
+//!
+//! `rp-wsw ws connect --url ws://127.0.0.1:8765/echo --payload "hi"
+//!   --db rip-data/wsw-e2e.db --session-id wsw-ses-cli-0001`
+//!
+//! `rp-wsw ws replay --db rip-data/wsw-e2e.db --frame-id wsw-fr-...`
+//!
+//! `rp-wsw decode --ops url_decode,hex_decode --input "%32%33"`
+//!
+//! `rp-wsw compare --mode text --left-file a.txt --right-file b.txt
+//!   --skip-line-regex "^ts:" --db rip-data/wsw-e2e.db`
 
 use hudsucker::rustls::crypto::aws_lc_rs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use wsw_runtime::listener::{handler::InterceptMatcher, RuntimeOptions};
 use wsw_runtime::scope::ScopeRules;
 use wsw_runtime::{authority, listener, persist, ListenerConfig};
@@ -41,6 +58,18 @@ rp-wsw send --db <path> --session-id <ses> --tab-id <rpt> --send-id <snd> --vers
 [--pid-file <path>]\n  \
 rp-wsw fuzz --db <path> --session-id <ses> --spec-json <file> [--job-id <fzj>] \
 [--policy <file>] [--upstream-ca <pem>]... [--artifacts-root <dir>] [--pid-file <path>]\n  \
+rp-wsw ws connect --url ws://host:port/path [--payload <text>] [--binary-hex <hex>] \
+[--opcode text|binary|ping] [--db <path>] [--session-id <ses>] [--rules-json <json>] \
+[--echo-timeout <secs>]\n  \
+rp-wsw ws replay --db <path> --frame-id <wsw-fr-...> [--payload <text>] [--binary-hex <hex>] \
+[--target ws://host:port/path] [--session-id <ses>] [--rules-json <json>] [--artifacts-root <dir>] \
+[--echo-timeout <secs>]\n  \
+rp-wsw decode [--input <str> | --input-file <path> | --input-base64 <b64>] --ops url_encode,b64_encode,... \
+[--out-file <path>]\n  \
+rp-wsw compare --mode text|json|header|hex (--left <str>|--left-file <p>|--left-exchange <id> \
+|--left-frame <id>) (same for --right*) [--direction request|response] [--db <path>] \
+[--artifacts-root <dir>] [--skip-line-regex r1,r2] [--normalize-key-regex r1,r2] [--save-artifact] \
+[--out-file <path>]\n  \
 rp-wsw ca status [--ca-dir <dir>]\n  \
 rp-wsw ca export [--ca-dir <dir>] --out <path>\n  \
 rp-wsw ca regenerate [--ca-dir <dir>]\n  \
@@ -76,6 +105,34 @@ struct Args {
     // fuzz 子命令（WSW-4）
     job_id: Option<String>,
     spec_json: Option<PathBuf>,
+    // ws 子命令（WSW-5）
+    url: Option<String>,
+    payload: Option<String>,
+    binary_hex: Option<String>,
+    opcode: Option<String>,
+    echo_timeout: Option<u64>,
+    target: Option<String>,
+    frame_id: Option<String>,
+    // decode 子命令（WSW-6）
+    input: Option<String>,
+    input_file: Option<PathBuf>,
+    input_base64: Option<String>,
+    ops: Option<String>,
+    // compare 子命令（WSW-6）
+    mode: Option<String>,
+    left: Option<String>,
+    left_file: Option<PathBuf>,
+    left_exchange: Option<String>,
+    left_frame: Option<String>,
+    right: Option<String>,
+    right_file: Option<PathBuf>,
+    right_exchange: Option<String>,
+    right_frame: Option<String>,
+    direction: Option<String>,
+    skip_line_regexes: Option<String>,
+    normalize_key_regexes: Option<String>,
+    save_artifact: bool,
+    out_file: Option<PathBuf>,
 }
 
 fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
@@ -103,6 +160,31 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
         artifacts_root: None,
         job_id: None,
         spec_json: None,
+        url: None,
+        payload: None,
+        binary_hex: None,
+        opcode: None,
+        echo_timeout: None,
+        target: None,
+        frame_id: None,
+        input: None,
+        input_file: None,
+        input_base64: None,
+        ops: None,
+        mode: None,
+        left: None,
+        left_file: None,
+        left_exchange: None,
+        left_frame: None,
+        right: None,
+        right_file: None,
+        right_exchange: None,
+        right_frame: None,
+        direction: None,
+        skip_line_regexes: None,
+        normalize_key_regexes: None,
+        save_artifact: false,
+        out_file: None,
     };
     while let Some(arg) = next.next() {
         let mut take = |what: &str| -> String {
@@ -137,12 +219,43 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
             "--session-id" => a.session_id = Some(take("--session-id")),
             "--tab-id" => a.tab_id = Some(take("--tab-id")),
             "--send-id" => a.send_id = Some(take("--send-id")),
-            "--version-no" => a.version_no = Some(take("--version-no").parse().expect("version no")),
+            "--version-no" => {
+                a.version_no = Some(take("--version-no").parse().expect("version no"))
+            }
             "--request-json" => a.request_json = Some(take("--request-json").into()),
             "--policy" => a.policy_file = Some(take("--policy").into()),
             "--artifacts-root" => a.artifacts_root = Some(take("--artifacts-root").into()),
             "--job-id" => a.job_id = Some(take("--job-id")),
             "--spec-json" => a.spec_json = Some(take("--spec-json").into()),
+            "--url" => a.url = Some(take("--url")),
+            "--payload" => a.payload = Some(take("--payload")),
+            "--binary-hex" => a.binary_hex = Some(take("--binary-hex")),
+            "--opcode" => a.opcode = Some(take("--opcode")),
+            "--echo-timeout" => {
+                a.echo_timeout = Some(take("--echo-timeout").parse().expect("secs"))
+            }
+            "--target" => a.target = Some(take("--target")),
+            "--frame-id" => a.frame_id = Some(take("--frame-id")),
+            "--input" => a.input = Some(take("--input")),
+            "--input-file" => a.input_file = Some(take("--input-file").into()),
+            "--input-base64" => a.input_base64 = Some(take("--input-base64")),
+            "--ops" => a.ops = Some(take("--ops")),
+            "--mode" => a.mode = Some(take("--mode")),
+            "--left" => a.left = Some(take("--left")),
+            "--left-file" => a.left_file = Some(take("--left-file").into()),
+            "--left-exchange" => a.left_exchange = Some(take("--left-exchange")),
+            "--left-frame" => a.left_frame = Some(take("--left-frame")),
+            "--right" => a.right = Some(take("--right")),
+            "--right-file" => a.right_file = Some(take("--right-file").into()),
+            "--right-exchange" => a.right_exchange = Some(take("--right-exchange")),
+            "--right-frame" => a.right_frame = Some(take("--right-frame")),
+            "--direction" => a.direction = Some(take("--direction")),
+            "--skip-line-regex" => a.skip_line_regexes = Some(take("--skip-line-regex")),
+            "--normalize-key-regex" => {
+                a.normalize_key_regexes = Some(take("--normalize-key-regex"))
+            }
+            "--save-artifact" => a.save_artifact = true,
+            "--out-file" => a.out_file = Some(take("--out-file").into()),
             other => {
                 eprintln!("{TAG} unknown arg {other}");
                 usage();
@@ -195,6 +308,18 @@ async fn status_heartbeat(
             persist_enqueued_total: shared
                 .counters
                 .persist_enqueued_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            ws_connections_total: shared
+                .counters
+                .ws_connections_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            ws_frames_captured_total: shared
+                .counters
+                .ws_frames_captured_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            ws_frames_dropped_total: shared
+                .counters
+                .ws_frames_dropped_total
                 .load(std::sync::atomic::Ordering::Relaxed),
             error_counts: shared.counters.error_counts(),
             started_at: shared.started_at.clone(),
@@ -394,10 +519,14 @@ async fn run_fuzz(a: Args) -> Result<(), Box<dyn std::error::Error>> {
                 persist::now_iso(),
             );
             store.insert_fuzz_job(&row)?;
-            store.advance_fuzz_job(&jid, "CREATED", &persist::FuzzJobPatch {
-                state: "QUEUED",
-                ..Default::default()
-            })?;
+            store.advance_fuzz_job(
+                &jid,
+                "CREATED",
+                &persist::FuzzJobPatch {
+                    state: "QUEUED",
+                    ..Default::default()
+                },
+            )?;
             jid
         }
     };
@@ -476,12 +605,16 @@ async fn run_fuzz(a: Args) -> Result<(), Box<dyn std::error::Error>> {
                     row.state.as_str(),
                     "CANCELLED" | "COMPLETED" | "FAILED" | "BUDGET_EXHAUSTED"
                 ) {
-                    let _ = store.advance_fuzz_job(&job_id, &row.state, &persist::FuzzJobPatch {
-                        state: "FAILED",
-                        error_code: Some("fuzz_spec_invalid".into()),
-                        completed_at: Some(persist::now_iso()),
-                        ..Default::default()
-                    });
+                    let _ = store.advance_fuzz_job(
+                        &job_id,
+                        &row.state,
+                        &persist::FuzzJobPatch {
+                            state: "FAILED",
+                            error_code: Some("fuzz_spec_invalid".into()),
+                            completed_at: Some(persist::now_iso()),
+                            ..Default::default()
+                        },
+                    );
                 }
             }
             Err(format!("fuzz spec invalid: {msg}").into())
@@ -801,6 +934,501 @@ fn run_redact_headers() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ===========================================================================
+// WSW-5/6 子命令（D4：独立入口 = CLI 直用 + API 直用双面，非独立端口）。
+// ===========================================================================
+
+/// ws 子命令 scope 闸前置（判据 8：ws/wss scheme 映射 http/https 复走既有
+/// 查点 A 词形——scope.rs 零 diff 纯调用面）。规则源：--rules-json > wsw_session
+/// 行（--db + --session-id；缺行 = default deny 安全默认，send 先例）> default deny。
+fn ws_scope_rules(a: &Args, store: Option<&persist::PersistStore>) -> Result<ScopeRules, String> {
+    if let Some(raw) = &a.rules_json {
+        return ScopeRules::from_json(raw).map_err(|e| format!("rules-json parse: {e}"));
+    }
+    if let (Some(store), Some(session_id)) = (store, a.session_id.as_deref()) {
+        return store
+            .get_session(session_id)
+            .map_err(|e| format!("session read: {e}"))?
+            .map(|s| ScopeRules::from_json(&s.scope_rules_json))
+            .transpose()
+            .map_err(|e| format!("session rules parse: {e}"))?
+            .ok_or_else(|| "session not found (default deny)".to_string());
+    }
+    Ok(ScopeRules::default())
+}
+
+/// url 词形 → host/port/path + scope 映射 scheme（ws→http、wss→https）。
+fn parse_ws_url(url: &str) -> Result<(String, u16, String, &'static str), String> {
+    let parsed: hudsucker::hyper::Uri = url.parse().map_err(|e| format!("--url parse: {e}"))?;
+    let scheme = parsed.scheme_str().ok_or("--url missing scheme")?;
+    let host = parsed.host().ok_or("--url missing host")?.to_string();
+    let port = parsed.port_u16().unwrap_or(match scheme {
+        "wss" => 443,
+        "ws" => 80,
+        other => return Err(format!("--url scheme 词表外（ws/wss）：{other}")),
+    });
+    let path = if parsed.path().is_empty() {
+        "/"
+    } else {
+        parsed.path()
+    };
+    let mapped = match scheme {
+        "wss" => "https",
+        _ => "http",
+    };
+    Ok((host, port, path.to_string(), mapped))
+}
+
+/// ws connect/replay 公共体：scope 闸 → tokio-tungstenite 客户端直连 → 单帧
+/// 发送 → echo 等待（echo_timeout 秒；超时如实 none）→ Close 收口 → JSON
+/// 摘要 stdout（rp_server 侧消费）。
+async fn ws_send_one(
+    url: &str,
+    opcode_word: &str,
+    payload: Vec<u8>,
+    echo_timeout_secs: u64,
+) -> Result<serde_json::Value, String> {
+    use hudsucker::futures::{SinkExt, StreamExt};
+    use hudsucker::tokio_tungstenite::tungstenite::Message;
+    let (ws, _resp) = hudsucker::tokio_tungstenite::connect_async(url)
+        .await
+        .map_err(|e| format!("ws connect: {e}"))?;
+    let started = std::time::Instant::now();
+    let (mut sink, mut stream) = ws.split();
+    let msg = match opcode_word {
+        "binary" => Message::Binary(payload.clone().into()),
+        "ping" => Message::Ping(payload.clone().into()),
+        "text" => Message::text(String::from_utf8_lossy(&payload).to_string()),
+        other => return Err(format!("opcode 词表外（text/binary/ping）：{other}")),
+    };
+    sink.send(msg).await.map_err(|e| format!("ws send: {e}"))?;
+    // echo/回读面：timeout 内读一帧（echo 靶机回声证据面；超时 = none 如实）。
+    let echo = match tokio::time::timeout(
+        std::time::Duration::from_secs(echo_timeout_secs.max(1)),
+        stream.next(),
+    )
+    .await
+    {
+        Ok(Some(Ok(m))) => match m {
+            Message::Text(t) => {
+                serde_json::json!({"opcode": "text", "len": t.len(), "text": t.to_string()})
+            }
+            Message::Binary(b) => serde_json::json!({"opcode": "binary", "len": b.len()}),
+            Message::Pong(_) => serde_json::json!({"opcode": "pong", "len": 0}),
+            Message::Ping(_) => serde_json::json!({"opcode": "ping", "len": 0}),
+            Message::Close(_) => serde_json::json!({"opcode": "close", "len": 0}),
+            Message::Frame(_) => serde_json::json!({"opcode": "frame", "len": 0}),
+        },
+        Ok(Some(Err(e))) => serde_json::json!({"error": e.to_string()}),
+        Ok(None) => serde_json::json!({"opcode": "eof"}),
+        Err(_) => serde_json::json!({"opcode": "none", "note": "echo timeout"}),
+    };
+    let _ = sink.send(Message::Close(None)).await;
+    let _ = sink.close().await;
+    Ok(serde_json::json!({
+        "url": url,
+        "sent": {"opcode": opcode_word, "len": payload.len()},
+        "echo": echo,
+        "duration_ms": started.elapsed().as_millis() as u64,
+    }))
+}
+
+/// `ws connect`：主动 WS 客户端连靶机发单帧（D4；scope 闸前置——闸外连接
+/// 前拒绝，零越闸）。
+async fn run_ws_connect(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let url = a
+        .url
+        .clone()
+        .ok_or("ws connect requires --url ws://host:port/path")?;
+    let (host, port, path, mapped_scheme) = parse_ws_url(&url)?;
+    // 规则源 store（--db 在场时打开读面——wsw_session 行规则源，send 先例）。
+    let store = match &a.db {
+        Some(db) => {
+            let s = persist::PersistStore::open_file(db)?;
+            let migrations_dir =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+            s.run_migrations(&migrations_dir)?;
+            Some(s)
+        }
+        None => None,
+    };
+    let rules = ws_scope_rules(&a, store.as_ref()).map_err(|e| format!("scope rules: {e}"))?;
+    let target = wsw_runtime::scope::ScopeTarget {
+        scheme: mapped_scheme,
+        host: &host,
+        port,
+        path: &path,
+    };
+    if let wsw_runtime::scope::ScopeDecision::Blocked { reason } =
+        wsw_runtime::scope::check(&rules, &target)
+    {
+        println!(
+            "{}",
+            serde_json::json!({
+                "state": "scope_blocked",
+                "reason_code": reason.code(),
+                "url": url,
+            })
+        );
+        std::process::exit(3);
+    }
+    let opcode_word = a.opcode.as_deref().unwrap_or("text");
+    let payload = ws_payload_bytes(&a, opcode_word)?;
+    let echo_timeout = a.echo_timeout.unwrap_or(2);
+    let summary = ws_send_one(&url, opcode_word, payload, echo_timeout)
+        .await
+        .map_err(|e| format!("ws connect: {e}"))?;
+    println!(
+        "{}",
+        serde_json::json!({"state": "connected", "op": "connect"})
+    );
+    println!("{summary}");
+    Ok(())
+}
+
+/// 帧载荷解析（--binary-hex > --payload > 空；opcode=text 时 binary-hex 仍可
+/// 承载任意字节面——CLI 层 utf8 校验放行 lossy，靶机面字节保真）。
+fn ws_payload_bytes(a: &Args, opcode_word: &str) -> Result<Vec<u8>, String> {
+    let _ = opcode_word;
+    if let Some(hex) = &a.binary_hex {
+        let hex = hex.trim();
+        if hex.len() % 2 != 1 {
+            // 偶数位才可能是合法 hex（奇数位直接拒）。
+            return Ok(hex
+                .as_bytes()
+                .chunks(2)
+                .map(|p| {
+                    u8::from_str_radix(std::str::from_utf8(p).unwrap_or("zz"), 16).unwrap_or(0)
+                })
+                .collect());
+        }
+        return Err("--binary-hex odd length".into());
+    }
+    Ok(a.payload.clone().unwrap_or_default().into_bytes())
+}
+
+/// `ws replay`：读 030 帧行 + 握手行还原目标 → 直连重发单帧（--payload/
+/// --binary-hex 编辑态 > CAS 原始 payload；判据 2 承载面）。
+async fn run_ws_replay(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let db = a.db.clone().ok_or("ws replay requires --db <path>")?;
+    let frame_id = a
+        .frame_id
+        .clone()
+        .ok_or("ws replay requires --frame-id <wsw-fr-...>")?;
+    let artifacts_root = a
+        .artifacts_root
+        .clone()
+        .unwrap_or_else(wsw_message::cas::resolve_artifacts_dir);
+    let store = persist::PersistStore::open_file(&db)?;
+    let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    store.run_migrations(&migrations_dir)?;
+    store.assert_watermark()?;
+    let frame = store
+        .get_ws_frame(&frame_id)?
+        .ok_or(format!("frame not found: {frame_id}"))?;
+    let handshake = store
+        .get_exchange_row(&frame.connection_exchange_id)?
+        .ok_or(format!(
+            "handshake row not found for {}",
+            frame.connection_exchange_id
+        ))?;
+    let target = match &a.target {
+        Some(t) => t.clone(),
+        None => {
+            let scheme = handshake.scheme.as_deref().unwrap_or("ws");
+            let authority = handshake.authority.clone().unwrap_or_default();
+            let path = handshake.path.clone().unwrap_or_else(|| "/".into());
+            format!("{scheme}://{authority}{path}")
+        }
+    };
+    let (host, port, path, mapped_scheme) = parse_ws_url(&target)?;
+    let rules = ws_scope_rules(&a, Some(&store)).map_err(|e| format!("scope rules: {e}"))?;
+    let target_scope = wsw_runtime::scope::ScopeTarget {
+        scheme: mapped_scheme,
+        host: &host,
+        port,
+        path: &path,
+    };
+    if let wsw_runtime::scope::ScopeDecision::Blocked { reason } =
+        wsw_runtime::scope::check(&rules, &target_scope)
+    {
+        println!(
+            "{}",
+            serde_json::json!({
+                "state": "scope_blocked",
+                "reason_code": reason.code(),
+                "frame_id": frame_id,
+            })
+        );
+        std::process::exit(3);
+    }
+
+    // 载荷：--payload/--binary-hex 编辑态 > CAS 原始字节。
+    let payload: Vec<u8> = if a.payload.is_some() || a.binary_hex.is_some() {
+        ws_payload_bytes(&a, frame.opcode)?
+    } else {
+        match &frame.payload_body_uri {
+            Some(uri) => wsw_message::cas::read_body(&artifacts_root, uri)
+                .map_err(|e| format!("cas read {uri}: {e}"))?,
+            None => Vec::new(),
+        }
+    };
+    let opcode_word = frame.opcode;
+    let url = if target.starts_with("ws://") || target.starts_with("wss://") {
+        target.clone()
+    } else {
+        format!("ws://{host}:{port}{path}")
+    };
+    let echo_timeout = a.echo_timeout.unwrap_or(2);
+    let summary = ws_send_one(&url, opcode_word, payload, echo_timeout)
+        .await
+        .map_err(|e| format!("ws replay: {e}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "state": "ok",
+            "op": "replay",
+            "frame_id": frame_id,
+            "edited": a.payload.is_some() || a.binary_hex.is_some(),
+        })
+    );
+    println!("{summary}");
+    Ok(())
+}
+
+/// `decode`：变换链单步/多级执行（--ops 逗号分隔词表链；stdout JSON 摘要）。
+fn run_decode(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let input = if let Some(s) = &a.input {
+        s.clone()
+    } else if let Some(f) = &a.input_file {
+        std::fs::read_to_string(f)?
+    } else if let Some(b64) = &a.input_base64 {
+        let ops = [wsw_runtime::decoder::DecodeOp::B64Decode];
+        wsw_runtime::decoder::apply_ops(b64.trim(), &ops)
+            .map_err(|e| format!("--input-base64 decode: {e}"))?
+    } else {
+        return Err("decode requires --input / --input-file / --input-base64".into());
+    };
+    let ops_word = a.ops.clone().ok_or("decode requires --ops <word list>")?;
+    let mut ops = Vec::new();
+    for w in ops_word.split(',').map(str::trim).filter(|w| !w.is_empty()) {
+        let op = wsw_runtime::decoder::DecodeOp::from_word(w)
+            .ok_or_else(|| format!("unknown op: {w:?}（词表 = rp-wsw decode --ops-list）"))?;
+        ops.push(op);
+    }
+    match wsw_runtime::decoder::apply_ops(&input, &ops) {
+        Ok(result) => {
+            let payload = serde_json::json!({"ops": ops_word, "result": result, "error": null});
+            emit_json(&payload, a.out_file.as_deref())?;
+            println!("{payload}");
+            Ok(())
+        }
+        Err(e) => {
+            let payload =
+                serde_json::json!({"ops": ops_word, "result": null, "error": e.to_string()});
+            println!("{payload}");
+            Err(format!("decode failed: {e}").into())
+        }
+    }
+}
+
+fn emit_json(
+    payload: &serde_json::Value,
+    out: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = out {
+        std::fs::write(path, payload.to_string())?;
+    }
+    Ok(())
+}
+
+/// 比较对象源（D6：手工输入 / exchange Body CAS 回读 / 030 帧 payload）。
+enum CompareSource {
+    Text(String),
+    CasBytes(Vec<u8>),
+}
+
+/// 比较源解析（--left/--left-file/--left-exchange/--left-frame 四形互斥）。
+fn resolve_compare_source(
+    side: &str,
+    text: &Option<String>,
+    file: &Option<PathBuf>,
+    exchange: &Option<String>,
+    frame: &Option<String>,
+    store: Option<&persist::PersistStore>,
+    artifacts_root: &Path,
+) -> Result<CompareSource, String> {
+    let provided = [
+        text.is_some(),
+        file.is_some(),
+        exchange.is_some(),
+        frame.is_some(),
+    ]
+    .iter()
+    .filter(|b| **b)
+    .count();
+    if provided != 1 {
+        return Err(format!(
+            "{side} 须且仅须一个源：--{side} / --{side}-file / --{side}-exchange / --{side}-frame"
+        ));
+    }
+    if let Some(t) = text {
+        return Ok(CompareSource::Text(t.clone()));
+    }
+    if let Some(f) = file {
+        return std::fs::read_to_string(f)
+            .map(CompareSource::Text)
+            .map_err(|e| format!("read {f:?}: {e}"));
+    }
+    let store = store.ok_or(format!("{side}-exchange/--{side}-frame 需要 --db <path>"))?;
+    if let Some(ex_id) = exchange {
+        let row = store
+            .get_exchange_row(ex_id)
+            .map_err(|e| e.to_string())?
+            .ok_or(format!("exchange not found: {ex_id}"))?;
+        let uri = row
+            .request_body_uri
+            .or(row.response_body_uri)
+            .ok_or(format!("exchange {ex_id} 零 body CAS 引用"))?;
+        let bytes = wsw_message::cas::read_body(artifacts_root, &uri)
+            .map_err(|e| format!("cas read {uri}: {e}"))?;
+        return Ok(CompareSource::CasBytes(bytes));
+    }
+    let fr_id = frame.as_ref().unwrap();
+    let row = store
+        .get_ws_frame(fr_id)
+        .map_err(|e| e.to_string())?
+        .ok_or(format!("frame not found: {fr_id}"))?;
+    let uri = row
+        .payload_body_uri
+        .ok_or(format!("frame {fr_id} 零 payload CAS 引用"))?;
+    let bytes = wsw_message::cas::read_body(artifacts_root, &uri)
+        .map_err(|e| format!("cas read {uri}: {e}"))?;
+    Ok(CompareSource::CasBytes(bytes))
+}
+
+/// `compare`：两对象 diff（四面 + regex 忽略维；stdout JSON 报告；
+/// --save-artifact = 报告落 CAS + wsw_body_blob（wsw_message 既有面））。
+fn run_compare(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let mode = a.mode.as_deref().unwrap_or("text");
+    if !matches!(mode, "text" | "json" | "header" | "hex") {
+        return Err(format!("--mode 词表外（text/json/header/hex）：{mode}").into());
+    }
+    let artifacts_root = a
+        .artifacts_root
+        .clone()
+        .unwrap_or_else(wsw_message::cas::resolve_artifacts_dir);
+    let store = match &a.db {
+        Some(db) => {
+            let s = persist::PersistStore::open_file(db)?;
+            let migrations_dir =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+            s.run_migrations(&migrations_dir)?;
+            Some(s)
+        }
+        None => None,
+    };
+    if (a.left_exchange.is_some()
+        || a.left_frame.is_some()
+        || a.right_exchange.is_some()
+        || a.right_frame.is_some())
+        && store.is_none()
+    {
+        return Err("exchange/frame 比较源需要 --db <path>".into());
+    }
+    if a.save_artifact && store.is_none() {
+        return Err("--save-artifact 需要 --db <path>（wsw_body_blob 登记面）".into());
+    }
+    let left_src = resolve_compare_source(
+        "left",
+        &a.left,
+        &a.left_file,
+        &a.left_exchange,
+        &a.left_frame,
+        store.as_ref(),
+        &artifacts_root,
+    )?;
+    let right_src = resolve_compare_source(
+        "right",
+        &a.right,
+        &a.right_file,
+        &a.right_exchange,
+        &a.right_frame,
+        store.as_ref(),
+        &artifacts_root,
+    )?;
+    let to_string = |src: &CompareSource| -> String {
+        match src {
+            CompareSource::Text(t) => t.clone(),
+            CompareSource::CasBytes(b) => String::from_utf8_lossy(b).to_string(),
+        }
+    };
+    let to_bytes = |src: &CompareSource| -> Vec<u8> {
+        match src {
+            CompareSource::Text(t) => t.as_bytes().to_vec(),
+            CompareSource::CasBytes(b) => b.clone(),
+        }
+    };
+    let ignore = wsw_runtime::comparer::IgnoreRules {
+        skip_line_regexes: a
+            .skip_line_regexes
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        normalize_key_regexes: a
+            .normalize_key_regexes
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        base: Default::default(),
+    }
+    .compile()
+    .map_err(|e| e.to_string())?;
+    let report = match mode {
+        "json" => {
+            wsw_runtime::comparer::compare_json(&to_string(&left_src), &to_string(&right_src))
+                .map_err(|e| e.to_string())?
+        }
+        "header" => {
+            wsw_runtime::comparer::compare_headers(&to_string(&left_src), &to_string(&right_src))
+                .map_err(|e| e.to_string())?
+        }
+        "hex" => wsw_runtime::comparer::compare_bytes(&to_bytes(&left_src), &to_bytes(&right_src)),
+        _ => wsw_runtime::comparer::compare_text(
+            &to_string(&left_src),
+            &to_string(&right_src),
+            &ignore,
+        ),
+    };
+    let mut payload = serde_json::to_value(&report).map_err(|e| e.to_string())?;
+    if let (Some(store), true) = (store.as_ref(), a.save_artifact) {
+        match wsw_runtime::comparer::persist_report_as_blob(store, &artifacts_root, &report) {
+            Ok(body_ref) => {
+                payload["artifact"] = serde_json::json!({
+                    "sha256": body_ref.sha256,
+                    "uri": body_ref.uri,
+                    "size": body_ref.size,
+                    "fidelity": format!("{:?}", body_ref.fidelity).to_lowercase(),
+                });
+            }
+            Err(e) => {
+                payload["artifact_error"] = serde_json::json!(e);
+            }
+        }
+    }
+    emit_json(&payload, a.out_file.as_deref())?;
+    println!("{payload}");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     // 日志可见面：拒绝记录/五态/捕获计数落 stderr 单行（PLAN :528）。
@@ -826,6 +1454,13 @@ async fn main() {
             Some("migrate") => db_migrate(&parse_args(&mut args)),
             _ => usage(),
         },
+        "ws" => match args.next().as_deref() {
+            Some("connect") => run_ws_connect(parse_args(&mut args)).await,
+            Some("replay") => run_ws_replay(parse_args(&mut args)).await,
+            _ => usage(),
+        },
+        "decode" => run_decode(parse_args(&mut args)),
+        "compare" => run_compare(parse_args(&mut args)),
         "redact-headers" => run_redact_headers(),
         _ => usage(),
     };
@@ -853,7 +1488,10 @@ mod tests {
         assert!(!out.contains("wsw3-secret-token"), "凭据值不进展示层");
         assert!(!out.contains("session=abc123"), "Cookie 值不进展示层");
         assert!(out.contains("text/html"), "未命中头值原样保留");
-        assert!(out.contains("\"redacted_header_names\""), "脱敏头名清单在场");
+        assert!(
+            out.contains("\"redacted_header_names\""),
+            "脱敏头名清单在场"
+        );
         // 大小写不敏感命中（Authorization/authorization 各记一条，保序去重）。
         assert!(out.contains("authorization"), "命中头名清单含小写形式");
     }

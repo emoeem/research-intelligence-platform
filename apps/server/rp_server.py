@@ -3546,6 +3546,9 @@ def wsw_post_route(path: str, body: dict) -> dict:
     """WSW POST 分发：WSW-3 新写面（send-to-repeater / tabs / send / cancel）
     优先，其余回落 WSW-2 既有 listener/ca 动作（只增量，既有语义不动）。"""
     rest = unquote(path[len("/api/wsw/"):]).strip("/")
+    wsw56 = _wsw_post_route_wsw56(rest, body)
+    if wsw56 is not None:
+        return wsw56
     match = re.fullmatch(r"history/([^/]+)/send-to-repeater", rest)
     if match:
         return _wsw_history_send_to_repeater(unquote(match.group(1)), body)
@@ -4603,6 +4606,381 @@ def _wsw_history_send_to_repeater(exchange_id: str, body: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# WSW-5/6 独立入口面（D4/D5/D6/D7 七端点）：GET /api/wsw/ws/frames（游标
+# 分页 W3-D3 协议复用 + conn/opcode/direction 过滤）/ GET
+# /api/wsw/ws/frames/{id}（帧详情含 CAS payload 回读）/ POST
+# /api/wsw/ws/replay（帧重放——rp-wsw ws replay 子进程委派）/ POST
+# /api/wsw/decode（Decoder 变换链——rp-wsw decode 子进程委派）/ POST
+# /api/wsw/compare（Comparer——rp-wsw compare 子进程委派）/ GET
+# /api/wsw/passive/hits（命中游标分页）/ GET /api/wsw/passive/rules（规则
+# 注册表只读投影）。
+#
+# 红线（D4/红线 1/3）：全部挂既有 /api/ 分支 + Bearer 鉴权同面（do_POST
+# /api/wsw/ 分支既有 require_auth + AUTH_ENABLED 强制），单端口零新端口零
+# 第二事件面；读面 _wsw_ro_conn（mode=ro + query_only）；写面 = rp-wsw
+# 子进程 Rust-only（零直连 SQL 写——红线 3 subprocess 委派纪律）；SSE 面
+# 零改动（D9 语义不重叠裁决）。规则投影 = passive.rs 注册表只读镜像
+# （PASSIVE_RULES.py 侧静态词表，selftest_wsw56.sh 与 passive.rs 词表逐条
+# 对账钉住漂移——单源 = Rust 注册表，投影变更必须同批随更）。
+# ---------------------------------------------------------------------------
+
+_WSW_WS_FRAME_COLUMNS = (
+    "frame_id, connection_exchange_id, direction, sequence_no, opcode, payload_len, "
+    "payload_body_sha256, payload_body_uri, payload_body_len, payload_body_fidelity, "
+    "masked, captured_at, scope_decision"
+)
+_WSW_WS_FRAME_FILTER_KEYS = ("connection_exchange_id", "opcode", "direction")
+_WSW_PASSIVE_HIT_COLUMNS = (
+    "hit_id, exchange_id, listener_id, rule_id, rule_version, severity, "
+    "match_detail_json, created_at"
+)
+_WSW_PASSIVE_HIT_FILTER_KEYS = ("exchange_id", "rule_id", "severity")
+
+# 规则注册表只读投影（单源 = crates/wsw-runtime/src/passive.rs PASSIVE_RULES
+# 14 规则逐字同源；WSW-7 Provider 接线禁第二注册表——判据 12 词形）。
+_WSW_PASSIVE_RULES_PROJECTION = [
+    {"rule_id": "missing_header_strict_transport_security", "rule_version": 1, "severity": "low", "class": "missing_security_header", "description": "HTTPS 响应缺失 Strict-Transport-Security 头"},
+    {"rule_id": "missing_header_content_security_policy", "rule_version": 1, "severity": "low", "class": "missing_security_header", "description": "响应缺失 Content-Security-Policy 头"},
+    {"rule_id": "missing_header_x_content_type_options", "rule_version": 1, "severity": "low", "class": "missing_security_header", "description": "响应缺失 X-Content-Type-Options 头"},
+    {"rule_id": "missing_header_x_frame_options", "rule_version": 1, "severity": "info", "class": "missing_security_header", "description": "响应缺失 X-Frame-Options 头"},
+    {"rule_id": "cookie_missing_secure", "rule_version": 1, "severity": "medium", "class": "cookie_attribute", "description": "Set-Cookie 缺 Secure 属性"},
+    {"rule_id": "cookie_missing_httponly", "rule_version": 1, "severity": "low", "class": "cookie_attribute", "description": "Set-Cookie 缺 HttpOnly 属性"},
+    {"rule_id": "cookie_missing_samesite", "rule_version": 1, "severity": "low", "class": "cookie_attribute", "description": "Set-Cookie 缺 SameSite 属性"},
+    {"rule_id": "info_leak_server_version", "rule_version": 1, "severity": "info", "class": "info_leak", "description": "Server 头携带版本号迹象（值含 /<digits>）"},
+    {"rule_id": "info_leak_x_powered_by", "rule_version": 1, "severity": "info", "class": "info_leak", "description": "X-Powered-By 头在场"},
+    {"rule_id": "info_leak_via_header", "rule_version": 1, "severity": "info", "class": "info_leak", "description": "Via 头在场（代理链路暴露）"},
+    {"rule_id": "redirect_cross_origin", "rule_version": 1, "severity": "medium", "class": "abnormal_redirect", "description": "3xx Location 跨源（绝对 URL host 与请求 authority 不一致）"},
+    {"rule_id": "redirect_scheme_downgrade", "rule_version": 1, "severity": "medium", "class": "abnormal_redirect", "description": "HTTPS 响应 Location 降级 http://"},
+    {"rule_id": "config_permissive_cors", "rule_version": 1, "severity": "medium", "class": "common_config", "description": "Access-Control-Allow-Origin: * 全放行"},
+    {"rule_id": "config_set_cookie_cacheable", "rule_version": 1, "severity": "low", "class": "common_config", "description": "Set-Cookie 响应缺 Cache-Control: no-store"},
+]
+
+
+def _wsw_require_030(conn: sqlite3.Connection) -> None:
+    """030 水位守卫（wsw_ws_frame/wsw_passive_hit 两表在场；缺 → 503 可诊断）。"""
+    names = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+        "('wsw_ws_frame','wsw_passive_hit')")}
+    if not {"wsw_ws_frame", "wsw_passive_hit"}.issubset(names):
+        raise ApiError(503, "wsw_030_not_applied",
+                       "WSW 库未含 030 帧面两表（rp-wsw db migrate 至 030）")
+
+
+def _wsw_ws_frame_filters(params: dict) -> tuple:
+    """WS 帧列表过滤参数解析（D4）：conn/opcode/direction 三键；返回
+    (where_sql, args, normalized)。"""
+    norm = {}
+    conds, args = [], []
+    for key in _WSW_WS_FRAME_FILTER_KEYS:
+        raw = params.get(key, [""])[0]
+        if raw == "" or raw is None:
+            continue
+        norm[key] = raw
+    if "connection_exchange_id" in norm:
+        conds.append("connection_exchange_id = ?")
+        args.append(norm["connection_exchange_id"])
+    if "opcode" in norm:
+        if norm["opcode"] not in ("text", "binary", "ping", "pong", "close"):
+            raise ApiError(400, "bad_filter",
+                           f"opcode 词表外（text/binary/ping/pong/close）：{norm['opcode']!r}")
+        conds.append("opcode = ?")
+        args.append(norm["opcode"])
+    if "direction" in norm:
+        if norm["direction"] not in ("client_to_server", "server_to_client"):
+            raise ApiError(400, "bad_filter",
+                           f"direction 词表外（client_to_server/server_to_client）：{norm['direction']!r}")
+        conds.append("direction = ?")
+        args.append(norm["direction"])
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    return where, args, norm
+
+
+def _wsw_ws_frames_list(_conn, params) -> dict:
+    """GET /api/wsw/ws/frames：游标分页（captured_at DESC, frame_id DESC；
+    W3-D3 协议复用——cursor 指纹守卫 filter_cursor_mismatch 400 负例承载）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_030(conn)
+        where, args, norm = _wsw_ws_frame_filters(params)
+        fingerprint = _wsw_filter_fingerprint(norm)
+        limit_raw = params.get("limit", [""])[0]
+        if limit_raw == "":
+            limit = WSW_LIST_LIMIT_DEFAULT
+        else:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                raise ApiError(400, "bad_limit", f"limit 非整数：{limit_raw!r}")
+        if not (1 <= limit <= WSW_LIST_LIMIT_CAP):
+            raise ApiError(400, "limit_exceeds_cap",
+                           f"limit 越界（1..{WSW_LIST_LIMIT_CAP}）：{limit}")
+        cursor_raw = params.get("cursor", [""])[0]
+        cursor_sql, cursor_args = "", []
+        if cursor_raw:
+            cur = _wsw_cursor_decode(cursor_raw)
+            if cur["f"] != fingerprint:
+                raise ApiError(400, "filter_cursor_mismatch",
+                               "过滤参数与 cursor 签发时不一致（漏行/重行防线，D3 指纹守卫）")
+            # 无过滤 where="" 时游标条件用 WHERE 起头（history 端点
+            # base_where/global_where 分形态同款——500 根因修复）。
+            cursor_kw = " AND " if where else " WHERE "
+            cursor_sql = (f"{cursor_kw}(captured_at < ? OR (captured_at = ? AND frame_id < ?))")
+            cursor_args = [cur["t"], cur["t"], cur["id"]]
+        sql = (f"SELECT {_WSW_WS_FRAME_COLUMNS} FROM wsw_ws_frame{where}{cursor_sql} "
+               "ORDER BY captured_at DESC, frame_id DESC LIMIT ?")
+        sql_args = args + cursor_args + [limit + 1]
+        rows = [dict(r) for r in conn.execute(sql, sql_args)]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = ""
+        if has_more and rows:
+            last = rows[-1]
+            next_cursor = _wsw_cursor_encode(last["captured_at"] or "", last["frame_id"], fingerprint)
+        total = conn.execute("SELECT COUNT(*) FROM wsw_ws_frame").fetchone()[0]
+        return {"rows": rows, "next_cursor": next_cursor, "has_more": has_more,
+                "total": total, "limit": limit, "fingerprint": fingerprint}
+    finally:
+        conn.close()
+
+
+def _wsw_ws_frame_detail(frame_id: str, params: dict) -> dict:
+    """GET /api/wsw/ws/frames/{id}：帧详情（CAS payload 按需回读 base64，
+    payload=1 查询参数控制——D3 按需纪律与 history body 同型）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_030(conn)
+        rows = [dict(r) for r in conn.execute(
+            f"SELECT {_WSW_WS_FRAME_COLUMNS} FROM wsw_ws_frame WHERE frame_id=?", (frame_id,))]
+        if not rows:
+            raise ApiError(404, "frame_not_found", f"帧不存在：{frame_id}")
+        row = rows[0]
+    finally:
+        conn.close()
+    if params.get("payload", [""])[0] in ("1", "true") and row.get("payload_body_uri"):
+        data = _wsw_cas_read(row["payload_body_uri"])
+        row["payload_encoding"] = "base64"
+        row["payload"] = base64.b64encode(data).decode("ascii")
+    return row
+
+
+def _wsw_rp_wsw_json(args: list, timeout_s: int = 30) -> dict:
+    """rp-wsw 子进程委派（JSON stdout 契约；stderr 进日志面）。零直连 SQL
+    写——红线 3 subprocess 纪律（decode/compare/replay 三写面同型）。"""
+    if not os.path.isfile(RP_WSW_BIN):
+        raise ApiError(503, "rp_wsw_bin_missing",
+                       f"rp-wsw 二进制不存在：{RP_WSW_BIN}（cargo build -p wsw-runtime --bin rp-wsw）")
+    try:
+        proc = subprocess.run([RP_WSW_BIN] + args, capture_output=True,
+                              text=True, timeout=timeout_s, cwd=REPO_ROOT)
+    except subprocess.TimeoutExpired:
+        raise ApiError(504, "rp_wsw_timeout", f"rp-wsw 子进程超时（>{timeout_s}s）")
+    if proc.returncode != 0:
+        # stderr 末行 = rp-wsw error 面（JSON 摘要已在 stdout——子进程失败
+        # 词形回传，不吞不伪装）。
+        detail = (proc.stderr.strip().splitlines() or [""])[-1] or proc.stdout.strip()[-300:]
+        raise ApiError(400, "rp_wsw_failed", detail or f"rp-wsw exit {proc.returncode}")
+    for line in reversed(proc.stdout.strip().splitlines()):
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+    raise ApiError(500, "rp_wsw_bad_output", "rp-wsw stdout 无 JSON 行")
+
+
+def _wsw_ws_replay(body: dict) -> dict:
+    """POST /api/wsw/ws/replay：帧重放（rp-wsw ws replay 子进程；--payload
+    编辑态 / 原样两态；scope 闸在子进程内前置——闸外 exit 3 + scope_blocked
+    词形回传 403）。"""
+    frame_id = body.get("frame_id")
+    if not isinstance(frame_id, str) or not frame_id.startswith("wsw-fr-"):
+        raise ApiError(400, "bad_frame_id", f"frame_id 必须为 wsw-fr- 前缀：{frame_id!r}")
+    args = ["ws", "replay", "--db", WSW_DB_PATH, "--frame-id", frame_id,
+            "--artifacts-root", WSW_ARTIFACTS_ROOT, "--echo-timeout", "3"]
+    if body.get("payload") is not None:
+        if not isinstance(body["payload"], str):
+            raise ApiError(400, "bad_payload", "payload 必须为字符串")
+        args += ["--payload", body["payload"]]
+    if body.get("binary_hex") is not None:
+        if not isinstance(body["binary_hex"], str):
+            raise ApiError(400, "bad_binary_hex", "binary_hex 必须为 hex 字符串")
+        args += ["--binary-hex", body["binary_hex"]]
+    if body.get("target") is not None:
+        if not isinstance(body["target"], str):
+            raise ApiError(400, "bad_target", "target 必须为 ws:// URL 字符串")
+        args += ["--target", body["target"]]
+    session_id = body.get("session_id") or "wsw-ses-cli-0001"
+    args += ["--session-id", session_id]
+    try:
+        return _wsw_rp_wsw_json(args, timeout_s=30)
+    except ApiError as exc:
+        if exc.code == "rp_wsw_failed":
+            raise ApiError(403, "replay_rejected", exc.message)
+        raise
+
+
+_DECODER_OP_WORDS = (
+    "url_encode", "url_decode", "b64_encode", "b64_decode", "b64url_encode",
+    "b64url_decode", "hex_encode", "hex_decode", "html_entity_encode",
+    "html_entity_decode", "unicode_escape", "unicode_unescape", "json_pretty",
+    "json_compact", "json_validate", "jwt_decode", "sha256",
+)
+
+
+def _wsw_decode(body: dict) -> dict:
+    """POST /api/wsw/decode：Decoder 变换链（rp-wsw decode 子进程委派；
+    词表 = decoder.rs DECODER_OPS 17 op——Gzip/Deflate/Brotli 裁剪面词表外
+    400）。"""
+    ops = body.get("ops")
+    if not isinstance(ops, list) or not ops or not all(isinstance(o, str) for o in ops):
+        raise ApiError(400, "bad_ops", "ops 必须为非空字符串数组（词表 decoder.rs DECODER_OPS）")
+    for o in ops:
+        if o not in _DECODER_OP_WORDS:
+            raise ApiError(400, "bad_ops",
+                           f"op 词表外：{o!r}（Gzip/Deflate/Brotli 解压面本批裁剪——D5 登记项）")
+    if "input" in body:
+        if not isinstance(body["input"], str):
+            raise ApiError(400, "bad_input", "input 必须为字符串")
+        args = ["decode", "--input", body["input"], "--ops", ",".join(ops)]
+    elif "input_base64" in body:
+        if not isinstance(body["input_base64"], str):
+            raise ApiError(400, "bad_input", "input_base64 必须为 base64 字符串")
+        args = ["decode", "--input-base64", body["input_base64"], "--ops", ",".join(ops)]
+    else:
+        raise ApiError(400, "bad_input", "须提供 input 或 input_base64")
+    return _wsw_rp_wsw_json(args, timeout_s=15)
+
+
+def _wsw_compare(body: dict) -> dict:
+    """POST /api/wsw/compare：Comparer（rp-wsw compare 子进程委派；四面
+    text/json/header/hex + regex 忽略维；比较对象 = 文本 / exchange Body /
+    帧 payload——CAS 源由子进程经 WSW_DB_PATH + WSW_ARTIFACTS_ROOT 回读）。"""
+    mode = body.get("mode") or "text"
+    if mode not in ("text", "json", "header", "hex"):
+        raise ApiError(400, "bad_mode", f"mode 词表外（text/json/header/hex）：{mode!r}")
+
+    def side_args(side: str) -> list:
+        spec = body.get(side)
+        if not isinstance(spec, dict):
+            raise ApiError(400, f"bad_{side}", f"{side} 必须为对象（text/exchange_id/frame_id 三形）")
+        if "text" in spec:
+            if not isinstance(spec["text"], str):
+                raise ApiError(400, f"bad_{side}", f"{side}.text 必须为字符串")
+            return [f"--{side}", spec["text"]]
+        if "exchange_id" in spec:
+            if not isinstance(spec["exchange_id"], str) or not spec["exchange_id"].startswith("wsw-"):
+                raise ApiError(400, f"bad_{side}", f"{side}.exchange_id 必须为 wsw- 前缀")
+            return [f"--{side}-exchange", spec["exchange_id"], "--db", WSW_DB_PATH,
+                    "--artifacts-root", WSW_ARTIFACTS_ROOT]
+        if "frame_id" in spec:
+            if not isinstance(spec["frame_id"], str) or not spec["frame_id"].startswith("wsw-fr-"):
+                raise ApiError(400, f"bad_{side}", f"{side}.frame_id 必须为 wsw-fr- 前缀")
+            return [f"--{side}-frame", spec["frame_id"], "--db", WSW_DB_PATH,
+                    "--artifacts-root", WSW_ARTIFACTS_ROOT]
+        raise ApiError(400, f"bad_{side}", f"{side} 须提供 text/exchange_id/frame_id 之一")
+
+    args = ["compare", "--mode", mode] + side_args("left") + side_args("right")
+    for key, flag in (("skip_line_regexes", "--skip-line-regex"),
+                      ("normalize_key_regexes", "--normalize-key-regex")):
+        vals = body.get(key)
+        if vals is not None:
+            if not isinstance(vals, list) or not all(isinstance(v, str) for v in vals):
+                raise ApiError(400, f"bad_{key}", f"{key} 必须为字符串数组")
+            if vals:
+                args += [flag, ",".join(vals)]
+    if body.get("save_artifact"):
+        args += ["--db", WSW_DB_PATH, "--artifacts-root", WSW_ARTIFACTS_ROOT, "--save-artifact"]
+    return _wsw_rp_wsw_json(args, timeout_s=15)
+
+
+def _wsw_passive_hits_list(_conn, params) -> dict:
+    """GET /api/wsw/passive/hits：命中游标分页（created_at DESC, hit_id DESC；
+    exchange_id/rule_id/severity 过滤 + cursor 指纹守卫同面）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_030(conn)
+        norm = {}
+        conds, args = [], []
+        for key in _WSW_PASSIVE_HIT_FILTER_KEYS:
+            raw = params.get(key, [""])[0]
+            if raw == "" or raw is None:
+                continue
+            norm[key] = raw
+        if "exchange_id" in norm:
+            conds.append("exchange_id = ?")
+            args.append(norm["exchange_id"])
+        if "rule_id" in norm:
+            if norm["rule_id"] not in {r["rule_id"] for r in _WSW_PASSIVE_RULES_PROJECTION}:
+                raise ApiError(400, "bad_filter", f"rule_id 词表外：{norm['rule_id']!r}")
+            conds.append("rule_id = ?")
+            args.append(norm["rule_id"])
+        if "severity" in norm:
+            if norm["severity"] not in ("info", "low", "medium", "high"):
+                raise ApiError(400, "bad_filter", f"severity 词表外：{norm['severity']!r}")
+            conds.append("severity = ?")
+            args.append(norm["severity"])
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
+        fingerprint = _wsw_filter_fingerprint(norm)
+        limit_raw = params.get("limit", [""])[0]
+        if limit_raw == "":
+            limit = WSW_LIST_LIMIT_DEFAULT
+        else:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                raise ApiError(400, "bad_limit", f"limit 非整数：{limit_raw!r}")
+        if not (1 <= limit <= WSW_LIST_LIMIT_CAP):
+            raise ApiError(400, "limit_exceeds_cap",
+                           f"limit 越界（1..{WSW_LIST_LIMIT_CAP}）：{limit}")
+        cursor_raw = params.get("cursor", [""])[0]
+        cursor_sql, cursor_args = "", []
+        if cursor_raw:
+            cur = _wsw_cursor_decode(cursor_raw)
+            if cur["f"] != fingerprint:
+                raise ApiError(400, "filter_cursor_mismatch",
+                               "过滤参数与 cursor 签发时不一致（漏行/重行防线，D3 指纹守卫）")
+            cursor_kw = " AND " if where else " WHERE "
+            cursor_sql = (f"{cursor_kw}(created_at < ? OR (created_at = ? AND hit_id < ?))")
+            cursor_args = [cur["t"], cur["t"], cur["id"]]
+        sql = (f"SELECT {_WSW_PASSIVE_HIT_COLUMNS} FROM wsw_passive_hit{where}{cursor_sql} "
+               "ORDER BY created_at DESC, hit_id DESC LIMIT ?")
+        sql_args = args + cursor_args + [limit + 1]
+        rows = [dict(r) for r in conn.execute(sql, sql_args)]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = ""
+        if has_more and rows:
+            last = rows[-1]
+            next_cursor = _wsw_cursor_encode(last["created_at"] or "", last["hit_id"], fingerprint)
+        total = conn.execute("SELECT COUNT(*) FROM wsw_passive_hit").fetchone()[0]
+        return {"rows": rows, "next_cursor": next_cursor, "has_more": has_more,
+                "total": total, "limit": limit, "fingerprint": fingerprint}
+    finally:
+        conn.close()
+
+
+def _wsw_passive_rules(_conn, _params) -> dict:
+    """GET /api/wsw/passive/rules：规则注册表只读投影（passive.rs
+    PASSIVE_RULES 14 规则镜像；WSW-7 统一入口被动侧输入——判据 12）。"""
+    return {"rules": _WSW_PASSIVE_RULES_PROJECTION,
+            "classes": ["missing_security_header", "cookie_attribute", "info_leak",
+                        "abnormal_redirect", "common_config"],
+            "severities": ["info", "low", "medium", "high"],
+            "count": len(_WSW_PASSIVE_RULES_PROJECTION),
+            "note": "只读投影（单源 = wsw-runtime passive.rs 注册表；零 Finding 提升面——候选态）"}
+
+
+def _wsw_post_route_wsw56(rest: str, body: dict) -> dict:
+    """WSW-5/6 POST 分发（wsw_post_route 前置分支；D4 三写面子进程委派）。"""
+    if rest == "ws/replay":
+        return _wsw_ws_replay(body)
+    if rest == "decode":
+        return _wsw_decode(body)
+    if rest == "compare":
+        return _wsw_compare(body)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # MA-4 SSE 事件推送面（docs/rip3/MA-4-TASK.md D1/D2/D3）
 # ---------------------------------------------------------------------------
 # 事件源 = 既有表只读 tail 三形态 cursor（零引擎零 hook 零迁移）：
@@ -5140,6 +5518,9 @@ API_ROUTES = {
     "/api/wsw/repeater/sends": _wsw_send_list,
     "/api/wsw/repeater/send-status": _wsw_send_status,
     "/api/wsw/fuzz/jobs": _wsw_fuzz_jobs_list,
+    "/api/wsw/ws/frames": _wsw_ws_frames_list,
+    "/api/wsw/passive/hits": _wsw_passive_hits_list,
+    "/api/wsw/passive/rules": _wsw_passive_rules,
     "/api/wsw/status": _wsw_history_stats,
     "/api/plugins": handle_plugins_list,
     "/api/plugins/trust-policy": handle_plugin_trust_policy,
@@ -5359,6 +5740,13 @@ class RpHandler(BaseHTTPRequestHandler):
                         return
                     if rest and "/" not in rest:
                         self.send_json(_wsw_history_detail(None, rest))
+                        return
+                # WSW-5/6 帧详情动态路径（D4）：/api/wsw/ws/frames/{id}
+                #（?payload=1 按需 CAS 回读）。
+                if parsed.path.startswith("/api/wsw/ws/frames/"):
+                    rest = unquote(parsed.path[len("/api/wsw/ws/frames/"):]).strip("/")
+                    if rest and "/" not in rest:
+                        self.send_json(_wsw_ws_frame_detail(rest, params))
                         return
                 # WSW-4 Fuzzer 动态路径（D8）：/api/wsw/fuzz/jobs/{id}（job
                 # + case 计数详情）。

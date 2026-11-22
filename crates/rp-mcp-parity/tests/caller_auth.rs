@@ -206,8 +206,8 @@ fn caller_multi_key_auth_e2e() {
             database::migrate(&pool, &repo_root().join("migrations")).expect("migrate temp db");
         assert_eq!(
             applied.last().map(|m| m.version),
-            Some(29),
-            "真实迁移链必须应用到 027 链尾（MA-2 caller 归属列与 caller_budget）"
+            Some(30),
+            "真实迁移链必须应用到当前链尾（027 MA-2 caller 归属列与 caller_budget 之后已随链演进至 030）"
         );
     }
 
