@@ -1,0 +1,109 @@
+{
+  "schema_version": "1",
+  "report_id": "rep-20261123-001",
+  "report_kind": "src_vuln_report",
+  "title": "示范源代码漏洞研究报告（中文验收面）",
+  "generated_at": "2026-11-23T10:00:00Z",
+  "language": "zh",
+  "task_ref": {
+    "task_id": "task-42",
+    "workflow_run_id": "run-20261123-01"
+  },
+  "executive_summary": "本次研究对示范目标执行七维覆盖扫描，**确认 1 个高危漏洞**与 1 个中危漏洞。全部结论引用 RTIS POC 细节，正文零复制。",
+  "scope": {
+    "authorization": "委托授权书编号 AUTH-2026-001，范围限内网示范段。",
+    "assets": ["https://demo.example.com", "10.0.0.0/24"]
+  },
+  "methodology": "按研究计划七维投影推进：资产面 → 接口面 → 输入点面。假设经计划项五态判定后生成 Finding。",
+  "timeline": [
+    {"date": "2026-11-20", "event": "研究计划生成并通过预算守卫"},
+    {"date": "2026-11-21", "event": "资产面覆盖完成"},
+    {"date": "2026-11-22", "event": "高危漏洞确认（RTIS POC 复现）"}
+  ],
+  "coverage": {
+    "dimensions": [
+      {"dimension": "assets", "total": 10, "tested": 8, "confirmed": 2},
+      {"dimension": "input_points", "total": 5, "tested": 5, "confirmed": 1}
+    ]
+  },
+  "findings": [
+    {
+      "finding_id": "find-20261123-001",
+      "rtis_ref": "rtis://poc/42",
+      "title": "示范接口存在未授权访问（中文标题验收面）",
+      "severity": "high",
+      "result_state": "confirmed",
+      "location": {
+        "artifact_uri": "artifact-20261123-003",
+        "start_line": 12,
+        "end_line": 18,
+        "snippet": "router.get(\"/admin\", handler_without_auth_guard)"
+      },
+      "vuln_type": "未授权访问",
+      "affected_scope": ["/admin", "/admin/export"],
+      "preconditions": "目标服务**已部署**且 `/admin` 路由暴露于公网。",
+      "principle": "路由注册缺少鉴权中间件，任意客户端可直达管理面。",
+      "repro_steps": "1. 构造 `GET /admin` 请求（无 Cookie）。\n2. 观察 200 响应与数据返回。",
+      "request_response": [
+        {"direction": "request", "content": "GET /admin HTTP/1.1\nHost: demo.example.com"},
+        {"direction": "response", "content": "HTTP/1.1 200 OK\nContent-Type: text/html"}
+      ],
+      "evidence": [
+        {
+          "evidence_id": "re-20261123-001",
+          "artifact_id": "artifact-20261123-003",
+          "tool_run_id": "toolrun-20261123-007",
+          "trace_id": "trace-20261123-abc123",
+          "uri": "ripartifact://toolrun-20261123-007/artifact-20261123-003",
+          "content_hash": "a3f1c2b4d5e6f7089a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b",
+          "evidence_type": "provider_result"
+        }
+      ],
+      "impact": "管理面数据可被任意读取，存在横向移动风险。",
+      "remediation": {
+        "priority": "immediate",
+        "suggestions": ["为 `/admin` 路由挂载鉴权中间件", "增加会话超时与审计日志"]
+      },
+      "technical_explanation": "技术解释字段位：**双解释生成属 6b**（8.3），本批只承载。含 `代码字面` 与换行。",
+      "plain_explanation": "通俗解释字段位：好比大门没上锁，谁都能进（通俗七问属 6b 生成器）。"
+    },
+    {
+      "finding_id": "find-20261123-002",
+      "title": "示范页面信息泄露（中危对照面）",
+      "severity": "medium",
+      "result_state": "confirmed",
+      "location": {
+        "artifact_uri": "artifact-20261123-004",
+        "start_line": 40,
+        "end_line": 44
+      },
+      "vuln_type": "信息泄露",
+      "affected_scope": ["/debug"],
+      "preconditions": "调试页面未随发布关闭。",
+      "principle": "调试路由泄露内部栈信息。",
+      "repro_steps": "访问 `/debug` 观察响应体。",
+      "request_response": [],
+      "evidence": [],
+      "impact": "内部实现细节暴露，辅助攻击者侦察。",
+      "remediation": {
+        "priority": "medium",
+        "suggestions": ["生产构建移除调试路由"]
+      },
+      "properties": {
+        "reviewer_note": "覆盖自由扩展位"
+      }
+    }
+  ],
+  "attack_paths": [
+    {
+      "path_id": "path-20261123-01",
+      "title": "未授权访问 → 数据导出",
+      "steps": ["直达 `/admin`", "调用导出接口 `/admin/export`"],
+      "evidence_refs": ["re-20261123-001", "ripartifact://toolrun-20261123-007/artifact-20261123-003"]
+    }
+  ],
+  "appendix": "附录 A：工具清单与时间戳对账（markdown 片段面）。",
+  "properties": {
+    "batch": "PHASE-6A"
+  }
+}

@@ -25,6 +25,7 @@ members = [
     "crates/wsw-runtime",
     "crates/wsw-poc",
     "crates/document-router",
+    "crates/report-engine",
     "tests",
 ]
 
@@ -92,6 +93,16 @@ sha2 = "=0.10.9"
 # Wire/Outbound 原始字节与体字节的 JSON 往返编码（fixtures 期望 JSON 同口径）；
 # lock 已有 0.13.1 与 0.22.1 双版本，等号钉选定 0.22.1，零 vendor 增量。
 base64 = "=0.22.1"
+
+# Report IR 渲染 crate（PHASE-6A D3 单 crate 裁决——原双 crate 中 docx-rs
+# 于实施日停批撤除：其 0.4.22（crates.io latest）硬依赖 zip ^8.6.0，advisory DB
+# 实测 6 条 vulnerability error 级 RUSTSEC（0367/0368/0369/0429/0545/0546）命中
+# 且 patched 全部 >=9.0.0 被 ^8.6.0 约束堵死，deny advisories 门不可达；裁决
+# 半撤保 comrak，DOCX 渲染顺延 6b 重新侦察（实录 docs/phase0/PHASE-6A-BATCH-REPORT.md）。
+# comrak =1.1.0（crates.io latest；BSD-2-Clause；MSRV 1.89 < workspace 1.99；
+# default-features=false 剥 cli/syntect-onig/bon——零 clap/零 syntect/零 shell-words）
+# 承载 markdown→HTML 片段面。exact 钉 = rmcp/chromiumoxide vendor 跃迁批先例。
+comrak = { version = "=1.1.0", default-features = false }
 
 # workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
 domain = { path = "crates/domain" }

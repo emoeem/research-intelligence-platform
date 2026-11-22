@@ -1,0 +1,1918 @@
+use std::cmp::max;
+use std::collections::HashSet;
+use std::fmt::{self, Write};
+use std::str;
+
+use crate::Arena;
+use crate::ctype::{isalpha, isdigit, ispunct, ispunct_char, isspace, isspace_char};
+use crate::nodes::{
+    CalloutFold, ListDelimType, ListType, Node, NodeAlert, NodeBlockDirective, NodeCallout,
+    NodeCodeBlock, NodeHeading, NodeHtmlBlock, NodeLink, NodeList, NodeMath, NodeMathBlock,
+    NodeTaskItem, NodeValue, NodeWikiLink, TableAlignment,
+};
+use crate::parser::block_ids;
+use crate::parser::options::{Options, Plugins, WikiLinksMode};
+#[cfg(feature = "phoenix_heex")]
+use crate::parser::phoenix_heex::NodeHeexBlock;
+#[cfg(feature = "shortcodes")]
+use crate::parser::shortcodes::NodeShortCode;
+use crate::scanners;
+use crate::strings::trim_start_match;
+use crate::{node_matches, strings};
+
+#[cfg(feature = "grid_table")]
+mod grid_table;
+
+/// Formats an AST as CommonMark, modified by the given options.
+pub fn format_document(root: Node<'_>, options: &Options, output: &mut dyn Write) -> fmt::Result {
+    // Formatting an ill-formed AST might lead to invalid output. However, we don't want to pay for
+    // validation in normal workflow. As a middleground, we validate the AST in debug builds. See
+    // https://github.com/kivikakk/comrak/issues/371.
+    #[cfg(debug_assertions)]
+    root.validate().unwrap_or_else(|e| {
+        panic!("The document to format is ill-formed: {:?}", e);
+    });
+
+    format_document_with_plugins(root, options, output, &Plugins::default())
+}
+
+/// Formats an AST as CommonMark, modified by the given options. Accepts custom plugins.
+pub fn format_document_with_plugins(
+    root: Node<'_>,
+    options: &Options,
+    output: &mut dyn Write,
+    _plugins: &Plugins,
+) -> fmt::Result {
+    if !options.render.experimental_minimize_commonmark {
+        return format_internal(root, options, output);
+    }
+
+    let mut result = String::new();
+    format_internal(root, options, &mut result)?;
+    minimize_commonmark(&mut result, options);
+
+    output.write_str(&result)
+}
+
+// Doesn't honour experimental_minimize_commonmark.
+fn format_internal(root: Node<'_>, options: &Options, output: &mut dyn Write) -> fmt::Result {
+    let mut f = CommonMarkFormatter::new(root, options, output);
+    f.format(root)
+}
+
+struct CommonMarkFormatter<'a, 'o, 'c, 'w> {
+    node: Node<'a>,
+    options: &'o Options<'c>,
+    output: &'w mut dyn Write,
+    /// Buffer used by wrapping implementation; flushed on newline or wrapping
+    /// event.
+    wrap_buffer: String,
+    /// The last two bytes written (to output or wrap_buffer).
+    window: Vec<u8>,
+    /// Contains some assortment of:
+    ///
+    /// * "> " when formatting within a blockquote.
+    /// * " "*n when formatting within a list item (n≥2).
+    /// * "    " when formatting within a fenced code block.
+    /// * "    " when formatting within a footnote definition.
+    /// * "> " when formatting within an alert.
+    ///
+    /// A prefix when non-empty is therefore guaranteed to have a length of at
+    /// least two. This is relevant in write_prefix.
+    prefix: String,
+    column: usize,
+    need_cr: u8,
+    last_breakable: usize,
+    begin_line: bool,
+    begin_content: bool,
+    no_linebreaks: bool,
+    in_tight_list_item: bool,
+    emphasis_delims: Vec<char>,
+    last_emphasis: Option<(Node<'a>, char)>,
+    #[cfg(feature = "grid_table")]
+    grid_table_indent: usize,
+    custom_escape: Option<fn(Node<'a>, char) -> bool>,
+    footnote_ix: u32,
+    ol_stack: Vec<usize>,
+    allow_wrap: bool,
+    callout_title_depth: usize,
+    callout_title_state_stack: Vec<(bool, bool, usize, bool, u8)>,
+    escape_braces: bool,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum Escaping {
+    Literal,
+    Normal,
+    Url,
+    Title,
+    WikilinkUrl,
+}
+
+impl Write for CommonMarkFormatter<'_, '_, '_, '_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.output(s, false, Escaping::Literal)
+    }
+}
+
+impl<'a, 'o, 'c, 'w> CommonMarkFormatter<'a, 'o, 'c, 'w> {
+    fn new(node: Node<'a>, options: &'o Options<'c>, output: &'w mut dyn Write) -> Self {
+        CommonMarkFormatter {
+            node,
+            options,
+            output,
+            wrap_buffer: String::new(),
+            window: Vec::with_capacity(2),
+            prefix: String::new(),
+            column: 0,
+            need_cr: 0,
+            last_breakable: 0,
+            begin_line: true,
+            begin_content: true,
+            no_linebreaks: false,
+            in_tight_list_item: false,
+            emphasis_delims: vec![],
+            last_emphasis: None,
+            #[cfg(feature = "grid_table")]
+            grid_table_indent: 0,
+            custom_escape: None,
+            footnote_ix: 0,
+            ol_stack: vec![],
+            allow_wrap: options.render.width > 0 && !options.render.hardbreaks,
+            escape_braces: false,
+            callout_title_depth: 0,
+            callout_title_state_stack: Vec::new(),
+        }
+    }
+
+    /// Writes to self.output, or self.buffer if we're wrapping output, and
+    /// update self.window.
+    fn write(&mut self, s: &str) -> fmt::Result {
+        if s.is_empty() {
+            return Ok(());
+        }
+        // We maintain a window size of 2 bytes at most.
+        if s.len() > 1 {
+            self.window.clear();
+            self.window.extend_from_slice(&s.as_bytes()[s.len() - 2..]);
+        } else {
+            assert_eq!(s.len(), 1);
+            if self.window.len() == 2 {
+                self.window.remove(0);
+            } else {
+                assert!(self.window.len() < 2);
+            }
+            self.window.push(s.as_bytes()[0]);
+        }
+
+        let last_was_cr = self.window.last() == Some(&b'\n');
+
+        if self.options.render.width == 0 {
+            self.output.write_str(s)?;
+        } else if last_was_cr {
+            // Can flush.
+            self.output.write_str(&self.wrap_buffer)?;
+            self.output.write_str(s)?;
+            self.wrap_buffer.clear();
+        } else {
+            self.wrap_buffer.push_str(s);
+        }
+
+        if last_was_cr {
+            self.column = 0;
+            self.begin_line = true;
+            self.begin_content = true;
+            self.last_breakable = 0;
+        }
+
+        Ok(())
+    }
+
+    fn write_prefix(&mut self) -> fmt::Result {
+        if self.prefix.is_empty() {
+            return Ok(());
+        }
+        if self.options.render.width == 0 {
+            self.output.write_str(&self.prefix)?;
+        } else {
+            self.wrap_buffer.push_str(&self.prefix);
+        }
+        self.window.clear();
+        self.window
+            .extend_from_slice(&self.prefix.as_bytes()[self.prefix.len().saturating_sub(2)..]);
+        Ok(())
+    }
+
+    fn output(&mut self, s: &str, wrap: bool, escaping: Escaping) -> fmt::Result {
+        let bytes = s.as_bytes();
+        let wrap = self.allow_wrap && wrap && !self.no_linebreaks;
+
+        if self.in_tight_list_item && self.need_cr > 1 {
+            self.need_cr = 1;
+        }
+
+        let mut last_crs_consume = self
+            .window
+            .iter()
+            .rev()
+            .take_while(|&&b| b == b'\n')
+            .count();
+        while self.need_cr > 0 {
+            if self.window.is_empty() {
+                // nvm
+            } else if last_crs_consume > 0 {
+                last_crs_consume -= 1;
+                if self.need_cr > 1 {
+                    self.write_prefix()?;
+                    self.column = self.prefix.len();
+                }
+            } else {
+                self.write("\n")?;
+                if self.need_cr > 1 {
+                    self.write_prefix()?;
+                    self.column = self.prefix.len();
+                }
+            }
+            self.need_cr -= 1;
+        }
+
+        let mut it = s.char_indices();
+
+        while let Some((mut i, c)) = it.next() {
+            if self.begin_line {
+                self.write_prefix()?;
+                self.column = self.prefix.len();
+            }
+
+            if self.custom_escape.is_some_and(|f| f(self.node, c)) {
+                self.write("\\")?;
+            }
+
+            let nextb = bytes.get(i + 1);
+            if c == ' ' && wrap {
+                if !self.begin_line {
+                    let last_nonspace = self.wrap_buffer.len();
+                    self.write(" ")?;
+                    self.column += 1;
+                    self.begin_line = false;
+                    self.begin_content = false;
+                    while bytes.get(i + 1) == Some(&(b' ')) {
+                        (i, _) = it.next().unwrap();
+                    }
+                    if !bytes.get(i + 1).is_some_and(|&c| isdigit(c)) {
+                        self.last_breakable = last_nonspace;
+                    }
+                }
+            } else if escaping == Escaping::Literal {
+                if bytes[i] == b'\n' {
+                    self.write("\n")?;
+                } else {
+                    let cs = char::to_string(&c);
+                    self.write(&cs)?;
+                    self.column += cs.len();
+                    self.begin_line = false;
+                    self.begin_content = self.begin_content && isdigit(bytes[i]);
+                }
+            } else {
+                self.outc(c, escaping, nextb)?;
+                self.begin_line = false;
+                self.begin_content = self.begin_content && isdigit(bytes[i]);
+            }
+
+            if self.options.render.width > 0
+                && self.column > self.options.render.width
+                && !self.begin_line
+                && self.last_breakable > 0
+            {
+                self.output
+                    .write_str(&self.wrap_buffer[..self.last_breakable])?;
+                self.output.write_str("\n")?;
+                strings::remove_from_start(&mut self.wrap_buffer, self.last_breakable + 1);
+                self.wrap_buffer.insert_str(0, &self.prefix);
+                self.column = self.wrap_buffer.len();
+                self.last_breakable = 0;
+                self.begin_line = false;
+                self.begin_content = false;
+            }
+        }
+        Ok(())
+    }
+
+    fn outc(&mut self, c: char, escaping: Escaping, nextb: Option<&u8>) -> fmt::Result {
+        // NOTE: nextb contains the byte *immediately following the first byte of c*.
+        // If c is a multibyte character, nextb contains the second byte of c!
+        // We rely on it here *only* where we know c to be a single byte
+        // character, in which case it faithfully represents the first byte of the
+        // following character (or is None if the string ends).
+        // Any use of nextb must be conditional on asserting c is a single byte character.
+        let follows_digit = self.window.last().is_some_and(|&b| isdigit(b));
+
+        let nextb = match nextb {
+            Some(&b) => b,
+            None if escaping == Escaping::Normal => self.next_inline_first_byte(),
+            None => 0,
+        };
+
+        let needs_escaping = (c as u64) < 0x80
+            && escaping != Escaping::Literal
+            && ((escaping == Escaping::Normal
+                && ((c as u64) < 0x20
+                    || c == '*'
+                    || c == '_'
+                    || c == '['
+                    || c == ']'
+                    || c == '#'
+                    || c == '<'
+                    || c == '>'
+                    || c == '\\'
+                    || c == '`'
+                    || c == '~'
+                    || c == '!'
+                    || (self.options.extension.autolink && c == '@')
+                    || ((self.options.extension.math_dollars
+                        || self.options.extension.math_dollars_block
+                        || self.options.extension.math_code)
+                        && c == '$')
+                    || (self.options.extension.ofm_comments && c == '%' && nextb == b'%')
+                    || (c == '&' && isalpha(nextb))
+                    || (c == '{' && self.escape_braces)
+                    || (c == '!' && nextb == 0x5b)
+                    || (self.begin_content
+                        && (self.options.extension.block_directive
+                            || self.options.extension.description_lists)
+                        && c == ':')
+                    || (self.begin_content
+                        && (c == '-' || c == '+' || c == '=')
+                        && !follows_digit)
+                    || (self.begin_content
+                        && (c == '.' || c == ')')
+                        && follows_digit
+                        && (nextb == 0 || isspace(nextb)))))
+                || (escaping == Escaping::Url
+                    && (c == '`'
+                        || c == '<'
+                        || c == '>'
+                        || isspace_char(c)
+                        || c == '\\'
+                        || c == ')'
+                        || c == '('))
+                || (escaping == Escaping::Title
+                    && (c == '`' || c == '<' || c == '>' || c == '"' || c == '\\'))
+                || (escaping == Escaping::WikilinkUrl
+                    && (c == '\\'
+                        || c == '['
+                        || c == ']'
+                        || c == '|'
+                        || (c == '&' && (isalpha(nextb) || nextb == b'#')))));
+
+        if needs_escaping {
+            // (c as u64) < 256 is implied.
+            let out = if escaping == Escaping::WikilinkUrl && c == '&' {
+                "&amp;".to_string()
+            } else if escaping == Escaping::Url && isspace_char(c) {
+                format!("%{:02X}", c as u8)
+            } else if c == '[' && self.options.extension.math_latex {
+                "&#91;".to_string()
+            } else if ispunct_char(c) {
+                format!("\\{}", c)
+            } else if c == '\0' {
+                "\u{fffd}".to_string()
+            } else {
+                format!("&#{};", c as u8)
+            };
+            self.write(&out)?;
+            self.column += out.len();
+        } else {
+            let cs = char::to_string(&c);
+            self.write(&cs)?;
+            self.column += cs.len();
+        }
+
+        Ok(())
+    }
+
+    fn next_inline_first_byte(&self) -> u8 {
+        self.node
+            .next_sibling()
+            .map_or(0, |next| match &next.data().value {
+                NodeValue::Text(text) => text.as_bytes().first().copied().unwrap_or(0),
+                NodeValue::Escaped => b'\\',
+                NodeValue::CommentInline(_) => b'%',
+                _ => 0,
+            })
+    }
+
+    fn cr(&mut self) {
+        if self.callout_title_depth > 0 {
+            return;
+        }
+        self.need_cr = max(self.need_cr, 1);
+    }
+
+    fn blankline(&mut self) {
+        if self.callout_title_depth > 0 {
+            return;
+        }
+        self.need_cr = max(self.need_cr, 2);
+    }
+
+    /// Encode an info string for single-line title output in code fences,
+    /// block directive fences, or alert titles.
+    ///
+    /// Re-escapes `&` and `\` to counteract the parser's `unescape_html`
+    /// and `unescape` passes, encodes newlines as character references to
+    /// keep the output single-line without altering the value, and optionally
+    /// encodes `:` as `&#58;` (for directive fences, since the scanner
+    /// rejects literal colons before unescaping).
+    fn write_title_info(
+        &mut self,
+        info: &str,
+        escape_colon: bool,
+        escape_brace: bool,
+    ) -> fmt::Result {
+        for c in info.chars() {
+            match c {
+                '\n' => {
+                    write!(self, "&#10;")?;
+                }
+                '\r' => {
+                    write!(self, "&#13;")?;
+                }
+                '&' => {
+                    write!(self, "&amp;")?;
+                }
+                '\\' => {
+                    write!(self, "\\\\")?;
+                }
+                ':' if escape_colon => {
+                    write!(self, "&#58;")?;
+                }
+                '{' if escape_brace => {
+                    write!(self, "\\{{")?;
+                }
+                _ => {
+                    write!(self, "{}", c)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn format(&mut self, root: Node<'a>) -> fmt::Result {
+        enum Phase {
+            Pre,
+            Post,
+        }
+        let mut stack = vec![(root, Phase::Pre)];
+
+        while let Some((node, phase)) = stack.pop() {
+            match phase {
+                Phase::Pre => {
+                    if self.format_node(node, true)? {
+                        stack.push((node, Phase::Post));
+                        for ch in node.reverse_children() {
+                            stack.push((ch, Phase::Pre));
+                        }
+                    }
+                }
+                Phase::Post => {
+                    self.format_node(node, false)?;
+                }
+            }
+        }
+
+        if !self.wrap_buffer.is_empty() {
+            self.output.write_str(&self.wrap_buffer)?;
+        }
+        if !self.window.is_empty() && self.window.last() != Some(&b'\n') {
+            self.output.write_str("\n")?;
+        }
+        Ok(())
+    }
+
+    fn format_node(&mut self, node: Node<'a>, entering: bool) -> Result<bool, fmt::Error> {
+        self.node = node;
+
+        let parent_node = node.parent();
+        if (entering && node.data().value.block() && node.previous_sibling().is_some())
+            || (!entering && node_matches!(node, NodeValue::List(..)))
+        {
+            self.in_tight_list_item = parent_node.is_some_and(tight_container);
+        }
+        let next_is_block = node
+            .next_sibling()
+            .is_none_or(|next| next.data().value.block());
+        let text_in_cell = node_matches!(node, NodeValue::Text(..))
+            && parent_node.is_some_and(|n| node_matches!(n, NodeValue::TableCell));
+
+        match node.data().value {
+            NodeValue::Document => (),
+            NodeValue::FrontMatter(ref fm) => self.format_front_matter(fm, entering)?,
+            NodeValue::BlockQuote => self.format_block_quote(entering)?,
+            NodeValue::List(..) => self.format_list(node, entering)?,
+            NodeValue::Item(..) => self.format_item(node, entering)?,
+            NodeValue::DescriptionList => (),
+            NodeValue::DescriptionItem(..) => (),
+            NodeValue::DescriptionTerm => (),
+            NodeValue::DescriptionDetails => self.format_description_details(node, entering)?,
+            NodeValue::Heading(ref nh) => self.format_heading(nh, node, entering)?,
+            NodeValue::CodeBlock(ref ncb) => self.format_code_block(node, ncb, entering)?,
+            NodeValue::HtmlBlock(ref nhb) => self.format_html_block(nhb, entering)?,
+            #[cfg(feature = "phoenix_heex")]
+            NodeValue::HeexBlock(ref nhb) => self.format_heex_block(nhb, entering)?,
+            NodeValue::ThematicBreak(..) => self.format_thematic_break(entering)?,
+            NodeValue::Paragraph => self.format_paragraph(entering),
+            NodeValue::Text(ref literal) => {
+                self.format_text(literal, node, entering, !text_in_cell)?
+            }
+            NodeValue::LineBreak => self.format_line_break(entering, next_is_block)?,
+            NodeValue::SoftBreak => self.format_soft_break(entering)?,
+            NodeValue::Code(ref code) => self.format_code(node, &code.literal, entering)?,
+            NodeValue::HtmlInline(ref literal) => self.format_html_inline(literal, entering)?,
+            #[cfg(feature = "phoenix_heex")]
+            NodeValue::HeexInline(ref literal) => self.format_heex_inline(literal, entering)?,
+            NodeValue::Raw(ref literal) => self.format_raw(literal, entering)?,
+            NodeValue::Strong(..) => self.format_emphasis(node, entering, true)?,
+            NodeValue::Emph(..) => self.format_emphasis(node, entering, false)?,
+            NodeValue::TaskItem(ref nti) => self.format_task_item(nti, node, entering)?,
+            NodeValue::Strikethrough(..) => self.format_strikethrough()?,
+            NodeValue::Highlight => self.format_highlight()?,
+            NodeValue::Insert => self.format_insert()?,
+            NodeValue::Superscript => self.format_superscript()?,
+            NodeValue::Link(ref nl) => return self.format_link(node, nl, entering),
+            NodeValue::Image(ref nl) => self.format_image(node, nl, entering)?,
+            #[cfg(feature = "shortcodes")]
+            NodeValue::ShortCode(ref ne) => self.format_shortcode(ne, entering)?,
+            NodeValue::Table(..) => self.format_table(entering),
+            NodeValue::TableRow(..) => self.format_table_row(entering)?,
+            NodeValue::TableCell => self.format_table_cell(node, entering)?,
+            #[cfg(feature = "grid_table")]
+            NodeValue::GridTable(..) => {
+                self.format_grid_table(node)?;
+                return Ok(false);
+            }
+            #[cfg(feature = "grid_table")]
+            NodeValue::GridTableRow(..) => unreachable!(),
+            #[cfg(feature = "grid_table")]
+            NodeValue::GridTableCell(..) => (),
+            NodeValue::FootnoteDefinition(ref nfd) => {
+                self.format_footnote_definition(&nfd.name, entering)?
+            }
+            NodeValue::FootnoteReference(ref nfr) => {
+                self.format_footnote_reference(&nfr.name, entering)?
+            }
+            NodeValue::MultilineBlockQuote(..) => self.format_block_quote(entering)?,
+            NodeValue::Escaped => {
+                self.format_escaped(node)?;
+                return Ok(false);
+            }
+            NodeValue::Math(ref math) => self.format_math(math, node, entering)?,
+            NodeValue::MathBlock(ref math) => self.format_math_block(node, math, entering)?,
+            NodeValue::WikiLink(ref nl) => return self.format_wikilink(node, nl, entering),
+            NodeValue::Underline => self.format_underline()?,
+            NodeValue::Subscript => self.format_subscript()?,
+            NodeValue::SpoileredText => self.format_spoiler()?,
+            NodeValue::EscapedTag(net) => self.format_escaped_tag(net)?,
+            NodeValue::Alert(ref alert) => self.format_alert(alert, entering)?,
+            NodeValue::Callout(ref nc) => self.format_callout(node, nc, entering)?,
+            NodeValue::CalloutTitle => self.format_callout_title(entering)?,
+            NodeValue::Subtext => self.format_subtext(entering)?,
+            NodeValue::BlockDirective(ref nbd) => self.format_block_directive(nbd, entering)?,
+            NodeValue::BlockId(ref n) => {
+                if entering {
+                    write!(self, "^{}", n.name)?;
+                }
+            }
+            NodeValue::CommentInline(ref comment) => {
+                if entering {
+                    write!(self, "%%{}%%", comment.literal)?;
+                }
+            }
+            NodeValue::MultilineComment(ref comment) => {
+                if entering {
+                    let first_in_list_item = node.previous_sibling().is_none()
+                        && parent_node.is_some_and(|parent| {
+                            node_matches!(parent, NodeValue::Item(..) | NodeValue::TaskItem(..))
+                        });
+                    if !first_in_list_item {
+                        self.blankline();
+                    }
+                    write!(self, "%%{}", comment.literal)?;
+                    if comment.closed {
+                        write!(self, "%%")?;
+                    }
+                }
+            }
+        };
+        Ok(true)
+    }
+
+    fn format_front_matter(&mut self, front_matter: &str, entering: bool) -> fmt::Result {
+        if entering {
+            self.output(front_matter, false, Escaping::Literal)?;
+        }
+        Ok(())
+    }
+
+    fn format_block_quote(&mut self, entering: bool) -> fmt::Result {
+        if entering {
+            write!(self, "> ")?;
+            self.begin_content = true;
+            write!(self.prefix, "> ")?;
+        } else {
+            let new_len = self.prefix.len() - 2;
+            self.prefix.truncate(new_len);
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_list(&mut self, node: Node<'a>, entering: bool) -> fmt::Result {
+        let ol_start = match node.data().value {
+            NodeValue::List(NodeList {
+                list_type: ListType::Ordered,
+                start,
+                ..
+            }) => Some(start),
+            _ => None,
+        };
+
+        if entering {
+            if let Some(start) = ol_start {
+                self.ol_stack.push(start);
+            }
+        } else {
+            if ol_start.is_some() {
+                self.ol_stack.pop();
+            }
+
+            if match node.next_sibling() {
+                Some(next_sibling) => {
+                    node_matches!(next_sibling, NodeValue::CodeBlock(..) | NodeValue::List(..))
+                }
+                _ => false,
+            } {
+                self.cr();
+                write!(self, "<!-- end list -->")?;
+                self.blankline();
+            }
+        }
+        Ok(())
+    }
+
+    fn format_item(&mut self, node: Node<'a>, entering: bool) -> fmt::Result {
+        let parent = match node.parent().unwrap().data().value {
+            NodeValue::List(ref nl) => nl.clone(),
+            _ => unreachable!(),
+        };
+
+        let mut listmarker = String::new();
+        let min_width = following_html_block_indent(node) + 1;
+
+        let marker_width = if parent.list_type == ListType::Bullet {
+            min_width.max(2)
+        } else {
+            let list_number = if let Some(last_stack) = self.ol_stack.last_mut() {
+                let list_number = *last_stack;
+                if entering {
+                    *last_stack += 1;
+                    list_number
+                } else {
+                    list_number - 1
+                }
+            } else {
+                match node.data().value {
+                    NodeValue::Item(ref ni) => ni.start,
+                    NodeValue::TaskItem(_) => parent.start,
+                    _ => unreachable!(),
+                }
+            };
+            let list_delim = parent.delimiter;
+            write!(
+                listmarker,
+                "{}{} ",
+                list_number,
+                if list_delim == ListDelimType::Paren {
+                    ")"
+                } else {
+                    "."
+                }
+            )?;
+            let mut current_len = listmarker.len();
+
+            while current_len < self.options.render.ol_width.min(12).max(min_width) {
+                write!(listmarker, " ").unwrap();
+                current_len += 1;
+            }
+
+            listmarker.len()
+        };
+
+        if entering {
+            if parent.list_type == ListType::Bullet {
+                let bullet = char::from(self.options.render.list_style as u8);
+                write!(self, "{}{}", bullet, " ".repeat(marker_width - 1)).unwrap();
+            } else {
+                self.write_str(&listmarker)?;
+            }
+            self.begin_content = true;
+            for _ in 0..marker_width {
+                write!(self.prefix, " ")?;
+            }
+        } else {
+            let new_len = if self.prefix.len() > marker_width {
+                self.prefix.len() - marker_width
+            } else {
+                0
+            };
+            self.prefix.truncate(new_len);
+            if !parent.tight && node.next_sibling().is_some() {
+                self.blankline();
+            } else {
+                self.cr();
+            }
+        }
+
+        Ok(())
+    }
+
+    fn format_description_details(&mut self, node: Node<'a>, entering: bool) -> fmt::Result {
+        let item = node.parent().unwrap();
+        let width = (following_html_block_indent(item) + 1).max(2);
+        if entering {
+            if let NodeValue::DescriptionItem(ref ndi) = item.data().value
+                && ndi.tight
+            {
+                self.need_cr = self.need_cr.min(1);
+            }
+            write!(self, ":{}", " ".repeat(width - 1))?;
+            self.begin_content = true;
+            self.prefix.push_str(&" ".repeat(width));
+        } else {
+            self.prefix.truncate(self.prefix.len() - width);
+        }
+        Ok(())
+    }
+
+    fn format_heading(&mut self, nh: &NodeHeading, node: Node<'a>, entering: bool) -> fmt::Result {
+        let setext = nh.level <= 2
+            && node
+                .descendants()
+                .any(|n| node_matches!(n, NodeValue::SoftBreak | NodeValue::LineBreak));
+        if entering {
+            if !setext {
+                for _ in 0..nh.level {
+                    write!(self, "#")?;
+                }
+                write!(self, " ")?;
+                self.no_linebreaks = true;
+            }
+            self.begin_content = true;
+            self.escape_braces = self.header_attributes();
+        } else {
+            self.escape_braces = false;
+            #[cfg(feature = "attributes")]
+            self.format_attributes(node, self.header_attributes(), true)?;
+            if setext {
+                self.cr();
+                self.write_str(if nh.level == 1 { "===" } else { "---" })?;
+            }
+            self.no_linebreaks = false;
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_code_block(
+        &mut self,
+        node: Node<'a>,
+        ncb: &NodeCodeBlock,
+        entering: bool,
+    ) -> fmt::Result {
+        if !entering {
+            return Ok(());
+        }
+
+        let first_in_list_item = node.previous_sibling().is_none()
+            && match node.parent() {
+                Some(parent) => {
+                    node_matches!(parent, NodeValue::Item(..) | NodeValue::TaskItem(..))
+                }
+                _ => false,
+            };
+
+        if !first_in_list_item {
+            self.blankline();
+        }
+
+        let info = ncb.info.as_bytes();
+        let literal = ncb.literal.as_bytes();
+
+        if self.callout_title_depth > 0 {
+            if ncb.fenced {
+                let fence_byte = if info.contains(&b'`') { b'~' } else { b'`' };
+                let numticks = max(3, longest_byte_sequence(literal, fence_byte) + 1);
+                let fence_str = (fence_byte as char).to_string().repeat(numticks);
+                write!(self, "{}", fence_str)?;
+                if !ncb.info.is_empty() {
+                    self.write_title_info(&ncb.info, false, self.fenced_code_attributes())?;
+                }
+                #[cfg(feature = "attributes")]
+                self.format_attributes(node, self.fenced_code_attributes(), !info.is_empty())?;
+            } else {
+                write!(self, "    ")?;
+                let mut content = ncb.literal.clone();
+                if content.ends_with('\n') {
+                    content.pop();
+                }
+                self.write_str(&content)?;
+            }
+        } else {
+            #[allow(clippy::len_zero)]
+            if !(info.len() > 0
+                || literal.len() <= 2
+                || isspace(literal[0])
+                || first_in_list_item
+                || node.previous_sibling().is_some_and(|previous| {
+                    self.in_tight_list_item
+                        || node_matches!(
+                            previous,
+                            NodeValue::CodeBlock(..) | NodeValue::DescriptionList
+                        )
+                })
+                || self.options.render.prefer_fenced
+                || self.fenced_code_attributes() && has_attributes(node)
+                || isspace(literal[literal.len() - 1]) && isspace(literal[literal.len() - 2]))
+            {
+                write!(self, "    ")?;
+                write!(self.prefix, "    ")?;
+                self.write_str(&ncb.literal)?;
+                let new_len = self.prefix.len() - 4;
+                self.prefix.truncate(new_len);
+            } else {
+                let fence_byte = if info.contains(&b'`') { b'~' } else { b'`' };
+                let numticks = max(3, longest_byte_sequence(literal, fence_byte) + 1);
+                for _ in 0..numticks {
+                    write!(self, "{}", fence_byte as char)?;
+                }
+                if !info.is_empty() {
+                    if self.fenced_code_attributes() {
+                        self.write_str(&ncb.info.replace('{', "\\{"))?;
+                    } else {
+                        self.write_str(&ncb.info)?;
+                    }
+                }
+                #[cfg(feature = "attributes")]
+                self.format_attributes(node, self.fenced_code_attributes(), !info.is_empty())?;
+                self.cr();
+                self.write_str(&ncb.literal)?;
+                self.cr();
+                for _ in 0..numticks {
+                    write!(self, "{}", fence_byte as char)?;
+                }
+            }
+        }
+        self.blankline();
+
+        Ok(())
+    }
+
+    fn format_html_block(&mut self, nhb: &NodeHtmlBlock, entering: bool) -> fmt::Result {
+        if entering {
+            self.blankline();
+            if self.callout_title_depth > 0 {
+                let mut content = nhb.literal.clone();
+                if content.ends_with('\n') {
+                    content.pop();
+                }
+                self.write_str(&content)?;
+            } else {
+                self.write_str(&nhb.literal)?;
+            }
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "phoenix_heex")]
+    fn format_heex_block(&mut self, nhb: &NodeHeexBlock, entering: bool) -> fmt::Result {
+        if entering {
+            self.blankline();
+            self.write_str(&nhb.literal)?;
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_thematic_break(&mut self, entering: bool) -> fmt::Result {
+        if entering {
+            self.blankline();
+            write!(self, "-----")?;
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_paragraph(&mut self, entering: bool) {
+        if !entering {
+            self.blankline();
+        }
+    }
+
+    fn format_text(
+        &mut self,
+        literal: &str,
+        node: Node<'a>,
+        entering: bool,
+        wrap: bool,
+    ) -> fmt::Result {
+        if entering {
+            // Entity encode a leading or trailing whitespace character if this
+            // is the first or last child of an emphasis node respectively,
+            // otherwise flankingness rules will cause the emph to not be
+            // parsed! (Note that both is possible.)
+            let (leading, trailing) = if node
+                .parent()
+                .is_some_and(|n| is_emphasis_delimiter_node(&n.data().value))
+            {
+                (
+                    if node.previous_sibling().is_none() {
+                        literal
+                            .chars()
+                            .next()
+                            .and_then(|c| if c.is_whitespace() { Some(c) } else { None })
+                    } else {
+                        None
+                    },
+                    if node.next_sibling().is_none() {
+                        literal
+                            .chars()
+                            .next_back()
+                            .and_then(|c| if c.is_whitespace() { Some(c) } else { None })
+                    } else {
+                        None
+                    },
+                )
+            } else {
+                (None, None)
+            };
+
+            if let Some(leading) = leading {
+                write!(self, "&#{};", leading as u32)?;
+
+                if leading.len_utf8() == literal.len() {
+                    // Deleterious case: the emphasis contains a text node which
+                    // is a single whitespace character. Then,leading and trailing
+                    // are actually the same (only) character, and the string slice
+                    // below will fail.
+                    // We can just stop!
+                    return Ok(());
+                }
+            }
+
+            let mut body = &literal[leading.map_or(0, char::len_utf8)
+                ..literal.len() - trailing.map_or(0, char::len_utf8)];
+            if body.starts_with('{')
+                && node
+                    .previous_sibling()
+                    .is_some_and(|previous| self.takes_inline_attributes(previous))
+            {
+                self.output("\\{", wrap, Escaping::Literal)?;
+                body = &body[1..];
+            }
+            match block_ids::trailing_marker_caret(body).filter(|_| {
+                self.options.extension.ofm_block_ids
+                    && node.parent().is_some_and(|p| p.data().value.block())
+            }) {
+                Some(caret) => {
+                    self.output(&body[..caret], wrap, Escaping::Normal)?;
+                    self.output("\\^", wrap, Escaping::Literal)?;
+                    self.output(&body[caret + 1..], wrap, Escaping::Normal)?;
+                }
+                None => self.output(body, wrap, Escaping::Normal)?,
+            }
+
+            if let Some(trailing) = trailing {
+                write!(self, "&#{};", trailing as u32)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn format_line_break(&mut self, entering: bool, next_is_block: bool) -> fmt::Result {
+        if entering {
+            if !self.options.render.hardbreaks && !next_is_block {
+                // If the next element is a block, a backslash means a
+                // literal backslash instead of a line break. In this case
+                // we can just skip the line break since it's meaningless
+                // before a block.
+                write!(self, "\\")?;
+            }
+            self.cr();
+        }
+        Ok(())
+    }
+
+    fn format_soft_break(&mut self, entering: bool) -> fmt::Result {
+        if entering {
+            if !self.no_linebreaks
+                && self.options.render.width == 0
+                && !self.options.render.hardbreaks
+            {
+                self.cr();
+            } else if self.options.render.hardbreaks {
+                self.output("\n", true, Escaping::Literal)?;
+            } else {
+                self.output(" ", true, Escaping::Literal)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn format_code(&mut self, node: Node<'a>, literal: &str, entering: bool) -> fmt::Result {
+        if entering {
+            let literal_bytes = literal.as_bytes();
+            let numticks = shortest_unused_sequence(literal_bytes, b'`');
+            for _ in 0..numticks {
+                write!(self, "`")?;
+            }
+
+            let all_space = literal_bytes
+                .iter()
+                .all(|&c| c == b' ' || c == b'\r' || c == b'\n');
+            let has_edge_space =
+                literal_bytes[0] == b' ' || literal_bytes[literal_bytes.len() - 1] == b' ';
+            let has_edge_backtick =
+                literal_bytes[0] == b'`' || literal_bytes[literal_bytes.len() - 1] == b'`';
+
+            let pad = literal.is_empty() || has_edge_backtick || (!all_space && has_edge_space);
+            if pad {
+                write!(self, " ")?
+            }
+            self.output(literal, true, Escaping::Literal)?;
+            if pad {
+                write!(self, " ")?;
+            }
+            for _ in 0..numticks {
+                write!(self, "`")?;
+            }
+            #[cfg(feature = "attributes")]
+            self.format_attributes(node, self.inline_code_attributes(), false)?;
+        }
+        #[cfg(not(feature = "attributes"))]
+        let _ = node;
+
+        Ok(())
+    }
+
+    fn format_html_inline(&mut self, literal: &str, entering: bool) -> fmt::Result {
+        if entering {
+            self.write_str(literal)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "phoenix_heex")]
+    fn format_heex_inline(&mut self, literal: &str, entering: bool) -> fmt::Result {
+        if entering {
+            self.write_str(literal)?;
+        }
+        Ok(())
+    }
+
+    fn format_raw(&mut self, literal: &str, entering: bool) -> fmt::Result {
+        if entering {
+            self.write_str(literal)?;
+        }
+        Ok(())
+    }
+
+    fn format_emphasis(&mut self, node: Node<'a>, entering: bool, strong: bool) -> fmt::Result {
+        let written = !(strong
+            && self.options.render.gfm_quirks
+            && node
+                .parent()
+                .is_some_and(|p| node_matches!(p, NodeValue::Strong(..))));
+        let delim = if entering {
+            let delim = if written {
+                self.emphasis_delimiter(node, strong)
+            } else {
+                *self.emphasis_delims.last().unwrap()
+            };
+            self.emphasis_delims.push(delim);
+            delim
+        } else {
+            let delim = self.emphasis_delims.pop().unwrap();
+            if written {
+                self.last_emphasis = Some((node, delim));
+            }
+            delim
+        };
+        if written {
+            self.write_char(delim)?;
+            if strong {
+                self.write_char(delim)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn emphasis_delimiter(&self, node: Node<'a>, strong: bool) -> char {
+        let adjacent = match node.previous_sibling() {
+            Some(prev) => self
+                .last_emphasis
+                .filter(|&(last, _)| last.same_node(prev))
+                .map(|(_, delim)| delim),
+            None if !strong
+                && node.next_sibling().is_none()
+                && node.parent().is_some_and(|p| {
+                    node_matches!(p, NodeValue::Emph(..) | NodeValue::Strong(..))
+                }) =>
+            {
+                self.emphasis_delims.last().copied()
+            }
+            None => None,
+        };
+        match adjacent {
+            Some('*') if !(strong && self.options.extension.underline) => '_',
+            _ => '*',
+        }
+    }
+
+    fn format_task_item(
+        &mut self,
+        nti: &NodeTaskItem,
+        node: Node<'a>,
+        entering: bool,
+    ) -> fmt::Result {
+        if node
+            .parent()
+            .map(|p| node_matches!(p, NodeValue::List(_)))
+            .unwrap_or_default()
+        {
+            self.format_item(node, entering)?;
+        }
+        if entering {
+            write!(self, "[{}] ", nti.symbol.unwrap_or(' '))?;
+        }
+        Ok(())
+    }
+
+    fn format_strikethrough(&mut self) -> fmt::Result {
+        write!(self, "~~")?;
+        Ok(())
+    }
+
+    fn format_highlight(&mut self) -> fmt::Result {
+        write!(self, "==")?;
+        Ok(())
+    }
+
+    fn format_insert(&mut self) -> fmt::Result {
+        write!(self, "++")?;
+        Ok(())
+    }
+
+    fn format_superscript(&mut self) -> fmt::Result {
+        write!(self, "^")?;
+        Ok(())
+    }
+
+    fn format_underline(&mut self) -> fmt::Result {
+        write!(self, "__")?;
+        Ok(())
+    }
+
+    fn format_subscript(&mut self) -> fmt::Result {
+        write!(self, "~")?;
+        Ok(())
+    }
+
+    fn format_spoiler(&mut self) -> fmt::Result {
+        write!(self, "||")?;
+        Ok(())
+    }
+
+    fn format_escaped(&mut self, node: Node<'a>) -> fmt::Result {
+        let child = node.first_child().unwrap();
+        let NodeValue::Text(ref literal) = child.data().value else {
+            unreachable!()
+        };
+        write!(self, "\\{}", literal)
+    }
+
+    fn format_escaped_tag(&mut self, net: &str) -> fmt::Result {
+        self.output(net, false, Escaping::Literal)
+    }
+
+    fn format_link(
+        &mut self,
+        node: Node<'a>,
+        nl: &NodeLink,
+        entering: bool,
+    ) -> Result<bool, fmt::Error> {
+        if is_autolink(node, nl) {
+            if entering {
+                write!(self, "<{}>", trim_start_match(&nl.url, "mailto:"))?;
+                return Ok(false);
+            }
+        } else if entering {
+            write!(self, "[")?;
+        } else {
+            write!(self, "](")?;
+            self.output(&nl.url, false, Escaping::Url)?;
+            if !nl.title.is_empty() {
+                write!(self, " \"")?;
+                self.output(&nl.title, false, Escaping::Title)?;
+                write!(self, "\"")?;
+            }
+            write!(self, ")")?;
+            #[cfg(feature = "attributes")]
+            self.format_attributes(node, self.link_attributes(), false)?;
+        }
+
+        Ok(true)
+    }
+
+    fn format_wikilink(
+        &mut self,
+        node: Node<'a>,
+        nl: &NodeWikiLink,
+        entering: bool,
+    ) -> Result<bool, fmt::Error> {
+        let in_table = node
+            .ancestors()
+            .any(|ancestor| node_matches!(ancestor, NodeValue::Table(..)));
+        let title_is_url = node.first_child().is_some_and(|child| {
+            child.next_sibling().is_none()
+                && matches!(child.data().value, NodeValue::Text(ref t) if *t == nl.url)
+        });
+        if entering {
+            if nl.embed {
+                write!(self, "!")?;
+            }
+            write!(self, "[[")?;
+            if title_is_url {
+                self.output(&nl.url, false, Escaping::WikilinkUrl)?;
+                write!(self, "]]")?;
+                return Ok(false);
+            }
+            if !in_table {
+                self.custom_escape = Some(wikilink_title_escape);
+            }
+            if self.options.extension.wikilinks() == Some(WikiLinksMode::UrlFirst) {
+                self.output(&nl.url, false, Escaping::WikilinkUrl)?;
+                write!(self, "|")?;
+            }
+        } else {
+            if self.options.extension.wikilinks() == Some(WikiLinksMode::TitleFirst) {
+                write!(self, "|")?;
+                self.output(&nl.url, false, Escaping::WikilinkUrl)?;
+            }
+            write!(self, "]]")?;
+            if !in_table {
+                self.custom_escape = None;
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn format_image(&mut self, node: Node<'a>, nl: &NodeLink, entering: bool) -> fmt::Result {
+        if entering {
+            write!(self, "![")?;
+        } else {
+            write!(self, "](")?;
+            self.output(&nl.url, false, Escaping::Url)?;
+            if !nl.title.is_empty() {
+                self.output(" \"", true, Escaping::Literal)?;
+                self.output(&nl.title, false, Escaping::Title)?;
+                write!(self, "\"")?;
+            }
+            write!(self, ")")?;
+            #[cfg(feature = "attributes")]
+            self.format_attributes(node, self.link_attributes(), false)?;
+        }
+        #[cfg(not(feature = "attributes"))]
+        let _ = node;
+        Ok(())
+    }
+
+    fn header_attributes(&self) -> bool {
+        #[cfg(feature = "attributes")]
+        return self.options.extension.header_attributes;
+        #[cfg(not(feature = "attributes"))]
+        return false;
+    }
+
+    fn fenced_code_attributes(&self) -> bool {
+        #[cfg(feature = "attributes")]
+        return self.options.extension.fenced_code_attributes;
+        #[cfg(not(feature = "attributes"))]
+        return false;
+    }
+
+    fn inline_code_attributes(&self) -> bool {
+        #[cfg(feature = "attributes")]
+        return self.options.extension.inline_code_attributes;
+        #[cfg(not(feature = "attributes"))]
+        return false;
+    }
+
+    fn link_attributes(&self) -> bool {
+        #[cfg(feature = "attributes")]
+        return self.options.extension.link_attributes;
+        #[cfg(not(feature = "attributes"))]
+        return false;
+    }
+
+    fn takes_inline_attributes(&self, node: Node<'a>) -> bool {
+        match node.data().value {
+            NodeValue::Code(..) => self.inline_code_attributes(),
+            NodeValue::Link(..) | NodeValue::Image(..) => self.link_attributes(),
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "attributes")]
+    fn format_attributes(&mut self, node: Node<'a>, enabled: bool, space: bool) -> fmt::Result {
+        if !enabled || !has_attributes(node) {
+            return Ok(());
+        }
+        let ast = node.data();
+        let attrs = ast.attrs.as_deref().unwrap();
+        let mut parts = vec![];
+        if let Some(id) = &attrs.id {
+            parts.push(format!("#{}", attribute_value(id)));
+        }
+        for class in &attrs.classes {
+            parts.push(format!(".{}", attribute_value(class)));
+        }
+        for (key, value) in &attrs.pairs {
+            parts.push(format!("{key}={}", attribute_value(value)));
+        }
+        if space {
+            self.write_str(" ")?;
+        }
+        write!(self, "{{{}}}", parts.join(" "))
+    }
+
+    #[cfg(feature = "shortcodes")]
+    fn format_shortcode(&mut self, ne: &NodeShortCode, entering: bool) -> fmt::Result {
+        if entering {
+            write!(self, ":")?;
+            self.output(&ne.code, false, Escaping::Literal)?;
+            write!(self, ":")?;
+        }
+        Ok(())
+    }
+
+    fn format_table(&mut self, entering: bool) {
+        if entering {
+            self.custom_escape = Some(table_escape);
+        } else {
+            self.custom_escape = None;
+        }
+        self.blankline();
+    }
+
+    fn format_table_row(&mut self, entering: bool) -> fmt::Result {
+        if entering {
+            self.cr();
+            write!(self, "|")?;
+        }
+        Ok(())
+    }
+
+    fn format_table_cell(&mut self, node: Node<'a>, entering: bool) -> fmt::Result {
+        if entering {
+            write!(self, " ")?;
+        } else {
+            write!(self, " |")?;
+
+            let row = &node.parent().unwrap().data().value;
+            let in_header = match *row {
+                NodeValue::TableRow(ref ntr) => ntr.header,
+                _ => panic!(),
+            };
+
+            if in_header && node.next_sibling().is_none() {
+                let table = &node.parent().unwrap().parent().unwrap().data().value;
+                let alignments = match table {
+                    NodeValue::Table(nt) => &nt.alignments,
+                    _ => panic!(),
+                };
+
+                self.cr();
+                write!(self, "|")?;
+                for a in alignments {
+                    write!(
+                        self,
+                        " {} |",
+                        match *a {
+                            TableAlignment::Left => ":--",
+                            TableAlignment::Center => ":-:",
+                            TableAlignment::Right => "--:",
+                            TableAlignment::None => "---",
+                        }
+                    )?;
+                }
+                self.cr();
+            }
+        }
+        Ok(())
+    }
+
+    fn format_footnote_definition(&mut self, name: &str, entering: bool) -> fmt::Result {
+        if entering {
+            self.footnote_ix += 1;
+            writeln!(self, "[^{}]:", name)?;
+            write!(self.prefix, "    ")?;
+        } else {
+            let new_len = self.prefix.len() - 4;
+            self.prefix.truncate(new_len);
+        }
+        Ok(())
+    }
+
+    fn format_footnote_reference(&mut self, r: &str, entering: bool) -> fmt::Result {
+        if entering {
+            self.write_str("[^")?;
+            self.write_str(r)?;
+            self.write_str("]")?;
+        }
+        Ok(())
+    }
+
+    fn format_math(&mut self, math: &NodeMath, node: Node<'a>, entering: bool) -> fmt::Result {
+        if entering {
+            let literal = &math.literal;
+            let latex = self.options.extension.math_latex
+                && ((math.display_math && self.options.extension.math_dollars_block)
+                    || !(self.options.extension.math_dollars
+                        && dollar_math_holds(
+                            math,
+                            node.next_sibling(),
+                            self.options.extension.math_code,
+                        )));
+            let (start_fence, end_fence) = match (math.dollar_math, math.display_math, latex) {
+                (false, _, _) => ("$`", "`$"),
+                (true, true, true) => ("\\[", "\\]"),
+                (true, false, true) => ("\\(", "\\)"),
+                (true, true, false) => ("$$", "$$"),
+                (true, false, false) => ("$", "$"),
+            };
+
+            self.output(start_fence, false, Escaping::Literal)?;
+            self.output(literal, true, Escaping::Literal)?;
+            self.output(end_fence, false, Escaping::Literal)?;
+        }
+        Ok(())
+    }
+
+    fn format_math_block(
+        &mut self,
+        node: Node<'a>,
+        math: &NodeMathBlock,
+        entering: bool,
+    ) -> fmt::Result {
+        if !entering {
+            return Ok(());
+        }
+
+        if self.callout_title_depth > 0 {
+            return self.write_str("$$");
+        }
+
+        let first_in_list_item = node.previous_sibling().is_none()
+            && node
+                .parent()
+                .is_some_and(|parent| node_matches!(parent, NodeValue::Item(..)));
+        if !first_in_list_item {
+            self.blankline();
+        }
+        // Restore the indentation stripped by the parser so literal dollar
+        // fences do not become closing fences on reparse.
+        let indent = " ".repeat(math.fence_offset);
+        self.write_str(&indent)?;
+        self.write_str("$$")?;
+        let prefix_len = self.prefix.len();
+        self.prefix.push_str(&indent);
+        self.cr();
+        self.write_str(&math.literal)?;
+        if !math.literal.is_empty() && !math.literal.ends_with('\n') {
+            self.cr();
+        }
+        self.write_str("$$")?;
+        self.prefix.truncate(prefix_len);
+        self.blankline();
+
+        Ok(())
+    }
+
+    fn format_alert(&mut self, alert: &NodeAlert, entering: bool) -> fmt::Result {
+        if entering {
+            write!(
+                self,
+                "> [!{}]",
+                alert.alert_type.default_title().to_uppercase()
+            )?;
+            if let Some(ref title) = alert.title {
+                write!(self, " ")?;
+                self.write_title_info(title, false, false)?;
+            }
+            writeln!(self)?;
+            write!(self, "> ")?;
+            self.begin_content = true;
+            write!(self.prefix, "> ")?;
+        } else {
+            let new_len = self.prefix.len() - 2;
+            self.prefix.truncate(new_len);
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_callout(&mut self, node: Node<'a>, nc: &NodeCallout, entering: bool) -> fmt::Result {
+        if entering {
+            let mut header = String::from("> [!");
+            header.push_str(&nc.callout_type);
+            match &nc.metadata {
+                Some(meta) => {
+                    header.push('|');
+                    header.push_str(meta);
+                }
+                None => {
+                    if nc.callout_type.is_empty() {
+                        header.push(' ');
+                    }
+                }
+            }
+            header.push(']');
+            match nc.fold {
+                CalloutFold::Expanded => header.push('+'),
+                CalloutFold::Collapsed => header.push('-'),
+                CalloutFold::None => {}
+            }
+            self.output(&header, false, Escaping::Literal)?;
+            self.begin_content = true;
+            write!(self.prefix, "> ")?;
+            // No title container: body starts on the next line.
+            let has_title = node
+                .first_child()
+                .is_some_and(|ch| node_matches!(ch, NodeValue::CalloutTitle));
+            if !has_title {
+                self.cr();
+            }
+        } else {
+            let new_len = self.prefix.len() - 2;
+            self.prefix.truncate(new_len);
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_callout_title(&mut self, entering: bool) -> fmt::Result {
+        if entering {
+            // Save state and enter single-line title mode.
+            self.callout_title_state_stack.push((
+                self.no_linebreaks,
+                self.in_tight_list_item,
+                self.last_breakable,
+                self.allow_wrap,
+                self.need_cr,
+            ));
+            self.callout_title_depth += 1;
+            self.no_linebreaks = true;
+            self.allow_wrap = false;
+            self.last_breakable = 0;
+            self.need_cr = 0;
+            write!(self, " ")?;
+            self.begin_content = true;
+        } else {
+            self.callout_title_depth -= 1;
+            if let Some((no_lb, tight, lb, wrap, cr)) = self.callout_title_state_stack.pop() {
+                self.no_linebreaks = no_lb;
+                self.in_tight_list_item = tight;
+                self.last_breakable = lb;
+                self.allow_wrap = wrap;
+                self.need_cr = cr;
+            }
+            if self.callout_title_depth > 0 {
+                // Still inside an outer title; stay on the same line.
+            } else {
+                self.cr();
+            }
+        }
+        Ok(())
+    }
+
+    fn format_subtext(&mut self, entering: bool) -> fmt::Result {
+        if entering {
+            write!(self, "-# ")?;
+            self.begin_content = true;
+            self.no_linebreaks = true;
+        } else {
+            self.no_linebreaks = false;
+            self.blankline();
+        }
+        Ok(())
+    }
+
+    fn format_block_directive(&mut self, nbd: &NodeBlockDirective, entering: bool) -> fmt::Result {
+        if entering {
+            let fence = ":".repeat(nbd.fence_length.max(3));
+            if self.callout_title_depth > 0 {
+                if nbd.info.is_empty() {
+                    write!(self, "{fence}")?;
+                } else {
+                    write!(self, "{fence}")?;
+                    self.write_title_info(&nbd.info, true, false)?;
+                }
+            } else if nbd.info.is_empty() {
+                writeln!(self, "{fence}")?;
+            } else {
+                writeln!(self, "{fence}{}", nbd.info)?;
+            }
+            self.begin_content = true;
+        } else if self.callout_title_depth == 0 {
+            let fence = ":".repeat(nbd.fence_length.max(3));
+            write!(self, "{fence}")?;
+            self.blankline();
+        }
+        Ok(())
+    }
+}
+
+fn longest_byte_sequence(buffer: &[u8], ch: u8) -> usize {
+    let mut longest = 0;
+    let mut current = 0;
+    for c in buffer {
+        if *c == ch {
+            current += 1;
+        } else {
+            if current > longest {
+                longest = current;
+            }
+            current = 0;
+        }
+    }
+    if current > longest {
+        longest = current;
+    }
+    longest
+}
+
+fn shortest_unused_sequence(buffer: &[u8], f: u8) -> usize {
+    let mut used = HashSet::<usize>::new();
+    let mut current = 0;
+    for c in buffer {
+        if *c == f {
+            current += 1;
+        } else {
+            if current > 0 {
+                used.insert(current);
+            }
+            current = 0;
+        }
+    }
+
+    if current > 0 {
+        used.insert(current);
+    }
+
+    let mut i = 1;
+    while used.contains(&i) {
+        i += 1;
+    }
+    i
+}
+
+fn is_autolink(node: Node<'_>, nl: &NodeLink) -> bool {
+    if nl.url.is_empty() || scanners::scheme(&nl.url).is_none() || has_attributes(node) {
+        return false;
+    }
+
+    if !nl.title.is_empty() {
+        return false;
+    }
+
+    let link_text = match node.first_child() {
+        None => return false,
+        Some(child) => match child.data().value {
+            NodeValue::Text(ref t) => t.clone(),
+            _ => return false,
+        },
+    };
+
+    trim_start_match(&nl.url, "mailto:") == link_text
+}
+
+#[cfg(feature = "attributes")]
+fn has_attributes(node: Node<'_>) -> bool {
+    node.data().attrs.as_deref().is_some_and(|attrs| {
+        attrs.id.is_some() || !attrs.classes.is_empty() || !attrs.pairs.is_empty()
+    })
+}
+
+#[cfg(not(feature = "attributes"))]
+fn has_attributes(_node: Node<'_>) -> bool {
+    false
+}
+
+#[cfg(feature = "attributes")]
+fn attribute_value(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.' | '%'))
+    {
+        return value.to_string();
+    }
+    let mut quoted = String::from("\"");
+    for c in value.chars() {
+        match c {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            '&' => quoted.push_str("&amp;"),
+            '\n' => quoted.push_str("&#10;"),
+            '\r' => quoted.push_str("&#13;"),
+            _ => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
+}
+
+fn wikilink_title_escape(node: Node<'_>, c: char) -> bool {
+    c == '|' && !node_matches!(node, NodeValue::WikiLink(..) | NodeValue::Escaped)
+}
+
+fn table_escape(node: Node<'_>, c: char) -> bool {
+    match node.data().value {
+        NodeValue::Table(..) | NodeValue::TableRow(..) | NodeValue::TableCell => false,
+        _ => c == '|',
+    }
+}
+
+fn minimize_commonmark(text: &mut String, original_options: &Options) {
+    let mut options_without = original_options.clone();
+    options_without.render.experimental_minimize_commonmark = false;
+
+    let ixs: Vec<usize> = text
+        .as_bytes()
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, &c)| if c == b'\\' { Some(ix) } else { None })
+        .collect();
+    let original = text.clone();
+
+    let mut adjust = 0;
+    for ix in ixs {
+        text.remove(ix - adjust);
+
+        let arena = Arena::new();
+        let root = crate::parse_document(&arena, text, &options_without);
+
+        let mut out = String::new();
+        format_document(root, &options_without, &mut out).unwrap();
+
+        if original == out {
+            // Removed character is guaranteed to be 1 byte wide, since it's
+            // always '\\'.
+            adjust += 1;
+        } else {
+            text.insert(ix - adjust, '\\');
+        }
+    }
+}
+
+/// Escapes the input, rendering it suitable for inclusion in a CommonMark
+/// document in a place where regular inline parsing is occurring. Note that
+/// this is not minimal --- there will be more escaping backslashes in the
+/// output than is strictly necessary. The rendering will not be affected,
+/// however.
+pub fn escape_inline(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() * 3 / 2);
+
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c < '\x20'
+            || c == '*'
+            || c == '_'
+            || c == '['
+            || c == ']'
+            || c == '#'
+            || c == '<'
+            || c == '>'
+            || c == '\\'
+            || c == '`'
+            || c == '~'
+            || c == '!'
+            || c == '&'
+            || (c == '%' && chars.peek() == Some(&'%'))
+            || c == '!'
+            || c == '-'
+            || c == '+'
+            || c == '='
+            || c == '.'
+            || c == '('
+            || c == ')'
+            || c == '"'
+        {
+            if ispunct(c as u8) {
+                write!(&mut result, "\\{}", c).unwrap();
+            } else {
+                write!(&mut result, "&#{};", c as u8).unwrap();
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+/// Escapes the input URL, rendering it suitable for inclusion as a [link
+/// destination] per the CommonMark spec.
+///
+/// [link destination]: https://spec.commonmark.org/0.31.2/#link-destination
+pub fn escape_link_destination(url: &str) -> String {
+    let mut result = String::with_capacity(url.len() * 3 / 2);
+
+    result.push('<');
+    for c in url.chars() {
+        match c {
+            '<' | '>' => {
+                result.push('\\');
+                result.push(c);
+            }
+            '\n' => result.push_str("%0A"),
+            '\r' => result.push_str("%0D"),
+            _ => result.push(c),
+        }
+    }
+    result.push('>');
+
+    result
+}
+
+fn dollar_math_holds(math: &NodeMath, next: Option<Node<'_>>, math_code: bool) -> bool {
+    let literal = math.literal.as_bytes();
+    let (Some(&first), Some(&last)) = (literal.first(), literal.last()) else {
+        return false;
+    };
+    if math.display_math {
+        return first != b'$' && last != b'$' && !math.literal.contains("$$");
+    }
+    let next_is_digit = next.is_some_and(|next| match next.data().value {
+        NodeValue::Text(ref t) => t.as_bytes().first().is_some_and(|&b| isdigit(b)),
+        _ => false,
+    });
+    !isspace(first)
+        && (!math_code || first != b'`')
+        && !isspace(last)
+        && last != b'\\'
+        && !literal.contains(&b'\n')
+        && !next_is_digit
+        && literal
+            .iter()
+            .enumerate()
+            .all(|(i, &b)| b != b'$' || (i > 0 && literal[i - 1] == b'\\'))
+}
+
+fn tight_container(node: Node<'_>) -> bool {
+    match node.data().value {
+        NodeValue::List(ref nl) => nl.tight,
+        NodeValue::Item(..) | NodeValue::TaskItem(..) => node.parent().is_some_and(tight_container),
+        _ => false,
+    }
+}
+
+fn following_html_block_indent(item: Node<'_>) -> usize {
+    if item.next_sibling().is_some() {
+        return 0;
+    }
+    match item.parent().and_then(|list| list.next_sibling()) {
+        Some(next) => match next.data().value {
+            NodeValue::HtmlBlock(ref nhb) => nhb.literal.bytes().take_while(|&b| b == b' ').count(),
+            _ => 0,
+        },
+        None => 0,
+    }
+}
+
+#[inline]
+fn is_emphasis_delimiter_node(value: &NodeValue) -> bool {
+    matches!(
+        value,
+        NodeValue::Emph(..)
+            | NodeValue::Strong(..)
+            | NodeValue::Strikethrough(..)
+            | NodeValue::Highlight
+            | NodeValue::Superscript
+            | NodeValue::Subscript
+            | NodeValue::SpoileredText
+            | NodeValue::Underline
+    )
+}

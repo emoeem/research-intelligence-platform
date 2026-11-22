@@ -1,0 +1,179 @@
+{
+  description = "comrak";
+
+  inputs = {
+    nixpkgs.url = "https://channels.nixos.org/nixos-26.05/nixexprs.tar.zst";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs =
+    {
+      self,
+      nixpkgs,
+      fenix,
+      ...
+    }:
+    let
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+      eachSystem = nixpkgs.lib.genAttrs systems;
+      pkgsFor = eachSystem (
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ self.overlays.default ];
+        }
+      );
+
+      msrvToolchain =
+        system:
+        fenix.packages.${system}.toolchainOf {
+          channel = "1.89.0";
+          sha256 = "sha256-+9FmLhAOezBZCOziO0Qct1NOrfpjNsXxc/8I0c7BdKE=";
+        };
+    in
+    {
+      overlays.default = import ./nix/overlay.nix;
+
+      packages = eachSystem (system: {
+        default = pkgsFor.${system}.comrak;
+
+        inherit (pkgsFor.${system}) comrak;
+
+        comrak-static = pkgsFor.${system}.pkgsStatic.comrak;
+
+        www = pkgsFor.${system}.comrak-www;
+      });
+
+      formatter = eachSystem (system: pkgsFor.${system}.nixfmt);
+
+      devShells = eachSystem (
+        system:
+        let
+          pkgs = pkgsFor.${system};
+          fenixPkgs = fenix.packages.${system};
+
+          mkShell =
+            {
+              name,
+              toolchain,
+              extraPkgs ? [ ],
+            }:
+            pkgs.mkShell {
+              inherit name;
+
+              packages = [
+                (fenixPkgs.combine (
+                  with toolchain;
+                  [
+                    cargo
+                    rustc
+                    rust-analyzer
+                    clippy
+                    rustfmt
+                    rust-src
+                    llvm-tools-preview
+                  ]
+                  ++ [
+                    fenixPkgs.targets.wasm32-unknown-unknown.latest.rust-std
+                  ]
+                ))
+              ]
+              ++ (with pkgs; [
+                re2c
+                cargo-fuzz
+                cargo-nextest
+                cargo-flamegraph
+                cargo-tarpaulin
+                cargo-audit
+                cargo-semver-checks
+                cargo-public-api
+                samply
+                python3
+                hyperfine
+                bacon
+              ])
+              ++ extraPkgs;
+            };
+        in
+        {
+          default = mkShell {
+            name = "comrak";
+            toolchain = fenixPkgs.complete;
+          };
+
+          codspeed = mkShell {
+            name = "comrak-codspeed";
+            toolchain = fenixPkgs.complete;
+            extraPkgs = [
+              (pkgs.callPackage ./nix/codspeed.nix {
+                rustPlatform = pkgs.makeRustPlatform {
+                  cargo = fenixPkgs.complete.toolchain;
+                  rustc = fenixPkgs.complete.toolchain;
+                };
+              })
+            ];
+          };
+
+          stable = mkShell {
+            name = "comrak-stable";
+            toolchain = fenixPkgs.stable;
+          };
+
+          msrv = mkShell {
+            name = "comrak-msrv";
+            toolchain = msrvToolchain system;
+          };
+        }
+      );
+
+      nossa.checks = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (
+        system:
+        let
+          pkgs = pkgsFor.${system};
+          toolchain = (msrvToolchain system).withComponents [
+            "cargo"
+            "rustc"
+            "clippy"
+            "rustfmt"
+          ];
+          msrvPlatform = pkgs.makeRustPlatform {
+            cargo = toolchain;
+            rustc = toolchain;
+          };
+        in
+        {
+          test = pkgs.comrak.overrideAttrs (old: {
+            pname = "comrak-test";
+            doCheck = true;
+            nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.perl ];
+            postPatch = (old.postPatch or "") + ''
+              find src -name '*.rs' -type f -exec perl -pi -e 's/#\[timeout\((\d+)\)\]/"#[timeout(" . ($1 * 2) . ")]"/ge' '{}' \;
+            '';
+          });
+
+          clippy = (pkgs.comrak.override { rustPlatform = msrvPlatform; }).overrideAttrs {
+            pname = "comrak-clippy";
+            buildPhase = ''
+              runHook preBuild
+              cargo clippy --locked --lib --bin comrak --tests -- -Dwarnings
+              runHook postBuild
+            '';
+            installPhase = "touch $out";
+          };
+
+          fmt = pkgs.runCommand "comrak-fmt" { nativeBuildInputs = [ toolchain ]; } ''
+            cd ${./.}
+            cargo fmt --check
+            touch $out
+          '';
+        }
+      );
+    };
+}

@@ -31,6 +31,10 @@ allow = [
   "BSD-2-Clause",
   "BSD-3-Clause",
   "CDLA-Permissive-2.0",
+  # PHASE-6A vendor 跃迁补录（2026-11-23，docs/phase0/PHASE-6A-TASK.md §0 D3④）：
+  # comrak 1.1.0 传递依赖 finl_unicode 许可表达式 (MIT OR Apache-2.0) AND
+  # Unicode-DFS-2016——双 crate vendor 增量包中唯一许可缺口（其余落既有 allow 集）。
+  "Unicode-DFS-2016",
 ]
 # 信任 crates.io 元数据（vendor/ 内 Cargo.toml 的 license 字段与 crates.io
 # 一致，manifest 逐包人工抽样核对记录在 DEPENDENCIES-RUST.md）。

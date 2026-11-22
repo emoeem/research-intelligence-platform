@@ -1,0 +1,1179 @@
+use nodes::NodeValueDiscriminants;
+use pretty_assertions::assert_eq;
+use strum::VariantArray;
+
+use super::*;
+
+type TestCase = (&'static [Sourcepos], &'static str);
+
+#[test]
+fn multiline_inline_sourcepos() {
+    let options = Options {
+        extension: options::Extension {
+            math_dollars: true,
+            math_code: true,
+            math_latex: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    for newline in ["\n", "\r\n", "\r"] {
+        for (open, close) in [
+            ("`a", "b`"),
+            ("$a", "b$"),
+            ("$$a", "b$$"),
+            ("$`a", "b`$"),
+            ("\\(a", "b\\)"),
+            ("<img", "src='x'>"),
+        ] {
+            for first_indent in 0..=3 {
+                for last_indent in 0..=3 {
+                    let input = format!(
+                        "Before{newline}{newline}Lead{newline}{}{open}{newline}{}{close} tail{newline}",
+                        " ".repeat(first_indent),
+                        " ".repeat(last_indent),
+                    );
+                    let arena = Arena::new();
+                    let root = parse_document(&arena, &input, &options);
+                    let inline = root
+                        .descendants()
+                        .find(|node| {
+                            matches!(
+                                node.data().value,
+                                NodeValue::Code(_) | NodeValue::Math(_) | NodeValue::HtmlInline(_)
+                            )
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        inline.data().sourcepos,
+                        (4, first_indent + 1, 5, last_indent + close.len()).into(),
+                        "{input:?}",
+                    );
+                }
+            }
+        }
+    }
+}
+
+const DOCUMENT: TestCase = (&[sourcepos!((1:1-1:1))], "a");
+
+const FRONT_MATTER: TestCase = (
+    &[sourcepos!((1:1-3:3))],
+    r#"---
+a: b
+---
+
+hello world
+"#,
+);
+
+const BLOCK_QUOTE: TestCase = (
+    &[sourcepos!((1:1-3:36))],
+    r#"> hello world
+> this is line 1
+> this is line 2 and some extra text
+
+hello world"#,
+);
+
+const MULTILINE_BLOCK_QUOTE: TestCase = (
+    &[sourcepos!((3:1-7:3))],
+    r#"Some text
+
+>>>
+hello world
+this is line 1
+this is line 2 and some extra text
+>>>
+
+hello world"#,
+);
+
+const LIST: TestCase = (
+    &[sourcepos!((1:1-2:38))],
+    r#"- bullet point one
+- bullet point two and some extra text
+
+hello world
+"#,
+);
+
+const ITEM: TestCase = (
+    &[sourcepos!((1:1-1:18)), sourcepos!((2:1-2:38))],
+    r#"- bullet point one
+- bullet point two and some extra text
+
+hello world
+"#,
+);
+
+const TASK_ITEM: TestCase = (
+    &[sourcepos!((1:1-1:22)), sourcepos!((3:1-3:24))],
+    r#"- [ ] bullet point one
+- bullet point two and some extra text
+- [x] bullet point three
+
+hello world
+"#,
+);
+
+const DESCRIPTION_LIST: TestCase = (
+    &[sourcepos!((1:1-7:11))],
+    r#"Term 1
+
+: Details 1
+
+Term 2
+
+: Details 2"#,
+);
+
+const DESCRIPTION_ITEM: TestCase = (
+    &[sourcepos!((1:1-3:11)), sourcepos!((5:1-7:11))],
+    r#"Term 1
+
+: Details 1
+
+Term 2
+
+: Details 2"#,
+);
+
+const DESCRIPTION_TERM: TestCase = (
+    &[sourcepos!((1:1-1:6))],
+    r#"Term 1
+
+: Details 1
+
+hello world
+"#,
+);
+
+const DESCRIPTION_DETAILS: TestCase = (
+    &[sourcepos!((3:1-3:11))],
+    r#"Term 1
+
+: Details 1
+
+hello world
+"#,
+);
+
+const CODE_BLOCK: TestCase = (
+    &[sourcepos!((1:1-3:3))],
+    r#"```
+hello world
+```
+
+hello world
+"#,
+);
+
+const HTML_BLOCK: TestCase = (
+    &[sourcepos!((1:1-2:30)), sourcepos!((5:1-5:10))],
+    r#"<details>
+<summary>hello world</summary>
+
+hello world
+</details>
+
+hello world
+"#,
+);
+
+const HTML_INLINE: TestCase = (
+    &[sourcepos!((1:7-3:14))],
+    r#"hello <img
+    src="foo"
+    alt="bar"> world
+"#,
+);
+
+#[cfg(feature = "phoenix_heex")]
+const HEEX_BLOCK: TestCase = (
+    &[sourcepos!((1:1-3:10))],
+    r#"<.header>
+hello
+</.header>
+
+hello world
+"#,
+);
+
+#[cfg(feature = "phoenix_heex")]
+const HEEX_INLINE: TestCase = (
+    &[sourcepos!((1:7-1:12))],
+    r#"hello {some} world
+"#,
+);
+
+const PARAGRAPH: TestCase = (
+    &[sourcepos!((1:1-1:11)), sourcepos!((4:1-4:11))],
+    r#"hello world
+
+
+hello world
+"#,
+);
+
+const HEADING: TestCase = (
+    &[sourcepos!((5:1-5:13)), sourcepos!((7:1-7:16))],
+    r#"---
+a: b
+---
+
+# Hello World
+
+# Test heading #
+
+hello world
+"#,
+);
+
+const THEMATIC_BREAK: TestCase = (
+    &[sourcepos!((3:2-3:4))],
+    r#"Hello
+
+ ---
+
+World"#,
+);
+
+const FOOTNOTE_DEFINITION: TestCase = (
+    &[sourcepos!((3:1-3:11))],
+    r#"Hello[^1]
+
+[^1]: World
+"#,
+);
+
+const FOOTNOTE_REFERENCE: TestCase = (
+    &[sourcepos!((1:6-1:9))],
+    r#"Hello[^1]
+
+[^1]: World
+"#,
+);
+
+#[cfg(feature = "shortcodes")]
+const SHORTCODE: TestCase = (
+    &[sourcepos!((2:2-2:7))],
+    r#"nya~
+!:fire:!
+"#,
+);
+
+const TABLE: TestCase = (
+    &[sourcepos!((3:1-5:17))],
+    r#"stuff before
+
+| Hello | World |
+| ----- | ----- |
+| cell1 | cell2 |
+
+hello world
+"#,
+);
+
+const TABLE_ROW: TestCase = (
+    &[sourcepos!((3:1-3:17)), sourcepos!((5:1-5:18))],
+    r#"stuff before
+
+| Hello | World |
+| ----- | ----- |
+| cell1 | cell02 |
+
+hello world
+"#,
+);
+
+#[cfg(feature = "grid_table")]
+const GRID_TABLE_TEXT: &str = r#"stuff before
+
++-------+-------+
+| Hello | World |
++=======+=======+
+| cell1 | cell2 |
+| more  |       |
++-------+-------+
+
+hello world
+"#;
+
+#[cfg(feature = "grid_table")]
+const GRID_TABLE: TestCase = (&[sourcepos!((3:1-8:17))], GRID_TABLE_TEXT);
+
+#[cfg(feature = "grid_table")]
+const GRID_TABLE_ROW: TestCase = (
+    &[sourcepos!((4:1-4:17)), sourcepos!((6:1-7:17))],
+    GRID_TABLE_TEXT,
+);
+
+#[cfg(feature = "grid_table")]
+const GRID_TABLE_CELL: TestCase = (
+    &[
+        sourcepos!((4:2-4:8)),
+        sourcepos!((4:10-4:16)),
+        sourcepos!((6:2-7:8)),
+        sourcepos!((6:10-7:16)),
+    ],
+    GRID_TABLE_TEXT,
+);
+
+const TABLE_CELL: TestCase = (
+    &[
+        sourcepos!((3:2-3:8)),
+        sourcepos!((3:10-3:16)),
+        sourcepos!((5:2-5:8)),
+        sourcepos!((5:10-5:17)),
+    ],
+    r#"stuff before
+
+| Hello | World |
+| ----- | ----- |
+| cell1 | cell02 |
+
+hello world
+"#,
+);
+
+const TEXT: TestCase = (
+    &[
+        sourcepos!((1:1-1:12)),
+        sourcepos!((3:3-3:7)),
+        sourcepos!((3:11-3:15)),
+        sourcepos!((5:3-5:7)),
+        sourcepos!((5:11-5:16)),
+        sourcepos!((7:1-7:11)),
+        sourcepos!((9:3-9:13)),
+        sourcepos!((11:3-11:8)),
+        sourcepos!((12:3-12:9)),
+        sourcepos!((12:12-12:15)),
+        sourcepos!((14:1-14:5)),
+        sourcepos!((14:7-14:7)),
+        sourcepos!((14:8-14:18)),
+        sourcepos!((14:20-14:20)),
+        sourcepos!((14:21-14:26)),
+        sourcepos!((16:7-16:14)),
+    ],
+    r#"stuff before
+
+| Hello | World |
+| ----- | ----- |
+| cell1 | cell02 |
+
+hello world
+
+> hello world
+
+- item 1[^1]
+- item 2 **bold**
+
+Test \`hello world\` here.
+
+[^1]: The end.
+"#,
+);
+
+const SOFT_BREAK: TestCase = (&[sourcepos!((1:13-1:13))], "stuff before\nstuff after");
+const LINE_BREAK: TestCase = (
+    &[sourcepos!((1:13-1:15)), sourcepos!((4:13-4:14))],
+    "stuff before  \nstuff after\n\nstuff before\\\nstuff after\n",
+);
+
+const CODE: TestCase = (&[sourcepos!((1:7-1:13))], "hello `world`");
+
+const EMPH: TestCase = (
+    &[sourcepos!((1:7-1:13)), sourcepos!((1:23-2:4))],
+    "hello *world* between *wo\nrld* after",
+);
+
+const STRONG: TestCase = (
+    &[sourcepos!((1:7-1:15)), sourcepos!((1:25-2:5))],
+    "hello **world** between **wo\nrld** after",
+);
+
+const STRIKETHROUGH: TestCase = (
+    &[sourcepos!((1:7-1:15)), sourcepos!((1:25-2:5))],
+    "hello ~~world~~ between ~~wo\nrld~~ after",
+);
+
+const HIGHLIGHT: TestCase = (
+    &[sourcepos!((1:7-1:15)), sourcepos!((1:25-2:5))],
+    "hello ==world== between ==wo\nrld== after",
+);
+
+const INSERT: TestCase = (
+    &[sourcepos!((1:7-1:15)), sourcepos!((1:25-2:5))],
+    "hello ++world++ between ++wo\nrld++ after",
+);
+
+const SUPERSCRIPT: TestCase = (
+    &[sourcepos!((1:7-1:13)), sourcepos!((1:23-2:4))],
+    "hello ^world^ between ^wo\nrld^ after",
+);
+
+const SUBSCRIPT: TestCase = (
+    &[sourcepos!((1:7-1:13)), sourcepos!((1:23-2:4))],
+    "hello ~world~ between ~wo\nrld~ after",
+);
+
+const LINK: TestCase = (
+    &[
+        sourcepos!((1:7-1:32)),
+        sourcepos!((2:7-2:32)),
+        sourcepos!((3:7-3:11)),
+        sourcepos!((4:7-4:16)),
+        sourcepos!((5:7-5:29)),
+        sourcepos!((6:7-6:21)),
+        sourcepos!((7:7-7:21)),
+    ],
+    r#"hello <https://example.com/fooo> world
+hello [foo](https://example.com) world
+hello [foo] world
+hello [bar][bar] world
+hello https://example.com/foo world
+hello www.example.com world
+hello foo@example.com world
+
+[foo]: https://example.com
+[bar]: https://example.com"#,
+);
+
+const IMAGE: TestCase = (
+    &[sourcepos!((1:7-1:38))],
+    "hello ![alt text](https://example.com) banana",
+);
+
+const MATH: TestCase = (
+    &[
+        sourcepos!((3:1-3:7)),
+        sourcepos!((3:17-3:26)),
+        sourcepos!((3:36-3:44)),
+    ],
+    r#"hello
+
+$1 + 1$ between $`1 + 23`$ between $$a + b$$
+
+banana"#,
+);
+
+const ESCAPED: TestCase = (
+    &[
+        sourcepos!((1:1-1:2)),
+        sourcepos!((1:3-1:4)),
+        sourcepos!((1:5-1:6)),
+        sourcepos!((1:7-1:8)),
+        sourcepos!((1:9-1:10)),
+        sourcepos!((1:11-1:12)),
+        sourcepos!((1:13-1:14)),
+        sourcepos!((1:15-1:16)),
+        sourcepos!((1:17-1:18)),
+        sourcepos!((1:19-1:20)),
+        sourcepos!((1:21-1:22)),
+        sourcepos!((1:23-1:24)),
+        sourcepos!((1:25-1:26)),
+        sourcepos!((1:27-1:28)),
+        sourcepos!((1:29-1:30)),
+        sourcepos!((1:31-1:32)),
+        sourcepos!((1:33-1:34)),
+        sourcepos!((1:35-1:36)),
+        sourcepos!((1:37-1:38)),
+        sourcepos!((1:39-1:40)),
+        sourcepos!((1:41-1:42)),
+        sourcepos!((1:43-1:44)),
+        sourcepos!((1:45-1:46)),
+        sourcepos!((1:47-1:48)),
+        sourcepos!((1:49-1:50)),
+        sourcepos!((1:51-1:52)),
+        sourcepos!((1:53-1:54)),
+        sourcepos!((1:55-1:56)),
+        sourcepos!((1:57-1:58)),
+        sourcepos!((1:59-1:60)),
+        sourcepos!((1:61-1:62)),
+        sourcepos!((1:63-1:64)),
+    ],
+    r#"\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~\a"#,
+);
+
+const WIKI_LINK: TestCase = (
+    &[sourcepos!((1:1-1:9)), sourcepos!((3:1-3:33))],
+    r#"[[floop]]
+
+[[http://example.com|some title]]
+
+after"#,
+);
+
+const UNDERLINE: TestCase = (&[sourcepos!((1:8-1:22))], "before __hello world__ after");
+
+const SPOILERED_TEXT: TestCase = (
+    &[sourcepos!((2:1-2:11))],
+    r#"before
+||spoiler||
+after"#,
+);
+
+// NOTE: I've adjusted this from its original asserted sourcepos (2:1-2:8) while
+// fixing emphasis sourcepos. I am not even sure what it is, really.
+const ESCAPED_TAG: TestCase = (
+    &[sourcepos!((2:2-2:8))],
+    r#"before
+||hello|
+after"#,
+);
+
+const ALERT: TestCase = (
+    &[sourcepos!((2:1-3:9))],
+    r#"before
+> [!note]
+> it's on
+
+after"#,
+);
+
+const SUBTEXT: TestCase = (
+    &[sourcepos!((2:1-2:14))],
+    r#"before
+-# Hello World
+
+hello world
+"#,
+);
+
+const BLOCK_DIRECTIVE: TestCase = (
+    &[sourcepos!((2:1-4:3))],
+    r#"before
+:::
+hello world
+:::
+after"#,
+);
+
+const BLOCK_ID: TestCase = (&[sourcepos!((1:7-1:10))], "hello ^abc\n");
+
+const COMMENT_INLINE: TestCase = (&[sourcepos!((1:3-1:8))], "x %%aa%% tail");
+
+const MULTILINE_COMMENT: TestCase = (&[sourcepos!((1:1-2:4))], "%%\naa%%bb");
+
+const MATH_BLOCK: TestCase = (&[sourcepos!((1:1-3:2))], "$$\na\n$$\n");
+
+const CALLOUT: TestCase = (&[sourcepos!((1:1-2:6))], "> [!note]\n> Body\n");
+const CALLOUT_TITLE: TestCase = (&[sourcepos!((1:11-1:15))], "> [!note] Title\n> Body\n");
+
+fn node_values() -> HashMap<NodeValueDiscriminants, TestCase> {
+    use NodeValueDiscriminants::*;
+
+    NodeValueDiscriminants::VARIANTS
+        .iter()
+        .filter(|v| !matches!(v, Raw))
+        .map(|v| {
+            let text = match v {
+                Document => DOCUMENT,
+                FrontMatter => FRONT_MATTER,
+                BlockQuote => BLOCK_QUOTE,
+                MultilineBlockQuote => MULTILINE_BLOCK_QUOTE,
+                List => LIST,
+                Item => ITEM,
+                TaskItem => TASK_ITEM,
+                DescriptionList => DESCRIPTION_LIST,
+                DescriptionItem => DESCRIPTION_ITEM,
+                DescriptionTerm => DESCRIPTION_TERM,
+                DescriptionDetails => DESCRIPTION_DETAILS,
+                CodeBlock => CODE_BLOCK,
+                HtmlBlock => HTML_BLOCK,
+                HtmlInline => HTML_INLINE,
+                Paragraph => PARAGRAPH,
+                Heading => HEADING,
+                ThematicBreak => THEMATIC_BREAK,
+                FootnoteDefinition => FOOTNOTE_DEFINITION,
+                FootnoteReference => FOOTNOTE_REFERENCE,
+                #[cfg(feature = "shortcodes")]
+                ShortCode => SHORTCODE,
+                Table => TABLE,
+                TableRow => TABLE_ROW,
+                TableCell => TABLE_CELL,
+                #[cfg(feature = "grid_table")]
+                GridTable => GRID_TABLE,
+                #[cfg(feature = "grid_table")]
+                GridTableRow => GRID_TABLE_ROW,
+                #[cfg(feature = "grid_table")]
+                GridTableCell => GRID_TABLE_CELL,
+                Text => TEXT,
+                SoftBreak => SOFT_BREAK,
+                LineBreak => LINE_BREAK,
+                Code => CODE,
+                Emph => EMPH,
+                Strong => STRONG,
+                Strikethrough => STRIKETHROUGH,
+                Highlight => HIGHLIGHT,
+                Insert => INSERT,
+                Superscript => SUPERSCRIPT,
+                Subscript => SUBSCRIPT,
+                Link => LINK,
+                Image => IMAGE,
+                Math => MATH,
+                MathBlock => MATH_BLOCK,
+                Escaped => ESCAPED,
+                WikiLink => WIKI_LINK,
+                Underline => UNDERLINE,
+                SpoileredText => SPOILERED_TEXT,
+                EscapedTag => ESCAPED_TAG,
+                Alert => ALERT,
+                Callout => CALLOUT,
+                CalloutTitle => CALLOUT_TITLE,
+                Subtext => SUBTEXT,
+                BlockDirective => BLOCK_DIRECTIVE,
+                BlockId => BLOCK_ID,
+                CommentInline => COMMENT_INLINE,
+                MultilineComment => MULTILINE_COMMENT,
+                Raw => unreachable!(),
+                #[cfg(feature = "phoenix_heex")]
+                HeexBlock => HEEX_BLOCK,
+                #[cfg(feature = "phoenix_heex")]
+                HeexInline => HEEX_INLINE,
+            };
+            (*v, text)
+        })
+        .collect()
+}
+
+#[test]
+fn sourcepos() {
+    let node_values = node_values();
+
+    let mut options = Options::default();
+    options.render.escaped_char_spans = true;
+    options.extension.front_matter_delimiter = Some("---".to_string());
+    options.extension.description_lists = true;
+    options.extension.footnotes = true;
+    options.extension.table = true;
+    options.extension.tasklist = true;
+    options.extension.strikethrough = true;
+    options.extension.highlight = true;
+    options.extension.insert = true;
+    options.extension.superscript = true;
+    options.extension.subscript = true;
+    options.extension.autolink = true;
+    #[cfg(feature = "shortcodes")]
+    {
+        options.extension.shortcodes = true;
+    }
+    options.extension.math_code = true;
+    options.extension.math_dollars = true;
+    options.extension.multiline_block_quotes = true;
+    options.extension.wikilinks_title_after_pipe = true;
+    options.extension.underline = true;
+    options.extension.spoiler = true;
+    options.extension.alerts = true;
+    options.extension.subtext = true;
+    options.extension.block_directive = true;
+    options.extension.ofm_comments = true;
+    #[cfg(feature = "phoenix_heex")]
+    {
+        options.extension.phoenix_heex = true;
+    }
+    #[cfg(feature = "grid_table")]
+    {
+        options.extension.grid_table = true;
+    }
+
+    for (kind, (expecteds, text)) in node_values {
+        // Only enable ofm_callouts for Callout/CalloutTitle kinds so that
+        // the shared options don't cause `[!note]` to be parsed as a callout
+        // in every other node's test case.
+        let mut case_options = options.clone();
+        case_options.extension.ofm_callouts = matches!(
+            kind,
+            NodeValueDiscriminants::Callout | NodeValueDiscriminants::CalloutTitle
+        );
+        case_options.extension.ofm_block_ids = matches!(kind, NodeValueDiscriminants::BlockId);
+        case_options.extension.math_dollars_block =
+            matches!(kind, NodeValueDiscriminants::MathBlock);
+
+        let arena = Arena::new();
+        let root = parse_document(&arena, text, &case_options);
+        let asts: Vec<_> = root
+            .descendants()
+            .filter(|d| NodeValueDiscriminants::from(&d.data().value) == kind)
+            .collect();
+
+        if asts.len() != expecteds.len() {
+            panic!(
+                "expected {} node(s) of kind {:?}, but got {}",
+                expecteds.len(),
+                kind,
+                asts.len()
+            );
+        }
+
+        for (ast, expected) in asts.into_iter().zip(expecteds) {
+            let actual = ast.data().sourcepos;
+            assert_eq!(
+                *expected, actual,
+                "{} != {} for {:?}",
+                expected, actual, kind
+            );
+        }
+    }
+}
+
+#[test]
+fn lazy_continuation_after_partial_tab() {
+    assert_ast_match!(
+        [],
+        ">\t>a\n"
+        ">\tb\n",
+        (document (1:1-2:3) [
+            (block_quote (1:1-2:3) [
+                (block_quote (1:3-2:3) [
+                    (paragraph (1:4-2:3) [
+                        (text (1:4-1:4) "a")
+                        (softbreak (1:5-1:5))
+                        (text (2:3-2:3) "b")
+                    ])
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn table_header_on_indented_lazy_line() {
+    assert_ast_match!(
+        [extension.table],
+        ">b\n"
+        " }\n"
+        ">:-\n",
+        (document (1:1-3:3) [
+            (block_quote (1:1-3:3) [
+                (paragraph (1:2-1:2) [
+                    (text (1:2-1:2) "b")
+                ])
+                (table (2:2-3:3) [
+                    (table_header (2:2-2:2) [
+                        (table_cell (2:2-2:2) [
+                            (text (2:2-2:2) "}")
+                        ])
+                    ])
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn html_block_with_partially_consumed_tab() {
+    assert_ast_match!(
+        [],
+        "*\n"
+        "\t<v>\n",
+        (document (1:1-2:4) [
+            (list (1:1-2:4) [
+                (item (1:1-2:4) [
+                    (html_block (2:2-2:4) "  <v>\n")
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "* <o>\n"
+        "\t>\n",
+        (document (1:1-2:2) [
+            (list (1:1-2:2) [
+                (item (1:1-2:2) [
+                    (html_block (1:3-2:2) "<o>\n  >\n")
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        ">\t<v>\n",
+        (document (1:1-1:5) [
+            (block_quote (1:1-1:5) [
+                (html_block (1:3-1:5) "  <v>\n")
+            ])
+        ])
+    );
+}
+
+#[test]
+fn reference_definitions_before_content() {
+    assert_ast_match!(
+        [],
+        "[a]: /u\n"
+        "foo *bar*\n"
+        "baz\n",
+        (document (1:1-3:3) [
+            (paragraph (2:1-3:3) [
+                (text (2:1-2:4) "foo ")
+                (emph (2:5-2:9) [
+                    (text (2:6-2:8) "bar")
+                ])
+                (softbreak (2:10-2:10))
+                (text (3:1-3:3) "baz")
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "[a]: /u\n"
+        "[b]: /v\n"
+        "\"t\"\n"
+        "foo\n"
+        "===\n",
+        (document (1:1-5:3) [
+            (heading (4:1-5:3) [
+                (text (4:1-4:3) "foo")
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "> [a]: /u\n"
+        ">   foo\n",
+        (document (1:1-2:7) [
+            (block_quote (1:1-2:7) [
+                (paragraph (2:5-2:7) [
+                    (text (2:5-2:7) "foo")
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "> [a]: /u\n"
+        "   foo\n",
+        (document (1:1-2:6) [
+            (block_quote (1:1-2:6) [
+                (paragraph (2:4-2:6) [
+                    (text (2:4-2:6) "foo")
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "- [a]: /u\n"
+        "  foo\n",
+        (document (1:1-2:5) [
+            (list (1:1-2:5) [
+                (item (1:1-2:5) [
+                    (paragraph (2:3-2:5) [
+                        (text (2:3-2:5) "foo")
+                    ])
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn reference_definition_then_setext_underline_is_paragraph() {
+    assert_ast_match!(
+        [],
+        "> [a]: /u\n"
+        "> ===\n",
+        (document (1:1-2:5) [
+            (block_quote (1:1-2:5) [
+                (paragraph (2:3-2:5) [
+                    (text (2:3-2:5) "===")
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn link_tail_crossing_lines() {
+    assert_ast_match!(
+        [],
+        "[a](\n"
+        "/u\n"
+        "\"t\"\n"
+        ") *x*\n",
+        (document (1:1-4:5) [
+            (paragraph (1:1-4:5) [
+                (link (1:1-4:1) "/u" [
+                    (text (1:2-1:2) "a")
+                ])
+                (text (4:2-4:2) " ")
+                (emph (4:3-4:5) [
+                    (text (4:4-4:4) "x")
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "![a](/u\n"
+        "\"t\nv\") x\n",
+        (document (1:1-3:5) [
+            (paragraph (1:1-3:5) [
+                (image (1:1-3:3) "/u" [
+                    (text (1:3-1:3) "a")
+                ])
+                (text (3:4-3:5) " x")
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "[a][\n"
+        "r] x\n"
+        "\n"
+        "[r]: /u\n",
+        (document (1:1-4:7) [
+            (paragraph (1:1-2:4) [
+                (link (1:1-2:2) "/u" [
+                    (text (1:2-1:2) "a")
+                ])
+                (text (2:3-2:4) " x")
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "> *[a](\n"
+        ">    /u\n"
+        "> )* x\n",
+        (document (1:1-3:6) [
+            (block_quote (1:1-3:6) [
+                (paragraph (1:3-3:6) [
+                    (emph (1:3-3:4) [
+                        (link (1:4-3:3) "/u" [
+                            (text (1:5-1:5) "a")
+                        ])
+                    ])
+                    (text (3:5-3:6) " x")
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn thematic_break_before_trailing_blank_lines() {
+    assert_ast_match!(
+        [],
+        "***\n"
+        "\n",
+        (document (1:1-2:0) [
+            (thematic_break (1:1-1:3))
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "- ***\n"
+        "\n",
+        (document (1:1-2:0) [
+            (list (1:1-1:5) [
+                (item (1:1-1:5) [
+                    (thematic_break (1:3-1:5))
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "> ***\n"
+        ">\n",
+        (document (1:1-2:1) [
+            (block_quote (1:1-2:1) [
+                (thematic_break (1:3-1:5))
+            ])
+        ])
+    );
+}
+
+#[test]
+fn table_before_trailing_blank_lines() {
+    assert_ast_match!(
+        [extension.table],
+        "| a |\n"
+        "| - |\n"
+        "\n",
+        (document (1:1-3:0) [
+            (table (1:1-2:5) [
+                (table_header (1:1-1:5) [
+                    (table_cell (1:2-1:4) [
+                        (text (1:3-1:3) "a")
+                    ])
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn list_items_end_at_their_last_child() {
+    assert_ast_match!(
+        [],
+        "- x\n"
+        "  \n"
+        "y\n",
+        (document (1:1-3:1) [
+            (list (1:1-1:3) [
+                (item (1:1-1:3) [
+                    (paragraph (1:3-1:3) [
+                        (text (1:3-1:3) "x")
+                    ])
+                ])
+            ])
+            (paragraph (3:1-3:1) [
+                (text (3:1-3:1) "y")
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "> - x\n"
+        ">\n",
+        (document (1:1-2:1) [
+            (block_quote (1:1-2:1) [
+                (list (1:3-1:5) [
+                    (item (1:3-1:5) [
+                        (paragraph (1:5-1:5) [
+                            (text (1:5-1:5) "x")
+                        ])
+                    ])
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "1. a\n"
+        "   \n"
+        "2. b\n"
+        "   \n",
+        (document (1:1-4:3) [
+            (list (1:1-3:4) [
+                (item (1:1-1:4) [
+                    (paragraph (1:4-1:4) [
+                        (text (1:4-1:4) "a")
+                    ])
+                ])
+                (item (3:1-3:4) [
+                    (paragraph (3:4-3:4) [
+                        (text (3:4-3:4) "b")
+                    ])
+                ])
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "- > x\n"
+        "  >\n",
+        (document (1:1-2:3) [
+            (list (1:1-2:3) [
+                (item (1:1-2:3) [
+                    (block_quote (1:3-2:3) [
+                        (paragraph (1:5-1:5) [
+                            (text (1:5-1:5) "x")
+                        ])
+                    ])
+                ])
+            ])
+        ])
+    );
+}
+
+#[test]
+fn list_items_without_children_end_at_their_last_content_line() {
+    assert_ast_match!(
+        [],
+        "-\n"
+        "  \n",
+        (document (1:1-2:2) [
+            (list (1:1-1:1) [
+                (item (1:1-1:1))
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "* [r]: /u\n"
+        "\n"
+        "z\n",
+        (document (1:1-3:1) [
+            (list (1:1-1:9) [
+                (item (1:1-1:9))
+            ])
+            (paragraph (3:1-3:1) [
+                (text (3:1-3:1) "z")
+            ])
+        ])
+    );
+
+    assert_ast_match!(
+        [],
+        "* [r]:\n"
+        "  /u\n"
+        "\n"
+        "z\n",
+        (document (1:1-4:1) [
+            (list (1:1-2:4) [
+                (item (1:1-2:4))
+            ])
+            (paragraph (4:1-4:1) [
+                (text (4:1-4:1) "z")
+            ])
+        ])
+    );
+}
+
+#[test]
+fn list_item_end_ignores_autocompleted_table_cells() {
+    assert_ast_match!(
+        [extension.table],
+        "- a|b\n"
+        "  -|-\n"
+        "  c\n"
+        "\n"
+        "z\n",
+        (document (1:1-5:1) [
+            (list (1:1-3:3) [
+                (item (1:1-3:3) [
+                    (table (1:3-3:3) [
+                        (table_header (1:3-1:5) [
+                            (table_cell (1:3-1:3) [
+                                (text (1:3-1:3) "a")
+                            ])
+                            (table_cell (1:5-1:5) [
+                                (text (1:5-1:5) "b")
+                            ])
+                        ])
+                        (table_row (3:3-3:3) [
+                            (table_cell (3:3-3:3) [
+                                (text (3:3-3:3) "c")
+                            ])
+                            (table_cell (3:4-3:3))
+                        ])
+                    ])
+                ])
+            ])
+            (paragraph (5:1-5:1) [
+                (text (5:1-5:1) "z")
+            ])
+        ])
+    );
+}

@@ -1,0 +1,19 @@
+[package]
+name = "report-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+description = "Report Engine：Report IR v1 单源 + Markdown/HTML/JSON(SARIF) 三渲染器（PHASE-6A D2/D4——IR 内存模型零落库，渲染纯函数零 I/O；四渲染函数禁 AI 重跑 :541；PDF/DOCX 全量/装配面/落库属 6b——docx-rs 因 zip 8.x RUSTSEC 链于本批停批撤除，DOCX 顺延 6b 重新侦察）。"
+
+[dependencies]
+# D2① 依赖面（裁决 B 单 crate 修订）：domain（ID 类型词形根，零依赖纯类型库）+
+# serde/serde_json + tool-registry（jsonschema_lite 同校验器——intel-db ir.rs
+# 先例）+ comrak（markdown→HTML 片段面 D5）。不依赖
+# verification-engine/wsw-runtime/agent-engine（渲染纯函数零重耦合）。
+domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tool-registry = { workspace = true }
+comrak = { workspace = true }

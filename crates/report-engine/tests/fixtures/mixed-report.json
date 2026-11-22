@@ -1,0 +1,68 @@
+{
+  "schema_version": "1",
+  "report_id": "rep-20261123-002",
+  "report_kind": "pentest_report",
+  "title": "五态覆盖混合报告（fixture 对账面）",
+  "generated_at": "2026-11-23T12:00:00Z",
+  "findings": [
+    {
+      "finding_id": "find-20261123-101",
+      "rtis_ref": "rtis://poc/900008",
+      "title": "已确认项（confirmed / critical）",
+      "severity": "critical",
+      "result_state": "confirmed",
+      "vuln_type": "远程代码执行",
+      "evidence": [
+        {
+          "evidence_id": "re-20261123-101",
+          "artifact_id": "artifact-critical-001",
+          "tool_run_id": "toolrun-critical-001",
+          "trace_id": "trace-critical-001",
+          "uri": "ripartifact://toolrun-critical-001/artifact-critical-001",
+          "content_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "evidence_type": "normalized_result"
+        }
+      ]
+    },
+    {
+      "finding_id": "find-20261123-102",
+      "title": "误报项（false_positive / info）",
+      "severity": "info",
+      "result_state": "false_positive",
+      "vuln_type": "误报示例",
+      "evidence": [
+        {
+          "evidence_id": "re-20261123-102",
+          "artifact_id": "artifact-fp-001",
+          "tool_run_id": "toolrun-fp-001",
+          "trace_id": "trace-fp-001",
+          "uri": "rtis://poc/900009",
+          "content_hash": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+          "evidence_type": "log_excerpt"
+        }
+      ]
+    },
+    {
+      "finding_id": "find-20261123-103",
+      "title": "未复现项（not_reproduced / medium）",
+      "severity": "medium",
+      "result_state": "not_reproduced",
+      "vuln_type": "竞态条件"
+    },
+    {
+      "finding_id": "find-20261123-104",
+      "title": "未测试项（not_tested / low）",
+      "severity": "low",
+      "result_state": "not_tested",
+      "vuln_type": "物理旁路"
+    },
+    {
+      "finding_id": "find-20261123-105",
+      "title": "结论不明项（inconclusive / high）",
+      "severity": "high",
+      "result_state": "inconclusive",
+      "vuln_type": "依赖版本漂移"
+    }
+  ],
+  "attack_paths": []
+}

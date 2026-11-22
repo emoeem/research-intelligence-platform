@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-platform/schemas/report-ir/report-ir-v1.schema.json",
+  "title": "RIP Report IR v1",
+  "description": "PHASE-6A D1 裁决实施（docs/phase0/PHASE-6A-TASK.md）。Report IR v1 = 三渲染器（Markdown/HTML/JSON+PDF/DOCX 属 6b）唯一结构源，禁止每种格式重新生成一遍（RIP3 PLAN :541）。SARIF 2.1.0 对齐：result/location/rule/artifact 四模型经 location/evidence 字段投影，自有维度（severity/六 ID/rtis_ref）全部走 properties.rip.* property bag，标准键零污染。rtis_ref 只承载 rtis://poc/<id> 引用词形（03-DOMAIN-MODEL :140 + 020:36 RTIS 红线：POC 正文/利用细节零复制）。双解释字段位（technical_explanation/plain_explanation）本批只承载不生成（8.3 生成器属 6b）。fail-closed：全层 additionalProperties:false、五处词表枚举（report_kind/severity/result_state/evidence_type/remediation.priority）、ID 前缀 pattern（rep-/find-/re-）与 uri 词形 pattern（rtis:// | ripartifact://）编译期即拒。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "report_kind",
+    "title",
+    "generated_at",
+    "findings"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "字符串常量版本号；读取器按版本路由（v1 唯一实现）。",
+      "type": "string",
+      "const": "1"
+    },
+    "report_id": {
+      "description": "报告稳定 ID（rep- 前缀，03-DOMAIN-MODEL :141 词形）。",
+      "type": "string",
+      "pattern": "^rep-[0-9a-zA-Z_-]+$"
+    },
+    "report_kind": {
+      "description": "报告类型词表（PLAN :517 §8.2 A/B/C 三类）。",
+      "enum": ["src_vuln_report", "pentest_report", "management_report"]
+    },
+    "title": {
+      "description": "报告标题（中文正确验收面 :670）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "description": "ISO8601 时间戳（pattern 而非 format 关键字——校验器离线全语义，pattern 更 fail-closed）。",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "language": {
+      "description": "报告语言，缺省 zh（:670 中文正确验收——Rust 侧 serde default 同源）。",
+      "type": "string",
+      "default": "zh",
+      "minLength": 1
+    },
+    "task_ref": {
+      "description": "研究任务引用（ID 引用非跨库 FK——03-DOMAIN-MODEL :144；两 ID 均可选，管理报告类可无编排容器）。",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "workflow_run_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "executive_summary": {
+      "description": "执行摘要（markdown 全文段；HTML 面经 comrak 渲染）。",
+      "type": "string"
+    },
+    "scope": {
+      "description": "授权范围与资产位（B 类 pentest_report 骨架投影 :517）。",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "authorization": {
+          "description": "授权说明（文本段）。",
+          "type": "string",
+          "minLength": 1
+        },
+        "assets": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "methodology": {
+      "description": "方法论（markdown 全文段）。",
+      "type": "string"
+    },
+    "timeline": {
+      "description": "关键时间线（日期 + 事件）。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["date", "event"],
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "event": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "coverage": {
+      "description": "七维覆盖投影（022 七维词表同源——dimension CHECK 词表直投影）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimensions"],
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dimension", "total", "tested", "confirmed"],
+            "properties": {
+              "dimension": {
+                "enum": [
+                  "assets",
+                  "api_endpoints",
+                  "identity_permissions",
+                  "input_points",
+                  "business_flows",
+                  "file_processing",
+                  "data_flows"
+                ]
+              },
+              "total": { "type": "integer", "minimum": 0 },
+              "tested": { "type": "integer", "minimum": 0 },
+              "confirmed": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "findings": {
+      "description": "Finding 集合（可空——空集边界判据 9；Finding 事实源在 RTIS，IR 只承载报告投影）。",
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "attack_paths": {
+      "description": "攻击路径（只承载引用——图表事实以 RTIS 攻击链为准 :531，Diagram Engine 属 6b）。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path_id", "title", "steps", "evidence_refs"],
+        "properties": {
+          "path_id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "steps": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "appendix": {
+      "description": "附录（markdown 全文段）。",
+      "type": "string"
+    },
+    "properties": {
+      "description": "自由扩展位（SARIF property bag 对齐位——自有维度演进落点）。",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "title",
+        "severity",
+        "result_state",
+        "vuln_type"
+      ],
+      "properties": {
+        "finding_id": {
+          "description": "Finding 稳定 ID（find- 前缀，03-DOMAIN-MODEL :140 词形）。",
+          "type": "string",
+          "pattern": "^find-[0-9a-zA-Z_-]+$"
+        },
+        "rtis_ref": {
+          "description": "RTIS POC 引用（rtis://poc/<id> 词形——细节不落 IR，020:36 RTIS 红线；可选：管理报告类 Finding 可无 POC 对应）。",
+          "type": "string",
+          "pattern": "^rtis://poc/[0-9]+$"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "severity": {
+          "description": "严重级（RTIS 权威值镜像只读——:140；SARIF level 三值映射见 render_sarif D1 映射表）。",
+          "enum": ["critical", "high", "medium", "low", "info"]
+        },
+        "result_state": {
+          "description": "五态研究结论（020 ResultGuard 词表同源，snake_case 归一）。",
+          "enum": [
+            "confirmed",
+            "false_positive",
+            "not_reproduced",
+            "not_tested",
+            "inconclusive"
+          ]
+        },
+        "location": {
+          "description": "SARIF physicalLocation 对齐位。",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "artifact_uri": { "type": "string", "minLength": 1 },
+            "start_line": { "type": "integer", "minimum": 1 },
+            "end_line": { "type": "integer", "minimum": 1 },
+            "snippet": { "type": "string" }
+          }
+        },
+        "vuln_type": { "type": "string", "minLength": 1 },
+        "affected_scope": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "preconditions": {
+          "description": "前置条件（markdown 片段——HTML 面经 comrak 渲染）。",
+          "type": "string"
+        },
+        "principle": {
+          "description": "原理（markdown 片段）。",
+          "type": "string"
+        },
+        "repro_steps": {
+          "description": "复现步骤（markdown 片段）。",
+          "type": "string"
+        },
+        "request_response": {
+          "description": "请求/响应对（direction = request|response）。",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["direction", "content"],
+            "properties": {
+              "direction": {
+                "enum": ["request", "response"]
+              },
+              "content": { "type": "string" }
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence_ref" }
+        },
+        "impact": { "type": "string" },
+        "remediation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["priority", "suggestions"],
+          "properties": {
+            "priority": {
+              "enum": ["immediate", "high", "medium", "low"]
+            },
+            "suggestions": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "technical_explanation": {
+          "description": "技术解释字段位（8.3 双解释——本批只承载不生成，6b 生成器）。",
+          "type": "string"
+        },
+        "plain_explanation": {
+          "description": "通俗解释字段位（8.3 通俗七问——本批只承载不生成，6b 生成器）。",
+          "type": "string"
+        },
+        "properties": {
+          "description": "自由扩展位。",
+          "type": "object"
+        }
+      }
+    },
+    "evidence_ref": {
+      "description": "Evidence 引用（六 ID 投影——015/021 同款列名；uri 词形 ripartifact:// 或 rtis://）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "artifact_id",
+        "tool_run_id",
+        "trace_id",
+        "uri",
+        "content_hash"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "pattern": "^re-[0-9a-zA-Z_-]+$"
+        },
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "tool_run_id": { "type": "string", "minLength": 1 },
+        "trace_id": { "type": "string", "minLength": 1 },
+        "uri": {
+          "type": "string",
+          "pattern": "^(ripartifact://|rtis://)[^\\s]+$"
+        },
+        "content_hash": {
+          "description": "sha256 小写 hex（021 content_hash 口径）。",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "evidence_type": {
+          "description": "021 CHECK 词表同源（可选——IR 引用面可只挂 ID）。",
+          "enum": ["provider_result", "normalized_result", "log_excerpt"]
+        }
+      }
+    }
+  }
+}
