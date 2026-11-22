@@ -144,11 +144,26 @@ pub fn probe_chromium() -> Option<PathBuf> {
     }
     for fixed in ["/usr/sbin/chromium", "/usr/bin/chromium"] {
         let p = PathBuf::from(fixed);
-        if executable_in_place(&p) {
+        if executable_in_place(&p) && usable_chromium(&p) {
             return Some(p);
         }
     }
     None
+}
+
+/// 自动探测级可用性验证：`--version` 子进程 exit 0 才算命中——Ubuntu snap
+/// 过渡壳/损坏安装路径存在可执行但无法运行（CI runner browser_adapter
+/// truncation 测试 FAILED 实证），探针语义 = 可用的 Chromium 而非路径存在。
+/// 显式 env 两级（RP_BROWSER_BIN/PW_CHROMIUM）不做此验证：显式指定失败在
+/// capture 时报错，不静默降级。
+fn usable_chromium(bin: &Path) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// 存在且可执行（mode 位含 owner execute；探针级检查，非 sha 钉值面）。

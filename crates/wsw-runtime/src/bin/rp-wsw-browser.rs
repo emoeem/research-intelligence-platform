@@ -76,6 +76,52 @@ fn write_capped(path: &Path, bytes: &[u8], cap: usize) -> std::io::Result<(usize
     Ok((take, bytes.len(), truncated))
 }
 
+#[cfg(test)]
+mod write_capped_tests {
+    use super::*;
+
+    /// 截断保真三态单测（truncation e2e 的环境敏感面降级显式跑后的语义承载：
+    /// Chromium 版本漂移使 1MiB 大页 CDP get_title 超时（CI FAILED/本地
+    /// TIMED_OUT 双实证），帽语义在纯函数面固化）。
+    #[test]
+    fn write_capped_under_cap_keeps_all_bytes() {
+        let dir = std::env::temp_dir().join(format!("w56-wc-u-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("u.txt");
+        let (take, total, truncated) =
+            write_capped(&p, b"hello", PAGE_TEXT_CAP_BYTES).unwrap();
+        assert_eq!((take, total, truncated), (5, 5, false));
+        assert_eq!(std::fs::read(&p).unwrap(), b"hello");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_capped_over_cap_takes_cap_and_flags_truncated() {
+        let dir = std::env::temp_dir().join(format!("w56-wc-o-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("o.bin");
+        let body: Vec<u8> = (0..=(PAGE_TEXT_CAP_BYTES as u8)).cycle().take(PAGE_TEXT_CAP_BYTES + 7).collect();
+        let (take, total, truncated) = write_capped(&p, &body, PAGE_TEXT_CAP_BYTES).unwrap();
+        assert_eq!((take, total, truncated), (PAGE_TEXT_CAP_BYTES, PAGE_TEXT_CAP_BYTES + 7, true));
+        let written = std::fs::read(&p).unwrap();
+        assert_eq!(written.len(), PAGE_TEXT_CAP_BYTES);
+        assert_eq!(&written[..8], &body[..8], "前缀逐字节保真");
+        assert_eq!(&written[PAGE_TEXT_CAP_BYTES - 8..], &body[PAGE_TEXT_CAP_BYTES - 8..PAGE_TEXT_CAP_BYTES], "帽内尾部逐字节保真");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_capped_exact_cap_boundary_is_not_truncated() {
+        let dir = std::env::temp_dir().join(format!("w56-wc-e-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("e.txt");
+        let body = vec![b'x'; PAGE_TEXT_CAP_BYTES];
+        let (take, total, truncated) = write_capped(&p, &body, PAGE_TEXT_CAP_BYTES).unwrap();
+        assert_eq!((take, total, truncated), (PAGE_TEXT_CAP_BYTES, PAGE_TEXT_CAP_BYTES, false));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
 /// 一次性 user-data-dir（D2③ cookie/storage/进程三面隔离；run 终局清理）。
 ///
 /// 目录锚 = 系统 /tmp（非 std::env::temp_dir()——Adapter env_clear 白名单
