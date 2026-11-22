@@ -153,6 +153,9 @@ fn local_dir_git_worktree_pinned_head_verified() {
     )
     .unwrap();
     git(&["init", "--quiet", &source_dir.to_string_lossy()]);
+    // 禁后台 maintenance（auto gc 与 .git/objects 复制竞争：maintenance.lock
+    // 瞬态消失致 copy ENOENT，CI 45047633559 实证）——per-repo 零全局侵入。
+    git(&["-C", &source_dir.to_string_lossy(), "config", "maintenance.auto", "false"]);
     git(&[
         "-C",
         &source_dir.to_string_lossy(),
@@ -229,6 +232,7 @@ fn git_source_full_chain_and_floating_branch() {
         &repo,
     );
     git(&["init", "--quiet", &repo.to_string_lossy()]);
+    git(&["-C", &repo.to_string_lossy(), "config", "maintenance.auto", "false"]);
     git(&["-C", &repo.to_string_lossy(), "config", "user.email", "t@t"]);
     git(&["-C", &repo.to_string_lossy(), "config", "user.name", "t"]);
     git(&["-C", &repo.to_string_lossy(), "add", "."]);
