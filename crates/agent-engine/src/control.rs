@@ -61,6 +61,9 @@ pub mod actions {
     /// MA-2 R5 预检面（D8）：并行 fan-out 前预估留痕（任务数/并发帽/窗口
     /// 余量实测数据进 audit_event + RunReport.warnings）。
     pub const PARALLEL_PLAN: &str = "agent.run.parallel_plan";
+    /// 轮界上下文折叠留痕（CB-1 B3；折叠只缩规划器可见投影面，轨迹权威
+    /// 面 agent_run_step 零改动——红线 5 词表区登记）。
+    pub const TRANSCRIPT_FOLD: &str = "agent.run.transcript_fold";
 }
 
 /// per-caller 预算面（MA-2 D2：027 caller_budget 表的内存投影）。
@@ -86,9 +89,44 @@ pub struct CallerBudget {
     pub budget_max_steps_per_run: usize,
 }
 
+/// 上下文折叠配置（CB-1 D2：两级触发 = 增长阈值软收缩 + 轮次间隔防抖，
+/// 挂 agent_loop 轮界；既有硬护栏 max_rounds/max_tool_calls/caller 三闸即
+/// 硬兜底零改动——折叠只缩规划器可见投影面，预算记账数真实步数）。
+///
+/// 默认值即最严缺省纪律（MA-2 [`RunControlConfig::allow_parallel_subtasks`]
+/// 同款）：折叠默认**关**（enabled=false）——折叠改变 planner 所见，默认开
+/// 会威胁「既有测试零改动通过」的确定性（判据 5）；所有折叠面走显式配置
+/// 开启（rp-agent `--transcript-fold` 唯一显式动作位）。
+#[derive(Debug, Clone)]
+pub struct FoldConfig {
+    /// 折叠开关：默认 false（最严缺省；未显式开启全链路逐字节现状）。
+    pub enabled: bool,
+    /// 增长阈值（tokens）：自上次折叠起转录 est_tokens 增量达到该值才满足
+    /// 触发条件一（计量走 context_broker::est_tokens 单点，D6）。
+    pub fold_growth_tokens: u64,
+    /// 两次折叠最小轮距（轮次间隔防抖；距上次折叠覆盖末轮不足该轮数不
+    /// 折叠——触发条件二）。
+    pub fold_min_interval_rounds: usize,
+    /// 最近 N 轮热窗：热窗内轮次永不折叠（防抖负例可测）。
+    pub fold_hot_window_rounds: usize,
+}
+
+impl Default for FoldConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            fold_growth_tokens: 12_000,
+            fold_min_interval_rounds: 4,
+            fold_hot_window_rounds: 2,
+        }
+    }
+}
+
 /// 运行控制配置（护栏参数；默认值即低并发纪律的最严面）。MA-2：新增
 /// caller 预算面字段 `caller_budgets`（空表 = 既有六字段语义零改动，
-/// 红线 1——`RunControlConfig::default()` 既有字段值不变）。
+/// 红线 1——`RunControlConfig::default()` 既有字段值不变）。CB-1：新增
+/// 折叠配置字段 `fold`（默认 [`FoldConfig::default`] 全关 = 既有七字段
+/// 语义零改动，红线 4 同款最严缺省纪律）。
 #[derive(Debug, Clone)]
 pub struct RunControlConfig {
     /// 单次 run 规划轮次上限（预算面；0 = 不限）。
@@ -110,6 +148,8 @@ pub struct RunControlConfig {
     /// per-caller 预算面（027 caller_budget 表内存投影；空表 = 缺行口径 =
     /// 并行关、帽不限，现状零回归）。
     pub caller_budgets: std::collections::HashMap<String, CallerBudget>,
+    /// 上下文折叠配置（CB-1 D2；默认全关 = 既有全链路逐字节现状）。
+    pub fold: FoldConfig,
 }
 
 impl Default for RunControlConfig {
@@ -122,6 +162,7 @@ impl Default for RunControlConfig {
             max_elapsed_ms: 0,
             allow_parallel_subtasks: false,
             caller_budgets: std::collections::HashMap::new(),
+            fold: FoldConfig::default(),
         }
     }
 }

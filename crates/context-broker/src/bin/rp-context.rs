@@ -39,6 +39,7 @@ fn usage_text() -> &'static str {
      \x20 expand --manifest-id <id> --item-id <id> [--db <path>]\n\
      \x20 manifest-show --manifest-id <id> [--db <path>]\n\
      \x20 cache-stats [--data-dir <dir>]\n\
+     \x20 cache-attrib [--data-dir <dir>] [--policy-version <v>]  (缓存失效静态归因 JSON, CB-1)\n\
      \n\
      help: rp-context --help（stdout, exit 0）"
 }
@@ -59,6 +60,7 @@ struct Flags {
     item_id: Option<String>,
     budget: u64,
     data_dir: Option<PathBuf>,
+    policy_version: String,
     rulepack_dir: PathBuf,
     manifest_dirs: Vec<PathBuf>,
 }
@@ -73,6 +75,7 @@ fn parse_flags(args: &[String]) -> Flags {
         item_id: None,
         budget: 8000,
         data_dir: None,
+        policy_version: "policy-1".to_string(),
         rulepack_dir: PathBuf::from("rulepacks/rip-rules"),
         manifest_dirs: vec![
             PathBuf::from("manifests/tools"),
@@ -92,6 +95,7 @@ fn parse_flags(args: &[String]) -> Flags {
             "--item-id" => flags.item_id = Some(value(&mut iter)),
             "--budget" => flags.budget = value(&mut iter).parse().unwrap_or(8000),
             "--data-dir" => flags.data_dir = Some(PathBuf::from(value(&mut iter))),
+            "--policy-version" => flags.policy_version = value(&mut iter),
             "--rulepack-dir" => flags.rulepack_dir = PathBuf::from(value(&mut iter)),
             "--manifest-dirs" => {
                 flags.manifest_dirs = value(&mut iter).split(',').map(PathBuf::from).collect();
@@ -302,6 +306,41 @@ fn run() -> i32 {
                 ),
                 Err(e) => {
                     eprintln!("cache-stats failed: {e}");
+                    return 1;
+                }
+            }
+        }
+        // CB-1（D5②）缓存失效静态归因报告：目录级扫描（entries / 按 TTL 类
+        // 过期计数 / policy_version 不匹配计数），JSON 输出，cache-stats 邻位。
+        "cache-attrib" => {
+            let cache_dir = flags
+                .data_dir
+                .clone()
+                .map(|d| d.join("runtime").join("broker-cache"))
+                .unwrap_or_else(BrokerCache::default_dir);
+            let cache = BrokerCache::open(cache_dir).unwrap_or_else(|e| {
+                eprintln!("open cache: {e}");
+                exit(1);
+            });
+            match cache.attribution_report(&flags.policy_version) {
+                Ok(report) => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "dir": report.dir.display().to_string(),
+                        "entries": report.entries,
+                        "expired": {
+                            "catalog": report.expired.catalog,
+                            "knowledge": report.expired.knowledge,
+                            "schema": report.expired.schema,
+                            "rtis": report.expired.rtis,
+                        },
+                        "policy_mismatch": report.policy_mismatch,
+                        "policy_version": flags.policy_version,
+                    }))
+                    .unwrap_or_default()
+                ),
+                Err(e) => {
+                    eprintln!("cache-attrib failed: {e}");
                     return 1;
                 }
             }

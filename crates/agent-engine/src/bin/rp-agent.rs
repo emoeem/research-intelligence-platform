@@ -10,6 +10,10 @@
 //! cargo run --offline -p agent-engine --bin rp-agent -- run-steps <run_id> [--db <path>] [--out <path>]
 //!   （P7-7 AgentRun/step 轨迹读取面：复用 RunStateStore::steps 读 014
 //!    agent_run_step 全量轨迹，seq 升序，入参快照与信封摘要逐字段透出）
+//! cargo run --offline -p agent-engine --bin rp-agent -- run-folds <run_id> [--db <path>] [--out <path>]
+//!   （CB-1 折叠行回查面：TaskMemoryStore::list_by_run 读 013
+//!    agent_task_memory 过滤 `transcript-fold:` 词形折叠行，memory_id/round/
+//!    summary digest/lifecycle 逐字段透出）
 //! cargo run --offline -p agent-engine --bin rp-agent -- trace <id> [--db <path>] [--out <path>]
 //!   （P7-5 统一只读关联查询：按任一 ID（trace_id/task_id/agent_run_id/
 //!    tool_run_id/artifact_id/evidence_id）关联出任务/意图/上下文/工具/
@@ -60,10 +64,15 @@ fn usage_text() -> &'static str {
      \x20 def-show <agent_id> [--version <v>] [--db <path>]\n\
      \x20 run-show <run_id> [--db <path>]\n\
      \x20 run-steps <run_id> [--db <path>] [--out <path>]  (AgentRun 步骤轨迹, P7-7)\n\
+     \x20 run-folds <run_id> [--db <path>] [--out <path>]  (折叠行回查, CB-1; 013 memory)\n\
      \x20 trace <id> [--db <path>] [--out <path>]  (按任一关联 ID 汇全链, P7-5)\n\
      \x20 run <agent_id> 追加: [--trace-id <id>]  (自定义链路追踪 ID)\n\
      \x20   [--caller-id <id>]  (caller 归属, MA-2 预算面; 027 caller_budget 表)\n\
      \x20   [--allow-parallel]  (并行子任务开关, 需 caller 预算面齐备才生效, D3)\n\
+     \x20   [--transcript-fold]  (上下文折叠开关, 默认关, CB-1 D2 显式动作位)\n\
+     \x20     [--fold-growth-tokens <n>]  (增长阈值, 缺省 12000)\n\
+     \x20     [--fold-min-interval-rounds <n>]  (两次折叠最小轮距, 缺省 4)\n\
+     \x20     [--fold-hot-window-rounds <n>]  (最近 N 轮永不折叠热窗, 缺省 2)\n\
      \n\
      help: rp-agent --help（stdout, exit 0）"
 }
@@ -95,6 +104,10 @@ struct Flags {
     trace_id: Option<String>,
     caller_id: Option<String>,
     allow_parallel: bool,
+    transcript_fold: bool,
+    fold_growth_tokens: u64,
+    fold_min_interval_rounds: usize,
+    fold_hot_window_rounds: usize,
 }
 
 fn parse_flags(args: &[String]) -> Flags {
@@ -122,6 +135,12 @@ fn parse_flags(args: &[String]) -> Flags {
         trace_id: None,
         caller_id: None,
         allow_parallel: false,
+        // CB-1（D2）：折叠默认关（最严缺省）；三参数缺省 = FoldConfig::default
+        // 词面（12000 / 4 / 2）。
+        transcript_fold: false,
+        fold_growth_tokens: 12_000,
+        fold_min_interval_rounds: 4,
+        fold_hot_window_rounds: 2,
     };
     let mut iter = args.iter();
     while let Some(flag) = iter.next() {
@@ -154,6 +173,19 @@ fn parse_flags(args: &[String]) -> Flags {
             "--trace-id" => flags.trace_id = Some(value(&mut iter)),
             "--caller-id" => flags.caller_id = Some(value(&mut iter)),
             "--allow-parallel" => flags.allow_parallel = true,
+            // CB-1（D2）：--transcript-fold 唯一显式动作位（默认关）；三参数
+            // 旗标为 FoldConfig 参数面透传（CLI 实测可达性——默认阈值面下
+            // 短跑 run 恒不触发折叠，selftest_cb1 以收紧参数面实测真折）。
+            "--transcript-fold" => flags.transcript_fold = true,
+            "--fold-growth-tokens" => {
+                flags.fold_growth_tokens = value(&mut iter).parse().unwrap_or(12_000);
+            }
+            "--fold-min-interval-rounds" => {
+                flags.fold_min_interval_rounds = value(&mut iter).parse().unwrap_or(4);
+            }
+            "--fold-hot-window-rounds" => {
+                flags.fold_hot_window_rounds = value(&mut iter).parse().unwrap_or(2);
+            }
             _ => {}
         }
     }
@@ -596,6 +628,73 @@ fn run() -> i32 {
                 }
             }
         }
+        // CB-1（D1）折叠行回查面：TaskMemoryStore::list_by_run 读 013
+        // agent_task_memory，过滤 `transcript-fold:` 词形折叠行（确定性摘要
+        // 自别词形），memory_id/round/summary digest/lifecycle 逐字段透出。
+        // run 不存在 exit 1；零折叠 run 如实输出空数组（run-steps 先例口径）。
+        "run-folds" => {
+            let run_id = args.iter().skip(1).find(|a| !a.starts_with("--")).cloned();
+            let Some(run_id) = run_id else {
+                eprintln!("run-folds requires <run_id>");
+                return usage();
+            };
+            let pool = open_pool(&flags.db, &flags.migrations_dir);
+            let state_store = agent_engine::state::RunStateStore::new(pool.clone());
+            match state_store.run_state(&run_id) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    eprintln!(
+                        "{}",
+                        serde_json::json!({"code": "run_not_found", "message": format!("run {run_id} not found")})
+                    );
+                    return 1;
+                }
+                Err(e) => {
+                    eprintln!("run-folds failed: {e}");
+                    return 1;
+                }
+            }
+            let task_memory = agent_engine::memory::TaskMemoryStore::new(pool.clone());
+            let rows = task_memory.list_by_run(&run_id).unwrap_or_else(|e| {
+                eprintln!("run-folds failed: {e}");
+                exit(1);
+            });
+            let folds = rows
+                .iter()
+                .filter(|r| r.entry.summary().starts_with(agent_engine::agent_loop::FOLD_SUMMARY_PREFIX))
+                .map(|r| {
+                    let payload: serde_json::Value =
+                        serde_json::from_str(r.entry.content_json()).unwrap_or(serde_json::Value::Null);
+                    serde_json::json!({
+                        "memory_id": r.entry.memory_id(),
+                        "round": r.entry.round(),
+                        "rounds": payload.get("rounds").cloned().unwrap_or(serde_json::Value::Null),
+                        "steps_folded": payload.get("steps_folded").cloned().unwrap_or(serde_json::Value::Null),
+                        "est_before": payload.get("est_before").cloned().unwrap_or(serde_json::Value::Null),
+                        "est_after": payload.get("est_after").cloned().unwrap_or(serde_json::Value::Null),
+                        "digest": payload.get("digest").cloned().unwrap_or(serde_json::Value::Null),
+                        "summary": r.entry.summary(),
+                        "lifecycle": r.entry.lifecycle().as_str(),
+                        "created_at": r.created_at,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let payload = serde_json::json!({
+                "command": "run-folds",
+                "run_id": run_id,
+                "folds_count": folds.len(),
+                "folds": folds,
+                "db": flags.db.display().to_string(),
+            });
+            let text = payload.to_string();
+            println!("{text}");
+            if let Some(out) = &flags.out {
+                if let Err(e) = std::fs::write(out, &text) {
+                    eprintln!("write folds {}: {e}", out.display());
+                }
+            }
+            0
+        }
         "run" => {
             let agent_id = args.iter().skip(1).find(|a| !a.starts_with("--")).cloned();
             let Some(agent_id) = agent_id else {
@@ -671,9 +770,26 @@ fn run() -> i32 {
             )
             .with_control(agent_engine::control::RunControlConfig {
                 allow_parallel_subtasks: flags.allow_parallel,
+                // CB-1（D2）：折叠参数面（enabled 随 --transcript-fold；缺省
+                // 全关 = 既有 run 行为零变化）。折叠行落库面仅在显式开启时
+                // 挂接（不隐式开启步骤三类记忆，with_memory 语义隔离）。
+                fold: agent_engine::control::FoldConfig {
+                    enabled: flags.transcript_fold,
+                    fold_growth_tokens: flags.fold_growth_tokens,
+                    fold_min_interval_rounds: flags.fold_min_interval_rounds,
+                    fold_hot_window_rounds: flags.fold_hot_window_rounds,
+                },
                 caller_budgets,
                 ..agent_engine::control::RunControlConfig::default()
             });
+            // CB-1（D1/S5）：--transcript-fold 开启时挂折叠行落库面（013
+            // agent_task_memory）；落库失败降级 warning 不炸 run（引擎内
+            // 降级先例同款）。默认关路径零挂接 = 既有 CLI 行为零变化。
+            let loop_ = if flags.transcript_fold {
+                loop_.with_fold_memory(agent_engine::memory::TaskMemoryStore::new(pool.clone()))
+            } else {
+                loop_
+            };
             let confirmer = FirstFamilyConfirmer::new(
                 context_broker::IntentConfig::from_dir(&flags.rulepack_dir).unwrap_or_else(|e| {
                     eprintln!("intent config: {e}");

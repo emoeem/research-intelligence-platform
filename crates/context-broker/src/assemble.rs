@@ -267,7 +267,7 @@ impl Broker {
             est: l1_est,
             signals: vec!["l1:catalog-digest".to_string()],
             score: 0.0,
-            selection_seq: SELECT_SEQ.fetch_add(1, Ordering::Relaxed),
+            selection_seq: 0,
         });
 
         // ---- L2 分桶 + L3 引用（Artifact）----
@@ -347,6 +347,15 @@ impl Broker {
             item.summary = String::new();
             l3_refs.push(s.candidate.reference.ref_id.clone());
             installed.push(item);
+        }
+
+        // ---- reason 序确定性化（CB-1 D4）：零信号退化 reason 的序号源 =
+        // 本装配内 installed 选择序（1 起，装配内位次），替代进程级
+        // SELECT_SEQ 累计序——同输入两次装配序号相等（跨请求可复现）。
+        // 两形态口径文档（acceptance_explainable.rs:159-161）原文不动；
+        // 序号语义变更登记 §8 前置输出（explain 下游消费者对账输入）。
+        for (idx, item) in installed.iter_mut().enumerate() {
+            item.selection_seq = idx as u64 + 1;
         }
 
         // ---- citations[]（§9.2 第 2 条：权威引用集，与摘要分离）----
@@ -819,9 +828,6 @@ struct InstalledItem {
     selection_seq: u64,
 }
 
-/// 装配期条目序号（零信号退化 reason 的可追溯序号；不进 selection 指纹）。
-static SELECT_SEQ: AtomicU64 = AtomicU64::new(1);
-
 impl InstalledItem {
     fn summary(scored: &ScoredCandidate, est: u64) -> Self {
         Self::build(
@@ -836,6 +842,9 @@ impl InstalledItem {
         Self::build(scored, InclusionForm::RefOnly, String::new(), est)
     }
 
+    /// 构造（selection_seq 置 0 占位：CB-1 D4 起 zero-signal 退化 reason 的
+    /// 序号源 = 本装配内 installed 选择序，在 L3 段收尾后统一回填——构造期
+    /// 无法得知最终位次，占位值不外泄，reason() 调用点全部在回填之后）。
     fn build(scored: &ScoredCandidate, included: InclusionForm, summary: String, est: u64) -> Self {
         Self {
             item_id: scored.candidate.item_id.clone(),
@@ -846,13 +855,14 @@ impl InstalledItem {
             est,
             signals: scored.signals.clone(),
             score: scored.score,
-            selection_seq: SELECT_SEQ.fetch_add(1, Ordering::Relaxed),
+            selection_seq: 0,
         }
     }
 
     /// 可解释理由（设计稿 §4.3 matched_signals 原样；零信号退化形态
     /// source-order:<序号>+score:<分>;source:<源>，可追溯选择顺序、打分
-    /// 与来源）。
+    /// 与来源。CB-1 D4：序号 = 本装配内 installed 选择序（1 起，跨请求
+    /// 可复现），不再取进程级累计序）。
     fn reason(&self) -> String {
         if self.signals.is_empty() {
             format!(

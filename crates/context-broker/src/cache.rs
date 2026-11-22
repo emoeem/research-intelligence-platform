@@ -30,6 +30,8 @@
 use crate::error::ContextBrokerError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// 默认分层 TTL：L1 目录 10 分钟（设计稿 §7.1）。
@@ -43,6 +45,27 @@ pub const TTL_SCHEMA: Duration = Duration::from_secs(86400);
 
 /// 默认分层 TTL：RTIS 检索结果 10 分钟。
 pub const TTL_RTIS: Duration = Duration::from_secs(600);
+
+/// 缓存未命中归因（CB-1 D5：validation 三元组整体比对拆解为逐字段归因，
+/// 六词形与模块头注七类失效触发器映射表逐条对应——触发器 1 拆
+/// Version/ContentHash 两词形，触发器 2/3/4/5/7 同落 FingerprintMismatch，
+/// 触发器 6 = PolicyVersionMismatch，TTL 兜底 = TtlExpired）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum CacheMissReason {
+    /// 键对应条目文件不存在或坏条目视同缺失（首次取数，无负缓存）。
+    EntryMissing,
+    /// validation.version 不一致（触发器 1 载体之一：工具清单 version 变化）。
+    VersionMismatch,
+    /// validation.content_hash 不一致（触发器 1 载体之一：digest 变化）。
+    ContentHashMismatch,
+    /// validation.source_fingerprint 不一致（触发器 2/3/4/5/7 载体：治理/
+    /// 索引 schema/RTIS 库文件/插件状态/broker 分量变化）。
+    FingerprintMismatch,
+    /// 条目 policy_version 与当前值不一致（触发器 6：策略变化整体失效）。
+    PolicyVersionMismatch,
+    /// TTL 兜底过期（文件 mtime 距今超过 ttl）。
+    TtlExpired,
+}
 
 /// 读时校验三元组（设计稿 §7.1 条目 validation 字段）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,10 +106,105 @@ pub struct CacheStats {
     pub bytes: u64,
 }
 
-/// 内容寻址缓存（目录句柄；无进程内状态，读时校验）。
+/// 进程内归因快照（CB-1 D5①：六归因桶累计计数；命中不计入）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct CacheAttributionStats {
+    /// EntryMissing 累计。
+    pub entry_missing: u64,
+    /// VersionMismatch 累计。
+    pub version_mismatch: u64,
+    /// ContentHashMismatch 累计。
+    pub content_hash_mismatch: u64,
+    /// FingerprintMismatch 累计。
+    pub fingerprint_mismatch: u64,
+    /// PolicyVersionMismatch 累计。
+    pub policy_version_mismatch: u64,
+    /// TtlExpired 累计。
+    pub ttl_expired: u64,
+}
+
+/// 六归因桶（CB-1 D5①；std AtomicU64 零依赖，红线 3）。BrokerCache Clone
+/// 共享同一 Arc 实例——跨源计数汇总面。
+#[derive(Debug)]
+struct AttributionBuckets {
+    entry_missing: AtomicU64,
+    version_mismatch: AtomicU64,
+    content_hash_mismatch: AtomicU64,
+    fingerprint_mismatch: AtomicU64,
+    policy_version_mismatch: AtomicU64,
+    ttl_expired: AtomicU64,
+}
+
+impl AttributionBuckets {
+    const fn new() -> Self {
+        Self {
+            entry_missing: AtomicU64::new(0),
+            version_mismatch: AtomicU64::new(0),
+            content_hash_mismatch: AtomicU64::new(0),
+            fingerprint_mismatch: AtomicU64::new(0),
+            policy_version_mismatch: AtomicU64::new(0),
+            ttl_expired: AtomicU64::new(0),
+        }
+    }
+
+    fn bump(&self, reason: CacheMissReason) {
+        let bucket = match reason {
+            CacheMissReason::EntryMissing => &self.entry_missing,
+            CacheMissReason::VersionMismatch => &self.version_mismatch,
+            CacheMissReason::ContentHashMismatch => &self.content_hash_mismatch,
+            CacheMissReason::FingerprintMismatch => &self.fingerprint_mismatch,
+            CacheMissReason::PolicyVersionMismatch => &self.policy_version_mismatch,
+            CacheMissReason::TtlExpired => &self.ttl_expired,
+        };
+        bucket.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> CacheAttributionStats {
+        let load = |b: &AtomicU64| b.load(Ordering::Relaxed);
+        CacheAttributionStats {
+            entry_missing: load(&self.entry_missing),
+            version_mismatch: load(&self.version_mismatch),
+            content_hash_mismatch: load(&self.content_hash_mismatch),
+            fingerprint_mismatch: load(&self.fingerprint_mismatch),
+            policy_version_mismatch: load(&self.policy_version_mismatch),
+            ttl_expired: load(&self.ttl_expired),
+        }
+    }
+}
+
+/// 目录级静态归因报告（CB-1 D5② cache-attrib 子命令数据面：磁盘条目静态
+/// 扫描，与进程内 [`CacheAttributionStats`] 互补——跨进程重启可复算）。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CacheAttributionReport {
+    /// 缓存目录。
+    pub dir: PathBuf,
+    /// 条目数（目录内全部 .json 文件，含坏条目）。
+    pub entries: usize,
+    /// 按 TTL 类过期计数（四分层 TTL 常量逐类比对 mtime；类间嵌套口径——
+    /// 同一过期条目计入所有更短 TTL 类）。
+    pub expired: TtlClassExpired,
+    /// policy_version 与给定当前值不一致的条目数（坏条目不计）。
+    pub policy_mismatch: usize,
+}
+
+/// 按 TTL 类过期计数（CB-1 D5②）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct TtlClassExpired {
+    /// TTL_CATALOG 口径过期条目数。
+    pub catalog: usize,
+    /// TTL_KNOWLEDGE 口径过期条目数。
+    pub knowledge: usize,
+    /// TTL_SCHEMA 口径过期条目数。
+    pub schema: usize,
+    /// TTL_RTIS 口径过期条目数。
+    pub rtis: usize,
+}
+
+/// 内容寻址缓存（目录句柄 + 归因桶句柄；读时校验）。
 #[derive(Debug, Clone)]
 pub struct BrokerCache {
     dir: PathBuf,
+    attribution: Arc<AttributionBuckets>,
 }
 
 impl BrokerCache {
@@ -96,7 +214,10 @@ impl BrokerCache {
             source: "broker-cache".to_string(),
             reason: format!("create dir {}: {e}", dir.display()),
         })?;
-        Ok(Self { dir })
+        Ok(Self {
+            dir,
+            attribution: Arc::new(AttributionBuckets::new()),
+        })
     }
 
     /// 默认目录：`$RIP_DATA_DIR/runtime/broker-cache`，env 缺省回落系统
@@ -172,19 +293,22 @@ impl BrokerCache {
         Ok(key)
     }
 
-    /// 读（读时校验：validation 三元组逐字段比对 + policy_version 比对 +
-    /// TTL 兜底；任一不符即未命中返回 None，由调用方重建）。
-    pub fn get(
+    /// 读时校验本体（get / get_with_attribution 共用；逐字段归因拆解，
+    /// 读取行为与既有 get 逐字节一致）。返回 (载荷, 未命中归因)；命中时
+    /// reason 为 None。坏条目（解析失败）视同缺失（EntryMissing）。
+    fn read_entry(
         &self,
         key: &str,
         expected: &CacheValidation,
         policy_version: &str,
         ttl: Duration,
-    ) -> Result<Option<String>, ContextBrokerError> {
+    ) -> Result<(Option<String>, Option<CacheMissReason>), ContextBrokerError> {
         let path = self.path_for(key);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok((None, Some(CacheMissReason::EntryMissing)))
+            }
             Err(e) => {
                 return Err(ContextBrokerError::Source {
                     source: "broker-cache".to_string(),
@@ -194,16 +318,133 @@ impl BrokerCache {
         };
         let entry: CacheEntry = match serde_json::from_str(&text) {
             Ok(entry) => entry,
-            Err(_) => return Ok(None), // 坏条目视同未命中（重建），不缓存失败态
+            // 坏条目视同未命中（重建），不缓存失败态。
+            Err(_) => return Ok((None, Some(CacheMissReason::EntryMissing))),
         };
-        if entry.validation != *expected || entry.policy_version != policy_version {
-            return Ok(None);
+        // CB-1 D5：整体比对拆解为逐字段归因（version → content_hash →
+        // source_fingerprint → policy_version → TTL，先命中先归因）。
+        if entry.validation.version != expected.version {
+            return Ok((None, Some(CacheMissReason::VersionMismatch)));
+        }
+        if entry.validation.content_hash != expected.content_hash {
+            return Ok((None, Some(CacheMissReason::ContentHashMismatch)));
+        }
+        if entry.validation.source_fingerprint != expected.source_fingerprint {
+            return Ok((None, Some(CacheMissReason::FingerprintMismatch)));
+        }
+        if entry.policy_version != policy_version {
+            return Ok((None, Some(CacheMissReason::PolicyVersionMismatch)));
         }
         // TTL 兜底：文件 mtime = 原子改名写入时刻（跨进程可靠）。
         if expired_at(&path, ttl) {
-            return Ok(None);
+            return Ok((None, Some(CacheMissReason::TtlExpired)));
         }
-        Ok(Some(entry.payload))
+        Ok((Some(entry.payload), None))
+    }
+
+    /// 读（读时校验：validation 三元组逐字段比对 + policy_version 比对 +
+    /// TTL 兜底；任一不符即未命中返回 None，由调用方重建）。CB-1 D5：改
+    /// 为 [`Self::read_entry`] 薄包装（签名与行为零 diff，丢弃归因且不
+    /// 计入归因桶——既有调用方零副作用）。
+    pub fn get(
+        &self,
+        key: &str,
+        expected: &CacheValidation,
+        policy_version: &str,
+        ttl: Duration,
+    ) -> Result<Option<String>, ContextBrokerError> {
+        Ok(self.read_entry(key, expected, policy_version, ttl)?.0)
+    }
+
+    /// 读 + 未命中归因（CB-1 D5 additive API）：与 [`Self::get`] 同一读时
+    /// 校验逻辑；未命中返回六词形 [`CacheMissReason`]（命中 reason 为
+    /// None），且每次未命中计入进程内六归因桶（[`Self::attribution_stats`]
+    /// 快照读取；[`Self::get`] 不计数——归因只在显式归因入口累计）。
+    pub fn get_with_attribution(
+        &self,
+        key: &str,
+        expected: &CacheValidation,
+        policy_version: &str,
+        ttl: Duration,
+    ) -> Result<(Option<String>, Option<CacheMissReason>), ContextBrokerError> {
+        let (payload, reason) = self.read_entry(key, expected, policy_version, ttl)?;
+        if let Some(reason) = reason {
+            self.attribution.bump(reason);
+        }
+        Ok((payload, reason))
+    }
+
+    /// 归因快照（CB-1 D5①：进程内六桶累计；Clone 共享同一实例）。
+    pub fn attribution_stats(&self) -> CacheAttributionStats {
+        self.attribution.snapshot()
+    }
+
+    /// 目录级静态归因报告（CB-1 D5② cache-attrib 数据面）：扫描目录内全部
+    /// .json 条目，逐条目按四分层 TTL 常量比对 mtime 计过期（类间嵌套）+
+    /// 比对 policy_version 计不匹配；坏条目计入 entries 但不参与归因。
+    pub fn attribution_report(
+        &self,
+        policy_version: &str,
+    ) -> Result<CacheAttributionReport, ContextBrokerError> {
+        let reader = std::fs::read_dir(&self.dir).map_err(|e| ContextBrokerError::Source {
+            source: "broker-cache".to_string(),
+            reason: format!("read dir {}: {e}", self.dir.display()),
+        })?;
+        let mut entries = 0usize;
+        let mut expired = TtlClassExpired {
+            catalog: 0,
+            knowledge: 0,
+            schema: 0,
+            rtis: 0,
+        };
+        let mut policy_mismatch = 0usize;
+        for entry in reader {
+            let path = match entry {
+                Ok(entry) => entry.path(),
+                Err(_) => continue,
+            };
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            entries += 1;
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(entry) = serde_json::from_str::<CacheEntry>(&text) else {
+                continue; // 坏条目不可归因（计入 entries）
+            };
+            if entry.policy_version != policy_version {
+                policy_mismatch += 1;
+            }
+            let age = match std::fs::metadata(&path).and_then(|m| m.modified()) {
+                Ok(modified) => match modified.duration_since(UNIX_EPOCH) {
+                    Ok(base) => SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .saturating_sub(base),
+                    Err(_) => Duration::MAX,
+                },
+                Err(_) => Duration::MAX, // 元数据不可得视同过期
+            };
+            if age > TTL_CATALOG {
+                expired.catalog += 1;
+            }
+            if age > TTL_KNOWLEDGE {
+                expired.knowledge += 1;
+            }
+            if age > TTL_SCHEMA {
+                expired.schema += 1;
+            }
+            if age > TTL_RTIS {
+                expired.rtis += 1;
+            }
+        }
+        Ok(CacheAttributionReport {
+            dir: self.dir.clone(),
+            entries,
+            expired,
+            policy_mismatch,
+        })
     }
 
     /// 统计（cache-stats 数据面）。

@@ -42,8 +42,8 @@ pub use assemble::{
     REF_ONLY_COST,
 };
 pub use cache::{
-    BrokerCache, CacheEntry, CacheStats, CacheValidation, TTL_CATALOG, TTL_KNOWLEDGE, TTL_RTIS,
-    TTL_SCHEMA,
+    BrokerCache, CacheAttributionReport, CacheAttributionStats, CacheEntry, CacheMissReason,
+    CacheStats, CacheValidation, TtlClassExpired, TTL_CATALOG, TTL_KNOWLEDGE, TTL_RTIS, TTL_SCHEMA,
 };
 pub use domain::context::{
     ContentRef, ContextItemKind, ContextLayer, InclusionForm, IntentQuery, IntentStatus, RefEvent,

@@ -29,12 +29,13 @@ use crate::store::AgentStore;
 use crate::tool_link::{ToolCallSpec, ToolLink};
 use audit_engine::AuditEngine;
 use context_broker::{
-    AssembleRequest, AssembledContext, ContextItemKind, ContextLayer, InclusionForm,
+    est_tokens, AssembleRequest, AssembledContext, ContextItemKind, ContextLayer, InclusionForm,
 };
 use domain::{
     AgentId, AgentRun, AgentRunState, CapabilityRef, EvidenceMemoryEntry, MemoryLifecycle,
     MemoryObjectRef, ResearchMemoryEntry, RunId, TaskMemoryEntry,
 };
+use tool_registry::hash::sha256_hex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -233,6 +234,10 @@ pub struct RunReport {
     pub research_memory_id: Option<String>,
     /// 轨迹续接步数（resume 时 > 0；fresh run 为 0；P7-4 additive 字段）。
     pub resumed_steps: usize,
+    /// 上下文折叠事件留痕（CB-1 B1/B3 additive：折叠轮区间/折入步数/est
+    /// 前后值/digest/确定性摘要/落库 memory_id；折叠默认关为空数组——
+    /// 折叠只改规划器可见投影面，[`RunReport::steps`] 全量不缩水，红线 5）。
+    pub fold_events: Vec<FoldEvent>,
 }
 
 /// 内部驱动参数（run / resume 共用执行尾；区别只在历史续接与起始轮次）。
@@ -252,6 +257,9 @@ struct DriveParams<'a> {
     confirmer: &'a mut dyn crate::broker_link::IntentConfirmer,
     /// 轨迹续接步（fresh run 为空；resume 时按 seq 升序）。
     history: Vec<StepRecord>,
+    /// 轨迹续接步轮次表（与 history 等长；CB-1 D3 轮界跨度表内建——fresh
+    /// 为空，resume 由 StoredStep.round 重建，state.rs SELECT 已含 round 列）。
+    history_rounds: Vec<usize>,
     /// 起始轮次（fresh run 0；resume 为轨迹最大轮次 + 1）。
     start_round: usize,
     /// 是否为恢复段（报告留痕 + 警告标注）。
@@ -350,6 +358,170 @@ struct ParallelStepOut {
     warnings: Vec<String>,
 }
 
+// ==== CB-1 上下文折叠面（B1/B3；docs/rip3/CB-1-TASK.md D1-D3/D6）====
+//
+// 折叠语义只对「发给规划器的」生效（D3：PlanContext 投影），steps 权威
+// 面全量逐字节（红线 5）；折叠产物落 agent_task_memory（013 记忆面既有
+// 表，D1 零迁移）；计量全走 context_broker::est_tokens 单点（D6）；折叠
+// 函数纯确定性——同转录前缀 → 同折叠视图/digest（D1，resume 由重算兜底）。
+
+/// 折叠合成行 tool_id（CB-1 D3 词形；`transcript-fold` 词形自别——
+/// compress/压缩 词形被 013 memory 面占用（A13），折叠面不复用）。
+pub const FOLD_TOOL_ID: &str = "transcript:fold";
+
+/// 折叠合成行 tool_version（CB-1 D3 折叠版本常量；折叠纯函数语义变更时
+/// 递增，重算对账随版本对齐）。
+pub const TRANSCRIPT_FOLD_VERSION: &str = "1";
+
+/// 折叠确定性摘要词形前缀（CB-1 D1：无时间戳无进程内计数，同转录前缀 →
+/// 同摘要；run-folds 回查与 resume 漂移检测按此前缀识别折叠行）。
+pub const FOLD_SUMMARY_PREFIX: &str = "transcript-fold:";
+
+/// 折叠事件留痕（CB-1 B1/B3 additive；RunReport.fold_events 元素，折叠行
+/// content_json 出处载荷与摘要词形同源数据面——Phase 6 检索面折叠摘要
+/// 引用输入，§8 前置输出①）。
+#[derive(Debug, Clone, Serialize)]
+pub struct FoldEvent {
+    /// 折叠覆盖轮区间（含端点 [start, end]）。
+    pub rounds: [usize; 2],
+    /// 折入步数（被折叠的原始 StepRecord 条数）。
+    pub steps_folded: usize,
+    /// 折叠前段 est_tokens（context_broker::est_tokens 单点计量，D6）。
+    pub est_before: u64,
+    /// 折叠后合成行 est_tokens（摘要 sizing 同源计量）。
+    pub est_after: u64,
+    /// 折前段 canonical JSON 的 sha256（确定性 digest；fresh 折叠与 resume
+    /// 重算对账锚点，判据 2）。
+    pub digest: String,
+    /// 确定性摘要词形（`transcript-fold:` 前缀自别）。
+    pub summary: String,
+    /// 落 agent_task_memory 的折叠行 memory_id（未挂折叠落库面或落库失败
+    /// 为 None；回查走 rp-agent run-folds）。
+    pub memory_id: Option<String>,
+}
+
+/// 已应用折叠（drive 内部载具：FoldEvent 报告/落库载荷 + 投影合成行）。
+struct AppliedFold {
+    event: FoldEvent,
+    synthetic: StepRecord,
+}
+
+/// 折叠覆盖段产出（纯函数输出）。
+struct FoldSegment {
+    /// 覆盖轮区间（含端点）。
+    rounds: (usize, usize),
+    steps_folded: usize,
+    est_before: u64,
+    est_after: u64,
+    digest: String,
+    summary: String,
+    synthetic: StepRecord,
+}
+
+/// 折叠纯函数（CB-1 D1/D3/D6）：对 [a, b] 轮区间内的步骤段构造确定性折叠
+/// 产出——同转录前缀 → 同摘要/digest/est 前后值（无时间戳无进程内计数）。
+/// 折前段 canonical JSON = serde_json 规范序列化（Value 默认 BTreeMap 键
+/// 序纪律同 canonical_call_key），sha256 走 tool-registry::hash 既有依赖
+/// （D7 零新依赖）。区间内无步骤返回 None。
+fn fold_segment(
+    steps: &[StepRecord],
+    rounds: &[usize],
+    a: usize,
+    b: usize,
+) -> Option<FoldSegment> {
+    debug_assert_eq!(steps.len(), rounds.len(), "fold span table parity");
+    let mut segment: Vec<StepRecord> = Vec::new();
+    for (i, record) in steps.iter().enumerate() {
+        if rounds[i] >= a && rounds[i] <= b {
+            segment.push(record.clone());
+        }
+    }
+    if segment.is_empty() {
+        return None;
+    }
+    // est_before：折前段序列化 est（est_tokens 单点；tokenizer 在位/缺席
+    // 只影响数值不改变触发判定结构，D6）。
+    let canonical = serde_json::to_string(&segment).unwrap_or_else(|_| "[]".to_string());
+    let digest = sha256_hex(canonical.as_bytes());
+    let est_before = est_tokens(&canonical);
+    // 确定性摘要词形（D1）：tools = 折入步去重排序 tool_id 集；
+    // artifacts = 折入步登记 artifact 计数。
+    let mut tools: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for record in &segment {
+        tools.insert(record.tool_id.as_str());
+    }
+    let artifacts = segment
+        .iter()
+        .filter(|s| s.artifact_id.as_deref().is_some_and(|a| !a.is_empty()))
+        .count();
+    let summary = format!(
+        "{FOLD_SUMMARY_PREFIX}rounds={a}-{b};steps={};tools={{{}}};artifacts={{{}}}",
+        segment.len(),
+        tools.into_iter().collect::<Vec<&str>>().join(","),
+        artifacts
+    );
+    let est_after = est_tokens(&summary);
+    let synthetic = StepRecord {
+        tool_id: FOLD_TOOL_ID.to_string(),
+        tool_version: TRANSCRIPT_FOLD_VERSION.to_string(),
+        tool_run_id: String::new(),
+        // ToolRunStatus 词形内（D3：合成行词形全部落在既有词表内）。
+        status: "SUCCEEDED".to_string(),
+        artifact_id: None,
+        evidence_id: None,
+        content_hash: None,
+        summary: Some(summary.clone()),
+        error: None,
+        elapsed_ms: 0,
+    };
+    Some(FoldSegment {
+        rounds: (a, b),
+        steps_folded: segment.len(),
+        est_before,
+        est_after,
+        digest,
+        summary,
+        synthetic,
+    })
+}
+
+/// 折叠投影（纯函数，CB-1 D3）：已折叠段以每段一条合成行原位替代，未折叠
+/// 段原样透传；无折叠事件返回 None（调用方直用全量切片——默认关路径零
+/// 分配零行为差）。`rounds` 与 `steps` 等长（轮界跨度表内建，D3）。
+fn fold_projection(
+    steps: &[StepRecord],
+    rounds: &[usize],
+    folds: &[AppliedFold],
+) -> Option<Vec<StepRecord>> {
+    debug_assert_eq!(steps.len(), rounds.len(), "fold span table parity");
+    if folds.is_empty() {
+        return None;
+    }
+    let mut out: Vec<StepRecord> = Vec::with_capacity(steps.len());
+    let mut ei = 0usize;
+    let mut i = 0usize;
+    while i < steps.len() {
+        if ei < folds.len() && rounds[i] == folds[ei].event.rounds[0] {
+            out.push(folds[ei].synthetic.clone());
+            let b = folds[ei].event.rounds[1];
+            while i < steps.len() && rounds[i] <= b && rounds[i] >= folds[ei].event.rounds[0] {
+                i += 1;
+            }
+            ei += 1;
+            continue;
+        }
+        out.push(steps[i].clone());
+        i += 1;
+    }
+    // 残余事件（覆盖轮区间在轨迹中无对应步骤的异常形态）按序补尾合成行，
+    // 保证投影与 fold_events 事件数一致（不丢事件）。
+    while ei < folds.len() {
+        out.push(folds[ei].synthetic.clone());
+        ei += 1;
+    }
+    Some(out)
+}
+
 /// Agent 执行闭环。
 pub struct AgentLoop {
     store: AgentStore,
@@ -361,6 +533,10 @@ pub struct AgentLoop {
     config: LoopConfig,
     control: RunControlConfig,
     memory: Option<MemoryStore>,
+    /// 折叠行落库面（CB-1 D1：TaskMemoryStore 直连 013 agent_task_memory；
+    /// None = 折叠只投影不落库。与 [`Self::with_memory`] 三类记忆接线相互
+    /// 独立——折叠开启不隐式开启步骤记忆）。
+    fold_memory: Option<crate::memory::TaskMemoryStore>,
 }
 
 impl AgentLoop {
@@ -384,12 +560,21 @@ impl AgentLoop {
             config,
             control: RunControlConfig::default(),
             memory: None,
+            fold_memory: None,
         }
     }
 
     /// 覆盖运行控制参数（P7-4 九类护栏；缺省即低并发纪律最严面）。
     pub fn with_control(mut self, control: RunControlConfig) -> Self {
         self.control = control;
+        self
+    }
+
+    /// 挂折叠行落库面（CB-1 D1：折叠产物经 TaskMemoryStore::append 落
+    /// agent_task_memory 013 既有表；None = 折叠只投影不落库，回查面
+    /// run-folds 将如实输出空数组）。
+    pub fn with_fold_memory(mut self, fold_memory: crate::memory::TaskMemoryStore) -> Self {
+        self.fold_memory = Some(fold_memory);
         self
     }
 
@@ -491,6 +676,7 @@ impl AgentLoop {
             planner: &*req.planner,
             confirmer: req.confirmer.as_mut(),
             history: Vec::new(),
+            history_rounds: Vec::new(),
             start_round: 0,
             resumed: false,
             executed_keys: Vec::new(),
@@ -553,6 +739,8 @@ impl AgentLoop {
 
         // 轨迹续接：历史步骤 + 重复调用键 + 停滞已见哈希；轮次续接。
         let history: Vec<StepRecord> = persisted.iter().map(|s| s.record.clone()).collect();
+        // CB-1（D3）：轮界跨度表由 StoredStep.round 重建（与 history 等长）。
+        let history_rounds: Vec<usize> = persisted.iter().map(|s| s.round).collect();
         let executed_keys: Vec<String> = persisted
             .iter()
             .map(|s| control::canonical_call_key(&s.record.tool_id, &s.input_json))
@@ -579,6 +767,7 @@ impl AgentLoop {
             planner: &*req.planner,
             confirmer: req.confirmer.as_mut(),
             history,
+            history_rounds,
             start_round,
             resumed: true,
             executed_keys,
@@ -670,6 +859,93 @@ impl AgentLoop {
         let mut no_progress_streak = 0usize;
         let mut round = p.start_round;
 
+        // CB-1（D2/D3）折叠状态：轮界跨度表内建（fresh 空表起步，随步执行
+        // 记录；resume 由 StoredStep.round 重建）+ 事件列 + 触发基线。折叠
+        // 默认关路径：跨度表记录为旁路零行为影响，事件列恒空，投影恒 = 全量
+        // 切片（红线 4/5）。
+        let fold_enabled = cfg.fold.enabled;
+        let mut step_rounds: Vec<usize> = p.history_rounds.clone();
+        let mut applied_folds: Vec<AppliedFold> = Vec::new();
+        let mut fold_est_baseline: u64 =
+            est_tokens(&serde_json::to_string(&steps).unwrap_or_else(|_| String::new()));
+        // 上次折叠覆盖末轮（无折叠 = 0；触发防抖轮距与热窗下界共同依据）。
+        let mut fold_boundary: usize = 0;
+        // 下一段未折叠轮起点（折叠只从最旧未折段向前推进，不重折）。
+        let mut fold_next_start: usize = 0;
+
+        // CB-1（D1/D3）resume 折叠重算 + 漂移检测：持久化折叠行（
+        // agent_task_memory，`transcript-fold:` 词形识别）覆盖轮区间重算
+        // digest 对账——一致则原样续接，不一致 warning 留痕且重算视图胜出
+        // （D1「resume 由重算兜底、持久化行作回查与漂移检测面」；判据 2
+        // 漂移检测负例可触发面）。折叠关闭时不重算不检测（全量直投）。
+        if p.resumed && fold_enabled {
+            if let Some(fold_mem) = &self.fold_memory {
+                match fold_mem.list_by_run(p.run_id_str) {
+                    Ok(rows) => {
+                        for row in rows
+                            .iter()
+                            .filter(|r| r.entry.summary().starts_with(FOLD_SUMMARY_PREFIX))
+                        {
+                            let payload: Value = serde_json::from_str(row.entry.content_json())
+                                .unwrap_or(Value::Null);
+                            let a = payload
+                                .get("rounds")
+                                .and_then(|r| r.get(0))
+                                .and_then(Value::as_u64)
+                                .map(|v| usize::try_from(v).unwrap_or(0));
+                            let b = payload
+                                .get("rounds")
+                                .and_then(|r| r.get(1))
+                                .and_then(Value::as_u64)
+                                .map(|v| usize::try_from(v).unwrap_or(0));
+                            let persisted_digest =
+                                payload.get("digest").and_then(Value::as_str).unwrap_or("");
+                            match (a, b) {
+                                (Some(a), Some(b)) => match fold_segment(&steps, &step_rounds, a, b)
+                                {
+                                    Some(seg) => {
+                                        if seg.digest != persisted_digest {
+                                            warnings.push(format!(
+                                                "transcript fold drift detected on resume: rounds {a}-{b} recomputed digest {} != persisted {persisted_digest} (recomputed view wins; persisted row kept for audit)",
+                                                seg.digest
+                                            ));
+                                        }
+                                        fold_boundary = fold_boundary.max(b);
+                                        fold_next_start = fold_next_start.max(b.saturating_add(1));
+                                        applied_folds.push(AppliedFold {
+                                            event: FoldEvent {
+                                                rounds: [a, b],
+                                                steps_folded: seg.steps_folded,
+                                                est_before: seg.est_before,
+                                                est_after: seg.est_after,
+                                                digest: seg.digest,
+                                                summary: seg.summary,
+                                                memory_id: Some(
+                                                    row.entry.memory_id().to_string(),
+                                                ),
+                                            },
+                                            synthetic: seg.synthetic,
+                                        });
+                                    }
+                                    None => warnings.push(format!(
+                                        "transcript fold replay skipped: rounds {a}-{b} has no steps in persisted trajectory (row {})",
+                                        row.entry.memory_id()
+                                    )),
+                                },
+                                _ => warnings.push(format!(
+                                    "transcript fold replay skipped: row {} has unparsable rounds payload",
+                                    row.entry.memory_id()
+                                )),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warnings.push(format!("transcript fold replay read failed: {e}"));
+                    }
+                }
+            }
+        }
+
         'rounds: loop {
             // 控制消费：取消先于暂停（取消是终止意愿，优先级最高）。消费点
             // 立即完成 CAS 跃迁（RUNNING→CANCELLED / RUNNING→PAUSED，域校验
@@ -707,6 +983,57 @@ impl AgentLoop {
                     json!({"before_step": steps.len(), "round": round}),
                 );
                 break 'rounds;
+            }
+            // CB-1（D2）轮界两级触发：增长阈值软收缩 + 轮次间隔防抖（控制
+            // 消费之后、护栏判定之前）。触发即对热窗外最旧未折段软折叠——
+            // 只改规划器可见投影（红线 5：steps 权威面零改动，预算记账数
+            // 真实步数，折叠不放宽任何护栏）。默认关路径本块零执行。
+            if fold_enabled && round > 0 {
+                let est_now =
+                    est_tokens(&serde_json::to_string(&steps).unwrap_or_else(|_| String::new()));
+                let growth = est_now.saturating_sub(fold_est_baseline);
+                let interval_ok =
+                    round.saturating_sub(fold_boundary) >= cfg.fold.fold_min_interval_rounds;
+                if growth >= cfg.fold.fold_growth_tokens && interval_ok {
+                    // 热窗：最近 N 轮永不折叠（可折轮 < round - N）。
+                    let hot_floor = round.saturating_sub(cfg.fold.fold_hot_window_rounds);
+                    if fold_next_start < hot_floor {
+                        if let Some(seg) =
+                            fold_segment(&steps, &step_rounds, fold_next_start, hot_floor - 1)
+                        {
+                            let memory_id = self.persist_fold_row(&p, &seg, &mut warnings);
+                            fold_boundary = seg.rounds.1;
+                            fold_next_start = seg.rounds.1.saturating_add(1);
+                            fold_est_baseline = est_now;
+                            self.audit_emit(
+                                control::actions::TRANSCRIPT_FOLD,
+                                p.run_id_str,
+                                p.trace_id.as_deref(),
+                                p.actor,
+                                json!({
+                                    "rounds": [seg.rounds.0, seg.rounds.1],
+                                    "steps_folded": seg.steps_folded,
+                                    "est_before": seg.est_before,
+                                    "est_after": seg.est_after,
+                                    "digest": seg.digest,
+                                    "memory_id": memory_id,
+                                }),
+                            );
+                            applied_folds.push(AppliedFold {
+                                event: FoldEvent {
+                                    rounds: [seg.rounds.0, seg.rounds.1],
+                                    steps_folded: seg.steps_folded,
+                                    est_before: seg.est_before,
+                                    est_after: seg.est_after,
+                                    digest: seg.digest,
+                                    summary: seg.summary,
+                                    memory_id,
+                                },
+                                synthetic: seg.synthetic,
+                            });
+                        }
+                    }
+                }
             }
             // 预算：轮次上限。
             if cfg.max_rounds > 0 && round >= cfg.max_rounds {
@@ -777,12 +1104,24 @@ impl AgentLoop {
                 );
                 break 'rounds;
             }
+            // CB-1（D3）规划器可见投影：已有折叠事件时传折叠视图（已折段
+            // 每段一条合成行原位替代），否则全量切片（默认关路径逐字节现状
+            // ——无折叠事件返回 None 直用 &steps）。
+            let fold_view: Vec<StepRecord>;
+            let history_ref: &[StepRecord] = match fold_projection(&steps, &step_rounds, &applied_folds)
+            {
+                Some(view) => {
+                    fold_view = view;
+                    &fold_view
+                }
+                None => &steps,
+            };
             let ctx = PlanContext {
                 goal: &p.goal,
                 run_id: p.run_id_str,
                 context: &context,
                 capability_refs: p.capability_refs,
-                history: &steps,
+                history: history_ref,
                 round,
                 explicit_input: p.explicit_input.as_ref(),
                 max_tool_calls: self.config.max_tool_calls,
@@ -838,6 +1177,7 @@ impl AgentLoop {
                             &context,
                             started_at,
                             &mut steps,
+                            &mut step_rounds,
                             &mut executed_keys,
                             &mut seen_hashes,
                             &mut warnings,
@@ -1007,6 +1347,8 @@ impl AgentLoop {
                             no_progress_streak += 1;
                         }
                         steps.push(record.clone());
+                        // CB-1（D3）轮界跨度表记录（旁路；折叠默认关零行为影响）。
+                        step_rounds.push(round);
                         self.audit_emit(
                             "agent.step.completed",
                             p.run_id_str,
@@ -1158,7 +1500,51 @@ impl AgentLoop {
             finish_reason,
             research_memory_id,
             resumed_steps: if p.resumed { p.history.len() } else { 0 },
+            fold_events: applied_folds.iter().map(|f| f.event.clone()).collect(),
         })
+    }
+
+    /// 折叠行落 agent_task_memory（CB-1 D1：013 记忆面既有表零迁移；memory_id
+    /// 沿 `mem-t-` 生成器，round = 折叠覆盖末轮，content_json = 折叠出处载荷，
+    /// summary = 确定性摘要词形）。未挂折叠落库面或写失败返回 None + 降级
+    /// warning 不炸 run（record_step_memory 降级先例同款）。
+    fn persist_fold_row(
+        &self,
+        p: &DriveParams<'_>,
+        seg: &FoldSegment,
+        warnings: &mut Vec<String>,
+    ) -> Option<String> {
+        let fold_mem = self.fold_memory.as_ref()?;
+        let content = json!({
+            "kind": "transcript-fold",
+            "rounds": [seg.rounds.0, seg.rounds.1],
+            "steps_folded": seg.steps_folded,
+            "est_before": seg.est_before,
+            "est_after": seg.est_after,
+            "digest": seg.digest,
+        });
+        let entry = TaskMemoryEntry::try_new(
+            crate::new_id("mem-t"),
+            p.run_id.clone(),
+            p.task_id.clone(),
+            u32::try_from(seg.rounds.1).unwrap_or(0),
+            content.to_string(),
+            seg.summary.clone(),
+            MemoryLifecycle::Active,
+        );
+        match entry {
+            Ok(entry) => match fold_mem.append(&entry) {
+                Ok(()) => Some(entry.memory_id().to_string()),
+                Err(e) => {
+                    warnings.push(format!("transcript fold memory append failed: {e}"));
+                    None
+                }
+            },
+            Err(e) => {
+                warnings.push(format!("transcript fold memory build failed: {e}"));
+                None
+            }
+        }
     }
 
     /// MA-2（D5.2）速率窗口计数：tool_run.caller_id 行 COUNT（027 数据源），
@@ -1210,6 +1596,7 @@ impl AgentLoop {
         context: &AssembledContext,
         started_at: Instant,
         steps: &mut Vec<StepRecord>,
+        step_rounds: &mut Vec<usize>,
         executed_keys: &mut Vec<String>,
         seen_hashes: &mut Vec<String>,
         warnings: &mut Vec<String>,
@@ -1540,6 +1927,8 @@ impl AgentLoop {
                 *no_progress_streak += 1;
             }
             steps.push(out.record.clone());
+            // CB-1（D3）轮界跨度表记录（旁路；折叠默认关零行为影响）。
+            step_rounds.push(round);
             self.audit_emit(
                 "agent.step.completed",
                 p.run_id_str,
@@ -2095,5 +2484,122 @@ mod tests {
         assert_eq!(derive_keyword(""), "");
         let long = "x".repeat(150);
         assert_eq!(derive_keyword(&long).chars().count(), 100);
+    }
+
+    /// CB-1 折叠单测步骤构造（轮次由调用方 rounds 表独立给定）。
+    fn fold_step(seq: usize, summary: &str) -> StepRecord {
+        StepRecord {
+            tool_id: format!("rip.kb.tool{}", seq % 2),
+            tool_version: "0.1.0".to_string(),
+            tool_run_id: format!("rn-{seq}"),
+            status: "SUCCEEDED".to_string(),
+            artifact_id: Some(format!("art-{seq}")),
+            evidence_id: Some(format!("ev-{seq}")),
+            content_hash: Some(format!("hash-{seq}")),
+            summary: Some(summary.to_string()),
+            error: None,
+            elapsed_ms: 1,
+        }
+    }
+
+    /// CB-1（红线 4）折叠最严缺省：FoldConfig 默认全关；RunControlConfig
+    /// 既有七字段值零改动（control.rs:114-125 断言面）。
+    #[test]
+    fn cb1_fold_config_defaults_strictest() {
+        let fold = control::FoldConfig::default();
+        assert!(!fold.enabled, "折叠默认关（判据 5）");
+        assert_eq!(fold.fold_growth_tokens, 12_000);
+        assert_eq!(fold.fold_min_interval_rounds, 4);
+        assert_eq!(fold.fold_hot_window_rounds, 2);
+        let cfg = RunControlConfig::default();
+        assert_eq!(cfg.max_rounds, 8);
+        assert_eq!(cfg.stall_window, 2);
+        assert_eq!(cfg.drift_tolerance, 1);
+        assert_eq!(cfg.min_evidence_hint, 1);
+        assert_eq!(cfg.max_elapsed_ms, 0);
+        assert!(!cfg.allow_parallel_subtasks);
+        assert!(cfg.caller_budgets.is_empty());
+        assert!(!cfg.fold.enabled);
+    }
+
+    /// CB-1（D1/D3）折叠纯函数确定性 + 合成行词形：同转录前缀 → 同
+    /// digest/摘要/est；合成行词形落既有词表内。
+    #[test]
+    fn cb1_fold_segment_deterministic_and_wordforms() {
+        let steps: Vec<StepRecord> = (0..3)
+            .map(|i| fold_step(i, &format!("step {i} summary text")))
+            .collect();
+        let rounds: Vec<usize> = vec![0, 0, 1];
+
+        let a = fold_segment(&steps, &rounds, 0, 0).expect("round 0 segment");
+        let b = fold_segment(&steps, &rounds, 0, 0).expect("deterministic replay");
+        assert_eq!(a.digest, b.digest, "同转录前缀同 digest（判据 2 纯函数面）");
+        assert_eq!(a.summary, b.summary, "同转录前缀同摘要");
+        assert_eq!(a.est_before, b.est_before);
+        assert_eq!(a.est_after, b.est_after);
+        assert_eq!(a.steps_folded, 2);
+        // est_tokens 单点（D6）：est_after = est_tokens(摘要)。
+        assert_eq!(a.est_after, est_tokens(&a.summary));
+        // est 记账方向：合成行小于折前段（折叠确有收缩）。
+        assert!(a.est_after < a.est_before, "fold shrinks planner view");
+
+        // 确定性摘要词形（D1）：前缀 + 轮区间 + 步数 + 工具集 + artifact 计数，
+        // 无时间戳无进程内计数。
+        assert!(a.summary.starts_with(FOLD_SUMMARY_PREFIX));
+        assert!(a.summary.contains("rounds=0-0"));
+        assert!(a.summary.contains("steps=2"));
+        assert!(a.summary.contains("tools={rip.kb.tool0,rip.kb.tool1}"));
+        assert!(a.summary.contains("artifacts={2}"));
+
+        // 合成行词形（D3）：tool_id/tool_version/tool_run_id/status/elapsed。
+        assert_eq!(a.synthetic.tool_id, FOLD_TOOL_ID);
+        assert_eq!(a.synthetic.tool_id, "transcript:fold");
+        assert_eq!(a.synthetic.tool_version, TRANSCRIPT_FOLD_VERSION);
+        assert_eq!(a.synthetic.tool_run_id, "", "空串先例（SUBMIT_REJECTED 同款）");
+        assert_eq!(a.synthetic.status, "SUCCEEDED", "ToolRunStatus 词形内");
+        assert_eq!(a.synthetic.elapsed_ms, 0);
+        assert_eq!(a.synthetic.summary.as_deref(), Some(a.summary.as_str()));
+        assert!(a.synthetic.artifact_id.is_none());
+        assert!(a.synthetic.evidence_id.is_none());
+        assert!(a.synthetic.content_hash.is_none());
+
+        // 空区间拒绝面。
+        assert!(fold_segment(&steps, &rounds, 9, 10).is_none());
+    }
+
+    /// CB-1（D3）折叠投影：已折段每段一条合成行原位替代 + 未折段原样透传
+    /// + 热窗段透传 + 无事件返回 None。
+    #[test]
+    fn cb1_fold_projection_replaces_folded_segments_in_place() {
+        let steps: Vec<StepRecord> = (0..5)
+            .map(|i| fold_step(i, &format!("step {i}")))
+            .collect();
+        // 步轮次：0,0,1,1,2（轮 0/1 各两步，轮 2 一步）。
+        let rounds: Vec<usize> = vec![0, 0, 1, 1, 2];
+        let seg01 = fold_segment(&steps, &rounds, 0, 1).expect("rounds 0-1");
+        let folds = vec![AppliedFold {
+            event: FoldEvent {
+                rounds: [0, 1],
+                steps_folded: seg01.steps_folded,
+                est_before: seg01.est_before,
+                est_after: seg01.est_after,
+                digest: seg01.digest.clone(),
+                summary: seg01.summary.clone(),
+                memory_id: None,
+            },
+            synthetic: seg01.synthetic.clone(),
+        }];
+
+        // 无事件：None（全量直投，默认关路径零分配）。
+        assert!(fold_projection(&steps, &rounds, &[]).is_none());
+
+        // 投影：合成行在位次 0，轮 2 步原样透传；长度 1 + 1 < 全量 5。
+        let view = fold_projection(&steps, &rounds, &folds).expect("projection");
+        assert_eq!(view.len(), 2, "合成行 + 热窗外余步");
+        assert_eq!(view[0].tool_id, FOLD_TOOL_ID);
+        assert_eq!(view[0].summary.as_deref(), Some(seg01.summary.as_str()));
+        assert_eq!(view[1].tool_id, steps[4].tool_id);
+        assert_eq!(view[1].content_hash, steps[4].content_hash);
+        assert!(view.len() < steps.len(), "规划器可见面 < 全量步数");
     }
 }

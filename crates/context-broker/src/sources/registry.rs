@@ -626,8 +626,10 @@ impl ContextSource for RegistrySource {
                 content_hash: content_hash.clone(),
                 source_fingerprint: fingerprint.clone(),
             };
-            if let Ok(Some(payload)) =
-                cache.get(&key, &validation, &self.policy_version, TTL_SCHEMA)
+            // CB-1 D5：消费点切 get_with_attribution（未命中归因自动入桶；
+            // 读取行为与既有 get 逐字节一致——命中条件同一校验链）。
+            if let Ok((Some(payload), _)) =
+                cache.get_with_attribution(&key, &validation, &self.policy_version, TTL_SCHEMA)
             {
                 return Some(payload);
             }
