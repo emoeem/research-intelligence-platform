@@ -250,14 +250,15 @@ fn provider() -> StaticCatalogProvider {
     StaticCatalogProvider::load(Path::new(SEED)).expect("能力种子加载（RT-1 16 条）")
 }
 
-/// 判据 5：30 份逐份断言（29 assign + 1 not_applicable；DI-3/RT-4 迁移后
+/// 判据 5：31 份逐份断言（30 assign + 1 not_applicable；DI-3/RT-4 迁移后
 /// 基线——3 处 RT-3 inconsistent 全部收敛，inconsistent 快照零成员；
-/// WSW-7 zap 登记随更 30 份；verdict/runtime/cross_check/gap/reason 逐字段）。
+/// WSW-7 zap 登记随更 30 份；WSW-8 browser 登记随更 31 份（设计内扩展非钉值
+/// 改动——WSW-8-TASK §2.1）；verdict/runtime/cross_check/gap/reason 逐字段）。
 #[test]
 fn manifests_expectation_table_30() {
     let provider = provider();
     let face = load_dispatch_face();
-    assert_eq!(face.len(), 30, "29 JSON + 1 YAML-only = 30 份派发面");
+    assert_eq!(face.len(), 31, "30 JSON + 1 YAML-only = 31 份派发面");
     let mut assign_runtimes: Vec<String> = Vec::new();
     let mut counts = [0usize; 4]; // assign/inconsistent/reject/not_applicable
     for (path, manifest) in &face {
@@ -307,8 +308,8 @@ fn manifests_expectation_table_30() {
     }
     assert_eq!(
         counts,
-        [29, 0, 0, 1],
-        "DI-3/RT-4 判据 1 分布：29 assign + 1 not_applicable（inconsistent 快照零成员；WSW-7 zap 随更）"
+        [30, 0, 0, 1],
+        "DI-3/RT-4 判据 1 分布：30 assign + 1 not_applicable（inconsistent 快照零成员；WSW-7 zap 随更 + WSW-8 browser 随更）"
     );
     // 判据 2：native_rust/python_worker/podman_host 三行在期望表内有 assign 成员。
     for word in ["native_rust", "python_worker", "podman_host"] {
@@ -452,8 +453,8 @@ fn assign_constraints_vocabulary() {
         }
     }
     assert_eq!(
-        checked, 29,
-        "29 份 assign 全部过 constraints 断言（DI-3/RT-4 迁移后基线；WSW-7 zap 随更）"
+        checked, 30,
+        "30 份 assign 全部过 constraints 断言（DI-3/RT-4 迁移后基线；WSW-7 zap 随更 + WSW-8 browser 随更）"
     );
 }
 
@@ -484,7 +485,7 @@ fn rt3_snapshot_dump_for_batch_report() {
     }
     let provider = provider();
     let face = load_dispatch_face();
-    assert_eq!(face.len(), 30, "30 份派发面快照");
+    assert_eq!(face.len(), 31, "31 份派发面快照");
     for (path, manifest) in &face {
         let facts = extract_facts(manifest);
         // 基线档 = trusted_low_risk（报告 §1 A8 表同口径）。

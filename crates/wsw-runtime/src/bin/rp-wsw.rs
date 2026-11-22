@@ -84,7 +84,11 @@ rp-wsw scan nuclei --url <u> [--template-ref rtis-poc:N | --template-file <p>] \
 rp-wsw scan zap --url <u> [--timeout-s S] [--alert-budget N] [--db <path>] [--task-id <id>] \
 [--trace-id <id>] [--run-id <id>]（WSW-7；scan_mode 词表单值 baseline）\n  \
 rp-wsw scan rtis --poc-id N --target <t>（WSW-7；poc get 元数据锚 + poc use 回填——零扫描执行面）\n  \
-rp-wsw redact-headers（stdin 头数组 JSON → stdout 脱敏投影）"
+rp-wsw redact-headers（stdin 头数组 JSON → stdout 脱敏投影）\n  \
+rp-wsw browser capture --db <path> --url <u> [--mode viewport|full_page|element|region] \
+[--selector <css>] [--clip-json '{{\"x\":0,\"y\":0,\"width\":100,\"height\":100}}'] [--settle-ms N] \
+[--scope-rules-json <json>] [--timeout-s S] [--task-id <id>] [--trace-id <id>] \
+[--run-id <id>]（WSW-8；截图四模式 + DOMSnapshot + 页面文本 + 网络摘要；evidence 'screenshot' 终局写入）"
     )
 }
 
@@ -150,6 +154,11 @@ struct Args {
     out_file: Option<PathBuf>,
     // scan 子命令（WSW-7 D7①）
     poc_id: Option<i64>,
+    // browser 子命令（WSW-8 D8②；mode 复用 compare 既有字段——子命令互斥面）
+    selector: Option<String>,
+    clip_json: Option<String>,
+    settle_ms: Option<u64>,
+    scope_rules_json: Option<String>,
     rate: Option<i64>,
     max_requests: Option<i64>,
     timeout_s: Option<i64>,
@@ -212,6 +221,10 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
         save_artifact: false,
         out_file: None,
         poc_id: None,
+        selector: None,
+        clip_json: None,
+        settle_ms: None,
+        scope_rules_json: None,
         rate: None,
         max_requests: None,
         timeout_s: None,
@@ -307,6 +320,11 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
             "--task-id" => a.task_id = Some(take("--task-id")),
             "--trace-id" => a.trace_id = Some(take("--trace-id")),
             "--run-id" => a.run_id = Some(take("--run-id")),
+            // browser 子命令旗标（WSW-8 D8②）
+            "--selector" => a.selector = Some(take("--selector")),
+            "--clip-json" => a.clip_json = Some(take("--clip-json")),
+            "--settle-ms" => a.settle_ms = Some(take("--settle-ms").parse().expect("settle ms")),
+            "--scope-rules-json" => a.scope_rules_json = Some(take("--scope-rules-json")),
             other => {
                 eprintln!("{TAG} unknown arg {other}");
                 usage();
@@ -1681,6 +1699,84 @@ fn run_scan_rtis(a: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// WSW-8 browser 子命令（D8②：独立入口第十面——wsw_runtime::browser 统一入口
+// 既有派发链消费：probe_chromium 探针链 + scope 消费 + submit_correlated +
+// NativeRustAdapter spawn rp-wsw-browser 子进程 + evidence 'screenshot' 终局
+// 写入；零第二派发实现，:761 禁第二套）
+// ---------------------------------------------------------------------------
+
+/// `browser capture`（D8②）：真实页面捕获派发（loopback fixture/授权目标面）。
+fn run_browser_capture(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let repo_root = scan_repo_root();
+    let db = a.db.clone().ok_or("browser capture requires --db <path>")?;
+    let url = a.url.clone().ok_or("browser capture requires --url <u>")?;
+    let mut input = serde_json::json!({
+        "url": url,
+        "mode": a.mode.clone().unwrap_or_else(|| "viewport".to_string()),
+        "timeout_s": a.timeout_s.unwrap_or(60),
+    });
+    if let Some(sel) = &a.selector {
+        input["selector"] = serde_json::json!(sel);
+    }
+    if let Some(clip_text) = &a.clip_json {
+        let clip: serde_json::Value = serde_json::from_str(clip_text)
+            .map_err(|e| format!("--clip-json 解析失败: {e}"))?;
+        input["clip"] = clip;
+    }
+    if let Some(settle) = a.settle_ms {
+        input["settle_ms"] = serde_json::json!(settle);
+    }
+    if let Some(rules_text) = &a.scope_rules_json {
+        let rules: serde_json::Value = serde_json::from_str(rules_text)
+            .map_err(|e| format!("--scope-rules-json 解析失败: {e}"))?;
+        input["scope_rules"] = rules;
+    }
+    let params = wsw_runtime::browser::BrowserCaptureParams::from_input(&input)
+        .map_err(|e| format!("{}: {}", e.category, e.message))?;
+    let engine = wsw_runtime::browser::open_browser_engine(&db, &repo_root)?;
+    let adapter = tool_engine::adapter::native_rust::NativeRustAdapter::new(
+        tool_engine::adapter::native_rust::NativeRustConfig::default(),
+    );
+    let manifest = wsw_runtime::browser::browser_manifest(&repo_root)?;
+    let run_id = a.run_id.clone().unwrap_or_else(|| {
+        format!(
+            "rn-wsw8-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros()
+        )
+    });
+    match wsw_runtime::browser::capture(
+        &engine,
+        &adapter,
+        &manifest,
+        &params,
+        &run_id,
+        a.task_id.as_deref(),
+        a.trace_id.as_deref(),
+    ) {
+        Ok(outcome) => {
+            let payload = serde_json::json!({
+                "run_id": outcome.run_id,
+                "status_word": outcome.status_word,
+                "evidence_id": outcome.evidence_id,
+                "artifacts": outcome.artifacts,
+            });
+            println!("{payload}");
+            Ok(())
+        }
+        Err(e) => {
+            let payload = serde_json::json!({
+                "error": {"category": e.category, "message": e.message}
+            });
+            println!("{payload}");
+            Err(format!("browser capture failed: {}", e.message).into())
+        }
+    }
+}
+
 /// `scan providers`（D7②）：三 adapter 契约面只读投影（manifest 直读 +
 /// plugin catalog 只读计数——投影逻辑单源 wsw_runtime::scanner::
 /// providers_projection；GET /api/wsw/scan/providers 子进程委派载体）。
@@ -1746,6 +1842,12 @@ async fn main() {
             // D7②：provider 契约面只读投影（GET /api/wsw/scan/providers 的
             // Rust 载体——投影逻辑单源 scanner.rs providers_projection）。
             Some("providers") => run_scan_providers(),
+            _ => usage(),
+        },
+        "browser" => match args.next().as_deref() {
+            // WSW-8 D8②：独立入口第十面（browser.rs 统一入口分派——
+            // Engine 装配 + submit_correlated + native_rust 派发链复用）。
+            Some("capture") => run_browser_capture(parse_args(&mut args)),
             _ => usage(),
         },
         "redact-headers" => run_redact_headers(),

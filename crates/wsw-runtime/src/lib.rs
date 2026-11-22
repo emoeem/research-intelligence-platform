@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod authority;
+pub mod browser;
 pub mod comparer;
 pub mod decoder;
 pub mod fuzz;

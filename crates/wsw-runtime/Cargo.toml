@@ -99,3 +99,19 @@ tool-engine = { workspace = true }
 # WSW-7 批（D3/D7）：tool-registry workspace 依赖（scan 运行库 Engine 装配
 # Registry::open + query-first 幂等登记——rp-verify engine_with_nuclei 先例）。
 tool-registry = { workspace = true }
+# WSW-8 批（D1）：Chromium 控制引擎（PLAN :640 候选锁定；:665 选型硬要求
+# A2/A3 实测闭环——license MIT OR Apache-2.0 / rust-version 1.85 < 本机
+# rustc 1.99.1 / edition 2024 可编）。default-features = false + features =
+# ["bytes"]（default features 面实测 = 仅 bytes，A2 verbatim）；fetcher/
+# native-tls/rustls/zip0/zip8 五 feature 全禁——fetcher 下载 Chromium 面
+# 违 D6 宿主零安装，浏览器二进制走探针链（browser.rs 五级探针，D2①）。
+#
+# 新基线声明（vendor 政策首个实战批次，WSW-8-TASK 红线 2）：
+# ① [[package]] 399→417（16 新名 + 2 双版本行：tungstenite 0.28.0 与
+#    hudsucker 栈 0.30.0 并存、sha1 0.10.7 与既有 0.11.0 并存；9 个版本
+#    bump 被既有钉值吸收不新增行——S2 逐行对账，偏差见批次报告）；
+# ② reqwest 双检词形：Cargo.toml 直接依赖 reqwest = 0 硬门（grep
+#    '^reqwest' crates/*/Cargo.toml = 0）+ lock 内 reqwest = 1 行基线钉
+#    （chromiumoxide 0.13.5 硬传递 default-features=false 零 TLS 零
+#    openssl 零 rustls）。
+chromiumoxide = { version = "=0.9.1", default-features = false, features = ["bytes"] }

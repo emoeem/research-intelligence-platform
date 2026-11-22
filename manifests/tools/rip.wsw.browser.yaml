@@ -1,0 +1,122 @@
+# WSW-8 Browser Evidence 登记文件（与同名 .json 双份等价——ri k knowledge
+# document.fetch.yaml 先例同款孪生纪律）：页面捕获（Chromium headless CDP，
+# chromiumoxide 0.9.1）。截图仅视觉状态不单独构成漏洞确认（PLAN :330/:766）；
+# run 归属 = native_rust Manifest 派发（Engine submit_correlated → collect_out_
+# artifacts 自动 artifact → evidence 'screenshot' 直 INSERT），不借 fuzz
+# JobRunner（D3⑤）。
+schema_version: "1"
+id: "rip.wsw.browser"
+name: "WSW Browser Capture"
+version: "0.1.4"
+kind: "tool"
+family: "browser_automation"
+description: "页面捕获（Chromium headless CDP，chromiumoxide 0.9.1）：截图四模式（viewport/full_page/element/region）+ DOMSnapshot 结构化 JSON + 页面文本投影 + 网络请求摘要；产物落 tool_run/artifact/evidence 三既有表（evidence_type='screenshot'，M1 词表预埋面），run 归属 = native_rust Manifest 派发（Engine submit_correlated），不借 fuzz JobRunner"
+runtime:
+  type: "native_rust"
+  binary: "/home/emo/rt3-target/release/rp-wsw-browser"
+  binary_sha256: "a226fb56c8061eb16bf739f3213705fd8e2b32d4977c11b7ee97e8274f0a564e"
+  subcommand: "capture"
+  argv_template: ["{{out_dir}}"]
+input_schema:
+  type: "object"
+  additionalProperties: false
+  required: ["url"]
+  properties:
+    url:
+      type: "string"
+      maxLength: 4096
+      description: "目标 URL（scheme 词表 http/https only；file:// 等结构化拒绝；scope_rules 传入时再经 scope.rs check 单跳闸）"
+    mode:
+      type: "string"
+      enum: ["viewport", "full_page", "element", "region"]
+      description: "截图四模式（PLAN :326 四词逐字）；缺省 viewport"
+    selector:
+      type: "string"
+      description: "element 模式 CSS 选择器（与 clip 互斥；无命中 = selector_not_found 结构化失败）"
+    clip:
+      type: "object"
+      description: "region 模式矩形 {x,y,width,height}（x/y>=0，width/height>0；与 selector 互斥；CDP 原生 clip 零自研裁剪）"
+      properties:
+        x: { type: "number" }
+        y: { type: "number" }
+        width: { type: "number", exclusiveMinimum: 0 }
+        height: { type: "number", exclusiveMinimum: 0 }
+      required: ["x", "y", "width", "height"]
+    settle_ms:
+      type: "integer"
+      minimum: 0
+      maximum: 15000
+      description: "导航完成后的稳定等待毫秒；缺省 800"
+    scope_rules:
+      type: "object"
+      description: "Scope 规则（wsw_session.scope_rules_json 同形状：include/exclude/allowed_ports/allowed_path_prefixes/allow_private_targets/max_redirects；传入时 scope.rs check 单跳闸同序，云元数据 deny-never-allow）"
+    timeout_s:
+      type: "integer"
+      minimum: 1
+      maximum: 120
+      description: "预算秒（TIMED_OUT 语义由 Adapter 看门狗承载）；缺省 60"
+    browser_bin:
+      type: "string"
+      description: "Chromium 可执行路径（内部面：统一入口 probe_chromium 探针链五级解析注入；缺位时子进程探针链兜底——Adapter env_clear 白名单结构性无 env 探针面）"
+    trace_id:
+      type: "string"
+      description: "Trace 锚（meta.json 九字段之九；关联主锚走 submit 请求顶层 trace_id → tool_run.trace_id 015 面）"
+output_schema:
+  type: "object"
+  required: ["status", "mode", "current_url", "final_url", "screenshot_bytes", "dom_strings", "page_text_bytes", "network_rows", "elapsed_ms"]
+  properties:
+    status:
+      type: "string"
+      enum: ["ok"]
+    mode:
+      type: "string"
+      enum: ["viewport", "full_page", "element", "region"]
+    current_url: { type: "string" }
+    final_url: { type: "string" }
+    title: { type: "string" }
+    screenshot_bytes: { type: "integer", minimum: 0 }
+    dom_strings: { type: "integer", minimum: 0 }
+    dom_documents: { type: "integer", minimum: 0 }
+    page_text_bytes: { type: "integer", minimum: 0 }
+    network_rows: { type: "integer", minimum: 0 }
+    capture_fidelity:
+      type: "array"
+      items: { type: "object" }
+      description: "截断登记面（dom.json 16MiB / page.txt 1MiB / network.json 1MiB 超帽截断 + reason=cap_exceeded——DESIGN §3.3 层 1 不静默裁原始语义口径）"
+    elapsed_ms: { type: "integer", minimum: 0 }
+resources:
+  cpu: "1"
+  memory: "128Gi"
+  timeout_seconds: 120
+  max_output_bytes: 8388608
+network:
+  mode: "egress_allowlist"
+  egress:
+    ports: [80, 443]
+    domains: []
+    note: "native_rust 无包裹级出网强制面（document_fetch 同款进程内承载）：目标面经 scope_rules 闸（scope.rs check 单跳闸 + 元数据 deny-never-allow + 私网审计）与 scheme 词表（http/https only）承载，ports 80/443 = 明文与 TLS 传输面词形"
+secrets: []
+permission_level: "T1"
+idempotent: false
+health:
+  probe: { type: "none" }
+  on_run_recover: false
+provenance:
+  origin: "rip-native"
+  source_path: "crates/wsw-runtime/src/browser.rs + crates/wsw-runtime/src/bin/rp-wsw-browser.rs"
+  license: "repo-internal"
+  dependencies:
+    - "rp-wsw-browser 构建产物钉值：CARGO_TARGET_DIR=/home/emo/rt3-target cargo build --offline --release -p wsw-runtime --bin rp-wsw-browser → /home/emo/rt3-target/release/rp-wsw-browser sha256_prefix a226fb56（2026-11-23 sha256sum 实测；与 binary_sha256 同 commit 纪律——rip.knowledge.document.fetch.json:154 先例）"
+    - "chromiumoxide 0.9.1（=0.9.1 default-features=false features=[bytes]，fetcher 禁用——WSW-8 D1 vendor 基线跃迁批；lock [[package]] 399→417）"
+    - "Chromium 二进制 = 宿主已装探针链五级（RP_BROWSER_BIN/PW_CHROMIUM env → ms-playwright 缓存 glob → /usr/sbin/chromium → /usr/bin/chromium；零安装零下载零 sudo——D2；本机实测 /usr/sbin/chromium 158.0.8127.36 + ms-playwright chromium-1255 双命中）"
+  known_limits:
+    - "binary_sha256 维护面：release 重建即漂移（WSW-7 坏消息 5 镜像 digest 重建非确定性同款词形）——重建后 sha256sum 实测回钉 manifest json/yaml 两处一致"
+    - "browser_bin 注入面：统一入口探针链解析注入；直调 submit 路径的调用方可显式指定任意存在路径——T1 本地面 + 进程组隔离（killpg 覆盖）+ 一次性 user-data-dir 承载；探针白名单 sha 钉值面登记观察池（后续批）"
+    - "capture 截断帽实测值：dom.json 16MiB / page.txt 1MiB / network.json 1MiB（超帽字节级截断 + capture_fidelity 登记，不静默裁原始语义）；screenshot 不设帽（PNG 自身体积面，max_output_bytes 8MiB 为结果帧帽）"
+    - "截图仅视觉状态不单独构成漏洞确认（PLAN :330/:766）：evidence 行 lifecycle='RAW' 零 Finding 零五态判定词形"
+    - "MHTML 全页归档（Page.captureSnapshot）/浏览器实例复用池/计划级批量捕获/截图导出渲染 = 观察池零实现（D4⑥/D8）"
+  tested: "crates/wsw-runtime tests/browser_adapter.rs（loopback fixture 四模式真捕获 + 六 ID 对账 + 截断帽/timeout/scope 元数据拒负例 + V-9 chromium 缺 SKIP）+ S3 冒烟实拍（PNG magic 89504e47 + strings marker + meta 九字段，2026-11-23 本会话实测）"
+context:
+  summary: "页面捕获（Chromium headless CDP，T1，scope 闸 + 截断帽）"
+  docs: "crates/wsw-runtime/src/browser.rs 模块头注 + docs/rip3/wsw/WSW-8-BATCH-REPORT.md"
+  tags: ["wsw", "browser", "screenshot", "dom-snapshot", "evidence"]

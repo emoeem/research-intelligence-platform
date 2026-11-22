@@ -4979,6 +4979,8 @@ def _wsw_post_route_wsw56(rest: str, body: dict) -> dict:
         return _wsw_compare(body)
     if rest == "scan":
         return _wsw_scan(body)
+    if rest == "browser/capture":
+        return _wsw_browser_capture(body)
     return None
 
 
@@ -5052,6 +5054,100 @@ def _wsw_scan_providers(_conn, _params) -> dict:
     D8 零新插件包；Bearer 同面由 do_GET 顶部既有调用承载）。"""
     projection = _wsw_rp_wsw_json(["scan", "providers"], timeout_s=30)
     return projection
+
+
+# ---------------------------------------------------------------------------
+# WSW-8 Browser Evidence 独立入口面（D8②）：POST /api/wsw/browser/capture
+# （rp-wsw browser capture 子进程委派——:4766 _wsw_rp_wsw_json + :4998 scan
+# 先例同型；Bearer 同面由 do_POST 顶部既有调用承载；400 校验负例（scheme/
+# mode 词表）在 API 面 fail fast，深度校验在子进程 input_schema/词表链；
+# 503 bin_missing / 504 timeout 由 _wsw_rp_wsw_json 既有词形透出）。
+# 截图仅视觉状态不单独构成漏洞确认（PLAN :330/:766）——本端点零 Finding
+# 零五态词形，evidence 行 lifecycle='RAW' 在子进程链内承载。SSE 面零改动。
+# ---------------------------------------------------------------------------
+
+_WSW_BROWSER_MODES = ("viewport", "full_page", "element", "region")
+_WSW_BROWSER_API_TIMEOUT_CAP = 600
+
+
+def _wsw_browser_capture(body: dict) -> dict:
+    """POST /api/wsw/browser/capture：页面捕获委派（rp-wsw browser capture
+    子进程同步委派；mode 词表 + scheme 词表 400 快拒，scope_rules/selector/
+    clip 透传——词表/互斥/私网负例在子进程链结构化承载）。"""
+    mode = body.get("mode") or "viewport"
+    if mode not in _WSW_BROWSER_MODES:
+        raise ApiError(400, "bad_mode",
+                       f"mode 词表外（viewport/full_page/element/region）：{mode!r}")
+    url = body.get("url")
+    if not isinstance(url, str) or not url:
+        raise ApiError(400, "bad_url", "browser capture 需要 url")
+    scheme = url.split("://")[0].lower()
+    if scheme not in ("http", "https"):
+        raise ApiError(400, "bad_url_scheme",
+                       f"url scheme 词表外（http/https）：{scheme!r}")
+    if mode == "element" and not body.get("selector"):
+        raise ApiError(400, "bad_selector", "mode=element 需要 selector")
+    if mode == "region" and not body.get("clip"):
+        raise ApiError(400, "bad_clip", "mode=region 需要 clip（{x,y,width,height}）")
+    args = ["browser", "capture", "--url", url, "--mode", mode]
+    if body.get("selector"):
+        args += ["--selector", str(body["selector"])]
+    if body.get("clip") is not None:
+        clip = body["clip"]
+        if not isinstance(clip, dict):
+            raise ApiError(400, "bad_clip",
+                           f"clip 须为对象 {{x,y,width,height}}：{clip!r}")
+        for key in ("x", "y", "width", "height"):
+            if not isinstance(clip.get(key), (int, float)):
+                raise ApiError(400, "bad_clip", f"clip.{key} 缺失或非数值")
+        import json as _json
+        args += ["--clip-json", _json.dumps(clip)]
+    if body.get("settle_ms") is not None:
+        try:
+            settle = int(body["settle_ms"])
+        except (TypeError, ValueError):
+            raise ApiError(400, "bad_settle", f"settle_ms 须为整数毫秒：{body.get('settle_ms')!r}")
+        if not 0 <= settle <= 15000:
+            raise ApiError(400, "bad_settle", f"settle_ms 超域（0..=15000）：{settle}")
+        args += ["--settle-ms", str(settle)]
+    if body.get("scope_rules") is not None:
+        rules = body["scope_rules"]
+        if not isinstance(rules, dict):
+            raise ApiError(400, "bad_scope_rules", f"scope_rules 须为对象：{rules!r}")
+        import json as _json
+        args += ["--scope-rules-json", _json.dumps(rules)]
+    if body.get("timeout_s") is not None:
+        try:
+            ts = int(body["timeout_s"])
+        except (TypeError, ValueError):
+            raise ApiError(400, "bad_timeout", f"timeout_s 须为整数秒：{body.get('timeout_s')!r}")
+        if not 1 <= ts <= 120:
+            raise ApiError(400, "bad_timeout", f"timeout_s 超域（1..=120）：{ts}")
+        args += ["--timeout-s", str(ts)]
+    if body.get("task_id"):
+        args += ["--task-id", str(body["task_id"])]
+    if body.get("trace_id"):
+        args += ["--trace-id", str(body["trace_id"])]
+    if body.get("run_id"):
+        args += ["--run-id", str(body["run_id"])]
+    args += ["--db", WSW_DB_PATH]
+    try:
+        timeout_api_s = int(body.get("timeout_api_s") or 120)
+    except (TypeError, ValueError):
+        raise ApiError(400, "bad_timeout",
+                       f"timeout_api_s 须为整数秒：{body.get('timeout_api_s')!r}")
+    timeout_api_s = max(5, min(timeout_api_s, _WSW_BROWSER_API_TIMEOUT_CAP))
+    payload = _wsw_rp_wsw_json(args, timeout_s=timeout_api_s)
+    status_word = payload.get("status_word")
+    if isinstance(payload, dict) and status_word not in (None, "SUCCEEDED"):
+        # 子进程链终态非成功（FAILED/TIMED_OUT/…）：结构化透出词形（不吞
+        # 不伪装——stderr 尾行已在 rp_wsw_failed 词形承载，此处为 run 终态
+        # 与信封 artifact/evidence 面如实回传 + capture_error 标注）。
+        return {"capture": payload, "capture_error": {
+            "status_word": status_word,
+            "note": "run 终态非 SUCCEEDED（结构化产物/失败面见 capture.artifacts 与 stderr 摘要）",
+        }}
+    return {"capture": payload}
 
 
 # ---------------------------------------------------------------------------
