@@ -9,7 +9,7 @@
   "runtime": {
     "type": "native_rust",
     "binary": "/usr/bin/ffprobe",
-    "binary_sha256": "a2ae3d0209aec73992d0c9f8baadce19f4929c276bb58a7305e5beb3ec38eff1",
+    "binary_sha256": "f4e2aff7625377acff9642f614ff17888e598b57060d5e72ac5720631ae18776",
     "capability_ref": "media.ffprobe",
     "argv_template": [
       "-v",
@@ -114,7 +114,7 @@
     "source_path": "/usr/bin/ffprobe",
     "license": "LGPL-2.1-or-later",
     "dependencies": [
-      "ffmpeg-full 9.0.2-3.46 sha256_prefix a2ae3d0209aec739（libavformat 63.1.102）"
+      "ffmpeg-full 9.1-1.6 sha256_prefix f4e2aff7625377ac（libavformat 63.16.100；2026-11-22 重探，RT-0.5-A 流程）"
     ],
     "tested": "DI-2 e2e：tone.wav 纯音频 metadata-only 分支与 small.mp4 视频探测子 run SUCCEEDED（format.duration 字符串形态数值化 / streams 投影），crates/document-router/tests/",
     "known_limits": [

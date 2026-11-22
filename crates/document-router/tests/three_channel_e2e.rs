@@ -1648,6 +1648,11 @@ fn di2_media_tone_wav_metadata_only_no_frames_step() {
     if !require_capability(&provider, test, "media.ffprobe") {
         return;
     }
+    // ffprobe 宿主钉值守卫（2f25787f 归档两测先例同款；DI-3/RT-4 D4 重钉
+    // 9.1）：异机 ffprobe ≠ 钉值宿主 → SKIP（fail-closed 身份校验语义实证）。
+    if !host_binary_pin_guard(test, "/usr/bin/ffprobe", "f4e2aff7625377ac") {
+        return;
+    }
     let engine = fresh_engine(&[]);
     let ws_root = workspace_root("di2-media-wav");
     let router = router_for(&ws_root);
@@ -1716,6 +1721,14 @@ fn di2_media_video_frames_extracted_with_budget() {
     let provider = provider();
     if !require_capability(&provider, test, "media.ffprobe")
         || !require_capability(&provider, test, "media.ffmpeg")
+    {
+        return;
+    }
+    // ffprobe + ffmpeg 双钉守卫（DI-3/RT-4 D4 同包升级重钉 9.1；frames 通道
+    // 与 probe 通道两份 Manifest 钉值同面——2f25787f 归档双钉先例同款形状）：
+    // 异机任一二进制 ≠ 钉值宿主 → SKIP。
+    if !host_binary_pin_guard(test, "/usr/bin/ffprobe", "f4e2aff7625377ac")
+        || !host_binary_pin_guard(test, "/usr/bin/ffmpeg", "d3acddf4bd443d06")
     {
         return;
     }
@@ -1830,6 +1843,10 @@ fn di2_media_duration_exceeded_chain_fails_with_probe_evidence() {
     let test = "di2_media_duration_exceeded_chain_fails_with_probe_evidence";
     let provider = provider();
     if !require_capability(&provider, test, "media.ffprobe") {
+        return;
+    }
+    // ffprobe 宿主钉值守卫（2f25787f 先例同款；DI-3/RT-4 D4 重钉 9.1）。
+    if !host_binary_pin_guard(test, "/usr/bin/ffprobe", "f4e2aff7625377ac") {
         return;
     }
     // 400 s 8kHz 16-bit 零 PCM WAV：data 长度字段 = 6.4 MB，内存组装不落盘。
@@ -2047,6 +2064,10 @@ fn di2_media_malformed_execution_passthrough_and_gzip_gate() {
     let test = "di2_media_malformed_execution_passthrough_and_gzip_gate";
     let provider = provider();
     if !require_capability(&provider, test, "media.ffprobe") {
+        return;
+    }
+    // ffprobe 宿主钉值守卫（2f25787f 先例同款；DI-3/RT-4 D4 重钉 9.1）。
+    if !host_binary_pin_guard(test, "/usr/bin/ffprobe", "f4e2aff7625377ac") {
         return;
     }
     let engine = fresh_engine(&[]);

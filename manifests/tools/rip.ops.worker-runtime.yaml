@@ -18,6 +18,9 @@ runtime:
   command: ["python3", "-I", "workers/python/runtime/worker_runtime.py"]
   working_dir: "repo://research-platform"
   restart: "pooled"
+  venv:
+    path: "workers/python/.venv"
+    direct_deps: ["pip"]
 input_schema:
   type: "object"
   additionalProperties: false

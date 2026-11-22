@@ -7,12 +7,12 @@
       "provider": "FFmpeg（ffmpeg-full 项目构建）",
       "executable_path": "/usr/bin/ffmpeg",
       "version": {
-        "normalized": "9.0.2",
-        "raw": "ffmpeg version 9.0.2"
+        "normalized": "9.1",
+        "raw": "ffmpeg version 9.1"
       },
       "binary_identity": {
-        "sha256_prefix": "09190fb791fb0db8",
-        "sha256_full": "09190fb791fb0db81fb2616a59b9c4a16f8806792b6247e7c1ff1a9dd1708889",
+        "sha256_prefix": "d3acddf4bd443d06",
+        "sha256_full": "d3acddf4bd443d06b02ff90ab574e889276ebbd1312f75bfd86d52552da164d8",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
@@ -20,7 +20,7 @@
       "package_provenance": {
         "pacman": {
           "name": "ffmpeg-full",
-          "version": "9.0.2-3.46"
+          "version": "9.1-1.6"
         }
       },
       "capabilities": [
@@ -105,7 +105,7 @@
         }
       ],
       "status": "available",
-      "probe_timestamp": "2026-11-18",
+      "probe_timestamp": "2026-11-22",
       "constraints": [
         {
           "code": "experimental_encoder",
@@ -134,12 +134,12 @@
       "provider": "FFmpeg（ffmpeg-full）",
       "executable_path": "/usr/bin/ffprobe",
       "version": {
-        "normalized": "9.0.2",
-        "raw": "ffprobe version 9.0.2 … libavformat 63.1.102"
+        "normalized": "9.1",
+        "raw": "ffprobe version 9.1 … libavformat 63.16.100"
       },
       "binary_identity": {
-        "sha256_prefix": "a2ae3d0209aec739",
-        "sha256_full": "a2ae3d0209aec73992d0c9f8baadce19f4929c276bb58a7305e5beb3ec38eff1",
+        "sha256_prefix": "f4e2aff7625377ac",
+        "sha256_full": "f4e2aff7625377acff9642f614ff17888e598b57060d5e72ac5720631ae18776",
         "file_type": "elf-pie",
         "owner_mode": "root:root 755",
         "wrapper_target": null
@@ -147,7 +147,7 @@
       "package_provenance": {
         "pacman": {
           "name": "ffmpeg-full",
-          "version": "9.0.2-3.46"
+          "version": "9.1-1.6"
         }
       },
       "capabilities": [
@@ -158,7 +158,7 @@
         }
       ],
       "status": "available",
-      "probe_timestamp": "2026-11-18",
+      "probe_timestamp": "2026-11-22",
       "constraints": [
         {
           "code": "version_coupled",

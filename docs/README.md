@@ -45,6 +45,8 @@
 | DI-2 任务书（S1→S8、十二项判据、十条红线、fixture 三层策略） | [phase0/DI-2-TASK.md](phase0/DI-2-TASK.md) |
 | DI-2 设计裁决（D1-D8：八签名嗅探/OCR 请求位与语言路由/媒体五门序/归档两阶段四闸/wrapper 双钉；含 S2 内存帽阶梯定值回写注记） | [phase0/DI-2-ADR-CHANNELS.md](phase0/DI-2-ADR-CHANNELS.md) |
 | DI-2 批次验收报告（document-router 三通道扩全：OCR/媒体/归档端到端 + ZipOther 路由变更判据迁移 + dispatch input.ocr 请求位 + 五 Manifest 双钉登记；十二项判据实测对照、内存帽 S2 阶梯定值回写、DI-3 缝登记） | [phase0/DI-2-BATCH-REPORT.md](phase0/DI-2-BATCH-REPORT.md) |
+| DI-3/RT-4 任务书（RT/DI 合并批：29 份 Manifest 逐项迁移 + PolicyResolver 接入 dispatch 派发决策点 + document-router ffprobe 钉值收口 + di2_media guard 单文件随挂；D1-D5 设计裁决 / A1-A14 锚点 / S1-S7 / 判据 10 条 / 八红线） | [phase0/DI-3-RT-4-TASK.md](phase0/DI-3-RT-4-TASK.md) |
+| DI-3/RT-4 批次验收报告（29 份逐项迁移六组动作（17 venv 补录 + 2 准入钉值 target/release 实测 sha256 + rtk.mcp network vm_local→none stdio 事实修正 + ffprobe/ffmpeg 同包 9.1 重钉三处一体 + 9 份零动作核对）+ 18 孪生同步 + Resolver dispatch.rs 单点接线三态硬拒 + dispatch_policy_gate 五负例矩阵 + run_tool_e2e fixture venv 化 + 媒体四测 guard 随挂 + selftest_rt4.sh（20 PASS V-9 预挂）；判据 1 = 28 assign + 1 not_applicable inconsistent 零成员、判据 9 = workspace 全量零基线红（MA-3 以来首次，di2_media×4 收口 26/26）；坏消息八项单列含 frames 联动重钉与 native_rust_dispatch 两测 D3 语义改造、WSW-7 前置输出登记节） | [phase0/DI-3-RT-4-BATCH-REPORT.md](phase0/DI-3-RT-4-BATCH-REPORT.md) |
 | 工具协议         | [phase0/TOOL-CONTRACT-DRAFT.md](phase0/TOOL-CONTRACT-DRAFT.md)         |
 | 插件协议         | [phase0/PLUGIN-CONTRACT-DRAFT.md](phase0/PLUGIN-CONTRACT-DRAFT.md)     |
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |

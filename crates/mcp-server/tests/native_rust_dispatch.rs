@@ -2,8 +2,9 @@
 //! 遗留 #2 消费）。真实 run_tool 通道（与 bin 同一 RunChannel 装配路径）：
 //! PDF 通道链派发（两条真实 run，trace_id = run_id 自锚定 → tool_run 表
 //! 可反查 /api/traces 面）+ 嗅探门前置拒绝（无 run 行）+ 输入 64 MiB 帽
-//! stat 前置拒绝（评审修订：fs::read 全量读入前判帽，D7 口径）+ `other`
-//! 拒绝面不回归（mcp_client runtime → 承载范围外拒绝）。
+//! stat 前置拒绝（评审修订：fs::read 全量读入前判帽，D7 口径）+ 词表外
+//! 声明 Resolver 闸硬拒（DI-3/RT-4 D3：mcp_client → RT3_RUNTIME_VOCAB）+
+//! 通道表外 native assign 工具承载守卫（B 组正式登记件，词形零漂移）。
 //!
 //! 纪律：临时库自建（生产 platform*.db / rip-data 零触碰）；fixture 来自
 //! 入库 crates/document-router/tests/fixtures/（评审修订：原 rip-data/
@@ -485,10 +486,12 @@ fn native_rust_dispatch_input_too_large_rejected_before_read() {
     assert_eq!(count, 0, "stat 帽拒绝零 run 行（读面未触达）");
 }
 
-/// `other` 拒绝面不回归：mcp_client runtime 工具落承载范围外拒绝（既有
-/// other => 分支保持词表扩展后的原语义——native_rust 已入词表）。
+/// 词表外 runtime.type 拒绝面（DI-3/RT-4 D3 行为变化显性记账）：mcp_client
+/// runtime 工具经 Resolver 接线后由 decide() N10b 前置硬拒（RT3_RUNTIME_VOCAB /
+/// VALIDATION）——原 `other` 臂「不在本面承载范围」词形被 Resolver 词表闸取代
+/// （词表外声明不再到达派发 match；承载语义不变，拒绝点前移 + 码表化）。
 #[test]
-fn dispatch_other_rejection_surface_unchanged() {
+fn dispatch_vocab_outside_rejected_by_resolver_gate() {
     let fix = fixture("other");
     // 登记 mcp_client runtime 的非 DI-1 工具（登记面合法形态 + manifest_for
     // 文件面）。
@@ -501,7 +504,7 @@ fn dispatch_other_rejection_surface_unchanged() {
             "version": "0.1.0",
             "kind": "tool",
             "family": "utility",
-            "description": "other 拒绝面回归探针（mcp_client runtime 不在派发承载范围）",
+            "description": "词表外声明探针（mcp_client runtime 经 Resolver 词表闸硬拒）",
             "runtime": {"type": "mcp_client", "endpoint": "stdio:/bin/true", "tool_name": "probe"},
             "input_schema": {"type": "object"},
             "output_schema": {"type": "object"},
@@ -521,49 +524,36 @@ fn dispatch_other_rejection_surface_unchanged() {
             "input": {},
         }))
         .expect_err("mcp_client runtime stays outside dispatch scope");
-    let message = err["error"]["message"].as_str().unwrap();
-    assert!(
-        message.contains("不在本面承载范围"),
-        "other 拒绝面语义保持：{message}"
+    assert_eq!(
+        err["error"]["category"], "VALIDATION",
+        "N10b 词表闸 category 保持 VALIDATION: {err}"
+    );
+    assert_eq!(
+        err["error"]["code"], "RT3_RUNTIME_VOCAB",
+        "Resolver 词表闸拒绝码（D3②）: {err}"
     );
 }
 
-/// 通道表外 native_rust 工具（非 DI-1 四工具 id）→ 承载范围守卫拒绝。
+/// 通道表外 native_rust assign 工具（B 组准入钉值齐备：rip.knowledge.document.fetch
+/// 正式登记件）→ 承载范围守卫拒绝（DI-3/RT-4 迁移后 assign 决策到达派发面，
+/// 通道表守卫词形零漂移——D3 判据 4 派发行为面断言之一）。
 #[test]
 fn native_rust_tool_outside_channel_table_rejected() {
     let fix = fixture("scope");
-    register_probe_manifest(
-        &fix,
-        &json!({
-            "schema_version": "1",
-            "id": "rip.dispatch.nonchannel",
-            "name": "Native Rust Outside Channel Table",
-            "version": "0.1.0",
-            "kind": "tool",
-            "family": "utility",
-            "description": "DI-1 通道表承载范围守卫探针",
-            "runtime": {
-                "type": "native_rust",
-                "binary": "/usr/bin/true",
-                "subcommand": "true",
-                "result_mode": "frame"
-            },
-            "input_schema": {"type": "object"},
-            "output_schema": {"type": "object"},
-            "resources": {"cpu": "1", "memory": "256Mi", "timeout_seconds": 10},
-            "network": {"mode": "none"},
-            "secrets": [],
-            "permission_level": "T0",
-            "idempotent": false,
-            "health": {"probe": {"type": "none"}, "on_run_recover": false},
-            "provenance": {"origin": "rip-native", "license": "repo-internal", "dependencies": [], "tested": "dispatch scope guard"}
-        }),
-    );
+    // B 组正式登记件（binary 绝对路径 + 64hex 钉值 → Resolver assign）；
+    // 通道表零扩展（RT-3-TASK §1/A2：dedicated dispatch comes with its own
+    // batch）→ run_tool 承载范围守卫拒绝，消息词形与迁移前一致。
+    let official = std::fs::read_to_string(
+        repo_root().join("manifests/tools/rip.knowledge.document.fetch.json"),
+    )
+    .expect("official B-group manifest readable");
+    let doc: Value = serde_json::from_str(&official).expect("official manifest json");
+    register_probe_manifest(&fix, &doc);
     let channel = fix.channel();
     let err = channel
         .run_tool(&json!({
-            "tool_id": "rip.dispatch.nonchannel",
-            "input": {},
+            "tool_id": "rip.knowledge.document.fetch",
+            "input": {"url": "http://example.com/", "allow_domain": ["example.com"]},
         }))
         .expect_err("non-channel-table native tool rejected");
     let message = err["error"]["message"].as_str().unwrap();

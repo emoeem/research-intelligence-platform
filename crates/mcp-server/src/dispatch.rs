@@ -42,8 +42,9 @@
 
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -52,7 +53,12 @@ use tool_engine::adapter::{
     NativeRustAdapter, NativeRustConfig, NetworkPlan, PodmanHostAdapter, PodmanHostConfig,
     PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };
-use tool_engine::capability::StaticCatalogProvider;
+use tool_engine::capability::{CapabilityId, CapabilityProvider, InputRisk, StaticCatalogProvider};
+use tool_engine::policy::{
+    decide, derive_dependency_complexity, derive_isolation_requirement, derive_trust,
+    CapabilityInput as ResolverCapabilityInput, DecisionInput, DependencyComplexity,
+    RuntimeDecision, Verdict,
+};
 use tool_engine::{DriveOutcome, Engine, EngineError};
 
 use database::rusqlite::OptionalExtension;
@@ -257,6 +263,51 @@ impl RunChannel {
             .unwrap_or("")
             .to_string();
 
+        // DI-3/RT-4 D3：PolicyResolver 派发闸单点接线（RT-3-ADR D9 缝合点，
+        // 决策/派发分离——决策本体在 tool-engine policy.rs 纯函数面，本模块
+        // 只做输入装配与闸门）。decide() 在 runtime.type 提取与 match 派发
+        // 之间调用；Reject/Inconsistent/NotApplicable 三态硬拒不派发
+        // （fail-closed 零降级，提交前拒绝不落 run 行）；assign 按决策值派发
+        // （迁移完成态决策值=声明值 → 三分支行为零漂移，S4 断言）。venv 真探测
+        // 在装配面完成（RT3_VENV_UNAVAILABLE 先于 adapter ensure_ready 双层
+        // 纵深，探测拒绝零 worker 进程拉起）。
+        let facts = resolver_extract_facts(&manifest)
+            .map_err(|e| err_payload(&format!("resolver input assembly failed: {e}"), "INFRA"))?;
+        let venv_status = resolver_probe_venv(&manifest, self.working_dir.as_deref())
+            .map_err(|e| err_payload(&format!("resolver input assembly failed: {e}"), "INFRA"))?;
+        let capability =
+            resolver_capability_input(&self.capability_seed_path, facts.capability_ref.as_deref())
+                .map_err(|e| {
+                    err_payload(&format!("resolver input assembly failed: {e}"), "INFRA")
+                })?;
+        let decision_input = resolver_build_input(&facts, capability, venv_status);
+        let decision = decide(&decision_input);
+        match decision.verdict {
+            Verdict::Assign => {
+                // 决策值=声明值（R7 交叉校验保证）；派发按决策值走。
+            }
+            Verdict::NotApplicable => {
+                return Err(err_payload(
+                    &format!(
+                        "tool {tool_id} 是元数据条目（health.probe.type={}）：登记即置 DISABLED，not_applicable 不派发面（DI-3/RT-4 D3② 行为变化显性记账）",
+                        facts.probe_type.as_deref().unwrap_or("none")
+                    ),
+                    "VALIDATION",
+                ));
+            }
+            Verdict::Inconsistent => {
+                return Err(resolver_inconsistent_payload(&decision));
+            }
+            Verdict::Reject => {
+                return Err(resolver_reject_payload(&decision));
+            }
+        }
+        let dispatch_runtime = decision
+            .runtime
+            .map(|t| t.as_str())
+            .unwrap_or(runtime_type.as_str())
+            .to_string();
+
         let request = build_request(
             tool_id,
             input,
@@ -272,11 +323,11 @@ impl RunChannel {
             .unwrap_or_default()
             .to_string();
 
-        // 派发：runtime.type 分流到两条既有驱动路径（本模块不写第三条）。
+        // 派发：决策值分流到既有驱动路径（本模块不写第三条）。
         // P9-4：受理走 submit_correlated 自锚定（trace_id = run_id，015/018
         // run 即链锚惯例；workflow tool 节点同一入口），使 MCP 通道运行可经
         // REST /api/traces 反查（双通道同一审计链载具前提）。
-        let outcome = match runtime_type.as_str() {
+        let outcome = match dispatch_runtime.as_str() {
             "python_worker" => {
                 let adapter = build_python_adapter(&manifest, self.working_dir.clone())
                     .map_err(|e| err_payload(&e, "INFRA"))?;
@@ -965,6 +1016,327 @@ fn build_python_adapter(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// DI-3/RT-4 D3①：Resolver 输入装配（tests/policy_resolver_manifests.rs
+// extract_facts/to_input 测试面形态的生产搬运；决策本体零改动——policy.rs
+// 纯函数面零 diff，本模块只做 Manifest 直读派生 + 宿主子事实装配）。
+// ---------------------------------------------------------------------------
+
+/// Resolver 宿主能力子事实的进程级目录装配（rp-mcp.rs:192 同款种子来源 =
+/// RunChannel.capability_seed_path）。OnceLock 首次装配后复用（D3① 装配一次）；
+/// 首装后异 seed 路径（测试夹具面）旁路即时装配不进缓存。目录只读消费
+/// （红线 2：决策面零写入入口）。
+static RESOLVER_CATALOG: OnceLock<(PathBuf, StaticCatalogProvider)> = OnceLock::new();
+
+/// 64 位小写 hex 钉值形态核验（policy.rs admission 同规则本地副本）。
+fn resolver_sha256_hex(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// trust 派生来源回显词形（期望表测试同款；D3 派生路径可解释性）。
+fn resolver_trust_source(tool_id: &str, origin: Option<&str>, identity_pinned: bool) -> String {
+    match origin {
+        Some("rip-native") => format!("provenance.origin=rip-native（自研在仓，{tool_id}）"),
+        Some("internal-kit") => {
+            format!("provenance.origin=internal-kit（平台发行 kit，{tool_id}）")
+        }
+        Some(other) => {
+            if identity_pinned {
+                format!("provenance.origin={other} + 身份钉值在位（{tool_id}）")
+            } else {
+                format!("provenance.origin={other} 钉值缺省 → registered（{tool_id}）")
+            }
+        }
+        None => "provenance.origin 未声明 → registered".to_string(),
+    }
+}
+
+/// Manifest 事实面（全部 owned；供 [`resolver_build_input`] 借用）。
+struct ResolverFacts {
+    tool_id: String,
+    declared: String,
+    origin: Option<String>,
+    license_present: bool,
+    identity_pinned: bool,
+    trust_source: String,
+    network_mode: Option<String>,
+    secrets_present: bool,
+    probe_type: Option<String>,
+    capability_ref: Option<String>,
+    venv_declared: bool,
+    binary_path: Option<String>,
+    binary_sha256: Option<String>,
+    has_argv_or_subcommand: bool,
+    has_budget: bool,
+    permission_level: Option<String>,
+}
+
+/// Manifest 直读事实抽取（期望表 extract_facts 同字段口径；INFRA 失败仅在
+/// 结构损坏时发生——常规词表外/缺省交由 decide() 声明面规则承载）。
+fn resolver_extract_facts(manifest: &Value) -> Result<ResolverFacts, String> {
+    let runtime = manifest
+        .get("runtime")
+        .ok_or_else(|| "manifest has no runtime block".to_string())?;
+    let declared = runtime
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let origin = manifest
+        .get("provenance")
+        .and_then(|p| p.get("origin"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let license_present = manifest
+        .get("provenance")
+        .and_then(|p| p.get("license"))
+        .and_then(Value::as_str)
+        .is_some();
+    let identity_pinned = match declared.as_str() {
+        "native_rust" => runtime
+            .get("binary_sha256")
+            .and_then(Value::as_str)
+            .map(resolver_sha256_hex)
+            .unwrap_or(false),
+        "podman_host" => runtime
+            .get("image")
+            .and_then(Value::as_str)
+            .and_then(|img| img.find("@sha256:").map(|i| &img[i + 9..]))
+            .map(resolver_sha256_hex)
+            .unwrap_or(false),
+        _ => false,
+    };
+    let network_mode = manifest
+        .get("network")
+        .and_then(|n| n.get("mode"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let secrets_present = manifest
+        .get("secrets")
+        .and_then(Value::as_array)
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    let probe_type = manifest
+        .get("health")
+        .and_then(|h| h.get("probe"))
+        .and_then(|p| p.get("type"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let capability_ref = runtime
+        .get("capability_ref")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let venv_declared = runtime.get("venv").map(|v| !v.is_null()).unwrap_or(false);
+    let binary_path = runtime
+        .get("binary")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let binary_sha256 = runtime
+        .get("binary_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let has_argv_or_subcommand =
+        runtime.get("argv_template").is_some() || runtime.get("subcommand").is_some();
+    let resources = manifest.get("resources");
+    let has_budget = resources
+        .and_then(|r| r.get("timeout_seconds"))
+        .and_then(Value::as_i64)
+        .is_some()
+        && resources
+            .and_then(|r| r.get("max_output_bytes"))
+            .and_then(Value::as_i64)
+            .is_some();
+    let permission_level = manifest
+        .get("permission_level")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let tool_id = manifest
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let trust_source = resolver_trust_source(&tool_id, origin.as_deref(), identity_pinned);
+    Ok(ResolverFacts {
+        tool_id,
+        declared,
+        origin,
+        license_present,
+        identity_pinned,
+        trust_source,
+        network_mode,
+        secrets_present,
+        probe_type,
+        capability_ref,
+        venv_declared,
+        binary_path,
+        binary_sha256,
+        has_argv_or_subcommand,
+        has_budget,
+        permission_level,
+    })
+}
+
+/// venv 真探测（D3①：venv_declared=true → `venv::probe`；五态——含失败态
+/// status——如实进 DecisionInput，拒绝语义统一由 decide() R1 产出 RT3_
+/// VENV_UNAVAILABLE。探测失败零系统解释器回退，fail-closed 先于 adapter
+/// ensure_ready 双层纵深，省 worker 进程拉起）。
+fn resolver_probe_venv(
+    manifest: &Value,
+    working_dir: Option<&Path>,
+) -> Result<Option<tool_engine::venv::VenvStatus>, String> {
+    let declared = manifest
+        .get("runtime")
+        .and_then(|r| r.get("venv"))
+        .filter(|v| !v.is_null());
+    let Some(block) = declared else {
+        return Ok(None);
+    };
+    let config: tool_engine::venv::VenvConfig = serde_json::from_value(block.clone())
+        .map_err(|e| format!("manifest runtime.venv invalid: {e}"))?;
+    match tool_engine::venv::probe(&config, working_dir, None) {
+        Ok(identity) => Ok(Some(identity.status)),
+        Err(failure) => Ok(Some(failure.status)),
+    }
+}
+
+/// 宿主能力目录条目装配（capability_ref 在场 → CapabilityProvider::get；
+/// freshness 非 fresh / 条目缺即 N7 拒——拒绝语义由 decide() R1 承载，
+/// 这里只装配。missing 时 None 与期望表测试同口径）。
+fn resolver_capability_input(
+    seed_path: &Path,
+    capability_ref: Option<&str>,
+) -> Result<Option<ResolverCapabilityInput>, String> {
+    let Some(cap_ref) = capability_ref else {
+        return Ok(None);
+    };
+    // 进程级缓存（D3① 装配一次）：同 seed 路径命中即复用。
+    if let Some((cached_path, provider)) = RESOLVER_CATALOG.get() {
+        if cached_path == seed_path {
+            return resolver_capability_extract(provider, cap_ref);
+        }
+    }
+    // 未命中 → 即时装配；缓存空位则首装（异 seed 路径不覆盖既有缓存）。
+    let provider = StaticCatalogProvider::load(seed_path)
+        .map_err(|e| format!("capability seed load failed: {e}"))?;
+    if RESOLVER_CATALOG.get().is_none() {
+        let _ = RESOLVER_CATALOG.set((seed_path.to_path_buf(), provider));
+    }
+    if let Some((cached_path, provider)) = RESOLVER_CATALOG.get() {
+        if cached_path == seed_path {
+            return resolver_capability_extract(provider, cap_ref);
+        }
+    }
+    // 缓存被异 seed 路径占用（测试夹具面）：旁路装配值提取后即弃。
+    let provider = StaticCatalogProvider::load(seed_path)
+        .map_err(|e| format!("capability seed load failed: {e}"))?;
+    resolver_capability_extract(&provider, cap_ref)
+}
+
+/// 目录条目 → CapabilityInput 提取（期望表 to_input capability 块同口径）。
+fn resolver_capability_extract(
+    provider: &StaticCatalogProvider,
+    cap_ref: &str,
+) -> Result<Option<ResolverCapabilityInput>, String> {
+    let id =
+        CapabilityId::new(cap_ref).map_err(|e| format!("capability_ref 词表 {cap_ref:?}：{e}"))?;
+    Ok(provider.get(&id).map(|cached| ResolverCapabilityInput {
+        capability_id: cap_ref.to_string(),
+        status: cached.entry.status,
+        freshness: cached.freshness,
+        fingerprint: cached.entry.fingerprint.as_ref().map(|f| f.0.clone()),
+        catalog_constraints: cached
+            .entry
+            .constraints
+            .iter()
+            .map(|c| format!("catalog:{}:{}", c.code.as_str(), c.detail))
+            .collect(),
+    }))
+}
+
+/// 事实面 + 宿主子事实 → DecisionInput（期望表 to_input 同口径；input_risk =
+/// trusted_low_risk 固定基线档，D3①——Router 侧输入风险分类器接入登记后续批；
+/// egress_wired=true / vm_ready=false 同基线：podman_vm adapter 设计保留面）。
+fn resolver_build_input<'a>(
+    facts: &'a ResolverFacts,
+    capability: Option<ResolverCapabilityInput>,
+    venv_status: Option<tool_engine::venv::VenvStatus>,
+) -> DecisionInput<'a> {
+    let trust = derive_trust(
+        facts.origin.as_deref(),
+        facts.license_present,
+        facts.identity_pinned,
+    );
+    // 词表外声明无 complexity 派生判据（derive_dependency_complexity Err）：
+    // 取 Simple 基线让 R0 通过、由 decide() N10b 产出 RT3_RUNTIME_VOCAB 硬拒
+    // （policy_resolver_matrix 词表外行同款形状；禁 panic 面）。
+    let complexity =
+        derive_dependency_complexity(&facts.declared).unwrap_or(DependencyComplexity::Simple);
+    let isolation = derive_isolation_requirement(
+        facts.network_mode.as_deref(),
+        InputRisk::TrustedLowRisk,
+        facts.secrets_present,
+    );
+    let mut d = DecisionInput::base(&facts.tool_id);
+    d.declared_runtime = Some(&facts.declared);
+    d.trust_level = Some(trust);
+    d.input_risk = Some(InputRisk::TrustedLowRisk);
+    d.dependency_complexity = Some(complexity);
+    d.isolation_requirement = Some(isolation);
+    d.trust_source = Some(&facts.trust_source);
+    d.capability_ref = facts.capability_ref.as_deref();
+    d.capability = capability;
+    d.venv_declared = facts.venv_declared;
+    d.venv_status = venv_status;
+    d.network_mode = facts.network_mode.as_deref();
+    d.secrets_present = facts.secrets_present;
+    d.probe_type = facts.probe_type.as_deref();
+    d.egress_wired = true;
+    d.vm_ready = false;
+    d.binary_path = facts.binary_path.as_deref();
+    d.binary_sha256 = facts.binary_sha256.as_deref();
+    d.has_argv_or_subcommand = facts.has_argv_or_subcommand;
+    d.has_budget = facts.has_budget;
+    d.permission_level = facts.permission_level.as_deref();
+    d
+}
+
+/// Resolver Reject 载荷（D3②）：受理拒绝（submit 前拒绝不落 run 行，
+/// BudgetDenied 受理拒绝同型）；code/category 沿 RejectInfo 九类词表
+/// （envelope.rs:14-23 词表内，RT3_ 码表判据 10 消费面）。
+fn resolver_reject_payload(decision: &RuntimeDecision) -> Value {
+    let reject = decision.reject.as_ref().expect("Reject carries RejectInfo");
+    json!({
+        "ok": false,
+        "error": {
+            "category": reject.category,
+            "code": reject.code.as_str(),
+            "message": reject.message,
+        },
+        "note": "PolicyResolver 派发闸拒绝（DI-3/RT-4 D3②）：受理拒绝不落 run 行，fail-closed 零降级",
+    })
+}
+
+/// Inconsistent 载荷（D3②）：POLICY_DENIED + gap 清单随 payload 回显
+/// （迁移完成态 28 assign 下 unreachable；未来新登记声明↔决策不一致即拒，
+/// 防绕过）。
+fn resolver_inconsistent_payload(decision: &RuntimeDecision) -> Value {
+    json!({
+        "ok": false,
+        "error": {
+            "category": "POLICY_DENIED",
+            "message": format!(
+                "声明与派生目标不一致（cross_check.consistent=false，声明 {:?}）：Resolver 派发闸硬拒，迁移建议 gap {} 项随 payload 回显",
+                decision.cross_check.manifest_runtime,
+                decision.gap.len()
+            ),
+            "gap": decision.gap,
+        },
+        "note": "PolicyResolver 派发闸拒绝（DI-3/RT-4 D3②）：声明↔目标冲突语境（N6/N9/R6 缺口）不派发",
+    })
+}
+
 /// isError=true 的结构化载荷（category 用 §5.3 词表：VALIDATION /
 /// POLICY_DENIED / INFRA / EXECUTION）。
 fn err_payload(message: &str, category: &str) -> Value {
@@ -1087,7 +1459,10 @@ impl RunChannel {
     pub fn claim_task(&self, args: &Value) -> Result<Value, Value> {
         let caller = caller_required(&self.collab_caller)?;
         if !args.is_object() {
-            return Err(err_payload("claim_task arguments must be a JSON object", "VALIDATION"));
+            return Err(err_payload(
+                "claim_task arguments must be a JSON object",
+                "VALIDATION",
+            ));
         }
         let store = workflow_engine::collab::ClaimStore::new(self.collab_pool()?);
         match opt_str(args, "claim_id") {
@@ -1235,7 +1610,10 @@ impl RunChannel {
         cmd.stderr(std::process::Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| {
             err_payload(
-                &format!("rp-agent spawn failed (构建产物在位? {}): {e}", self.agent_bin.display()),
+                &format!(
+                    "rp-agent spawn failed (构建产物在位? {}): {e}",
+                    self.agent_bin.display()
+                ),
                 "INFRA",
             )
         })?;
@@ -1243,9 +1621,10 @@ impl RunChannel {
         let timeout = Duration::from_secs(self.subtask_timeout_s.max(1));
         // wait 终态（timeout 轮询；超时 kill + 结构化信封，run 行留查）。
         loop {
-            match child.try_wait().map_err(|e| {
-                err_payload(&format!("rp-agent wait failed: {e}"), "INFRA")
-            })? {
+            match child
+                .try_wait()
+                .map_err(|e| err_payload(&format!("rp-agent wait failed: {e}"), "INFRA"))?
+            {
                 Some(status) => {
                     let mut stdout = String::new();
                     if let Some(mut out) = child.stdout.take() {
@@ -1258,22 +1637,17 @@ impl RunChannel {
                         let _ = err.read_to_string(&mut stderr);
                     }
                     if !status.success() {
-                        let tail: String = stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n");
+                        let tail: String =
+                            stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n");
                         // run FAILED 终态的失败原因在 stdout 的 outcome JSON（exit 1
                         // 约定），error 分支一并透传尾部供远端诊断（stderr 只承载
                         // panic/静态校验面，run 失败面 stderr 为空）。
-                        let out_tail: String = stdout
-                            .lines()
-                            .rev()
-                            .take(3)
-                            .collect::<Vec<_>>()
-                            .join("\n");
+                        let out_tail: String =
+                            stdout.lines().rev().take(3).collect::<Vec<_>>().join("\n");
                         return Err(err_payload(
                             &format!(
                                 "rp-agent exited {} stderr=[{}] stdout_tail=[{}]",
-                                status,
-                                tail,
-                                out_tail
+                                status, tail, out_tail
                             ),
                             "EXECUTION",
                         ));
@@ -1389,14 +1763,15 @@ impl RunChannel {
                 .clone()
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
         );
-        let output = cmd
-            .output()
-            .map_err(|e| {
-                err_payload(
-                    &format!("rp-kc spawn failed (构建产物在位? {}): {e}", self.kc_bin.display()),
-                    "INFRA",
-                )
-            })?;
+        let output = cmd.output().map_err(|e| {
+            err_payload(
+                &format!(
+                    "rp-kc spawn failed (构建产物在位? {}): {e}",
+                    self.kc_bin.display()
+                ),
+                "INFRA",
+            )
+        })?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -1407,7 +1782,10 @@ impl RunChannel {
             ));
         }
         let receipt: Value = serde_json::from_str(stdout.trim()).map_err(|e| {
-            err_payload(&format!("rp-kc receipt parse failed: {e}; raw={stdout:?}"), "INFRA")
+            err_payload(
+                &format!("rp-kc receipt parse failed: {e}; raw={stdout:?}"),
+                "INFRA",
+            )
         })?;
         Ok(json!({"ok": true, "receipt": receipt}))
     }
@@ -1417,8 +1795,12 @@ impl RunChannel {
 fn claim_category(e: &workflow_engine::collab::CollabError) -> &'static str {
     use workflow_engine::collab::CollabError as E;
     match e {
-        E::NotFound(_) | E::NotClaimable { .. } | E::DependencyNotCompleted(_)
-        | E::NotClaimer(_) | E::CycleDetected(_) | E::InvalidInput(_) => "VALIDATION",
+        E::NotFound(_)
+        | E::NotClaimable { .. }
+        | E::DependencyNotCompleted(_)
+        | E::NotClaimer(_)
+        | E::CycleDetected(_)
+        | E::InvalidInput(_) => "VALIDATION",
         E::Storage(_) => "INFRA",
     }
 }

@@ -3,11 +3,11 @@
 //! 派生函数 + RT-1 CapabilityProvider 既有面（D10c 注入式消费）产出
 //! RuntimeDecision，逐份断言 verdict/runtime/cross_check/gap。
 //!
-//! # A9 预判（任务书 §2，2026-11-21 实测口径）
+//! # DI-3/RT-4 迁移后基线（本批判据 1，2026-11-22 实测口径）
 //!
-//! 25 assign + rip.knowledge.document.fetch / rip.knowledge.source.sync
-//! inconsistent（gap = 绝对路径+钉值缺口）+ rip.evidence.rtk.mcp inconsistent
-//! （gap = vm_local→kernel→vm）+ rip.ops.worker-runtime not_applicable。
+//! 28 assign + rip.ops.worker-runtime not_applicable（inconsistent 快照零成员：
+//! B 组两份准入钉值补录 + C 组 rtk.mcp network none 修正后，RT-3 §6 三处
+//! inconsistent gap 全部收敛——迁移完成态实证，verdict 四态词表不减）。
 //!
 //! # 三档风险路由（判据 6）
 //!
@@ -19,7 +19,10 @@
 //! Host Capability 子事实 = RT-1 `StaticCatalogProvider::load` 种子 +
 //! `CapabilityProvider::get`（D10c：不复制探测逻辑）；EgressProxy 接线子事实
 //! = true（RT-3-ADR D5 论据「现状形态」三工具承载）；VM 就绪子事实 = false
-//! （podman_vm adapter 设计保留面）。全离线零安装，`--test-threads=1`。
+//! （podman_vm adapter 设计保留面）；venv 子事实 = 声明在场即静态合成
+//! Available（DI-3/RT-4 任务书 D3① 裁决：与 egress_wired=true 注入同口径，
+//! 真探测面由 RT-2 python_worker_venv_e2e 既有承载 + adapter ensure_ready
+//! 双层纵深）。全离线零安装，`--test-threads=1`。
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +35,7 @@ use tool_engine::policy::{
     input_risk_short_alias, DecisionInput, DependencyComplexity, IsolationRequirement, Target,
     TrustLevel, Verdict,
 };
+use tool_engine::venv::VenvStatus;
 
 const TOOLS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../manifests/tools");
 const SEED: &str = concat!(
@@ -41,13 +45,6 @@ const SEED: &str = concat!(
 
 /// 元数据条目（R7 不派发面；RT-3-TASK §2 A9）。
 const METADATA_ENTRY: &str = "rip.ops.worker-runtime";
-
-/// 声明 native_rust 但 §3.1 准入缺口（裸名 binary + 无钉值；A9）。
-const ADMISSION_GAP_TOOLS: [&str; 2] =
-    ["rip.knowledge.document.fetch", "rip.knowledge.source.sync"];
-
-/// vm_local 派生 kernel × 声明 python_worker（N6；A9）。
-const VM_LOCAL_TOOL: &str = "rip.evidence.rtk.mcp";
 
 /// YAML-only Manifest（无 JSON 孪生；合计 29 份）。
 const YAML_ONLY: &str = "rip.http.tls_inspect.yaml";
@@ -197,6 +194,14 @@ fn to_input<'a>(
     d.capability_ref = facts.capability_ref.as_deref();
     d.capability = capability;
     d.venv_declared = facts.venv_declared;
+    // DI-3/RT-4 D3①：venv 声明在场 → 五态静态合成 Available（与本文件
+    // egress_wired=true 注入同口径——R1 闸子事实注入，非真探测；真探测面由
+    // RT-2 python_worker_venv_e2e 与 adapter ensure_ready 双层承载）。
+    d.venv_status = if facts.venv_declared {
+        Some(VenvStatus::Available)
+    } else {
+        None
+    };
     d.network_mode = facts.network_mode.as_deref();
     d.secrets_present = facts.secrets_present;
     d.probe_type = facts.probe_type.as_deref();
@@ -244,8 +249,9 @@ fn provider() -> StaticCatalogProvider {
     StaticCatalogProvider::load(Path::new(SEED)).expect("能力种子加载（RT-1 16 条）")
 }
 
-/// 判据 5：29 份逐份断言（25 assign + 2 准入缺口 inconsistent + 1 vm_local
-/// inconsistent + 1 not_applicable；verdict/runtime/cross_check/gap/reason）。
+/// 判据 5：29 份逐份断言（28 assign + 1 not_applicable；DI-3/RT-4 迁移后
+/// 基线——3 处 RT-3 inconsistent 全部收敛，inconsistent 快照零成员；
+/// verdict/runtime/cross_check/gap/reason 逐字段）。
 #[test]
 fn manifests_expectation_table_29() {
     let provider = provider();
@@ -283,49 +289,7 @@ fn manifests_expectation_table_29() {
             facts.tool_id,
             dec.reason[0].hit
         );
-        if ADMISSION_GAP_TOOLS.contains(&facts.tool_id.as_str()) {
-            counts[1] += 1;
-            assert_eq!(dec.verdict, Verdict::Inconsistent, "{}", facts.tool_id);
-            assert_eq!(
-                dec.runtime,
-                Some(Target::NativeRust),
-                "{} 目标=候选 native_rust",
-                facts.tool_id
-            );
-            assert!(!dec.cross_check.consistent);
-            let gap = dec.gap.join("\n");
-            assert!(
-                gap.contains("非绝对路径"),
-                "{} gap 绝对路径缺口：{gap}",
-                facts.tool_id
-            );
-            assert!(
-                gap.contains("binary_sha256"),
-                "{} gap 钉值缺口：{gap}",
-                facts.tool_id
-            );
-            continue;
-        }
-        if facts.tool_id == VM_LOCAL_TOOL {
-            counts[1] += 1;
-            assert_eq!(dec.verdict, Verdict::Inconsistent, "{}", facts.tool_id);
-            assert_eq!(
-                dec.runtime,
-                Some(Target::PodmanVm),
-                "{} 目标=podman_vm",
-                facts.tool_id
-            );
-            assert!(!dec.cross_check.consistent);
-            assert!(dec.reject.is_none());
-            let gap = dec.gap.join("\n");
-            assert!(
-                gap.contains("vm_local") && gap.contains("kernel") && gap.contains("podman_vm"),
-                "{} gap = vm_local→kernel→vm：{gap}",
-                facts.tool_id
-            );
-            continue;
-        }
-        // 25 assign：verdict/runtime/cross_check/gap/reject 逐字段。
+        // 28 assign（DI-3/RT-4 迁移完成态）：verdict/runtime/cross_check/gap/reject。
         counts[0] += 1;
         assert_eq!(dec.verdict, Verdict::Assign, "{}: {:?}", facts.tool_id, dec);
         let want = Target::parse(&declared).unwrap();
@@ -342,8 +306,8 @@ fn manifests_expectation_table_29() {
     }
     assert_eq!(
         counts,
-        [25, 3, 0, 1],
-        "A9 分布：25 assign + 3 inconsistent + 1 not_applicable"
+        [28, 0, 0, 1],
+        "DI-3/RT-4 判据 1 分布：28 assign + 1 not_applicable（inconsistent 快照零成员）"
     );
     // 判据 2：native_rust/python_worker/podman_host 三行在期望表内有 assign 成员。
     for word in ["native_rust", "python_worker", "podman_host"] {
@@ -365,30 +329,14 @@ fn manifests_three_tier_risk_routing() {
             continue;
         }
         let is_native_decl = matches!(facts.declared.as_str(), "native_rust" | "python_worker");
-        // low（trusted_low_risk）：基线档 = 期望表行为。
+        // low（trusted_low_risk）：基线档 = 期望表行为（DI-3/RT-4 迁移后
+        // 28 份全 assign——ADMISSION_GAP/VM_LOCAL 特例随迁移撤除）。
         let low = decide(&to_input(&facts, &provider, InputRisk::TrustedLowRisk));
-        if ADMISSION_GAP_TOOLS.contains(&facts.tool_id.as_str()) || facts.tool_id == VM_LOCAL_TOOL {
-            assert_eq!(low.verdict, Verdict::Inconsistent, "{} low", facts.tool_id);
-        } else {
-            assert_eq!(low.verdict, Verdict::Assign, "{} low", facts.tool_id);
-        }
+        assert_eq!(low.verdict, Verdict::Assign, "{} low", facts.tool_id);
         // unknown（untrusted 代码枚举）：native/python 声明 → inconsistent
-        // (target=container)；podman_host 声明 → assign；vm_local → N6 inconsistent。
+        // (target=container)；podman_host 声明 → assign。
         let unknown = decide(&to_input(&facts, &provider, InputRisk::Untrusted));
-        if facts.tool_id == VM_LOCAL_TOOL {
-            assert_eq!(
-                unknown.verdict,
-                Verdict::Inconsistent,
-                "{} unknown",
-                facts.tool_id
-            );
-            assert_eq!(
-                unknown.runtime,
-                Some(Target::PodmanVm),
-                "{} unknown",
-                facts.tool_id
-            );
-        } else if is_native_decl {
+        if is_native_decl {
             assert_eq!(
                 unknown.verdict,
                 Verdict::Inconsistent,
@@ -411,38 +359,17 @@ fn manifests_three_tier_risk_routing() {
                 facts.tool_id
             );
         }
-        // high（high_risk）：VM 闸 → Reject(RT3_VM_NOT_READY) 零降级；唯一
-        // 例外 = vm_local 声明 × 原生档声明（N6 声明冲突语境优先，D7 细则，
-        // 现仓命中 rip.evidence.rtk.mcp → Inconsistent(target=podman_vm)）。
+        // high（high_risk）：VM 闸 → Reject(RT3_VM_NOT_READY) 零降级
+        // （DI-3/RT-4 迁移后 N6 声明冲突语境在 29 份快照零成员）。
         let high = decide(&to_input(&facts, &provider, InputRisk::HighRisk));
-        if facts.tool_id == VM_LOCAL_TOOL {
-            assert_eq!(
-                high.verdict,
-                Verdict::Inconsistent,
-                "{} high",
-                facts.tool_id
-            );
-            assert_eq!(
-                high.runtime,
-                Some(Target::PodmanVm),
-                "{} high",
-                facts.tool_id
-            );
-            assert!(
-                high.reason.iter().any(|s| s.rule == "N6"),
-                "{} high N6",
-                facts.tool_id
-            );
-        } else {
-            assert_eq!(high.verdict, Verdict::Reject, "{} high", facts.tool_id);
-            assert_eq!(
-                high.reject.as_ref().unwrap().code.as_str(),
-                "RT3_VM_NOT_READY",
-                "{} high",
-                facts.tool_id
-            );
-            assert_eq!(high.runtime, None, "{} high 零降级目标", facts.tool_id);
-        }
+        assert_eq!(high.verdict, Verdict::Reject, "{} high", facts.tool_id);
+        assert_eq!(
+            high.reject.as_ref().unwrap().code.as_str(),
+            "RT3_VM_NOT_READY",
+            "{} high",
+            facts.tool_id
+        );
+        assert_eq!(high.runtime, None, "{} high 零降级目标", facts.tool_id);
     }
 }
 
@@ -523,7 +450,10 @@ fn assign_constraints_vocabulary() {
             );
         }
     }
-    assert_eq!(checked, 25, "25 份 assign 全部过 constraints 断言");
+    assert_eq!(
+        checked, 28,
+        "28 份 assign 全部过 constraints 断言（DI-3/RT-4 迁移后基线）"
+    );
 }
 
 /// D2/判据 4 联断：Integration 面 InputRisk 三档经既有枚举串（非短名）。

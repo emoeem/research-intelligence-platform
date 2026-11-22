@@ -8,7 +8,8 @@
   "description": "按已审核来源定点抓取文档正文（allowlist + 私网拒绝 + 重定向逐跳复核 + 哈希落库），只读 GET 无凭据",
   "runtime": {
     "type": "native_rust",
-    "binary": "rp-knowledge-fetch",
+    "binary": "/media/emo/code/pensting/research-platform/target/release/rp-knowledge-fetch",
+    "binary_sha256": "2729a81db0f7a08b71d54e9647fc95207cde51dc9a0619e1fe1a47bf023bda21",
     "subcommand": "fetch"
   },
   "input_schema": {
@@ -149,7 +150,9 @@
     "origin": "rip-native",
     "source_path": "crates/tool-engine/src/document_fetch.rs",
     "license": "repo-internal",
-    "dependencies": [],
+    "dependencies": [
+      "rp-knowledge-fetch 构建产物钉值：CARGO_TARGET_DIR=/home/emo/rt3-target cargo build --offline --release -p tool-engine -p plugin-runtime --bins → target/release/rp-knowledge-fetch sha256_prefix 2729a81db0f7a08b（2026-11-22 sha256sum 实测；crates/tool-engine/src/document_fetch.rs，自研在仓）"
+    ],
     "known_limits": [
       "传输面仅 http 明文（workspace 无 TLS 依赖栈）；https 按 scheme_unsupported 结构化拒绝",
       "SSRF 面：DNS 解析后全地址私网复核，且连接用已复核 IP（防 DNS rebinding TOCTOU）",

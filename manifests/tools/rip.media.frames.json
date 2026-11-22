@@ -9,7 +9,7 @@
   "runtime": {
     "type": "native_rust",
     "binary": "/usr/bin/ffmpeg",
-    "binary_sha256": "09190fb791fb0db81fb2616a59b9c4a16f8806792b6247e7c1ff1a9dd1708889",
+    "binary_sha256": "d3acddf4bd443d06b02ff90ab574e889276ebbd1312f75bfd86d52552da164d8",
     "capability_ref": "media.ffmpeg",
     "argv_template": [
       "-hide_banner",
@@ -119,7 +119,7 @@
     "source_path": "/usr/bin/ffmpeg",
     "license": "LGPL-2.1-or-later",
     "dependencies": [
-      "ffmpeg-full 9.0.2-3.46 sha256_prefix 09190fb791fb0db8（libx264/libopenh264 在列）"
+      "ffmpeg-full 9.1-1.6 sha256_prefix d3acddf4bd443d06（libx264/libopenh264 在列；2026-11-22 同包升级联动重探，version_coupled）"
     ],
     "tested": "DI-2 e2e：small.mp4（运行时生成）probe+frames 两子 run SUCCEEDED，out/frame-001..004.png 实收（2s@fps2=4 帧 ≤ 32 帽），crates/document-router/tests/",
     "known_limits": [

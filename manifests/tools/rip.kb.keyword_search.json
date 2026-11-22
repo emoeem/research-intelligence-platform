@@ -17,7 +17,13 @@
       "scripts/rip_kb_search.py"
     ],
     "working_dir": "repo://research-platform",
-    "restart": "pooled"
+    "restart": "pooled",
+    "venv": {
+      "path": "workers/python/.venv",
+      "direct_deps": [
+        "pip"
+      ]
+    }
   },
   "input_schema": {
     "type": "object",

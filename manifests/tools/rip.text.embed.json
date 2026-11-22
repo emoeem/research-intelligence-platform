@@ -16,7 +16,15 @@
       "workers/python/embedding_worker.py"
     ],
     "working_dir": "repo://research-platform",
-    "restart": "pooled"
+    "restart": "pooled",
+    "venv": {
+      "path": "workers/python/.venv",
+      "direct_deps": [
+        "numpy",
+        "onnxruntime",
+        "tokenizers"
+      ]
+    }
   },
   "input_schema": {
     "type": "object",

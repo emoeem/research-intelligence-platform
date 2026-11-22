@@ -26,6 +26,9 @@ runtime:
     - "integrations/rtis/eri_adapter.py"
   working_dir: "repo://research-platform"
   restart: "per_run"
+  venv:
+    path: "workers/python/.venv"
+    direct_deps: ["pip"]
 input_schema:
   type: "object"
   required: ["task_json"]

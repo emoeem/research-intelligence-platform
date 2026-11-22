@@ -20,7 +20,13 @@
       "../toolkit/src"
     ],
     "working_dir": "repo://research-platform",
-    "restart": "pooled"
+    "restart": "pooled",
+    "venv": {
+      "path": "workers/python/.venv",
+      "direct_deps": [
+        "pip"
+      ]
+    }
   },
   "input_schema": {
     "type": "object",
@@ -85,7 +91,7 @@
     "timeout_seconds": 60
   },
   "network": {
-    "mode": "vm_local"
+    "mode": "none"
   },
   "secrets": [],
   "permission_level": "T2",
@@ -107,7 +113,7 @@
     "dependencies": [],
     "known_limits": [
       "T2 从严登记：call 的外部副作用由远端 server 决定；派发须携带 authorization_ref，缺失按 POLICY_DENIED 拒绝（D-TC-05）",
-      "薄包装原样返回 stdout；server 须本仓可启动（network=vm_local），端到端调用需外部 MCP server 在线（同 T11 待验证口径，本批未实跑 call）"
+      "薄包装原样返回 stdout；MCP server 交互为 spawn 子进程 stdio 管道（toolkit rtk/mcp.py 最小 stdio 客户端，AST 复核零 socket/http import），network.mode=none 登记与承载一致；端到端调用需外部 MCP server 在线（同 T11 待验证口径，本批未实跑 call）"
     ],
     "tested": "toolkit pytest 27 passed（V-2 关闭：research-platform/.venv-check 临时 venv，2026-11-09 实跑 exit=0，含 test_mcp.py 用例）"
   },

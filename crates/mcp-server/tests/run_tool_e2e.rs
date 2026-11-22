@@ -24,7 +24,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use database::{migrate, DbPath, Pool, PoolConfig};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use common::McpProc;
 
@@ -62,10 +62,13 @@ fn fixture(tag: &str) -> Fixture {
         _dir: dir,
         run_db,
         artifacts_dir,
+        // DI-3/RT-4 A8：夹具目录置首——manifest_for 按目录序首个同 id 命中，
+        // fixture 登记件遮蔽仓库同 id 正式件（运行时解析消费 fixture 面；
+        // 正式 manifests/ 零 diff 纪律不变）。
         manifest_dirs: vec![
+            extra_manifest_dir.clone(),
             repo_root().join("manifests/tools"),
             repo_root().join("containerfiles/rip-tool-webresearch"),
-            extra_manifest_dir.clone(),
         ],
         extra_manifest_dir,
     }
@@ -79,11 +82,23 @@ impl Fixture {
         McpProc::spawn_in(
             &[
                 ("RP_MCP_TOKEN", token),
-                ("RP_DB_PATH", repo_root().join("migrations/platform.db").to_string_lossy().as_ref()),
+                (
+                    "RP_DB_PATH",
+                    repo_root()
+                        .join("migrations/platform.db")
+                        .to_string_lossy()
+                        .as_ref(),
+                ),
                 ("RP_RUN_DB", self.run_db.to_string_lossy().as_ref()),
-                ("RP_MIGRATIONS_DIR", repo_root().join("migrations").to_string_lossy().as_ref()),
+                (
+                    "RP_MIGRATIONS_DIR",
+                    repo_root().join("migrations").to_string_lossy().as_ref(),
+                ),
                 ("RP_MANIFEST_DIRS", &self.manifest_dirs_csv()),
-                ("RP_ARTIFACTS_DIR", self.artifacts_dir.to_string_lossy().as_ref()),
+                (
+                    "RP_ARTIFACTS_DIR",
+                    self.artifacts_dir.to_string_lossy().as_ref(),
+                ),
             ],
             Some(&repo_root()),
         )
@@ -100,8 +115,12 @@ impl Fixture {
 
 /// 解析 tools/call result 的 content[0].text 载荷。
 fn payload_of(reply: &Value) -> Value {
-    serde_json::from_str(reply["result"]["content"][0]["text"].as_str().expect("text"))
-        .expect("payload json")
+    serde_json::from_str(
+        reply["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text"),
+    )
+    .expect("payload json")
 }
 
 /// python3 在位守卫（V-9：真实 worker 用例保持本地可执行环境）。
@@ -208,6 +227,63 @@ fn write_t2_demo_manifest(fix: &Fixture) -> Value {
     manifest
 }
 
+/// DI-3/RT-4 A8：离线零安装 fixture venv（RT-2 make_fixture_venv 先例同款：
+/// `python3 -m venv` 含 pip → direct_deps=["pip"] capset 可满足；CI 不碰
+/// venv 纪律 ci.yml:101 不动——临时 venv 测试自建自焚，非仓库
+/// workers/python/.venv 本体）。
+fn make_fixture_venv(tag: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "rt4-venv-e2e-{}-{}-{}",
+        tag,
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
+    let out = Command::new("python3")
+        .args(["-m", "venv"])
+        .arg(&root)
+        .output()
+        .expect("spawn python3 -m venv");
+    assert!(
+        out.status.success(),
+        "fixture venv 创建失败: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    root
+}
+
+/// DI-3/RT-4 A8 fixture Manifest：正式 rip.doc.parse 登记件 deep-copy，
+/// 仅覆写 runtime.venv 注入/移除（其余逐字段零漂移断言保留），落夹具目录
+/// （manifest_dirs 首位 → 同 id 遮蔽仓库登记件，运行时解析消费 fixture 面
+/// 而非仓库面——venv 补录后 CI 无 workers/python/.venv 即红的解法）。
+fn write_doc_parse_fixture(fix: &Fixture, venv: Option<Value>) -> Value {
+    let official = read_repo_manifest("manifests/tools/rip.doc.parse.json");
+    let mut manifest = official.clone();
+    match venv {
+        Some(v) => manifest["runtime"]["venv"] = v,
+        None => {
+            if let Some(obj) = manifest["runtime"].as_object_mut() {
+                obj.remove("venv");
+            }
+        }
+    }
+    // 正式 Manifest 零漂移断言（A8）：两侧同去 venv 块后逐字段相等。
+    let mut mirror = manifest.clone();
+    if let Some(obj) = mirror["runtime"].as_object_mut() {
+        obj.remove("venv");
+    }
+    let mut official_mirror = official;
+    if let Some(obj) = official_mirror["runtime"].as_object_mut() {
+        obj.remove("venv");
+    }
+    assert_eq!(
+        mirror, official_mirror,
+        "fixture Manifest 除 venv 块外与正式登记件零漂移"
+    );
+    let path = fix.extra_manifest_dir.join("rip.doc.parse.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).expect("write manifest");
+    manifest
+}
+
 // ---------------------------------------------------------------------------
 // 判据一：令牌授权边界 fail-closed（缺失即 exit 2，不落任何运行行）
 // ---------------------------------------------------------------------------
@@ -218,13 +294,16 @@ fn run_tool_without_token_fails_closed_before_serving() {
     let mut proc = McpProc::spawn(&[
         ("RP_MCP_TOKEN", ""),
         ("RP_RUN_DB", fix.run_db.to_string_lossy().as_ref()),
-        ("RP_MIGRATIONS_DIR", repo_root().join("migrations").to_string_lossy().as_ref()),
+        (
+            "RP_MIGRATIONS_DIR",
+            repo_root().join("migrations").to_string_lossy().as_ref(),
+        ),
     ]);
     proc.send_raw(
         json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
             "name":"rip.run_tool","arguments":{"tool_id":"rip.doc.parse","input":{"text":"x"}}}})
-            .to_string()
-            .as_str(),
+        .to_string()
+        .as_str(),
     );
     assert_eq!(
         proc.wait_exit(),
@@ -254,9 +333,15 @@ fn t2_without_authorization_ref_is_policy_denied_and_lands_no_run_row() {
         "rip.run_tool",
         json!({"tool_id": T2_DEMO_MANIFEST_ID, "input": {"text": "# 标题\n\n正文。"}}),
     );
-    assert_eq!(reply["result"]["isError"], true, "T2 缺授权引用必须 isError=true: {reply}");
+    assert_eq!(
+        reply["result"]["isError"], true,
+        "T2 缺授权引用必须 isError=true: {reply}"
+    );
     let payload = payload_of(&reply);
-    assert_eq!(payload["error"]["category"], "POLICY_DENIED", "D-TC-05 类别: {payload}");
+    assert_eq!(
+        payload["error"]["category"], "POLICY_DENIED",
+        "D-TC-05 类别: {payload}"
+    );
     assert!(
         payload["error"]["message"]
             .as_str()
@@ -293,20 +378,37 @@ fn t2_with_authorization_ref_executes_real_worker() {
             "task_id": "task-p92-t2"
         }),
     );
-    assert_eq!(reply["result"]["isError"], false, "带授权引用应执行成功: {reply}");
+    assert_eq!(
+        reply["result"]["isError"], false,
+        "带授权引用应执行成功: {reply}"
+    );
     let payload = payload_of(&reply);
     assert_eq!(payload["status"], "SUCCEEDED");
     assert_eq!(payload["result"]["stats"]["sections"], json!(1));
     assert_eq!(payload["transcript"][0], "QUEUED");
-    assert_eq!(payload["transcript"].as_array().unwrap().last().unwrap(), "SUCCEEDED");
+    assert_eq!(
+        payload["transcript"].as_array().unwrap().last().unwrap(),
+        "SUCCEEDED"
+    );
     // Artifact + Evidence 引用与库行对账（face=rp-mcp，P7-2 同一登记实现）。
     let run_id = payload["run_id"].as_str().unwrap();
     assert!(!payload["artifact_id"].as_str().unwrap().is_empty());
     assert_eq!(payload["evidence_refs"].as_array().unwrap().len(), 1);
-    assert_eq!(count(&fix, "tool_run", &format!("run_id = '{run_id}' AND status = 'SUCCEEDED'")), 1);
+    assert_eq!(
+        count(
+            &fix,
+            "tool_run",
+            &format!("run_id = '{run_id}' AND status = 'SUCCEEDED'")
+        ),
+        1
+    );
     assert_eq!(count(&fix, "artifact", &format!("run_id = '{run_id}'")), 1);
     assert_eq!(
-        count(&fix, "evidence", &format!("source_pk = '{run_id}' AND captured_by = 'rp-mcp:run_tool'")),
+        count(
+            &fix,
+            "evidence",
+            &format!("source_pk = '{run_id}' AND captured_by = 'rp-mcp:run_tool'")
+        ),
         1
     );
     proc.wait_exit();
@@ -332,7 +434,18 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
         return;
     }
     let fix = fixture("doc-parse");
-    register_manifest(&fix, &read_repo_manifest("manifests/tools/rip.doc.parse.json"));
+    // DI-3/RT-4 A8 fixture 化：正式登记件内容零漂移 fixture + 临时 venv
+    // （python3 -m venv 自建；Resolver 接线后 run_tool 派发面 venv 真探测
+    // available → assign → venv 解释器执行 parsing_worker，全链与迁移前零漂移）。
+    let venv_root = make_fixture_venv("doc-parse");
+    let manifest = write_doc_parse_fixture(
+        &fix,
+        Some(json!({
+            "path": venv_root.to_string_lossy(),
+            "direct_deps": ["pip"]
+        })),
+    );
+    register_manifest(&fix, &manifest);
     let mut proc = fix.server("tok");
     proc.handshake("2024-11-05");
     let reply = proc.call(
@@ -342,13 +455,26 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
             "input": {"text": "# 标题\n\n正文一段。", "format": "md"}
         }),
     );
-    assert_eq!(reply["result"]["isError"], false, "doc.parse 全链应成功: {reply}");
+    assert_eq!(
+        reply["result"]["isError"], false,
+        "doc.parse 全链应成功: {reply}"
+    );
     let payload = payload_of(&reply);
     let run_id = payload["run_id"].as_str().unwrap().to_string();
     assert_eq!(payload["tool_id"], "rip.doc.parse");
     assert_eq!(payload["result"]["source"]["kind"], "inline");
-    assert!(payload["content_hash"].as_str().unwrap().len() == 64, "同哈希快照: {payload}");
-    assert_eq!(count(&fix, "tool_run", &format!("run_id = '{run_id}' AND status = 'SUCCEEDED'")), 1);
+    assert!(
+        payload["content_hash"].as_str().unwrap().len() == 64,
+        "同哈希快照: {payload}"
+    );
+    assert_eq!(
+        count(
+            &fix,
+            "tool_run",
+            &format!("run_id = '{run_id}' AND status = 'SUCCEEDED'")
+        ),
+        1
+    );
 
     // rip.get_run_status：只读投影 + Artifact/Evidence 引用面。
     let reply = proc.call("rip.get_run_status", json!({"run_id": run_id}));
@@ -362,18 +488,30 @@ fn run_tool_doc_parse_full_channel_with_status_and_cancel() {
     // rip.cancel_run：终态 run 不可发起取消（D-TC-04，accepted=false）。
     let reply = proc.call("rip.cancel_run", json!({"run_id": run_id}));
     let payload = payload_of(&reply);
-    assert_eq!(payload["accepted"], false, "终态 run 取消必须拒绝: {payload}");
+    assert_eq!(
+        payload["accepted"], false,
+        "终态 run 取消必须拒绝: {payload}"
+    );
 
     // 未知 run 的状态查询 = 结构化 isError。
     let reply = proc.call("rip.get_run_status", json!({"run_id": "rn-none"}));
     assert_eq!(reply["result"]["isError"], true);
     let payload = payload_of(&reply);
-    assert!(payload["error"]["message"].as_str().unwrap().contains("not found"), "{payload}");
+    assert!(
+        payload["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not found"),
+        "{payload}"
+    );
 
     // rip.get_tool_schema 的 run_db 回退段：目录两库（主库无此行 + aux 未
     // 挂载）没有的行，运行库已登记则按同一形状返回（source=run_db）。
     let reply = proc.call("rip.get_tool_schema", json!({"tool_id": "rip.doc.parse"}));
-    assert_eq!(reply["result"]["isError"], false, "run_db schema fallback: {reply}");
+    assert_eq!(
+        reply["result"]["isError"], false,
+        "run_db schema fallback: {reply}"
+    );
     let schema = payload_of(&reply);
     assert_eq!(schema["source"], "run_db");
     assert_eq!(
@@ -397,7 +535,10 @@ fn run_tool_unknown_tool_is_rejected_and_lands_no_run_row() {
     assert_eq!(reply["result"]["isError"], true);
     let payload = payload_of(&reply);
     assert!(
-        payload["error"]["message"].as_str().unwrap().contains("manifest for rip.nope not found"),
+        payload["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("manifest for rip.nope not found"),
         "未登记工具如实报 Manifest 缺失: {payload}"
     );
     assert_eq!(count(&fix, "tool_run", "1=1"), 0, "未知工具不落 run 行");
@@ -411,7 +552,10 @@ fn run_tool_unknown_tool_is_rejected_and_lands_no_run_row() {
 #[test]
 fn cancel_run_marks_cancel_requested_at_for_waiting_run() {
     let fix = fixture("cancel-queued");
-    register_manifest(&fix, &read_repo_manifest("manifests/tools/rip.doc.parse.json"));
+    // DI-3/RT-4 A8 fixture 化：登记面消费 fixture Manifest（正式件零漂移；
+    // 本用例只测引擎受理/取消语义不经 run_tool 派发，venv 探测零介入）。
+    let manifest = write_doc_parse_fixture(&fix, None);
+    register_manifest(&fix, &manifest);
     // 直接经引擎受理并落 WAITING_FOR_RUNNER（不经 run_tool，隔离取消语义；
     // D-TC-04：仅 RUNNING 与 WAITING_FOR_RUNNER 受理协作式取消）。
     let pool = Pool::open(PoolConfig {
@@ -444,10 +588,16 @@ fn cancel_run_marks_cancel_requested_at_for_waiting_run() {
         .expect("waiting transition");
     let reply = proc.call("rip.cancel_run", json!({"run_id": "rn-e2e-cancel"}));
     let payload = payload_of(&reply);
-    assert_eq!(payload["accepted"], true, "WAITING_FOR_RUNNER 受理取消: {payload}");
+    assert_eq!(
+        payload["accepted"], true,
+        "WAITING_FOR_RUNNER 受理取消: {payload}"
+    );
     let reply = proc.call("rip.get_run_status", json!({"run_id": "rn-e2e-cancel"}));
     let status = payload_of(&reply);
-    assert!(status["cancel_requested_at"].is_string(), "取消时刻落行: {status}");
+    assert!(
+        status["cancel_requested_at"].is_string(),
+        "取消时刻落行: {status}"
+    );
     // 未知 run 取消 = 结构化 isError。
     let reply = proc.call("rip.cancel_run", json!({"run_id": "rn-none"}));
     assert_eq!(reply["result"]["isError"], true);
@@ -462,7 +612,9 @@ fn cancel_run_marks_cancel_requested_at_for_waiting_run() {
 #[test]
 fn container_tool_without_podman_waits_with_run_row_present() {
     if podman_available() {
-        eprintln!("SKIP: podman available（容器全链由 web_research_e2e 覆盖，本用例只断言无 Runner 态）");
+        eprintln!(
+            "SKIP: podman available（容器全链由 web_research_e2e 覆盖，本用例只断言无 Runner 态）"
+        );
         return;
     }
     let fix = fixture("container-wait");
@@ -478,13 +630,20 @@ fn container_tool_without_podman_waits_with_run_row_present() {
     );
     // Gateway 心跳判定：podman 探针失败 → WAITING_FOR_RUNNER（不 FAILED，
     // 不伪造结果；run 行在库对账）。
-    assert_eq!(reply["result"]["isError"], false, "等待态不是调用失败: {reply}");
+    assert_eq!(
+        reply["result"]["isError"], false,
+        "等待态不是调用失败: {reply}"
+    );
     let payload = payload_of(&reply);
     assert_eq!(payload["status"], "WAITING_FOR_RUNNER", "{payload}");
     assert_eq!(payload["ok"], false, "无结果产出（不伪造）");
     let run_id = payload["run_id"].as_str().unwrap();
     assert_eq!(
-        count(&fix, "tool_run", &format!("run_id = '{run_id}' AND status = 'WAITING_FOR_RUNNER'")),
+        count(
+            &fix,
+            "tool_run",
+            &format!("run_id = '{run_id}' AND status = 'WAITING_FOR_RUNNER'")
+        ),
         1,
         "rip.http.inspect run 行在库（WAITING_FOR_RUNNER）"
     );
@@ -492,7 +651,11 @@ fn container_tool_without_podman_waits_with_run_row_present() {
     let reply = proc.call("rip.get_run_status", json!({"run_id": run_id}));
     let status = payload_of(&reply);
     assert_eq!(status["status"], "WAITING_FOR_RUNNER");
-    assert_eq!(status["artifacts"].as_array().unwrap().len(), 0, "非终态无 Artifact");
+    assert_eq!(
+        status["artifacts"].as_array().unwrap().len(),
+        0,
+        "非终态无 Artifact"
+    );
     proc.wait_exit();
 }
 
@@ -501,4 +664,54 @@ fn container_tool_without_podman_waits_with_run_row_present() {
 fn read_repo_manifest(rel: &str) -> Value {
     let path = repo_root().join(rel);
     serde_json::from_str(&std::fs::read_to_string(path).expect("manifest file")).expect("manifest")
+}
+
+// ---------------------------------------------------------------------------
+// DI-3/RT-4 判据 5 + A8 负例：venv 声明指缺省根 → RT3_VENV_UNAVAILABLE
+// （DEPENDENCY）受理拒绝零 run 行零 worker 进程拉起（Resolver 探测拒绝先于
+// spawn——D3① fail-closed 先于 adapter ensure_ready 双层纵深）。
+// ---------------------------------------------------------------------------
+
+#[test]
+fn run_tool_venv_declared_absent_root_is_rejected_before_submit() {
+    if !python3_available() {
+        eprintln!("SKIP: python3 unavailable（V-9）");
+        return;
+    }
+    let fix = fixture("venv-absent");
+    let absent_root = std::env::temp_dir().join(format!(
+        "rt4-absent-venv-{}-{}",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
+    let manifest = write_doc_parse_fixture(
+        &fix,
+        Some(json!({
+            "path": absent_root.to_string_lossy(),
+            "direct_deps": ["pip"]
+        })),
+    );
+    register_manifest(&fix, &manifest);
+    let mut proc = fix.server("tok");
+    proc.handshake("2024-11-05");
+    let reply = proc.call(
+        "rip.run_tool",
+        json!({"tool_id": "rip.doc.parse", "input": {"text": "# 标题\n"}}),
+    );
+    assert_eq!(
+        reply["result"]["isError"], true,
+        "venv 缺根必须 isError: {reply}"
+    );
+    let payload = payload_of(&reply);
+    assert_eq!(
+        payload["error"]["category"], "DEPENDENCY",
+        "venv 五态 missing → D7 DEPENDENCY: {payload}"
+    );
+    assert_eq!(
+        payload["error"]["code"], "RT3_VENV_UNAVAILABLE",
+        "R1 venv 闸拒绝码: {payload}"
+    );
+    // 受理拒绝不落 run 行 + 零 worker 拉起（拒绝先于 submit/adapter spawn）。
+    assert_eq!(count(&fix, "tool_run", "1=1"), 0, "探测拒绝零 run 行");
+    proc.wait_exit();
 }
