@@ -62,10 +62,14 @@ ck "lock 内 chromiumoxide = =0.9.1 钉面" "1" "$(grep -c 'name = "chromiumoxid
 # 待显式 add 属工作树新增面，非 diff 漂移）。
 VENDOR_OUT=$(cargo vendor vendor --locked >/dev/null 2>&1; echo "vendor_rc=$?")
 VENDOR_TRACKED=$(git status --porcelain vendor/ | grep -c '^ M\|^M ') || VENDOR_TRACKED=0
-VENDOR_UNTRACKED=$(git status --porcelain vendor/ | grep -c '^??') || VENDOR_UNTRACKED=0
+VENDOR_TRACKED=$(git status --porcelain vendor/ | grep -c '^ M\|^M ') || VENDOR_TRACKED=0
 ck "cargo vendor --locked 复跑 exit 0" "vendor_rc=0" "$VENDOR_OUT"
 ck "vendor/ tracked 零 diff（完整性门）" "0" "$VENDOR_TRACKED"
-ck "vendor/ 新增目录 = 18（16 新名 + 2 双版本目录）" "18" "$VENDOR_UNTRACKED"
+# 18 个新目录在库存在性断言（收口态——入库后 git status ?? 形恒 0，
+# 原计数钉为提交前工作树状态钉，提交后恒 0 陈旧；16 新名 + 2 双版本）。
+VENDOR_NEW_DIRS="async-tungstenite chromiumoxide chromiumoxide_cdp chromiumoxide_pdl chromiumoxide_types reqwest sync_wrapper tower tower-http tower-layer which utf-8 ipnet futures-timer wasm-bindgen-futures windows-registry sha1-0.10.7 tungstenite-0.28.0"
+VENDOR_PRESENT=$(for d in $VENDOR_NEW_DIRS; do [ -d "vendor/$d" ] && echo "$d"; done | wc -l)
+ck "vendor/ 18 个新目录在库（16 新名 + 2 双版本目录）" "18" "$VENDOR_PRESENT"
 ck "vendor 目录计数 = 392（374+18）" "392" "$(ls vendor | wc -l)"
 ck ".cargo/config.toml 零 diff" "0" "$(git status --porcelain .cargo/ | wc -l)"
 
