@@ -1078,9 +1078,26 @@ mod tests {
     #[test]
     fn l1_timeout_maps_to_timeout_envelope() {
         let root = make_fixture_venv();
+        // 预算检查点在 run_version_probe 的 Ok(None) 轮询分支——已退出的成功
+        // 子进程不判定预算（成功路径无超时语义，产品行为正确）。CI runner 上
+        // python3 -V 快到首次 try_wait 前退出 → 预算从未触发 → probe Ok
+        //（45071110402 实证）。测试载具面修复：bin/python 换 sleep wrapper
+        // 强制子进程存活 >1ns → Ok(None) 必进 → Timeout 确定触发。
+        let wrapper = root.join("bin").join("python");
+        std::fs::remove_file(&wrapper).unwrap();
+        std::fs::write(
+            &wrapper,
+            "#!/bin/sh\nsleep 0.2\nexec \"$@\"\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         let failure =
             probe_with_budget(&fixture_config(&root), None, None, Duration::from_nanos(1))
-                .expect_err("zero budget must time out");
+                .expect_err("slow wrapper must time out");
         assert_eq!(failure.kind, ProbeFailureKind::Timeout);
         assert_eq!(failure.status, VenvStatus::ProbeFailed);
         let (category, code, retryable) = failure.kind.envelope_mapping();
