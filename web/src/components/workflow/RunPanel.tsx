@@ -184,6 +184,11 @@ export function RunPanel({
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <StateBadge state={detail.run.state} />
+                {detail.run.caller_id ? (
+                  <span className="badge badge-sm badge-ghost" data-testid="workflow-run-caller-badge">
+                    {detail.run.caller_id}
+                  </span>
+                ) : null}
                 {control?.awaiting_approval ? (
                   <span
                     className="badge badge-sm badge-warning"

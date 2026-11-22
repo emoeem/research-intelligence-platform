@@ -44,6 +44,26 @@
     的 external_api_audit 表列对应）；本文件零 SQL 写纪律不变；
   * 子进程超时口径显式常量：rp-plugin 600s（PLUGIN_SUBPROCESS_TIMEOUT_S）、
     rp-workflow 同步 60s（WORKFLOW_SYNC_TIMEOUT_S）。
+- MA-4 SSE 事件推送面（GET /api/events，docs/rip3/MA-4-TASK.md D1/D2/D3）：
+  * 多客户端订阅推送：进程内订阅注册表（threading.Lock + deque + 条件变量）
+    + 单 tail 轮询 daemon 线程扇出（首个订阅者惰性启动；无订阅者自动退出；
+    源扫描顺序固定 → N 订阅者同序）；
+  * 事件源 = 既有表只读 tail 三形态 cursor（零引擎零 hook 零迁移）：
+    ①append-only（audit_event.event_id / ma_message・task_claim rowid 新行面）
+    ②updated_at 窗口重查（agent_run/tool_run/task_claim/ma_message，
+    (主键, updated_at, 状态) 元组去重防同刻重发）③workflow_run 活跃态快照
+    diff（017 无 updated_at 列：活跃行轮询 + 进程内 diff 发跃迁，跃迁出活跃
+    态直查终态补发）；PG knowledge 面不进 SSE（双库分工 029:121）；
+  * 帧 = `id: <source>:<cursor>` 单调 + `event: <kind>`（词表 additive：
+    run_state/claim_state/message/guardrail/audit）+ `data: {ts, kind,
+    entity_id, action, caller_id, run_id, detail}` JSON；空等心跳 `: ping`；
+  * 流形状 = HTTP/1.0 close-delimited（protocol_version 全文件零设置保持，
+    零 Content-Length；客户端读到连接关闭 = 流终；EventSource / curl -N /
+    fetch 均可消费）；Last-Event-ID 起始 cursor 重放（回看窗 RP_SSE_REPLAY_MAX
+    防 重放放大）；连接帽 RP_SSE_MAX_CLIENTS 超限 503 sse_capacity；
+  * 只读纪律：事件源与重放全经 connect_ro（mode=ro + query_only），本面零
+    SQL 写；限频长连接只计连接时刻一次（do_GET 顶部既有 check_rate_limit
+    调用序不变）。
 
 环境变量：
 - RP_PORT            监听端口，默认 7800
@@ -68,6 +88,10 @@
                       MA-1 起行尾追加 caller 字段三态（default=legacy 单令牌
                       /caller_id=多 key 命中/"-"=匿名未过鉴权），019 表零 ALTER；
                       本文件零 SQL 写（Phase 6 静态门禁）不变
+- RP_SSE_POLL_MS      MA-4 SSE tail 轮询周期毫秒（默认 500）
+- RP_SSE_HEARTBEAT_S  SSE 心跳注释行间隔秒（默认 15；`: ping` 保活探活）
+- RP_SSE_MAX_CLIENTS  SSE 订阅连接帽（默认 16；超限 503 sse_capacity）
+- RP_SSE_REPLAY_MAX   Last-Event-ID 重放回看窗行数帽（默认 500；防重放放大）
 """
 
 from __future__ import annotations
@@ -267,6 +291,12 @@ WORKFLOW_SYNC_TIMEOUT_S = 60
 RATE_LIMIT_WINDOW_S = 60
 RATE_LIMIT_RPM = int((os.environ.get("RP_RATE_LIMIT_RPM") or "600").strip() or "600")
 API_AUDIT_LOG = (os.environ.get("RP_API_AUDIT_LOG") or "").strip() or None
+
+# MA-4 SSE 推送面四常量（D1/D3；详见头注 MA-4 段与 env 说明区）。
+SSE_POLL_MS = int((os.environ.get("RP_SSE_POLL_MS") or "500").strip() or "500")
+SSE_HEARTBEAT_S = float((os.environ.get("RP_SSE_HEARTBEAT_S") or "15").strip() or "15")
+SSE_MAX_CLIENTS = int((os.environ.get("RP_SSE_MAX_CLIENTS") or "16").strip() or "16")
+SSE_REPLAY_MAX = int((os.environ.get("RP_SSE_REPLAY_MAX") or "500").strip() or "500")
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -744,10 +774,15 @@ RUN_LIST_COLUMNS = (
 
 
 def run_list_columns(conn: sqlite3.Connection, src: str) -> str:
-    """P7-5：trace_id 列按库水位条件追加（015 迁移之后的开发副本含列）。"""
+    """P7-5：trace_id 列按库水位条件追加（015 迁移之后的开发副本含列）。
+    MA-4（D5①）：caller_id 同款条件追加（027 之后的开发副本含列；按库水位
+    条件出现、旧库不伪造——RunsPage caller 徽标列同款先例）。"""
+    cols = RUN_LIST_COLUMNS
     if has_column(conn, src, "tool_run", "trace_id"):
-        return RUN_LIST_COLUMNS + ", trace_id"
-    return RUN_LIST_COLUMNS
+        cols += ", trace_id"
+    if has_column(conn, src, "tool_run", "caller_id"):
+        cols += ", caller_id"
+    return cols
 
 
 def handle_overview(conn: sqlite3.Connection, params: dict) -> dict:
@@ -1142,7 +1177,21 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
 
     status = check_enum(params, "status", RUN_STATUS)
     tool_filter = clean_str(params, "tool_id")
+    caller_filter = clean_str(params, "caller")
     limit = parse_limit(params)
+    caller_col_present = has_column(conn, src, "tool_run", "caller_id")
+    if caller_filter and not caller_col_present:
+        # MA-4（D5①）：缺 027 caller 列的旧库 → ?caller= 恒空集（非错误、
+        # 不伪造——P7-5 trace 列同款库水位守卫）。
+        return {
+            "available": True,
+            "source": src,
+            "total": 0,
+            "returned": 0,
+            "limit": limit,
+            "filters": {"status": status, "tool_id": tool_filter, "caller": caller_filter},
+            "items": [],
+        }
     where, args = [], []
     if status:
         where.append("status = ?")
@@ -1150,6 +1199,9 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
     if tool_filter:
         where.append("tool_id = ?")
         args.append(tool_filter)
+    if caller_filter:
+        where.append("caller_id = ?")
+        args.append(caller_filter)
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
     total = conn.execute(f"SELECT COUNT(*) FROM {src}.tool_run {where_sql}", args).fetchone()[0]
@@ -1165,7 +1217,7 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
         "total": total,
         "returned": len(items),
         "limit": limit,
-        "filters": {"status": status, "tool_id": tool_filter},
+        "filters": {"status": status, "tool_id": tool_filter, "caller": caller_filter},
         "items": items,
     }
 
@@ -2498,6 +2550,7 @@ def handle_agent_runs(conn: sqlite3.Connection, params: dict) -> dict:
 
     state = check_enum(params, "state", AGENT_RUN_STATES)
     agent_filter = clean_str(params, "agent_id")
+    caller_filter = clean_str(params, "caller")
     where, args = [], []
     if state:
         where.append("a.state = ?")
@@ -2505,14 +2558,25 @@ def handle_agent_runs(conn: sqlite3.Connection, params: dict) -> dict:
     if agent_filter:
         where.append("a.agent_id = ?")
         args.append(agent_filter)
-    where_sql = f" WHERE {' AND '.join(where)}" if where else ""
-    statements = [
-        (f"{agent_run_list_sql(conn, src)}{where_sql} ORDER BY a.created_at DESC LIMIT ?", src)
-        for src in run_schemas
-    ]
+    statements = []
+    stmt_args: tuple = ()
+    for src in run_schemas:
+        conds, cond_args = list(where), list(args)
+        if caller_filter:
+            # MA-4（D5①）：?caller= 等值过滤 additive；缺 027 caller 列的
+            # schema 在过滤下零贡献（旧库不伪造）。
+            if not has_column(conn, src, "agent_run", "caller_id"):
+                continue
+            conds.append("a.caller_id = ?")
+            cond_args.append(caller_filter)
+        where_sql = f" WHERE {' AND '.join(conds)}" if conds else ""
+        statements.append(
+            (f"{agent_run_list_sql(conn, src)}{where_sql} ORDER BY a.created_at DESC LIMIT ?", src)
+        )
+        stmt_args = tuple(cond_args)
     merged: list[dict] = []
     seen: set[str] = set()
-    for item in select_merged(conn, statements, tuple(args) + (limit,)):
+    for item in select_merged(conn, statements, stmt_args + (limit,)):
         run_key = item.get("run_id") or ""
         if run_key in seen:
             continue
@@ -2527,7 +2591,7 @@ def handle_agent_runs(conn: sqlite3.Connection, params: dict) -> dict:
         "total": total,
         "returned": len(merged),
         "limit": limit,
-        "filters": {"state": state, "agent_id": agent_filter},
+        "filters": {"state": state, "agent_id": agent_filter, "caller": caller_filter},
         "items": merged,
         **(
             {}
@@ -2657,13 +2721,26 @@ def handle_workflow_runs(conn: sqlite3.Connection, params: dict) -> dict:
     ?id= 详情 = run 头行 + 节点状态行 + 018 控制行（awaiting_approval 判定）
     + checkpoint 计数 + 六 ID 对账面。主库与 aux 双 schema 归并。"""
     run_id = clean_str(params, "id")
+    caller_filter = clean_str(params, "caller")
     limit = parse_limit(params)
     schemas = schemas_with_table(conn, "workflow_run")
     merged: list[dict] = []
     seen: set[str] = set()
     for src in schemas:
-        where = " WHERE run_id = ?" if run_id else ""
-        args: tuple = (run_id,) if run_id else ()
+        conds: list[str] = []
+        cond_args: list = []
+        if run_id:
+            conds.append("run_id = ?")
+            cond_args.append(run_id)
+        if caller_filter:
+            # MA-4（D5①）：?caller= 等值过滤 additive；缺 027 caller 列的
+            # schema 在过滤下零贡献（旧库不伪造）。
+            if not has_column(conn, src, "workflow_run", "caller_id"):
+                continue
+            conds.append("caller_id = ?")
+            cond_args.append(caller_filter)
+        where = f" WHERE {' AND '.join(conds)}" if conds else ""
+        args: tuple = tuple(cond_args)
         try:
             rows = conn.execute(
                 f"SELECT run_id, workflow_id, workflow_version, state, input_json,"
@@ -2751,6 +2828,7 @@ def handle_workflow_runs(conn: sqlite3.Connection, params: dict) -> dict:
         "total": len(merged),
         "returned": len(merged),
         "limit": limit,
+        "filters": {"caller": caller_filter},
         "items": [{k: v for k, v in item.items() if k != "input_json"} for item in merged],
         **(
             {}
@@ -2800,20 +2878,30 @@ def _generate_run_id() -> str:
     return "wfr-" + uuid.uuid4().hex
 
 
-def _spawn_workflow(args: list[str], log_name: str) -> dict:
-    """异步承载 rp-workflow 子进程（stdout/stderr 落日志文件，不等待）。"""
+def _spawn_workflow(args: list[str], log_name: str, bin_path: str | None = None) -> dict:
+    """异步承载子进程（stdout/stderr 落日志文件，不等待）。缺省 rp-workflow；
+    REST 子任务派发传 AGENT_BIN——MA-4 修正（MA-3 移交缺陷）：subtask_dispatch
+    原实现误用 WORKFLOW_BIN，agent_id 被当 workflow_id 解析恒失败（spawn 日志
+    「workflow definition <agent_id> not found」），MA-3 selftest 只钉 HTTP
+    200/403 词形未测运行完成故未暴露；本修正对齐 subtask_dispatch 既有文档
+    契约原文「spawn `rp-agent run <agent_id> ...` 子进程」，委派纪律不变
+    （子进程承载 + 日志落盘 + 本进程零直连 SQL 写）。"""
+    binary = bin_path or WORKFLOW_BIN
     os.makedirs(WORKFLOW_LOG_DIR, exist_ok=True)
     log_path = os.path.join(WORKFLOW_LOG_DIR, log_name)
     try:
         with open(log_path, "ab", buffering=0) as log_fh:
             proc = subprocess.Popen(
-                [WORKFLOW_BIN, *args],
+                [binary, *args],
                 stdout=log_fh,
                 stderr=log_fh,
                 cwd=REPO_ROOT,
                 start_new_session=True,
             )
     except OSError as exc:
+        if bin_path:
+            raise ApiError(502, "subtask_spawn_failed",
+                           f"rp-agent 启动失败（构建产物在位? {binary}）：{exc}") from exc
         raise ApiError(502, "workflow_cmd_spawn_failed",
                        f"rp-workflow 启动失败（构建产物在位? {WORKFLOW_BIN}）：{exc}") from exc
     return {"pid": proc.pid, "log": log_path}
@@ -3018,7 +3106,10 @@ def subtask_dispatch(body: dict, caller: str | None) -> dict:
         args += ["--max-tool-calls", str(max_tool_calls)]
     # 子任务幂等钉定：agent run id 由 rp-agent 受理面生成（wfr- 同款预生成
     # 是 workflow run 面语义；agent run 回执经 /api/agent-runs caller_id 对账）。
-    spawned = _spawn_workflow(args, f"subtask-{_generate_run_id()}.log")
+    # MA-4 修正：spawn 二进制 WORKFLOW_BIN→AGENT_BIN（MA-3 移交缺陷，见
+    # _spawn_workflow docstring；MA-4-TASK 判据 2 硬验收 POST /api/subtasks
+    # 真进程运行完成依赖本修正）。
+    spawned = _spawn_workflow(args, f"subtask-{_generate_run_id()}.log", bin_path=AGENT_BIN)
     return {"result": "accepted", "action": "subtask", "caller": caller,
             "agent_id": agent_id, **spawned,
             "status_query": "/api/agent-runs"}
@@ -4511,6 +4602,532 @@ def _wsw_history_send_to_repeater(exchange_id: str, body: dict) -> dict:
     return _wsw_send_to_repeater(exchange_id, body)
 
 
+# ---------------------------------------------------------------------------
+# MA-4 SSE 事件推送面（docs/rip3/MA-4-TASK.md D1/D2/D3）
+# ---------------------------------------------------------------------------
+# 事件源 = 既有表只读 tail 三形态 cursor（零引擎零 hook 零迁移）：
+#   ①append-only cursor：audit_event.event_id（001 AUTOINCREMENT）/
+#     ma_message・task_claim rowid（029 新行面）；
+#   ②updated_at 窗口重查：agent_run / tool_run（主库+aux 双 schema 归并）/
+#     task_claim / ma_message（跃迁面；(主键, updated_at, 状态) 元组去重防
+#     同刻重发）；
+#   ③workflow_run 活跃态快照 diff（017 无 updated_at 列：轮询
+#     state IN ('queued','running','paused') 行 + 进程内快照 diff 发跃迁；
+#     跃迁出活跃态的 run 直查终态补发）。
+# PG knowledge 面不进 SSE（双库分工 029:121 原文「PG = 情报核」）。
+# 订阅态纯进程内存（零持久化零迁移）：进程重启 = 客户端 EventSource 自动
+# 重连 + Last-Event-ID 重放（回看窗 SSE_REPLAY_MAX）。
+# 只读纪律：本面全部经 connect_ro（mode=ro + query_only），零 SQL 写
+# （红线 3）；限频长连接只计连接时刻一次（do_GET 顶部既有调用序不变）。
+
+# 事件 kind 词表（additive 数据通道词形，非冻结契约——红线 5）。
+SSE_KINDS = ("run_state", "claim_state", "message", "guardrail", "audit")
+
+# audit_event.action 归类（词形 = agent-engine control::actions 实测）：
+# run 生命周期/步进跃迁 → run_state；护栏面 → guardrail；其余 → audit。
+_SSE_RUN_AUDIT_ACTIONS = (
+    "agent.run.accepted", "agent.run.finished", "agent.step.completed",
+    "agent.run.cancelled", "agent.run.cancelled_direct",
+    "agent.run.paused", "agent.run.resumed",
+)
+_SSE_GUARDRAIL_ACTION = "agent.run.guardrail"
+_SSE_RUN_TABLES = (("agent_run", "state"), ("tool_run", "status"))
+_SSE_ACTIVE_RUN_STATES = ("queued", "running", "paused")
+_SSE_SCAN_LIMIT = 1000    # 单周期单源扫描行帽（防积压放大）
+_SSE_SEEN_CAP = 4096      # 窗口去重映射条目帽（超限清空；窗口 cursor 仍防重扫）
+
+_sse_lock = threading.Lock()
+_sse_registry: list[dict] = []      # 订阅记录 {queue: deque, filters, cond, alive}
+_sse_tail_thread: threading.Thread | None = None
+_sse_cursors: dict = {}             # tail 线程私有 cursor 态（单线程访问）
+
+
+def _sse_audit_event(row: sqlite3.Row) -> dict:
+    """audit_event 行 → SSE 事件（kind 按 action 词形归类；caller 从 detail
+    JSON 提取——GUARDRAIL budget 面与协作面 detail 均带 caller 键）。"""
+    action = row["action"] or ""
+    detail = parse_json_or_none(row["detail"])
+    caller_id = None
+    if isinstance(detail, dict):
+        caller_id = (detail.get("caller_id") or detail.get("to_caller")
+                     or detail.get("from_caller"))
+    if action in _SSE_RUN_AUDIT_ACTIONS:
+        kind = "run_state"
+    elif action == _SSE_GUARDRAIL_ACTION:
+        kind = "guardrail"
+    else:
+        kind = "audit"
+    return {
+        "id": f"audit:{row['event_id']}", "kind": kind, "ts": row["ts"],
+        "entity_id": row["entity_id"], "action": action, "caller_id": caller_id,
+        "run_id": row["correlation_id"], "detail": detail,
+    }
+
+
+def _sse_claim_event(row: sqlite3.Row, rid: int) -> dict:
+    """task_claim 行 → SSE 事件（claim_state；caller = 领取者优先、建队者兜底）。"""
+    return {
+        "id": f"claim:{rid}", "kind": "claim_state", "ts": row["updated_at"],
+        "entity_id": row["claim_id"], "action": f"claim.{row['state']}",
+        "caller_id": row["claimed_by"] or row["created_by"],
+        "run_id": row["run_id"],
+        "detail": {"kind": row["kind"], "attempt": row["attempt"],
+                   "claimed_by": row["claimed_by"], "created_by": row["created_by"],
+                   "node_id": row["node_id"], "agent_id": row["agent_id"]},
+    }
+
+
+def _sse_message_event(row: sqlite3.Row, rid: int) -> dict:
+    """ma_message 行 → SSE 事件（message；caller = 收件方——投递通知语义，
+    R2「事件推送面推投递通知」；from/to 在 detail 全量在位）。"""
+    if row["read_at"]:
+        action = "message.read"
+    elif row["delivered_at"]:
+        action = "message.delivered"
+    else:
+        action = "message.sent"
+    return {
+        "id": f"message:{rid}", "kind": "message",
+        "ts": row["updated_at"] or row["created_at"],
+        "entity_id": row["message_id"], "action": action,
+        "caller_id": row["to_caller"], "run_id": row["run_id"],
+        "detail": {"from_caller": row["from_caller"], "to_caller": row["to_caller"],
+                   "claim_id": row["claim_id"], "delivered_at": row["delivered_at"],
+                   "read_at": row["read_at"],
+                   "payload": parse_json_or_none(row["payload_json"])},
+    }
+
+
+def _sse_match(filters: dict, ev: dict) -> bool:
+    """订阅过滤（?caller= 等值 + ?kinds= 词表；空过滤 = 全收）。"""
+    caller = filters.get("caller")
+    if caller and ev.get("caller_id") != caller:
+        return False
+    kinds = filters.get("kinds")
+    if kinds and ev.get("kind") not in kinds:
+        return False
+    return True
+
+
+def _sse_frame(ev: dict) -> str:
+    """SSE 帧格式化（D3）：id/event/data 三行 + 空行终止。"""
+    data = json.dumps({
+        "ts": ev["ts"], "kind": ev["kind"], "entity_id": ev["entity_id"],
+        "action": ev["action"], "caller_id": ev["caller_id"],
+        "run_id": ev["run_id"], "detail": ev["detail"],
+    }, ensure_ascii=False)
+    return f"id: {ev['id']}\nevent: {ev['kind']}\ndata: {data}\n\n"
+
+
+def _sse_sig(ev: dict) -> str:
+    """重放去重签名（id + 帧要素全文）：重放窗口与 live 队列重叠区不重发。"""
+    return (f"{ev['id']}|{ev['kind']}|{ev['ts']}|{ev['entity_id']}|{ev['action']}"
+            f"|{json.dumps(ev.get('detail'), ensure_ascii=False, sort_keys=True)}")
+
+
+def _sse_seed_cursors(conn: sqlite3.Connection) -> None:
+    """tail 启动 cursor 播种（不回放历史：历史经 Last-Event-ID 显式重放；
+    updated_at 窗口边界行同步进去重映射防首周波伪事件）。"""
+    cur = _sse_cursors
+    cur.setdefault("run_windows", {})
+    cur.setdefault("run_seen", {})
+    cur.setdefault("wf_snap", {})
+    cur.setdefault("wf_fin_windows", {})
+    cur.setdefault("wf_fin_seen", {})
+    cur.setdefault("claim_rowid", {})
+    cur.setdefault("claim_windows", {})
+    cur.setdefault("claim_seen", {})
+    cur.setdefault("message_rowid", {})
+    cur.setdefault("message_windows", {})
+    cur.setdefault("message_seen", {})
+    if schemas_with_table(conn, "audit_event"):
+        cur["audit"] = int(conn.execute(
+            "SELECT COALESCE(MAX(event_id), 0) FROM audit_event").fetchone()[0])
+    else:
+        cur["audit"] = 0
+    for table, state_col in _SSE_RUN_TABLES:
+        for src in schemas_with_table(conn, table):
+            key = f"{src}.{table}"
+            mx = conn.execute(f"SELECT MAX(updated_at) FROM {src}.{table}").fetchone()[0] or ""
+            cur["run_windows"][key] = mx
+            seen: dict = {}
+            if mx:
+                for row in conn.execute(
+                    f"SELECT run_id, {state_col} AS run_state FROM {src}.{table}"
+                    f" WHERE updated_at = ?", (mx,),
+                ):
+                    seen[row["run_id"]] = (mx, row["run_state"])
+            cur["run_seen"][key] = seen
+    for src in schemas_with_table(conn, "workflow_run"):
+        snap = {row["run_id"]: row["state"] for row in conn.execute(
+            f"SELECT run_id, state FROM {src}.workflow_run"
+            f" WHERE state IN ('queued','running','paused')")}
+        cur["wf_snap"][f"{src}.workflow_run"] = snap
+        # 终态补扫 cursor 播种（③b）：finished_at 窗口取当前 MAX，边界行
+        # 同步进去重集合（不回放历史——历史经 Last-Event-ID 显式重放）。
+        mx_fin = conn.execute(
+            f"SELECT MAX(finished_at) FROM {src}.workflow_run").fetchone()[0] or ""
+        cur["wf_fin_windows"][f"{src}.workflow_run"] = mx_fin
+        fin_seen: set = set()
+        if mx_fin:
+            for row in conn.execute(
+                f"SELECT run_id FROM {src}.workflow_run WHERE finished_at = ?", (mx_fin,),
+            ):
+                fin_seen.add(row["run_id"])
+        cur["wf_fin_seen"][f"{src}.workflow_run"] = fin_seen
+    for src in schemas_with_table(conn, "task_claim"):
+        cur["claim_rowid"][src] = int(conn.execute(
+            f"SELECT COALESCE(MAX(rowid), 0) FROM {src}.task_claim").fetchone()[0])
+        mx = conn.execute(f"SELECT MAX(updated_at) FROM {src}.task_claim").fetchone()[0] or ""
+        cur["claim_windows"][src] = mx
+        seen: dict = {}
+        if mx:
+            for row in conn.execute(
+                f"SELECT claim_id, state FROM {src}.task_claim WHERE updated_at = ?", (mx,),
+            ):
+                seen[row["claim_id"]] = (mx, row["state"])
+        cur["claim_seen"][src] = seen
+    for src in schemas_with_table(conn, "ma_message"):
+        cur["message_rowid"][src] = int(conn.execute(
+            f"SELECT COALESCE(MAX(rowid), 0) FROM {src}.ma_message").fetchone()[0])
+        mx = conn.execute(f"SELECT MAX(updated_at) FROM {src}.ma_message").fetchone()[0] or ""
+        cur["message_windows"][src] = mx
+        seen: dict = {}
+        if mx:
+            for row in conn.execute(
+                f"SELECT message_id, delivered_at, read_at FROM {src}.ma_message"
+                f" WHERE updated_at = ?", (mx,),
+            ):
+                seen[row["message_id"]] = (mx, row["delivered_at"], row["read_at"])
+        cur["message_seen"][src] = seen
+
+
+def _sse_scan_cycle(conn: sqlite3.Connection) -> list[dict]:
+    """一个轮询周期（tail 线程调用，单线程）：按三形态 cursor 扫既有表。
+    源扫描顺序固定（audit → run 窗口 → workflow diff → claim → message），
+    各订阅者队列追加序一致 = N 订阅者同序。只读 SELECT。"""
+    cur = _sse_cursors
+    events: list[dict] = []
+
+    # ① append-only：audit_event（event_id 单调；kind 按 action 归类）
+    if schemas_with_table(conn, "audit_event"):
+        rows = conn.execute(
+            "SELECT event_id, ts, action, entity_type, entity_id, correlation_id, detail"
+            " FROM audit_event WHERE event_id > ? ORDER BY event_id ASC LIMIT ?",
+            (cur["audit"], _SSE_SCAN_LIMIT),
+        ).fetchall()
+        for row in rows:
+            cur["audit"] = int(row["event_id"])
+            events.append(_sse_audit_event(row))
+
+    # ② updated_at 窗口重查：agent_run / tool_run（双 schema 归并；状态列
+    # 词形按表取——agent_run.state / tool_run.status）
+    for table, state_col in _SSE_RUN_TABLES:
+        for src in schemas_with_table(conn, table):
+            key = f"{src}.{table}"
+            window = cur["run_windows"].get(key, "")
+            seen = cur["run_seen"].setdefault(key, {})
+            caller_sql = "caller_id" if has_column(conn, src, table, "caller_id") else "NULL"
+            rows = conn.execute(
+                f"SELECT run_id, {state_col} AS run_state, updated_at,"
+                f" {caller_sql} AS caller_id FROM {src}.{table}"
+                f" WHERE updated_at >= ? ORDER BY updated_at ASC LIMIT ?",
+                (window, _SSE_SCAN_LIMIT),
+            ).fetchall()
+            for row in rows:
+                uat = row["updated_at"]
+                if uat > window:
+                    window = uat
+                if seen.get(row["run_id"]) == (uat, row["run_state"]):
+                    continue
+                seen[row["run_id"]] = (uat, row["run_state"])
+                events.append({
+                    "id": f"run:{row['run_id']}", "kind": "run_state", "ts": uat,
+                    "entity_id": row["run_id"],
+                    "action": f"{table}.{row['run_state']}",
+                    "caller_id": row["caller_id"], "run_id": row["run_id"],
+                    "detail": {"table": table, "state": row["run_state"]},
+                })
+            if len(seen) > _SSE_SEEN_CAP:
+                seen.clear()
+            cur["run_windows"][key] = window
+
+    # ③ workflow_run 活跃态快照 diff（017 无 updated_at；跃迁出活跃态的
+    # run 直查终态补发）+ ③b 终态补扫：存活期短于轮询周期的 run（整段
+    # queued→running→终态落在两扫之间，快照从未见过其活跃态）由 finished_at
+    # 窗口补发终态事件——017 仅 created/started/finished 三时间列，终态行
+    # 唯一单调可用列 = finished_at；已发终态 run_id 集合（wf_fin_seen）由
+    # 快照 diff 与补扫共享，一 run 终态恰好一发。
+    for src in schemas_with_table(conn, "workflow_run"):
+        snap = cur["wf_snap"].setdefault(f"{src}.workflow_run", {})
+        fin_window = cur["wf_fin_windows"].setdefault(f"{src}.workflow_run", "")
+        fin_seen = cur["wf_fin_seen"].setdefault(f"{src}.workflow_run", set())
+        caller_sql = "caller_id" if has_column(conn, src, "workflow_run", "caller_id") else "NULL"
+        active: dict[str, tuple[str, str | None, str]] = {}
+        for row in conn.execute(
+            f"SELECT run_id, state, {caller_sql} AS caller_id,"
+            f" created_at, started_at, finished_at FROM {src}.workflow_run"
+            f" WHERE state IN ('queued','running','paused')"
+        ).fetchall():
+            ts = row["started_at"] or row["created_at"]
+            active[row["run_id"]] = (row["state"], row["caller_id"], ts)
+        for run_id in sorted(active):
+            state, caller_id, ts = active[run_id]
+            if snap.get(run_id) != state:
+                snap[run_id] = state
+                events.append({
+                    "id": f"wf:{run_id}", "kind": "run_state", "ts": ts,
+                    "entity_id": run_id, "action": f"workflow.{state}",
+                    "caller_id": caller_id, "run_id": run_id,
+                    "detail": {"state": state},
+                })
+        for run_id in sorted(k for k in snap if k not in active):
+            fin = conn.execute(
+                f"SELECT state, {caller_sql} AS caller_id,"
+                f" created_at, started_at, finished_at FROM {src}.workflow_run"
+                f" WHERE run_id = ?", (run_id,),
+            ).fetchone()
+            snap.pop(run_id, None)
+            if fin is not None:
+                fin_seen.add(run_id)
+                events.append({
+                    "id": f"wf:{run_id}", "kind": "run_state",
+                    "ts": fin["finished_at"] or fin["started_at"] or fin["created_at"],
+                    "entity_id": run_id, "action": f"workflow.{fin['state']}",
+                    "caller_id": fin["caller_id"], "run_id": run_id,
+                    "detail": {"state": fin["state"]},
+                })
+        # ③b 终态补扫（finished_at 窗口；快照 diff 已发的终态由 fin_seen 去重）
+        fin_rows = conn.execute(
+            f"SELECT run_id, state, {caller_sql} AS caller_id,"
+            f" created_at, started_at, finished_at FROM {src}.workflow_run"
+            f" WHERE state NOT IN ('queued','running','paused') AND finished_at >= ?"
+            f" ORDER BY finished_at ASC LIMIT ?",
+            (fin_window, _SSE_SCAN_LIMIT),
+        ).fetchall()
+        for row in fin_rows:
+            fat = row["finished_at"]
+            if fat > fin_window:
+                fin_window = fat
+            if row["run_id"] in fin_seen:
+                continue
+            fin_seen.add(row["run_id"])
+            events.append({
+                "id": f"wf:{row['run_id']}", "kind": "run_state", "ts": fat,
+                "entity_id": row["run_id"], "action": f"workflow.{row['state']}",
+                "caller_id": row["caller_id"], "run_id": row["run_id"],
+                "detail": {"state": row["state"]},
+            })
+        if len(fin_seen) > _SSE_SEEN_CAP:
+            fin_seen.clear()
+        cur["wf_fin_windows"][f"{src}.workflow_run"] = fin_window
+
+    # ④ task_claim：rowid 新行面 + updated_at 跃迁面（共享去重映射，一态一发）
+    for src in schemas_with_table(conn, "task_claim"):
+        rowid_cur = cur["claim_rowid"].setdefault(src, 0)
+        window = cur["claim_windows"].setdefault(src, "")
+        seen = cur["claim_seen"].setdefault(src, {})
+        claim_cols = ("rowid AS rid, claim_id, kind, state, attempt, claimed_by,"
+                      " created_by, run_id, node_id, agent_id, updated_at")
+        for row in conn.execute(
+            f"SELECT {claim_cols} FROM {src}.task_claim"
+            f" WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
+            (rowid_cur, _SSE_SCAN_LIMIT),
+        ).fetchall():
+            rowid_cur = int(row["rid"])
+            if seen.get(row["claim_id"]) == (row["updated_at"], row["state"]):
+                continue
+            seen[row["claim_id"]] = (row["updated_at"], row["state"])
+            events.append(_sse_claim_event(row, row["rid"]))
+        cur["claim_rowid"][src] = rowid_cur
+        for row in conn.execute(
+            f"SELECT {claim_cols} FROM {src}.task_claim"
+            f" WHERE updated_at >= ? ORDER BY updated_at ASC LIMIT ?",
+            (window, _SSE_SCAN_LIMIT),
+        ).fetchall():
+            uat = row["updated_at"]
+            if uat > window:
+                window = uat
+            if seen.get(row["claim_id"]) == (uat, row["state"]):
+                continue
+            seen[row["claim_id"]] = (uat, row["state"])
+            events.append(_sse_claim_event(row, row["rid"]))
+        if len(seen) > _SSE_SEEN_CAP:
+            seen.clear()
+        cur["claim_windows"][src] = window
+
+    # ⑤ ma_message：rowid 新行面 + updated_at 投递/已读跃迁面（029 delivered_at
+    # /read_at 分记 = 事件去重键——MA-3 移交①原文）
+    for src in schemas_with_table(conn, "ma_message"):
+        rowid_cur = cur["message_rowid"].setdefault(src, 0)
+        window = cur["message_windows"].setdefault(src, "")
+        seen = cur["message_seen"].setdefault(src, {})
+        msg_cols = ("rowid AS rid, message_id, from_caller, to_caller, claim_id,"
+                    " run_id, payload_json, delivered_at, read_at, created_at, updated_at")
+        for row in conn.execute(
+            f"SELECT {msg_cols} FROM {src}.ma_message"
+            f" WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
+            (rowid_cur, _SSE_SCAN_LIMIT),
+        ).fetchall():
+            rowid_cur = int(row["rid"])
+            key_seen = (row["updated_at"], row["delivered_at"], row["read_at"])
+            if seen.get(row["message_id"]) == key_seen:
+                continue
+            seen[row["message_id"]] = key_seen
+            events.append(_sse_message_event(row, row["rid"]))
+        cur["message_rowid"][src] = rowid_cur
+        for row in conn.execute(
+            f"SELECT {msg_cols} FROM {src}.ma_message"
+            f" WHERE updated_at >= ? ORDER BY updated_at ASC LIMIT ?",
+            (window, _SSE_SCAN_LIMIT),
+        ).fetchall():
+            uat = row["updated_at"]
+            if uat > window:
+                window = uat
+            key_seen = (uat, row["delivered_at"], row["read_at"])
+            if seen.get(row["message_id"]) == key_seen:
+                continue
+            seen[row["message_id"]] = key_seen
+            events.append(_sse_message_event(row, row["rid"]))
+        if len(seen) > _SSE_SEEN_CAP:
+            seen.clear()
+        cur["message_windows"][src] = window
+
+    # 同事实跨 schema 去重（RP_AUX_DB 与主库同文件挂载的测试形态下同 rowid
+    # 双扫 → 一事实一发；sig 全等 = 同一库事实，非同事实跨库行各自保留）。
+    seen_sigs: set[str] = set()
+    unique: list[dict] = []
+    for ev in events:
+        sig = _sse_sig(ev)
+        if sig in seen_sigs:
+            continue
+        seen_sigs.add(sig)
+        unique.append(ev)
+    return unique
+
+
+def _sse_replay_events(last_event_id: str) -> list[dict]:
+    """Last-Event-ID 起始 cursor 重放（D3）：append-only 面（audit:<id> /
+    message:<rowid> / claim:<rowid>）回看窗内从库直读补发；run:/wf: 快照面
+    不可重放（快照语义，忽略）；未知词形忽略（首连从当前水位起）。"""
+    source, sep, cursor_raw = last_event_id.partition(":")
+    if not sep:
+        return []
+    try:
+        cursor = int(cursor_raw)
+    except ValueError:
+        return []
+    events: list[dict] = []
+    conn = connect_ro()
+    try:
+        if source == "audit" and schemas_with_table(conn, "audit_event"):
+            rows = conn.execute(
+                "SELECT event_id, ts, action, entity_type, entity_id, correlation_id, detail"
+                " FROM audit_event WHERE event_id > ? ORDER BY event_id ASC LIMIT ?",
+                (cursor, SSE_REPLAY_MAX),
+            ).fetchall()
+            events = [_sse_audit_event(row) for row in rows]
+        elif source == "message":
+            for src in schemas_with_table(conn, "ma_message"):
+                rows = conn.execute(
+                    f"SELECT rowid AS rid, message_id, from_caller, to_caller, claim_id,"
+                    f" run_id, payload_json, delivered_at, read_at, created_at, updated_at"
+                    f" FROM {src}.ma_message WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
+                    (cursor, SSE_REPLAY_MAX),
+                ).fetchall()
+                events += [_sse_message_event(row, row["rid"]) for row in rows]
+        elif source == "claim":
+            for src in schemas_with_table(conn, "task_claim"):
+                rows = conn.execute(
+                    f"SELECT rowid AS rid, claim_id, kind, state, attempt, claimed_by,"
+                    f" created_by, run_id, node_id, agent_id, updated_at"
+                    f" FROM {src}.task_claim WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
+                    (cursor, SSE_REPLAY_MAX),
+                ).fetchall()
+                events += [_sse_claim_event(row, row["rid"]) for row in rows]
+    finally:
+        conn.close()
+    # 同事实跨 schema 去重（RP_AUX_DB 与主库同文件挂载的测试形态下同 rowid
+    # 双扫 → 一事实一发；与 _sse_scan_cycle 尾部去重同纪律）。
+    seen_sigs: set[str] = set()
+    unique: list[dict] = []
+    for ev in events:
+        sig = _sse_sig(ev)
+        if sig in seen_sigs:
+            continue
+        seen_sigs.add(sig)
+        unique.append(ev)
+    return unique[:SSE_REPLAY_MAX]
+
+
+def _sse_ensure_tail_locked() -> None:
+    """首个订阅者惰性启动单 tail daemon（调用方持 _sse_lock；无订阅者由
+    循环自退，下一订阅者再启）。"""
+    global _sse_tail_thread
+    if _sse_tail_thread is not None and _sse_tail_thread.is_alive():
+        return
+    thread = threading.Thread(target=_sse_tail_loop, name="rp-sse-tail", daemon=True)
+    _sse_tail_thread = thread
+    thread.start()
+
+
+def _sse_tail_loop() -> None:
+    """单 tail 轮询 daemon（D3）：每周期扫三形态 cursor 并按订阅过滤扇出；
+    无订阅者自动退出；事件源连续失败有界重试后退出（订阅者重连触发再启）。"""
+    try:
+        _sse_seed_cursors(connect_ro())
+    except Exception as exc:  # noqa: BLE001 —— 事件源不可读：订阅者保持心跳空流
+        print(f"[rp-server] SSE tail cursor 播种失败（事件源不可读）：{exc}", file=sys.stderr)
+        with _sse_lock:
+            if _sse_tail_thread is threading.current_thread():
+                _sse_tail_thread = None
+        return
+    fail_streak = 0
+    try:
+        while True:
+            with _sse_lock:
+                if not _sse_registry:
+                    return
+            try:
+                conn = connect_ro()
+            except Exception as exc:  # noqa: BLE001
+                fail_streak += 1
+                if fail_streak >= 600:  # ~5 分钟连续失败后退出（重连触发再启）
+                    print(f"[rp-server] SSE tail 退出（事件源连续不可读 x{fail_streak}）：{exc}",
+                          file=sys.stderr)
+                    return
+                time.sleep(max(SSE_POLL_MS, 200) / 1000.0)
+                continue
+            try:
+                events = _sse_scan_cycle(conn)
+                fail_streak = 0
+            except Exception as exc:  # noqa: BLE001 —— 下周期重试
+                fail_streak += 1
+                if fail_streak == 1 or fail_streak % 120 == 0:
+                    print(f"[rp-server] SSE tail 周期失败 x{fail_streak}（继续重试）：{exc}",
+                          file=sys.stderr)
+                if fail_streak >= 600:
+                    print(f"[rp-server] SSE tail 退出（连续失败 x{fail_streak}）", file=sys.stderr)
+                    return
+            else:
+                if events:
+                    with _sse_lock:
+                        for sub in _sse_registry:
+                            if not sub["alive"]:
+                                continue
+                            matched = [ev for ev in events if _sse_match(sub["filters"], ev)]
+                            if matched:
+                                with sub["cond"]:
+                                    sub["queue"].extend(matched)
+                                    sub["cond"].notify_all()
+            finally:
+                conn.close()
+            time.sleep(SSE_POLL_MS / 1000.0)
+    finally:
+        with _sse_lock:
+            if _sse_tail_thread is threading.current_thread():
+                _sse_tail_thread = None
+
 
 API_ROUTES = {
     "/api/wsw/proxy-status": handle_wsw_proxy_status,
@@ -4688,6 +5305,11 @@ class RpHandler(BaseHTTPRequestHandler):
             if parsed.path.startswith("/api/"):
                 check_rate_limit()
                 self.require_auth()
+                # MA-4（D1）：SSE 专用分支在字典分发之前——裸 wfile 流
+                # （零 Content-Length close-delimited）不进 send_json。
+                if parsed.path == "/api/events":
+                    self._handle_sse_events(params)
+                    return
                 handler = API_ROUTES.get(parsed.path)
                 if handler is not None:
                     conn = connect_ro()
@@ -4763,6 +5385,94 @@ class RpHandler(BaseHTTPRequestHandler):
             self.send_json({"error": {"code": "internal", "message": f"内部错误：{exc}"}}, status=500)
         finally:
             self._finish_audit("GET", parsed.path, t0)
+
+    def _handle_sse_events(self, params: dict) -> None:
+        """GET /api/events（MA-4 D1/D3）：SSE close-delimited 流。形状 =
+        200 + text/event-stream + Cache-Control: no-store + 零 Content-Length
+        （protocol_version 缺省 HTTP/1.0 → 连接关闭即流终；EventSource /
+        curl -N / fetch 均可消费）。零 SQL 写：事件源与重放全经 connect_ro
+        只读 tail（D2/D3）；限频只计本连接时刻一次（do_GET 顶部既有调用序）。
+        断连清理：finally 摘除注册条目（连接数回落——判据 5）。"""
+        caller_filter = clean_str(params, "caller")
+        kinds_raw = clean_str(params, "kinds") or ""
+        kinds: list[str] = []
+        for word in (w.strip() for w in kinds_raw.split(",")):
+            if not word:
+                continue
+            if word not in SSE_KINDS:
+                raise ApiError(400, "invalid_param",
+                               f"未知事件 kind：{word}（词表 {', '.join(SSE_KINDS)}）")
+            kinds.append(word)
+        with _sse_lock:
+            if len(_sse_registry) >= SSE_MAX_CLIENTS:
+                raise ApiError(503, "sse_capacity",
+                               f"SSE 订阅连接数超帽（RP_SSE_MAX_CLIENTS={SSE_MAX_CLIENTS}）")
+            sub = {
+                "queue": deque(),
+                "filters": {"caller": caller_filter, "kinds": frozenset(kinds)},
+                "cond": threading.Condition(),
+                "alive": True,
+            }
+            _sse_registry.append(sub)
+            _sse_ensure_tail_locked()
+        try:
+            replay: list[dict] = []
+            last_id = (self.headers.get("Last-Event-ID") or "").strip()
+            if last_id:
+                # 流头之前：回看窗查询失败可安全回 JSON 错误（未入流态）。
+                replay = _sse_replay_events(last_id)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self._audit_note(200)
+            self.wfile.flush()
+            dedup: set[str] = set()
+            for ev in replay:
+                dedup.add(_sse_sig(ev))
+                self.wfile.write(_sse_frame(ev).encode("utf-8"))
+            self.wfile.flush()
+            try:
+                self._sse_stream_loop(sub, dedup)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass  # 客户端断连：finally 清注册（连接数回落）
+        finally:
+            with _sse_lock:
+                sub["alive"] = False
+                try:
+                    _sse_registry.remove(sub)
+                except ValueError:
+                    pass
+
+    def _sse_stream_loop(self, sub: dict, dedup: set[str]) -> None:
+        """逐帧写队列事件；空等心跳 `: ping` 注释行（RP_SSE_HEARTBEAT_S）；
+        重放去重：重叠区（重放窗口 ∩ live 队列）不重发，首个非重叠事件后
+        停止去重。写失败（断连）向上抛由调用方清理。"""
+        heartbeat_deadline = time.monotonic() + SSE_HEARTBEAT_S
+        draining = bool(dedup)
+        while True:
+            ev = None
+            with sub["cond"]:
+                while not sub["queue"]:
+                    remaining = heartbeat_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    sub["cond"].wait(remaining)
+                if sub["queue"]:
+                    ev = sub["queue"].popleft()
+            if ev is None:
+                self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
+                heartbeat_deadline = time.monotonic() + SSE_HEARTBEAT_S
+                continue
+            if draining:
+                if _sse_sig(ev) in dedup:
+                    continue
+                draining = False
+                dedup.clear()
+            self.wfile.write(_sse_frame(ev).encode("utf-8"))
+            self.wfile.flush()
+            heartbeat_deadline = time.monotonic() + SSE_HEARTBEAT_S
 
     def _reject_write(self) -> None:
         self.send_json(

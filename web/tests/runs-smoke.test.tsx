@@ -19,6 +19,8 @@ const RUNS_STUB = {
       workspace_id: "ws-dev",
       status: "SUCCEEDED",
       duration_ms: 4210,
+      // MA-4（D5②）：027 库水位行含 caller_id（按库水位条件出现）。
+      caller_id: "caller-ma4-a",
       created_at: "2026-11-10T04:57:00Z",
       finished_at: "2026-11-10T04:57:04Z",
     },
@@ -55,6 +57,7 @@ const RUN_DETAIL_STUB = {
     tool_id: "rip.kb.rtis",
     tool_version: "0.1.0",
     workspace_id: "ws-dev",
+    caller_id: "caller-ma4-a",
     input_hash: "ab".repeat(32),
     status: "SUCCEEDED",
     duration_ms: 4210,
@@ -158,6 +161,34 @@ describe("Runs 页（P5-8）", () => {
         String(call[0]).includes("status=SUCCEEDED"),
       );
       if (!called) throw new Error("状态过滤请求未发出");
+    });
+  });
+
+  it("MA-4 caller 徽标列（027 库水位在场渲染）与 caller 过滤走服务端参数", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("run_id=")
+        ? RUN_DETAIL_STUB
+        : url.includes("/api/runs")
+          ? RUNS_STUB
+          : {};
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/runs");
+    render(<App />);
+    await screen.findByText("rn-b5-rt-py");
+    // caller 徽标列按行水位渲染：仅首行含 caller_id，其余行不伪造。
+    const badges = screen.getAllByTestId("run-caller-badge");
+    expect(badges.length).toBe(1);
+    expect(badges[0]?.textContent).toBe("caller-ma4-a");
+    // caller 过滤走服务端参数（status 过滤同型）。
+    fireEvent.change(screen.getByTestId("caller-filter"), { target: { value: "caller-ma4-a" } });
+    await waitFor(() => {
+      const called = fetchMock.mock.calls.some((call) =>
+        String(call[0]).includes("caller=caller-ma4-a"),
+      );
+      if (!called) throw new Error("caller 过滤请求未发出");
     });
   });
 
@@ -268,6 +299,13 @@ describe("Run 详情页（P5-8）", () => {
     expect(preview.getAttribute("href")).toBe("artifacts://rn-b5-rt-py/stdout.log");
     expect(screen.getByText("2.0 KB")).toBeTruthy();
     expect(screen.getByText("stdout")).toBeTruthy();
+  });
+
+  it("MA-4 概要区 caller 行（027 库水位在场渲染，run.caller_id）", async () => {
+    renderDetail("rn-b5-rt-py");
+    expect(await screen.findByText("SUCCEEDED")).toBeTruthy();
+    expect(screen.getByText("caller")).toBeTruthy();
+    expect(screen.getByText("caller-ma4-a")).toBeTruthy();
   });
 
   it("404 渲染 ErrorPanel", async () => {

@@ -8,3 +8,4 @@ playwright-report/
 qa/plugins/.run/
 qa/mcp/.run/
 qa/mcp/.run-e2e/
+qa/runs/.run/

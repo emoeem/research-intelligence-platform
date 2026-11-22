@@ -430,6 +430,11 @@ export function AgentsPage() {
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <StateBadge state={run.state} />
+                    {run.caller_id ? (
+                      <span className="badge badge-sm badge-ghost" data-testid="agent-run-caller-badge">
+                        {run.caller_id}
+                      </span>
+                    ) : null}
                     {run.steps_count !== undefined ? (
                       <span className="text-[11px] text-muted">{run.steps_count} 步</span>
                     ) : null}

@@ -494,6 +494,7 @@ export interface AgentRunRow {
   state: string;
   memory_refs?: string[] | null;
   trace_id?: string | null;
+  caller_id?: string | null;
   steps_count?: number;
   created_at?: string | null;
   started_at?: string | null;
@@ -614,7 +615,7 @@ export interface AgentRunList {
   total: number;
   returned: number;
   limit?: number;
-  filters?: { state?: string | null; agent_id?: string | null };
+  filters?: { state?: string | null; agent_id?: string | null; caller?: string | null };
   items: AgentRunRow[];
 }
 
@@ -626,13 +627,14 @@ export function agentsPath(params: { limit?: number } = {}): string {
   return `/api/agents${qs ? `?${qs}` : ""}`;
 }
 
-/** /api/agent-runs 路径组装（列表过滤：state/agent_id/limit）。 */
+/** /api/agent-runs 路径组装（列表过滤：state/agent_id/caller/limit）。 */
 export function agentRunsPath(
-  params: { state?: string; agent_id?: string; limit?: number } = {},
+  params: { state?: string; agent_id?: string; caller?: string; limit?: number } = {},
 ): string {
   const search = new URLSearchParams();
   if (params.state) search.set("state", params.state);
   if (params.agent_id) search.set("agent_id", params.agent_id);
+  if (params.caller) search.set("caller", params.caller);
   if (params.limit) search.set("limit", String(params.limit));
   const qs = search.toString();
   return `/api/agent-runs${qs ? `?${qs}` : ""}`;
@@ -657,7 +659,7 @@ export async function fetchAgents(
 }
 
 export async function fetchAgentRuns(
-  params: { state?: string; agent_id?: string; limit?: number } = {},
+  params: { state?: string; agent_id?: string; caller?: string; limit?: number } = {},
   options: { signal?: AbortSignal } = {},
 ): Promise<AgentRunList> {
   return apiGet<AgentRunList>(agentRunsPath(params), options);
@@ -737,6 +739,7 @@ export interface WorkflowRunRow {
   tool_run_id?: string | null;
   artifact_id?: string | null;
   evidence_id?: string | null;
+  caller_id?: string | null;
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
@@ -797,6 +800,7 @@ export interface WorkflowRunList {
   total: number;
   returned: number;
   limit?: number;
+  filters?: { caller?: string | null };
   items: WorkflowRunRow[];
 }
 

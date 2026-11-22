@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
@@ -7,7 +7,10 @@ import { formatDateTime } from "../lib/format";
 /** 运行记录页（P5-8）：ToolRun 列表（/api/runs，状态过滤走服务端参数）。
  *  数据面 aux 优先（RP_AUX_DB）；未配置/缺表时按服务端守卫显真实空态说明。
  *  三态统一。P7-5：trace_id 在场（015 迁移后开发副本）时行内渲染 trace
- *  徽标链接（/traces?id=），列按库水位条件出现、旧库不伪造。 */
+ *  徽标链接（/traces?id=），列按库水位条件出现、旧库不伪造。
+ *  MA-4（D5②）：caller_id 在场（027 迁移后开发副本）时行内渲染 caller
+ *  徽标 + caller 过滤下拉（服务端 ?caller= 参数，status 过滤同型；下拉
+ *  选项 = 未过滤列表 items caller 去重累积，过滤态不缩选项集）。 */
 
 interface RunRow {
   run_id: string;
@@ -16,6 +19,7 @@ interface RunRow {
   task_id?: string | null;
   trace_id?: string | null;
   workspace_id?: string | null;
+  caller_id?: string | null;
   status?: string;
   error_category?: string | null;
   duration_ms?: number | null;
@@ -59,30 +63,65 @@ const STATUS_BADGE: Record<string, string> = {
 
 export function RunsPage() {
   const [status, setStatus] = useState("");
+  const [caller, setCaller] = useState("");
+  // 下拉选项 = 未过滤列表 items caller 去重累积（过滤态请求只含当前
+  // caller 的行，不缩选项集）。
+  const [callerOptions, setCallerOptions] = useState<string[]>([]);
   const params = new URLSearchParams({ limit: "50" });
   if (status) params.set("status", status);
+  if (caller) params.set("caller", caller);
   const list = useApi<RunList>(`/api/runs?${params.toString()}`);
 
   const items = list.data?.items ?? [];
+
+  useEffect(() => {
+    if (caller) return;
+    const seen = new Set(callerOptions);
+    let added = false;
+    for (const item of items) {
+      if (item.caller_id && !seen.has(item.caller_id)) {
+        seen.add(item.caller_id);
+        added = true;
+      }
+    }
+    if (added) setCallerOptions([...seen].sort());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.data, caller]);
 
   return (
     <div>
       <PageHeader
         title="运行记录"
         actions={
-          <select
-            aria-label="按状态过滤"
-            className="select select-sm rounded-control border border-edge bg-base-100"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="">全部状态</option>
-            {RUN_STATUS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          <>
+            <select
+              aria-label="按 caller 过滤"
+              data-testid="caller-filter"
+              className="select select-sm rounded-control border border-edge bg-base-100"
+              value={caller}
+              onChange={(event) => setCaller(event.target.value)}
+            >
+              <option value="">全部 caller</option>
+              {callerOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="按状态过滤"
+              className="select select-sm rounded-control border border-edge bg-base-100"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              <option value="">全部状态</option>
+              {RUN_STATUS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </>
         }
       />
       {list.loading ? (
@@ -100,7 +139,9 @@ export function RunsPage() {
       ) : (
         <>
           <p className="mb-2 text-xs text-muted">
-            {status ? `过滤 ${status}：` : ""}共 {list.data?.total ?? 0} 条（显示 {items.length}
+            {status ? `过滤 ${status}：` : ""}
+            {caller ? `过滤 caller ${caller}：` : ""}共 {list.data?.total ?? 0} 条（显示{" "}
+            {items.length}
             ，数据源：
             {list.data?.source === "aux" ? "RP_AUX_DB 开发库副本" : list.data?.source}）
           </p>
@@ -117,6 +158,11 @@ export function RunsPage() {
                         className={`badge badge-sm ${STATUS_BADGE[run.status] ?? "badge-ghost"}`}
                       >
                         {run.status}
+                      </span>
+                    ) : null}
+                    {run.caller_id ? (
+                      <span className="badge badge-sm badge-ghost" data-testid="run-caller-badge">
+                        {run.caller_id}
                       </span>
                     ) : null}
                     {run.error_category ? (

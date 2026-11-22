@@ -25,6 +25,7 @@ interface RunFull {
   tool_version?: string | null;
   task_id?: string | null;
   workspace_id?: string | null;
+  caller_id?: string | null;
   submit_key?: string | null;
   input_hash?: string | null;
   // JSON 列：服务端已解析为对象（字段名保留 *_json 后缀，rp_server.py detail 分支）
@@ -218,6 +219,7 @@ export function RunDetailPage() {
             }
           />
           <MetaRow label="workspace" value={run.workspace_id} />
+          <MetaRow label="caller" value={run.caller_id} />
           {run.task_id ? (
             <div className="flex gap-2 text-xs">
               <span className="w-24 shrink-0 text-muted">task</span>
