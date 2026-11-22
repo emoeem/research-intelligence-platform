@@ -39,6 +39,7 @@
 
 pub mod artifact;
 pub mod cas;
+pub mod diff;
 pub mod exchange;
 pub mod ids;
 pub mod parse;

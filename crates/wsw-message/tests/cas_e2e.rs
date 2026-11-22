@@ -125,19 +125,19 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
     let source_copy_version: i64 = pool
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version before migration");
-    // dev-b1.db 为 gitignored 开发副本：027 落地后本地遗留旧态，CI 测试二进制并行
+    // dev-b1.db 为 gitignored 开发副本：028 落地后本地遗留旧态，CI 测试二进制并行
     // 时序下也可能读到重建前状态——副本先幂等迁到当前链头再断言（migrate 只写副本；
-    // 023..027 建表全 IF NOT EXISTS、登记行全 INSERT OR IGNORE，回放安全）。
+    // 023..028 建表全 IF NOT EXISTS、登记行全 INSERT OR IGNORE，回放安全）。
     // 源文件零写入由 sha256 前后比对断言承载。
-    if source_copy_version < 27 {
+    if source_copy_version < 28 {
         migrate(&pool, &migrations_dir()).expect("bring disposable dev-b1 copy to chain tail");
     }
     let source_copy_version: i64 = pool
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version after bring-up");
     assert_eq!(
-        source_copy_version, 27,
-        "disposable copy must reach current chain tail 027 before the rewind simulation"
+        source_copy_version, 28,
+        "disposable copy must reach current chain tail 028 before the rewind simulation"
     );
     let existing_table: i64 = pool
         .with_conn(|conn| {
@@ -174,8 +174,8 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version");
     assert_eq!(
-        version, 27,
-        "development copy must reach current chain tail 027 (023 re-applied after rollback)"
+        version, 28,
+        "development copy must reach current chain tail 028 (023 re-applied after rollback)"
     );
     pool.with_conn(|conn| -> Result<(), database::DbError> {
         let table_count: i64 = conn.query_row(
@@ -187,7 +187,7 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         Ok(())
     })
     .expect("verify migrated table");
-    assert_eq!(version, 27);
+    assert_eq!(version, 28);
     drop(pool);
 
     let source_sha_after = sha256_hex(&fs::read(&source).expect("re-read source DB read-only"));

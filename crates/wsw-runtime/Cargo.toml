@@ -80,5 +80,9 @@ tokio = { workspace = true, features = ["net"] }
 # 持久化（024 三表）：rusqlite 经 database 重导出，不直连（wsw-message
 # store.rs 先例注释「迁移执行器唯一为 database::migrate」）。
 database = { workspace = true }
+# Payload 结果匹配正则面（WSW-4 D4：变换 :241 + 结果匹配 :258；传递依赖
+# 转正直接声明——lock :2229-2231 实值 1.13.1 等号钉版，[[package]] 399 恒定，
+# vendor 零变更；WSW-1 sha2/base64 转正先例）。
+regex = { version = "=1.13.1" }
 # 消息面：CAS 正文（wsw_body_blob 登记）+ 脱敏（日志投影）+ Exchange ID 形状。
 wsw-message = { path = "../wsw-message" }

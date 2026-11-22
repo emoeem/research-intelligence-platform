@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod authority;
+pub mod fuzz;
 pub mod listener;
 pub mod persist;
 pub mod scope;

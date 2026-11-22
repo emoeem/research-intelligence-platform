@@ -887,16 +887,16 @@ fn validate_send_state(state: &str) -> Result<(), DbError> {
 }
 
 impl PersistStore {
-    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，MA-2 后为 27）。
-    /// 方法名保留 025 批次命名（intercept_queue 测试 fn 名同款先例），随链尾演进
-    /// 仅更新断言值。
-    pub fn assert_watermark_25(&self) -> DbResult<()> {
+    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，WSW-4 后为 28）。
+    /// 方法名去数字收口（原 assert_watermark_25 名 25 断言 27 双漂移既有债，
+    /// WSW-4-TASK A13/S3 裁决改名；随链尾演进仅更新断言值）。
+    pub fn assert_watermark(&self) -> DbResult<()> {
         let v: i64 = self
             .pool
             .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if v != 27 {
+        if v != 28 {
             return Err(DbError::Validation(format!(
-                "027 chain head expected user_version=27, got {v}"
+                "028 chain head expected user_version=28, got {v}"
             )));
         }
         Ok(())
@@ -1376,6 +1376,517 @@ fn map_send_row(row: &database::rusqlite::Row<'_>) -> database::rusqlite::Result
         error_code: row.get(17)?,
         created_at: row.get(18)?,
     })
+}
+
+
+// ---------------------------------------------------------------------------
+// WSW-4 fuzz store（028 两表：wsw_fuzz_job / wsw_fuzz_case；WSW-4-TASK D2/D5）。
+// 状态机词表逐字 = PLAN :502-503；迁移合法性 Rust 侧查表拒 + SQL WHERE
+// state=from 单语句 CAS 双面强制（非法迁移 0 行受影响即 Validation 错，
+// 判据 6）。写权 = rp-wsw fuzz 子进程 Rust-only（W3-D7 分治延续）。
+// ---------------------------------------------------------------------------
+
+/// Fuzzer Job 九态词表（PLAN :502 逐字；028 CHECK 同源）。
+pub const FUZZ_JOB_STATES: [&str; 9] = [
+    "CREATED", "QUEUED", "RUNNING", "PAUSED", "CANCELLING", "CANCELLED",
+    "COMPLETED", "FAILED", "BUDGET_EXHAUSTED",
+];
+
+/// Fuzzer Case 七态词表（PLAN :503 逐字；028 CHECK 同源）。
+pub const FUZZ_CASE_STATES: [&str; 7] = [
+    "PENDING", "SENT", "RESPONDED", "TIMEOUT", "NETWORK_ERROR",
+    "SKIPPED_SCOPE", "SKIPPED_BUDGET",
+];
+
+/// Job 九态合法迁移表（Rust 侧强制；终态无出边）：
+/// CREATED→QUEUED/FAILED；QUEUED→RUNNING/CANCELLING/FAILED（spec 预检失败
+/// 收敛——resume 期词表文件丢失等 fail-closed 面）；RUNNING→PAUSED/
+/// CANCELLING/COMPLETED/FAILED/BUDGET_EXHAUSTED；PAUSED→RUNNING/CANCELLING；
+/// CANCELLING→CANCELLED。
+pub fn fuzz_job_transition_allowed(from: &str, to: &str) -> bool {
+    if !FUZZ_JOB_STATES.contains(&from) || !FUZZ_JOB_STATES.contains(&to) {
+        return false;
+    }
+    matches!(
+        (from, to),
+        ("CREATED", "QUEUED")
+            | ("CREATED", "FAILED")
+            | ("QUEUED", "RUNNING")
+            | ("QUEUED", "CANCELLING")
+            | ("QUEUED", "FAILED")
+            | (
+                "RUNNING",
+                "PAUSED" | "CANCELLING" | "COMPLETED" | "FAILED" | "BUDGET_EXHAUSTED"
+            )
+            | ("PAUSED", "RUNNING")
+            | ("PAUSED", "CANCELLING")
+            | ("CANCELLING", "CANCELLED")
+    )
+}
+
+/// Case 七态合法迁移表：PENDING→SENT/SKIPPED_SCOPE/SKIPPED_BUDGET；
+/// SENT→RESPONDED/TIMEOUT/NETWORK_ERROR；其余（终态）无出边。
+pub fn fuzz_case_transition_allowed(from: &str, to: &str) -> bool {
+    if !FUZZ_CASE_STATES.contains(&from) || !FUZZ_CASE_STATES.contains(&to) {
+        return false;
+    }
+    matches!(
+        (from, to),
+        ("PENDING", "SENT")
+            | ("PENDING", "SKIPPED_SCOPE")
+            | ("PENDING", "SKIPPED_BUDGET")
+            | ("SENT", "RESPONDED")
+            | ("SENT", "TIMEOUT")
+            | ("SENT", "NETWORK_ERROR")
+    )
+}
+
+/// `wsw_fuzz_job` 行（028 表；PLAN :502 九态行式状态机）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FuzzJobRow {
+    pub job_id: String,
+    pub session_id: String,
+    pub listener_id: String,
+    /// 九态词表串（大写逐字）。
+    pub state: String,
+    /// spec JSON 全量（8MiB 帽由 SQL CHECK 强制）。
+    pub spec_json: String,
+    pub estimated_requests: i64,
+    /// FuzzBudget 六字段组（D5；Rust 强制面行承载）。
+    pub max_requests: i64,
+    pub max_concurrency: i64,
+    pub rate_window_ms: i64,
+    pub rate_max_requests: i64,
+    pub min_request_interval_ms: i64,
+    pub max_duration_ms: i64,
+    pub baseline_case_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub task_id: Option<String>,
+    pub evidence_id: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub created_at: String,
+}
+
+/// `wsw_fuzz_case` 行（028 表；PLAN :503 七态行式状态机）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FuzzCaseRow {
+    pub case_id: String,
+    pub job_id: String,
+    pub ordinal: i64,
+    /// 七态词表串（大写逐字）。
+    pub state: String,
+    /// 该 case 各位置注入值列表 JSON（`["v1","v2",…]`）。
+    pub payload_json: String,
+    /// 组合值 sha256（变体对账锚）。
+    pub payload_sha256: String,
+    pub request_outbound_sha256: Option<String>,
+    pub exchange_id: Option<String>,
+    pub response_status: Option<i64>,
+    pub response_len: Option<i64>,
+    pub response_sha256: Option<String>,
+    pub response_mime: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub ttfb_ms: Option<i64>,
+    pub match_hits_json: Option<String>,
+    pub diff_class: Option<String>,
+    pub similarity: Option<f64>,
+    pub error_code: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+}
+
+/// Job 行状态推进 patch（`advance_fuzz_job` WHERE state=from CAS 消费）。
+#[derive(Debug, Clone, Default)]
+pub struct FuzzJobPatch {
+    /// 目标态（合法迁移表强制）。
+    pub state: &'static str,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub error_code: Option<String>,
+    /// Some = 覆写 baseline_case_id（None = 不动）。
+    pub baseline_case_id: Option<String>,
+}
+
+/// Case 行状态推进 patch（`advance_fuzz_case` WHERE state=from CAS 消费）。
+#[derive(Debug, Clone, Default)]
+pub struct FuzzCasePatch {
+    /// 目标态（合法迁移表强制）。
+    pub state: &'static str,
+    pub request_outbound_sha256: Option<String>,
+    pub exchange_id: Option<String>,
+    pub response_status: Option<i64>,
+    pub response_len: Option<i64>,
+    pub response_sha256: Option<String>,
+    pub response_mime: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub ttfb_ms: Option<i64>,
+    pub match_hits_json: Option<String>,
+    pub diff_class: Option<String>,
+    pub similarity: Option<f64>,
+    pub error_code: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+fn fuzz_job_row_from(row: &database::rusqlite::Row<'_>) -> Result<FuzzJobRow, database::rusqlite::Error> {
+    Ok(FuzzJobRow {
+        job_id: row.get(0)?,
+        session_id: row.get(1)?,
+        listener_id: row.get(2)?,
+        state: row.get(3)?,
+        spec_json: row.get(4)?,
+        estimated_requests: row.get(5)?,
+        max_requests: row.get(6)?,
+        max_concurrency: row.get(7)?,
+        rate_window_ms: row.get(8)?,
+        rate_max_requests: row.get(9)?,
+        min_request_interval_ms: row.get(10)?,
+        max_duration_ms: row.get(11)?,
+        baseline_case_id: row.get(12)?,
+        trace_id: row.get(13)?,
+        task_id: row.get(14)?,
+        evidence_id: row.get(15)?,
+        started_at: row.get(16)?,
+        completed_at: row.get(17)?,
+        duration_ms: row.get(18)?,
+        error_code: row.get(19)?,
+        created_at: row.get(20)?,
+    })
+}
+
+fn fuzz_case_row_from(row: &database::rusqlite::Row<'_>) -> Result<FuzzCaseRow, database::rusqlite::Error> {
+    Ok(FuzzCaseRow {
+        case_id: row.get(0)?,
+        job_id: row.get(1)?,
+        ordinal: row.get(2)?,
+        state: row.get(3)?,
+        payload_json: row.get(4)?,
+        payload_sha256: row.get(5)?,
+        request_outbound_sha256: row.get(6)?,
+        exchange_id: row.get(7)?,
+        response_status: row.get(8)?,
+        response_len: row.get(9)?,
+        response_sha256: row.get(10)?,
+        response_mime: row.get(11)?,
+        duration_ms: row.get(12)?,
+        ttfb_ms: row.get(13)?,
+        match_hits_json: row.get(14)?,
+        diff_class: row.get(15)?,
+        similarity: row.get(16)?,
+        error_code: row.get(17)?,
+        started_at: row.get(18)?,
+        completed_at: row.get(19)?,
+        created_at: row.get(20)?,
+    })
+}
+
+impl PersistStore {
+    /// fuzz job 行登记（INSERT；前缀/词表预检非法即错）。
+    pub fn insert_fuzz_job(&self, row: &FuzzJobRow) -> DbResult<()> {
+        if !row.job_id.starts_with("wsw-fzj-") {
+            return Err(DbError::Validation(format!(
+                "job_id must start with wsw-fzj-: {:?}",
+                row.job_id
+            )));
+        }
+        if !row.session_id.starts_with("wsw-ses-") {
+            return Err(DbError::Validation(format!(
+                "session_id must start with wsw-ses-: {:?}",
+                row.session_id
+            )));
+        }
+        if !row.listener_id.starts_with("wsw-lis-") {
+            return Err(DbError::Validation(format!(
+                "listener_id must start with wsw-lis-: {:?}",
+                row.listener_id
+            )));
+        }
+        if !FUZZ_JOB_STATES.contains(&row.state.as_str()) {
+            return Err(DbError::Validation(format!(
+                "invalid fuzz job state: {:?}",
+                row.state
+            )));
+        }
+        self.pool.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO wsw_fuzz_job \
+                 (job_id, session_id, listener_id, state, spec_json, estimated_requests, \
+                  max_requests, max_concurrency, rate_window_ms, rate_max_requests, \
+                  min_request_interval_ms, max_duration_ms, baseline_case_id, trace_id, \
+                  task_id, evidence_id, started_at, completed_at, duration_ms, error_code, \
+                  created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+                sql_params![
+                    row.job_id,
+                    row.session_id,
+                    row.listener_id,
+                    row.state,
+                    row.spec_json,
+                    row.estimated_requests,
+                    row.max_requests,
+                    row.max_concurrency,
+                    row.rate_window_ms,
+                    row.rate_max_requests,
+                    row.min_request_interval_ms,
+                    row.max_duration_ms,
+                    row.baseline_case_id,
+                    row.trace_id,
+                    row.task_id,
+                    row.evidence_id,
+                    row.started_at,
+                    row.completed_at,
+                    row.duration_ms,
+                    row.error_code,
+                    row.created_at,
+                ],
+            )?;
+            Ok::<(), database::rusqlite::Error>(())
+        })
+    }
+
+    /// fuzz job 行读取。
+    pub fn get_fuzz_job(&self, job_id: &str) -> DbResult<Option<FuzzJobRow>> {
+        self.pool.with_conn(|conn| {
+            conn.query_row(
+                "SELECT job_id, session_id, listener_id, state, spec_json, estimated_requests, \
+                 max_requests, max_concurrency, rate_window_ms, rate_max_requests, \
+                 min_request_interval_ms, max_duration_ms, baseline_case_id, trace_id, \
+                 task_id, evidence_id, started_at, completed_at, duration_ms, error_code, \
+                 created_at FROM wsw_fuzz_job WHERE job_id=?1",
+                sql_params![job_id],
+                fuzz_job_row_from,
+            )
+            .map(Some)
+            .or_else(|e: database::rusqlite::Error| match e {
+                database::rusqlite::Error::QueryReturnedNoRows => {
+                    Ok::<Option<FuzzJobRow>, database::rusqlite::Error>(None)
+                }
+                other => Err(other),
+            })
+        })
+    }
+
+    /// fuzz job 列表（created_at DESC 稳定序）。
+    pub fn list_fuzz_jobs(&self) -> DbResult<Vec<FuzzJobRow>> {
+        self.pool.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT job_id, session_id, listener_id, state, spec_json, estimated_requests, \
+                 max_requests, max_concurrency, rate_window_ms, rate_max_requests, \
+                 min_request_interval_ms, max_duration_ms, baseline_case_id, trace_id, \
+                 task_id, evidence_id, started_at, completed_at, duration_ms, error_code, \
+                 created_at FROM wsw_fuzz_job ORDER BY created_at DESC, job_id DESC",
+            )?;
+            let rows = stmt
+                .query_map([], fuzz_job_row_from)?
+                .collect::<Result<Vec<_>, database::rusqlite::Error>>()?;
+            Ok::<Vec<FuzzJobRow>, database::rusqlite::Error>(rows)
+        })
+    }
+
+    /// fuzz job 状态推进（单语句 CAS：`WHERE job_id=? AND state=from`；
+    /// Rust 侧迁移表先拒 + SQL 影响行数 0 复拒——判据 6 非法迁移双面）。
+    pub fn advance_fuzz_job(
+        &self,
+        job_id: &str,
+        from_state: &str,
+        patch: &FuzzJobPatch,
+    ) -> DbResult<()> {
+        if !fuzz_job_transition_allowed(from_state, patch.state) {
+            return Err(DbError::Validation(format!(
+                "illegal fuzz job state transition: {from_state:?} -> {:?}",
+                patch.state
+            )));
+        }
+        let n = self.pool.with_conn(|conn| {
+            conn.execute(
+                "UPDATE wsw_fuzz_job SET \
+                 state=?2, started_at=COALESCE(?3, started_at), \
+                 completed_at=COALESCE(?4, completed_at), \
+                 duration_ms=COALESCE(?5, duration_ms), \
+                 error_code=COALESCE(?6, error_code), \
+                 baseline_case_id=COALESCE(?7, baseline_case_id) \
+                 WHERE job_id=?1 AND state=?8",
+                sql_params![
+                    job_id,
+                    patch.state,
+                    patch.started_at,
+                    patch.completed_at,
+                    patch.duration_ms,
+                    patch.error_code,
+                    patch.baseline_case_id,
+                    from_state,
+                ],
+            )
+        })?;
+        if n == 0 {
+            return Err(DbError::Validation(format!(
+                "fuzz job {job_id:?} not in expected state {from_state:?} (CAS update missed)"
+            )));
+        }
+        Ok(())
+    }
+
+    /// fuzz case 行登记（INSERT；UNIQUE(job_id, ordinal) 重复即错）。
+    pub fn insert_fuzz_case(&self, row: &FuzzCaseRow) -> DbResult<()> {
+        if !row.case_id.starts_with("wsw-fzc-") {
+            return Err(DbError::Validation(format!(
+                "case_id must start with wsw-fzc-: {:?}",
+                row.case_id
+            )));
+        }
+        if !FUZZ_CASE_STATES.contains(&row.state.as_str()) {
+            return Err(DbError::Validation(format!(
+                "invalid fuzz case state: {:?}",
+                row.state
+            )));
+        }
+        self.pool.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO wsw_fuzz_case \
+                 (case_id, job_id, ordinal, state, payload_json, payload_sha256, \
+                  request_outbound_sha256, exchange_id, response_status, response_len, \
+                  response_sha256, response_mime, duration_ms, ttfb_ms, match_hits_json, \
+                  diff_class, similarity, error_code, started_at, completed_at, created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+                sql_params![
+                    row.case_id,
+                    row.job_id,
+                    row.ordinal,
+                    row.state,
+                    row.payload_json,
+                    row.payload_sha256,
+                    row.request_outbound_sha256,
+                    row.exchange_id,
+                    row.response_status,
+                    row.response_len,
+                    row.response_sha256,
+                    row.response_mime,
+                    row.duration_ms,
+                    row.ttfb_ms,
+                    row.match_hits_json,
+                    row.diff_class,
+                    row.similarity,
+                    row.error_code,
+                    row.started_at,
+                    row.completed_at,
+                    row.created_at,
+                ],
+            )?;
+            Ok::<(), database::rusqlite::Error>(())
+        })
+    }
+
+    /// fuzz case 状态推进（单语句 CAS：`WHERE case_id=? AND state=from`）。
+    #[allow(clippy::too_many_arguments)]
+    pub fn advance_fuzz_case(
+        &self,
+        case_id: &str,
+        from_state: &str,
+        patch: &FuzzCasePatch,
+    ) -> DbResult<()> {
+        if !fuzz_case_transition_allowed(from_state, patch.state) {
+            return Err(DbError::Validation(format!(
+                "illegal fuzz case state transition: {from_state:?} -> {:?}",
+                patch.state
+            )));
+        }
+        let n = self.pool.with_conn(|conn| {
+            conn.execute(
+                "UPDATE wsw_fuzz_case SET \
+                 state=?2, request_outbound_sha256=COALESCE(?3, request_outbound_sha256), \
+                 exchange_id=COALESCE(?4, exchange_id), \
+                 response_status=COALESCE(?5, response_status), \
+                 response_len=COALESCE(?6, response_len), \
+                 response_sha256=COALESCE(?7, response_sha256), \
+                 response_mime=COALESCE(?8, response_mime), \
+                 duration_ms=COALESCE(?9, duration_ms), \
+                 ttfb_ms=COALESCE(?10, ttfb_ms), \
+                 match_hits_json=COALESCE(?11, match_hits_json), \
+                 diff_class=COALESCE(?12, diff_class), \
+                 similarity=COALESCE(?13, similarity), \
+                 error_code=COALESCE(?14, error_code), \
+                 started_at=COALESCE(?15, started_at), \
+                 completed_at=COALESCE(?16, completed_at) \
+                 WHERE case_id=?1 AND state=?17",
+                sql_params![
+                    case_id,
+                    patch.state,
+                    patch.request_outbound_sha256,
+                    patch.exchange_id,
+                    patch.response_status,
+                    patch.response_len,
+                    patch.response_sha256,
+                    patch.response_mime,
+                    patch.duration_ms,
+                    patch.ttfb_ms,
+                    patch.match_hits_json,
+                    patch.diff_class,
+                    patch.similarity,
+                    patch.error_code,
+                    patch.started_at,
+                    patch.completed_at,
+                    from_state,
+                ],
+            )
+        })?;
+        if n == 0 {
+            return Err(DbError::Validation(format!(
+                "fuzz case {case_id:?} not in expected state {from_state:?} (CAS update missed)"
+            )));
+        }
+        Ok(())
+    }
+
+    /// job 全量 case 行（ordinal 序；resume 对账权威面——D5）。
+    pub fn list_cases_by_job(&self, job_id: &str) -> DbResult<Vec<FuzzCaseRow>> {
+        self.pool.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT case_id, job_id, ordinal, state, payload_json, payload_sha256, \
+                 request_outbound_sha256, exchange_id, response_status, response_len, \
+                 response_sha256, response_mime, duration_ms, ttfb_ms, match_hits_json, \
+                 diff_class, similarity, error_code, started_at, completed_at, created_at \
+                 FROM wsw_fuzz_case WHERE job_id=?1 ORDER BY ordinal",
+            )?;
+            let rows = stmt
+                .query_map(sql_params![job_id], fuzz_case_row_from)?
+                .collect::<Result<Vec<_>, database::rusqlite::Error>>()?;
+            Ok::<Vec<FuzzCaseRow>, database::rusqlite::Error>(rows)
+        })
+    }
+
+    /// job 各态 case 计数（列表/详情端点聚合面）。
+    pub fn fuzz_case_counts(&self, job_id: &str) -> DbResult<Vec<(String, i64)>> {
+        self.pool.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT state, COUNT(*) FROM wsw_fuzz_case WHERE job_id=?1 GROUP BY state",
+            )?;
+            let rows = stmt
+                .query_map(sql_params![job_id], |r| {
+                    Ok::<(String, i64), database::rusqlite::Error>((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, database::rusqlite::Error>>()?;
+            Ok::<Vec<(String, i64)>, database::rusqlite::Error>(rows)
+        })
+    }
+
+    /// job 已派发（非 PENDING）case 计数——预算总数闸复核面。
+    pub fn fuzz_case_dispatched_count(&self, job_id: &str) -> DbResult<i64> {
+        self.pool.with_conn(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM wsw_fuzz_case WHERE job_id=?1 AND state != 'PENDING'",
+                sql_params![job_id],
+                |r| r.get(0),
+            )
+        })
+    }
 }
 
 #[cfg(test)]

@@ -133,6 +133,18 @@ wsw_id!(
     "listener",
     "wsw-lis-"
 );
+wsw_id!(
+    /// Fuzz Job ID：Web Fuzzer 任务行主键（028 wsw_fuzz_job，WSW-4 消费）。
+    FuzzJobId,
+    "fuzz_job",
+    "wsw-fzj-"
+);
+wsw_id!(
+    /// Fuzz Case ID：fuzz 单 case 行主键（028 wsw_fuzz_case，WSW-4 消费）。
+    FuzzCaseId,
+    "fuzz_case",
+    "wsw-fzc-"
+);
 
 #[cfg(test)]
 mod tests {

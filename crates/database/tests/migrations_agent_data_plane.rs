@@ -80,9 +80,9 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
     assert_eq!(
         versions,
         vec![
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
         ],
-        "discover must see all current migrations 001..027 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget) (006 = next available by merge order, 007 = P2-4a RuntimeNode 数据面, 008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
+        "discover must see all current migrations 001..028 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget and WSW-4 028 fuzz 两表) (006 = next available by merge order, 007 = P2-4a RuntimeNode 数据面, 008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
     );
 
     reset_dev_copy();
@@ -97,8 +97,8 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (27, "_caller_attribution"),
-        "chain tail is now 027 (MA-2 caller 归属列与 caller_budget)，006..026 落于链中段"
+        (28, "_wsw_fuzz"),
+        "chain tail is now 028 (WSW-4 fuzz 两表)，006..027 落于链中段"
     );
 
     let dump1 = schema_dump(&pool);
@@ -106,8 +106,8 @@ fn p7_1_migrate_twice_no_diff_and_fk_rejects_missing_definition() {
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
     assert_eq!(
-        uv, 27,
-        "user_version must be 27 after first run (chain tail 027)"
+        uv, 28,
+        "user_version must be 28 after first run (chain tail 028)"
     );
 
     // 第二次：执行器按 user_version 全跳过，零变更。

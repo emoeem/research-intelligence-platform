@@ -39,6 +39,8 @@ fn usage() -> ! {
 rp-wsw send --db <path> --session-id <ses> --tab-id <rpt> --send-id <snd> --version-no <n> \
 --request-json <file> [--policy <file>] [--upstream-ca <pem>]... [--artifacts-root <dir>] \
 [--pid-file <path>]\n  \
+rp-wsw fuzz --db <path> --session-id <ses> --spec-json <file> [--job-id <fzj>] \
+[--policy <file>] [--upstream-ca <pem>]... [--artifacts-root <dir>] [--pid-file <path>]\n  \
 rp-wsw ca status [--ca-dir <dir>]\n  \
 rp-wsw ca export [--ca-dir <dir>] --out <path>\n  \
 rp-wsw ca regenerate [--ca-dir <dir>]\n  \
@@ -71,6 +73,9 @@ struct Args {
     request_json: Option<PathBuf>,
     policy_file: Option<PathBuf>,
     artifacts_root: Option<PathBuf>,
+    // fuzz 子命令（WSW-4）
+    job_id: Option<String>,
+    spec_json: Option<PathBuf>,
 }
 
 fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
@@ -96,6 +101,8 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
         request_json: None,
         policy_file: None,
         artifacts_root: None,
+        job_id: None,
+        spec_json: None,
     };
     while let Some(arg) = next.next() {
         let mut take = |what: &str| -> String {
@@ -134,6 +141,8 @@ fn parse_args(next: &mut impl Iterator<Item = String>) -> Args {
             "--request-json" => a.request_json = Some(take("--request-json").into()),
             "--policy" => a.policy_file = Some(take("--policy").into()),
             "--artifacts-root" => a.artifacts_root = Some(take("--artifacts-root").into()),
+            "--job-id" => a.job_id = Some(take("--job-id")),
+            "--spec-json" => a.spec_json = Some(take("--spec-json").into()),
             other => {
                 eprintln!("{TAG} unknown arg {other}");
                 usage();
@@ -345,6 +354,142 @@ fn ca_regenerate(a: &Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// fuzz 子命令（WSW-4）：spec 预检（fail-closed，失败不建行）→ job 行
+/// CREATED→QUEUED → JobRunner 全链（九态状态机 + 预算四闸 + 发送引擎单点
+/// sender::send_request）；SIGTERM/SIGINT → CANCELLING→CANCELLED graceful；
+/// stdout 输出终态汇总 JSON（rp_server 侧消费）。幂等防呆沿 run_send :
+/// 379-386 形态：--job-id 行已终态 → 直接回显退出；非终态 → 续派
+/// （case 行 status 权威——PENDING 未派、SENT/终态不重派，D5/判据 8）。
+async fn run_fuzz(a: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let db = a.db.clone().ok_or("fuzz requires --db <path>")?;
+    let session_id = a.session_id.clone().ok_or("fuzz requires --session-id")?;
+    let spec_path = a.spec_json.clone().ok_or("fuzz requires --spec-json")?;
+    let artifacts_root = a
+        .artifacts_root
+        .clone()
+        .unwrap_or_else(wsw_message::cas::resolve_artifacts_dir);
+
+    let store = persist::PersistStore::open_file(&db)?;
+    let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    store.run_migrations(&migrations_dir)?;
+    store.assert_watermark()?;
+
+    // 幂等/恢复分派。
+    let job_id = match &a.job_id {
+        Some(jid) if store.get_fuzz_job(jid)?.is_some() => jid.clone(),
+        other => {
+            let jid = other
+                .clone()
+                .unwrap_or_else(|| wsw_message::ids::FuzzJobId::generate().into_inner());
+            // 新 job：spec 预检先行（失败不建行——fail-closed）。
+            let spec_text = std::fs::read_to_string(&spec_path)
+                .map_err(|e| format!("spec read {}: {e}", spec_path.display()))?;
+            let prepared = wsw_runtime::fuzz::spec::prepare_spec(&spec_text)
+                .map_err(|e| format!("spec preflight: {e}"))?;
+            let row = wsw_runtime::fuzz::spec::job_row_from_prepared(
+                &prepared,
+                &jid,
+                &session_id,
+                &spec_text,
+                persist::now_iso(),
+            );
+            store.insert_fuzz_job(&row)?;
+            store.advance_fuzz_job(&jid, "CREATED", &persist::FuzzJobPatch {
+                state: "QUEUED",
+                ..Default::default()
+            })?;
+            jid
+        }
+    };
+
+    // 既有终态行 → 幂等回显退出（重放调用防呆）。
+    if let Some(existing) = store.get_fuzz_job(&job_id)? {
+        if matches!(
+            existing.state.as_str(),
+            "CANCELLED" | "COMPLETED" | "FAILED" | "BUDGET_EXHAUSTED"
+        ) {
+            println!(
+                "{}",
+                serde_json::json!({"job_id": job_id, "state": existing.state, "note": "already terminal"})
+            );
+            return Ok(());
+        }
+    }
+
+    if let Some(pid_file) = &a.pid_file {
+        std::fs::write(pid_file, format!("{}\n", std::process::id()))?;
+    }
+
+    // SIGTERM/SIGINT → cancel watch（graceful：在途 case 等终态 → CANCELLED）。
+    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let (_, pause_rx) = tokio::sync::watch::channel(false);
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigterm.recv() => println!("{TAG} SIGTERM received (fuzz job cancelling)"),
+            _ = sigint.recv() => println!("{TAG} SIGINT received (fuzz job cancelling)"),
+        }
+        let _ = cancel_tx.send(true);
+    });
+
+    // scope 规则源：wsw_session 行（缺行 = default deny——安全默认，同 send）。
+    let rules = store
+        .get_session(&session_id)?
+        .map(|s| ScopeRules::from_json(&s.scope_rules_json))
+        .transpose()?
+        .unwrap_or_default();
+    let policy = match &a.policy_file {
+        Some(f) => {
+            let text = std::fs::read_to_string(f)?;
+            wsw_runtime::sender::SendPolicy::from_json(&text)?
+        }
+        None => wsw_runtime::sender::SendPolicy::default(),
+    };
+    let opts = wsw_runtime::fuzz::FuzzJobOptions {
+        session_id,
+        rules,
+        policy,
+        artifacts_root,
+        extra_ca: a.upstream_cas.clone(),
+        cancel: cancel_rx,
+        pause: pause_rx,
+    };
+    match wsw_runtime::fuzz::run_job(&store, &job_id, opts).await {
+        Ok(summary) => {
+            println!("{}", serde_json::to_string(&summary)?);
+            Ok(())
+        }
+        Err(wsw_runtime::fuzz::FuzzError::JobTerminal(state)) => {
+            // 终态竞态（并发重放）：幂等回显。
+            println!(
+                "{}",
+                serde_json::json!({"job_id": job_id, "state": state, "note": "already terminal"})
+            );
+            Ok(())
+        }
+        Err(wsw_runtime::fuzz::FuzzError::Spec(e)) => {
+            // spec 面失败（resume 期词表文件丢失等）→ FAILED 收敛。
+            let msg = e.to_string();
+            if let Some(row) = store.get_fuzz_job(&job_id)? {
+                if !matches!(
+                    row.state.as_str(),
+                    "CANCELLED" | "COMPLETED" | "FAILED" | "BUDGET_EXHAUSTED"
+                ) {
+                    let _ = store.advance_fuzz_job(&job_id, &row.state, &persist::FuzzJobPatch {
+                        state: "FAILED",
+                        error_code: Some("fuzz_spec_invalid".into()),
+                        completed_at: Some(persist::now_iso()),
+                        ..Default::default()
+                    });
+                }
+            }
+            Err(format!("fuzz spec invalid: {msg}").into())
+        }
+        Err(e) => Err(format!("fuzz run: {e}").into()),
+    }
+}
+
 fn db_migrate(a: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let db = a.db.clone().ok_or("db migrate requires --db <path>")?;
     let store = wsw_runtime::persist::PersistStore::open_file(&db)?;
@@ -376,7 +521,7 @@ async fn run_send(a: Args) -> Result<(), Box<dyn std::error::Error>> {
     let store = persist::PersistStore::open_file(&db)?;
     let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     store.run_migrations(&migrations_dir)?;
-    store.assert_watermark_25()?;
+    store.assert_watermark()?;
 
     // 幂等防呆：已有终态行 = 重放调用，直接回显终态退出。
     if let Some(existing) = store.get_send(&send_id)? {
@@ -670,6 +815,7 @@ async fn main() {
     let result = match cmd.as_str() {
         "listener" => run_listener(parse_args(&mut args)).await,
         "send" => run_send(parse_args(&mut args)).await,
+        "fuzz" => run_fuzz(parse_args(&mut args)).await,
         "ca" => match args.next().as_deref() {
             Some("status") => ca_status(&parse_args(&mut args)),
             Some("export") => ca_export(&parse_args(&mut args)),

@@ -48,7 +48,7 @@ fn build_db(path: &Path) {
     let applied = migrate(&pool, &migrations_dir()).unwrap();
     assert_eq!(
         applied.last().map(|m| m.version),
-        Some(27),
+        Some(28),
         "真实迁移链 001..027 应全应用（026 = MA-1 caller/api_key 两表，027 = MA-2 caller 归属列与 caller_budget）"
     );
     pool.with_conn(|c| {

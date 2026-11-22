@@ -3405,6 +3405,13 @@ def wsw_post_route(path: str, body: dict) -> dict:
         return _wsw_spawn_send(body)
     if rest == "repeater/cancel":
         return _wsw_send_cancel(body)
+    # WSW-4 Fuzzer 控制面（D8 最小四端点：create/cancel 写面 + list/detail
+    # GET 读面——spec 校验 + spawn + 只读，job/case 行写权 Rust-only W3-D7）。
+    if rest == "fuzz/jobs":
+        return _wsw_fuzz_job_create(body)
+    match = re.fullmatch(r"fuzz/jobs/([^/]+)/cancel", rest)
+    if match:
+        return _wsw_fuzz_job_cancel(unquote(match.group(1)), body)
     return wsw_write(rest, body)
 
 
@@ -4243,6 +4250,198 @@ def _wsw_send_list(_conn, params) -> dict:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# WSW-4 Fuzzer 控制面（D8 最小四端点）：POST /api/wsw/fuzz/jobs（spec 校验
+# + spawn rp-wsw fuzz 子进程）/ GET /api/wsw/fuzz/jobs（列表）/ GET
+# /api/wsw/fuzz/jobs/{id}（job+case 计数）/ POST /api/wsw/fuzz/jobs/{id}/
+# cancel（SIGTERM）。job/case 行写权 = Rust 子进程独占（W3-D7 分治延续）；
+# 读面 _wsw_ro_conn（mode=ro + query_only）；web/** 零 diff——端点先行，
+# UI 批零后端改动接页。
+# ---------------------------------------------------------------------------
+
+def _wsw_require_028(conn: sqlite3.Connection) -> None:
+    """028 水位守卫（wsw_fuzz 两表在场；缺 → 503 可诊断）。"""
+    names = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+        "('wsw_fuzz_job','wsw_fuzz_case')")}
+    if not {"wsw_fuzz_job", "wsw_fuzz_case"}.issubset(names):
+        raise ApiError(503, "wsw_028_not_applied",
+                       "WSW 库未含 028 fuzz 两表（rp-wsw db migrate 至 028）")
+
+
+def _wsw_fuzz_validate_spec(spec) -> str:
+    """spec 最小校验（结构面；逐字段预检权威面在 rp-wsw 子进程 Rust 侧）。
+    返回规范化 spec JSON 串；非法 → 400 fuzz_spec_invalid。"""
+    if not isinstance(spec, dict):
+        raise ApiError(400, "fuzz_spec_invalid", "spec 必须为 JSON 对象")
+    req = spec.get("request")
+    if not isinstance(req, dict):
+        raise ApiError(400, "fuzz_spec_invalid", "spec.request 必填（OutboundRequest JSON）")
+    budget = spec.get("budget")
+    if not isinstance(budget, dict):
+        raise ApiError(400, "fuzz_spec_invalid",
+                       "spec.budget 必填（无显式 budget = 拒绝，D5 fail-closed）")
+    mr = budget.get("max_requests")
+    if not isinstance(mr, int) or isinstance(mr, bool) or mr < 1:
+        raise ApiError(400, "fuzz_spec_invalid", "budget.max_requests 必须为 >=1 整数")
+    mc = budget.get("max_concurrency", 2)
+    if not isinstance(mc, int) or isinstance(mc, bool) or mc < 1:
+        raise ApiError(400, "fuzz_spec_invalid", "budget.max_concurrency 必须为 >=1 整数")
+    mode = spec.get("mode")
+    if mode not in ("single", "cartesian", "zip"):
+        raise ApiError(400, "fuzz_spec_invalid",
+                       f"spec.mode 必须为 single/cartesian/zip：{mode!r}")
+    payloads = spec.get("payloads")
+    if not isinstance(payloads, list):
+        raise ApiError(400, "fuzz_spec_invalid",
+                        "spec.payloads 必须为数组（元素数 = 位置总数——marker+selector；"
+                        "零位置 job 允许空数组；逐项预检权威面在 rp-wsw Rust 侧）")
+    for p in payloads:
+        if not isinstance(p, dict) or "type" not in p:
+            raise ApiError(400, "fuzz_spec_invalid", "payloads 项必须为 {type,...} 对象")
+    positions = spec.get("positions", [])
+    if not isinstance(positions, list):
+        raise ApiError(400, "fuzz_spec_invalid", "spec.positions 必须为数组")
+    return json.dumps(spec, ensure_ascii=False)
+
+
+def _wsw_fuzz_job_create(body: dict) -> dict:
+    """POST /api/wsw/fuzz/jobs：spec 落盘 → rp-wsw fuzz 子进程 spawn
+    （W3-D7 send spawn 先例 rp_server.py:4067 同型；job_id Python 侧生成
+    形态 = wsw-fzj-<us>-<pid>，行登记由子进程 Rust 侧完成）。"""
+    session_id = body.get("session_id") or "wsw-ses-cli-0001"
+    if not os.path.isfile(RP_WSW_BIN):
+        raise ApiError(503, "rp_wsw_bin_missing",
+                       f"rp-wsw 二进制不存在：{RP_WSW_BIN}（cargo build -p wsw-runtime --bin rp-wsw）")
+    spec_json = _wsw_fuzz_validate_spec(body.get("spec"))
+    job_id = "wsw-fzj-{}-{}".format(int(time.time() * 1_000_000), os.getpid() % 0xffff)
+    os.makedirs(WSW_STATE_DIR, exist_ok=True)
+    spec_path = os.path.join(WSW_STATE_DIR, f"fuzz-{job_id}.spec.json")
+    with open(spec_path, "w", encoding="utf-8") as fh:
+        fh.write(spec_json)
+    pid_file = os.path.join(WSW_STATE_DIR, f"fuzz-{job_id}.pid")
+    cmd = [RP_WSW_BIN, "fuzz",
+           "--db", WSW_DB_PATH,
+           "--session-id", session_id,
+           "--job-id", job_id,
+           "--spec-json", spec_path,
+           "--pid-file", pid_file]
+    with open(WSW_LISTENER_LOG, "ab") as log:
+        proc = subprocess.Popen(cmd, stdout=log, stderr=log, cwd=REPO_ROOT,
+                                start_new_session=True)
+    return {"job_id": job_id, "pid": proc.pid, "session_id": session_id,
+            "status_url": f"/api/wsw/fuzz/jobs/{job_id}"}
+
+
+_WSW_FUZZ_JOB_COLUMNS = (
+    "job_id, session_id, listener_id, state, estimated_requests, max_requests, "
+    "max_concurrency, rate_window_ms, rate_max_requests, min_request_interval_ms, "
+    "max_duration_ms, baseline_case_id, trace_id, task_id, evidence_id, "
+    "started_at, completed_at, duration_ms, error_code, created_at"
+)
+_WSW_FUZZ_CASE_COLUMNS = (
+    "case_id, job_id, ordinal, state, payload_json, payload_sha256, "
+    "request_outbound_sha256, exchange_id, response_status, response_len, "
+    "response_sha256, response_mime, duration_ms, ttfb_ms, match_hits_json, "
+    "diff_class, similarity, error_code, started_at, completed_at, created_at"
+)
+
+
+def _wsw_fuzz_case_counts(conn, job_id: str) -> dict:
+    counts = {}
+    for r in conn.execute(
+            "SELECT state, COUNT(*) FROM wsw_fuzz_case WHERE job_id=? GROUP BY state",
+            (job_id,)):
+        counts[r[0]] = r[1]
+    return counts
+
+
+def _wsw_fuzz_jobs_list(_conn, params) -> dict:
+    """GET /api/wsw/fuzz/jobs：job 列表（只读；session 过滤可选；各态 case
+    计数聚合）。"""
+    session_id = params.get("session_id", [""])[0]
+    limit_raw = params.get("limit", ["100"])[0]
+    try:
+        limit = int(limit_raw)
+    except ValueError:
+        raise ApiError(400, "bad_limit", f"limit 非整数：{limit_raw!r}")
+    if not (1 <= limit <= 500):
+        raise ApiError(400, "limit_exceeds_cap", f"limit 越界（1..500）：{limit}")
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_028(conn)
+        rows = []
+        if session_id:
+            cur = conn.execute(
+                f"SELECT {_WSW_FUZZ_JOB_COLUMNS} FROM wsw_fuzz_job WHERE session_id=? "
+                "ORDER BY created_at DESC, job_id DESC LIMIT ?", (session_id, limit))
+        else:
+            cur = conn.execute(
+                f"SELECT {_WSW_FUZZ_JOB_COLUMNS} FROM wsw_fuzz_job "
+                "ORDER BY created_at DESC, job_id DESC LIMIT ?", (limit,))
+        for r in cur:
+            row = dict(r)
+            row["case_counts"] = _wsw_fuzz_case_counts(conn, row["job_id"])
+            rows.append(row)
+        return {"jobs": rows, "limit": limit}
+    finally:
+        conn.close()
+
+
+def _wsw_fuzz_job_detail(job_id: str) -> dict:
+    """GET /api/wsw/fuzz/jobs/{id}：job 行 + 各态 case 计数 + case 列表
+    （上限 500；禁大列 spec_json——按需另行）。"""
+    conn = _wsw_ro_conn()
+    try:
+        _wsw_require_028(conn)
+        job = conn.execute(
+            f"SELECT {_WSW_FUZZ_JOB_COLUMNS} FROM wsw_fuzz_job WHERE job_id=?",
+            (job_id,)).fetchone()
+        if job is None:
+            raise ApiError(404, "job_not_found", f"fuzz job 不存在：{job_id}")
+        out = dict(job)
+        out["case_counts"] = _wsw_fuzz_case_counts(conn, job_id)
+        cases = []
+        for r in conn.execute(
+                f"SELECT {_WSW_FUZZ_CASE_COLUMNS} FROM wsw_fuzz_case WHERE job_id=? "
+                "ORDER BY ordinal LIMIT 500", (job_id,)):
+            cases.append(dict(r))
+        out["cases"] = cases
+        return out
+    finally:
+        conn.close()
+
+
+def _wsw_fuzz_job_cancel(job_id: str, body: dict) -> dict:
+    """POST /api/wsw/fuzz/jobs/{id}/cancel：SIGTERM 子进程（graceful →
+    CANCELLING→CANCELLED；在途 case 等终态落行）；5s 未死 SIGKILL 兜底
+    （_wsw_send_cancel 先例同型；SIGKILL 路径 job 行滞留终态收敛缺口与
+    W3-F3 同源——批次报告如实登记）。"""
+    del body  # 预留 confirm 语义位
+    pid_file = os.path.join(WSW_STATE_DIR, f"fuzz-{job_id}.pid")
+    try:
+        with open(pid_file, "r", encoding="utf-8") as fh:
+            pid = int(fh.read().strip())
+    except (FileNotFoundError, ValueError):
+        return {"cancelled": False, "note": "pid 文件不存在（job 已结束或未运行）"}
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return {"cancelled": False, "note": "进程已不存在"}
+    for _ in range(50):
+        if not _wsw_listener_alive(pid):
+            break
+        time.sleep(0.1)
+    else:
+        os.kill(pid, signal.SIGKILL)
+    try:
+        os.unlink(pid_file)
+    except OSError:
+        pass
+    return {"cancelled": True, "job_id": job_id, "pid": pid,
+            "note": "SIGTERM graceful：JobRunner CANCELLING→CANCELLED（在途 case 等终态）"}
+
+
 def _wsw_history_send_to_repeater(exchange_id: str, body: dict) -> dict:
     return _wsw_send_to_repeater(exchange_id, body)
 
@@ -4258,6 +4457,7 @@ API_ROUTES = {
     "/api/wsw/repeater/tabs": _wsw_repeater_tabs,
     "/api/wsw/repeater/sends": _wsw_send_list,
     "/api/wsw/repeater/send-status": _wsw_send_status,
+    "/api/wsw/fuzz/jobs": _wsw_fuzz_jobs_list,
     "/api/wsw/status": _wsw_history_stats,
     "/api/plugins": handle_plugins_list,
     "/api/plugins/trust-policy": handle_plugin_trust_policy,
@@ -4472,6 +4672,13 @@ class RpHandler(BaseHTTPRequestHandler):
                         return
                     if rest and "/" not in rest:
                         self.send_json(_wsw_history_detail(None, rest))
+                        return
+                # WSW-4 Fuzzer 动态路径（D8）：/api/wsw/fuzz/jobs/{id}（job
+                # + case 计数详情）。
+                if parsed.path.startswith("/api/wsw/fuzz/jobs/"):
+                    rest = unquote(parsed.path[len("/api/wsw/fuzz/jobs/"):]).strip("/")
+                    if rest and "/" not in rest:
+                        self.send_json(_wsw_fuzz_job_detail(rest))
                         return
                 if parsed.path.startswith("/api/wsw/repeater/tabs/"):
                     rest = unquote(parsed.path[len("/api/wsw/repeater/tabs/"):]).strip("/")
