@@ -28,6 +28,13 @@
 //!      manifests/tools,containerfiles/rip-tool-webresearch,containerfiles/rip-tool-coreutils）
 //!    - RP_ARTIFACTS_DIR  Artifact 落盘根（默认 rip-data/artifacts）
 //!    - RP_RUNTIME_NODE_ID 容器 Runner 节点 id（默认 host-local）
+//!    - MA-3（D4）：RP_MCP_TOKEN 启动一次性解析 caller（sha256 → api_key
+//!      JOIN caller 吊销判定，rp_server.py _resolve_caller_key 同款 SQL
+//!      直查只读，主库 RP_DB_PATH 面）——未知/吊销 = 七枚协作派发工具
+//!      结构化拒绝 fail-closed，目录既有 rip.* 零影响；
+//!    - RP_AGENT_BIN / RP_KC_BIN 派发子进程可执行路径（缺省
+//!      target/debug/rp-agent / target/debug/rp-kc）；RP_SUBTASK_TIMEOUT_S
+//!      子任务超时秒（缺省 600）。
 //! 3. rmcp serve（transport-io stdio transport）拉起服务并等连接收尾
 //!    （EOF 即退出 0）。
 //!
@@ -39,13 +46,49 @@
 //! （tool-engine Engine 派发，tests/run_tool_e2e.rs 直测）。
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
+
+use database::rusqlite;
 
 use rmcp::service::serve_server;
 
 use mcp_server::dispatch::RunChannel;
 use mcp_server::McpServer;
+
+/// MA-3（D4）caller 解析（rp_server.py:209-248 _resolve_caller_key 同款
+/// SQL 直查只读）：sha256(令牌全文) → api_key JOIN caller（吊销/停用判定）
+/// 单行直查 → caller_id。主库 RP_DB_PATH 面（api_key/caller 026 表随
+/// migrations 在位；表缺失/查询失败如实按 None 处理——协作派发工具
+/// fail-closed，目录面零影响，不炸启动）。查询路径只读打开，零 SQL 写。
+fn resolve_caller_key(token: &str, main_db: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let key_hash = format!("{:x}", Sha256::digest(token.as_bytes()));
+    let conn = sqlite_connect_ro(main_db)?;
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT ak.key_hash, ak.caller_id              FROM api_key AS ak JOIN caller AS c ON c.caller_id = ak.caller_id              WHERE ak.key_hash = ?1 AND ak.revoked_at IS NULL AND c.revoked_at IS NULL",
+            [&key_hash],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    let (stored_hash, caller_id) = row?;
+    // 二道比对（rp_server.py compare_digest 同款口径；查询主键命中即同值，
+    // 保留词形对齐）。
+    if stored_hash != key_hash {
+        return None;
+    }
+    Some(caller_id)
+}
+
+/// 主库只读连接（目录库只读纪律同款；SQLITE_OPEN_READ_ONLY 物理不可写）。
+fn sqlite_connect_ro(db: &Path) -> Option<rusqlite::Connection> {
+    rusqlite::Connection::open_with_flags(
+        db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()
+}
 
 fn main() {
     // 授权边界（fail-closed）：RP_MCP_TOKEN 缺失或空值一律拒启（exit 2），
@@ -60,7 +103,6 @@ fn main() {
         );
         exit(2);
     }
-
     let main_db = std::env::var("RP_DB_PATH")
         .ok()
         .map(|p| PathBuf::from(p.trim()))
@@ -81,6 +123,14 @@ fn main() {
                 .unwrap_or_else(|| PathBuf::from("migrations/dev-p6.db")),
         ),
     };
+
+    // MA-3（D4）：caller 启动一次性解析（主库面；未知/吊销 = None，七枚
+    // 协作派发工具结构化拒绝，目录面零影响）。
+    let collab_caller = resolve_caller_key(token.as_deref().unwrap_or(""), &main_db);
+    eprintln!(
+        "[rp-mcp] collab caller {}（RP_MCP_TOKEN sha256 → api_key JOIN caller 吊销判定）",
+        collab_caller.as_deref().unwrap_or("-")
+    );
 
     // P9-2 执行通道（RP_RUN_DB 缺省即装配，rip-data 为 gitignore 运行时数据；
     // 显式 RP_RUN_DB=none 可关停执行面，run_tool 返回结构化未配置说明）。
@@ -141,6 +191,23 @@ fn main() {
                     .unwrap_or_else(|| {
                         PathBuf::from("manifests/capabilities/host-catalog-seed.json")
                     }),
+                           // MA-3（D4）协作派发面：caller + 派发子进程路径 + 超时。
+                collab_caller,
+                agent_bin: std::env::var("RP_AGENT_BIN")
+                    .ok()
+                    .map(PathBuf::from)
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or_else(|| PathBuf::from("target/debug/rp-agent")),
+                kc_bin: std::env::var("RP_KC_BIN")
+                    .ok()
+                    .map(PathBuf::from)
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or_else(|| PathBuf::from("target/debug/rp-kc")),
+                subtask_timeout_s: std::env::var("RP_SUBTASK_TIMEOUT_S")
+                    .ok()
+                    .and_then(|v| v.trim().parse::<u64>().ok())
+                    .filter(|v| *v >= 1)
+                    .unwrap_or(600),
             })
         }
     };

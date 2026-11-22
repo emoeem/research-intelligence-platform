@@ -142,7 +142,7 @@ fn mem_store() -> PersistStore {
         .join("../../migrations")
         .as_path())
     .expect("migrations");
-    s.assert_watermark().expect("watermark 28");
+    s.assert_watermark().expect("watermark 29");
     s
 }
 

@@ -104,7 +104,7 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
     assert_eq!(
         versions,
         vec![
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
         ],
         "discover must see all current migrations 001..028 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget and WSW-4 028 fuzz 两表) (006 = P7-1 提前通道，007 = P2-4a RuntimeNode 数据面，008 = P4-1 Context Broker 三表，均按合入顺序顺延；013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
     );
@@ -148,16 +148,17 @@ fn p1_3_migrate_twice_no_diff_on_dev_copy() {
             (26, "_caller".to_string()),
             (27, "_caller_attribution".to_string()),
             (28, "_wsw_fuzz".to_string()),
+            (29, "_collab_protocol".to_string()),
         ],
-        "first run must apply exactly 001..028"
+        "first run must apply exactly 001..029"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 28,
-        "user_version must be 28 after first run (chain tail 028)"
+        uv1, 29,
+        "user_version must be 29 after first run (chain tail 029)"
     );
     assert!(
         sv1.iter()

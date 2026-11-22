@@ -83,6 +83,12 @@ impl Fixture {
             working_dir: Some(repo_root()),
             document_input_root: self.document_input_root.clone(),
             capability_seed_path: self.capability_seed.clone(),
+            // MA-3（D4）协作面字段（本测试不触协作工具；caller None =
+            // fail-closed 缺省形态）。
+            collab_caller: None,
+            agent_bin: std::path::PathBuf::from("target/debug/rp-agent"),
+            kc_bin: std::path::PathBuf::from("target/debug/rp-kc"),
+            subtask_timeout_s: 600,
         }
     }
 }

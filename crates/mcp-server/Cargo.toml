@@ -23,6 +23,11 @@ description = "Phase 9 平台 MCP server（bin rp-mcp）：rmcp（MCP 官方 Rus
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
+# MA-3（D4）：sha2 转正直声明（workspace 条目 Cargo.toml:91 实值 =0.10.9
+# 已在 lock/vendor，WSW-4 D9 regex 转正同款口径——RP_MCP_TOKEN sha256 →
+# api_key JOIN caller 吊销判定的 caller 解析面；[[package]] 计数不变，
+# vendor 零变更）。
+sha2 = { workspace = true }
 rmcp = { workspace = true }
 tokio = { workspace = true }
 database = { workspace = true }
@@ -34,6 +39,10 @@ tool-registry = { workspace = true }
 tool-engine = { workspace = true }
 runtime-gateway = { workspace = true }
 agent-engine = { workspace = true }
+# MA-3（D4/D9）：协作派发面 claim/message store 复用面（ClaimStore/
+# MessageStore 唯一写入口在 workflow-engine，CAS 原语签名词形统一——
+# workspace 既有成员，零新外部包；Cargo.lock 变更仅 mcp-server 依赖清单行）。
+workflow-engine = { path = "../workflow-engine" }
 
 [[bin]]
 name = "rp-mcp"

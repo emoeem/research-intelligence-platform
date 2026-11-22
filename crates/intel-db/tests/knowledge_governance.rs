@@ -48,6 +48,8 @@ fn card_input(title: &str, content: &str, flags: Vec<RiskFlag>) -> CardInput {
         ai_derived: false,
         quality_flags: flags,
         workspace_id: "ws-p3".to_string(),
+        donor_caller_id: None,
+        donor_channel: None,
     }
 }
 

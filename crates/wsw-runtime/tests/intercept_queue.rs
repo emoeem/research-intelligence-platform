@@ -44,7 +44,7 @@ fn user_version_is_24_after_migrations() {
     let v = s
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)))
         .expect("user_version");
-    assert_eq!(v, 28, "028 chain head (024 intercept + 025 exchange + 026 caller 入链 + 027 caller_attribution 入链 + 028 fuzz 两表入链)");
+    assert_eq!(v, 29, "029 chain head (024 intercept + 025 exchange + 026 caller 入链 + 027 caller_attribution 入链 + 028 fuzz 两表入链 + 029 collab_protocol 两表入链)");
     // 三表齐备（024 纯新增）。
     for table in ["wsw_listener", "wsw_session", "wsw_intercept"] {
         let n = s

@@ -171,13 +171,17 @@ NEXTEOF
   [[ ${PAGES} -gt 50 ]] && { echo "[FAIL] 分页游标失灵（超过 50 页）"; break; }
 done
 MCP_ENTRY_COUNT=$(wc -l < "${WORK}/mcp_all_tools.jsonl" | tr -d ' ')
-ck "分页遍历条数 = 能力面 6 + 注册面 ${API_COUNT}" "$((6 + API_COUNT))" "${MCP_ENTRY_COUNT}"
+# MA-3（D4）：协作派发七工具 additive 入目录（能力面 6 -> 13；既有五枚
+# wired 词形零 diff——七枚新工具全走 RunChannel，caller 未解析结构化拒绝）。
+CAP_COUNT=13
+ck "分页遍历条数 = 能力面 ${CAP_COUNT} + 注册面 ${API_COUNT}" "$((CAP_COUNT + API_COUNT))" "${MCP_ENTRY_COUNT}"
 ck "分页页数 > 1（真分页，服务端页大小 20）" "True" "$([[ ${PAGES} -gt 1 ]] && echo True || echo False)"
 DUP=$(sort "${WORK}/mcp_all_tools.jsonl" | uniq -d | wc -l | tr -d ' ')
 ck "遍历无重复条目" "0" "${DUP}"
 # P0 整改断言（旧「零 Schema」反规范断言改写为标准一致性）：每条含必需
 # name（非空）与 inputSchema（object 形态含 type）；注册面条目零 description
-# （Token 纪律，能力面 6 条一行导航除外）；分页控量不省必需 Schema。
+# （Token 纪律，能力面 13 条一行导航除外——MA-3 七枚协作派发工具 additive）；
+# 分页控量不省必需 Schema。
 STD_TOOL=$(python3 -I - "${WORK}/mcp_all_tools.jsonl" <<'STDEOF'
 import json, sys
 bad = 0
@@ -193,10 +197,11 @@ print(bad)
 STDEOF
 )
 ck "目录条目标准 Tool 对象（每条含必需 name 与 inputSchema，P0）" "0" "${STD_TOOL}"
-CAPS="rip.list_tools rip.get_tool_schema rip.run_tool rip.search_knowledge rip.get_run_status rip.cancel_run"
+CAPS="rip.list_tools rip.get_tool_schema rip.run_tool rip.search_knowledge rip.get_run_status rip.cancel_run rip.run_subtask rip.get_subtask_status rip.claim_task rip.complete_claim rip.send_message rip.fetch_messages rip.contribute_knowledge"
 BAD_DESC=$(python3 -I - "${WORK}/mcp_all_tools.jsonl" <<'DESCEOF'
 import json, sys
-caps = {"rip.list_tools","rip.get_tool_schema","rip.run_tool","rip.search_knowledge","rip.get_run_status","rip.cancel_run"}
+caps = {"rip.list_tools","rip.get_tool_schema","rip.run_tool","rip.search_knowledge","rip.get_run_status","rip.cancel_run",
+        "rip.run_subtask","rip.get_subtask_status","rip.claim_task","rip.complete_claim","rip.send_message","rip.fetch_messages","rip.contribute_knowledge"}
 bad = 0
 for line in open(sys.argv[1]):
     t = json.loads(line)

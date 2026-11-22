@@ -22,7 +22,12 @@
 //!   的紧凑 JSON（确定性，不引入隐藏输入）；
 //! - `version`（可选）：agent 定义版本钉定；
 //! - `task_id`（可选）：关联研究任务（透传 agent run task_id）；
-//! - `workspace_id`（可选）：透传 agent 装配面。
+//! - `workspace_id`（可选）：透传 agent 装配面；
+//! - `caller_id`（可选，MA-3 D1②）：节点 caller 角色绑定（params 开放面
+//!   新键，dsl.rs「params 子对象是开放面」零迁移；字符串或 null，其余
+//!   值 params_invalid 拒）。双层解析序「节点 params 显式 > run 级
+//!   caller > None legacy」的节点级在 [`AgentNodeRequest::caller_id`]，
+//!   run 级与 None 档由端口实现侧（rp-workflow AgentLoopDriver）兜底。
 //!
 //! 输出：agent run 终态报告投影 object（见 [`report_projection`]，浅合并
 //! 进 run state）；agent run PAUSED → [`AgentNodeResult::Paused`]（run
@@ -55,6 +60,11 @@ pub struct AgentNodeRequest {
     pub task_id: Option<String>,
     /// workspace id（透传 agent 装配面；None = 实现侧缺省）。
     pub workspace_id: Option<String>,
+    /// 节点 caller 角色绑定（MA-3 D1②：agent 节点 params 开放面新键
+    /// `caller_id`；None = 节点未显式绑定，实现侧按 run 级 caller 兜底——
+    /// 双层解析序「节点 params 显式 > run 级 > None legacy」在端口实现侧
+    /// 落地。caller 是运行时维度，不进任何 JSON 冻结契约）。
+    pub caller_id: Option<String>,
 }
 
 impl AgentNodeRequest {
@@ -164,6 +174,22 @@ pub fn execute(
             .get("workspace_id")
             .and_then(Value::as_str)
             .map(str::to_string),
+        // MA-3 D1②：params 开放面新键 caller_id（dsl.rs「params 子对象是
+        // 开放面，键集不进 Schema 门」零迁移）；字符串或 null 合法，
+        // 其余值 params_invalid 拒（判据 2 负例词形）。
+        caller_id: match params.get("caller_id") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => {
+                return AgentNodeOutcome::Failed(NodeFailure::new(
+                    "params_invalid",
+                    format!(
+                        "agent node params caller_id must be a string, got {}",
+                        super::type_word(other)
+                    ),
+                ))
+            }
+        },
     };
     match driver.execute(&req) {
         AgentNodeOutcome::Succeeded { output } => match output {
@@ -217,6 +243,7 @@ mod tests {
             goal: String::new(),
             task_id: None,
             workspace_id: None,
+            caller_id: None,
         }
     }
 

@@ -39,3 +39,7 @@ agent-engine = { workspace = true }
 [[bin]]
 name = "rp-workflow"
 path = "src/bin/rp-workflow.rs"
+
+[[bin]]
+name = "rp-collab"
+path = "src/bin/rp-collab.rs"

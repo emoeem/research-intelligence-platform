@@ -200,8 +200,8 @@ mod tests {
         pool.with_conn(|conn| -> Result<(), database::DbError> {
             let level: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
             assert_eq!(
-                level, 28,
-                "内存库迁移水位 28（028_wsw_fuzz 入链后链尾）"
+                level, 29,
+                "内存库迁移水位 29（029_collab_protocol 入链后链尾）"
             );
             let sha = "ab".to_string() + &"0".repeat(62);
             register_body_blob(conn, &row(&sha)).expect("登记");

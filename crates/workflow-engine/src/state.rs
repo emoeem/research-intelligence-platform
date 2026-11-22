@@ -160,6 +160,10 @@ impl RunStore {
     /// 建一条 run（queued 头行 + 全节点 pending 行）；run_id 已存在即拒绝。
     /// 创建即写链路关联（018 六 ID 列）：trace_id = run_id（本 run 即链锚，
     /// P8-2 惯例成列化），task_id = 输入顶层 task_id（字符串即取）。
+    ///
+    /// legacy 入口（caller_id = None，workflow_run.caller_id 落 NULL——
+    /// MA-3 D1 双层解析的 legacy 档，既有调用方行为零变化；显式 caller 归属
+    /// 走 [`RunStore::create_run_with_caller`]）。
     pub fn create_run(
         &self,
         run_id: &str,
@@ -167,6 +171,21 @@ impl RunStore {
         workflow_version: u32,
         input: &Value,
         node_kinds: &[(String, String)],
+    ) -> Result<(), WorkflowError> {
+        self.create_run_with_caller(run_id, workflow_id, workflow_version, input, node_kinds, None)
+    }
+
+    /// 建一条 run 并落 run 级 caller 归属（MA-3 D1①：workflow_run.caller_id
+    /// 写面接线——027 落列零写面声明在本批兑现；None = legacy 零回归）。
+    /// 其余语义与 [`RunStore::create_run`] 逐字一致。
+    pub fn create_run_with_caller(
+        &self,
+        run_id: &str,
+        workflow_id: &str,
+        workflow_version: u32,
+        input: &Value,
+        node_kinds: &[(String, String)],
+        caller_id: Option<&str>,
     ) -> Result<(), WorkflowError> {
         let now = domain::time::now_iso();
         let input_text = serde_json::to_string(input)
@@ -177,8 +196,8 @@ impl RunStore {
                 let done: usize = c
                     .execute(
                         "INSERT INTO workflow_run (run_id, workflow_id, workflow_version, state,
-                         input_json, created_at, schema_version, trace_id, task_id)
-                         VALUES (?1, ?2, ?3, 'queued', ?4, ?5, 1, ?6, ?7)",
+                         input_json, created_at, schema_version, trace_id, task_id, caller_id)
+                         VALUES (?1, ?2, ?3, 'queued', ?4, ?5, 1, ?6, ?7, ?8)",
                         rusqlite::params![
                             run_id,
                             workflow_id,
@@ -186,7 +205,8 @@ impl RunStore {
                             input_text,
                             now,
                             run_id,
-                            task_id
+                            task_id,
+                            caller_id
                         ],
                     )
                     .map_err(database::DbError::Sqlite)?;

@@ -91,13 +91,24 @@ pub const CODE_INTERNAL: i64 = -32603;
 /// rip.run_tool / rip.get_run_status / rip.cancel_run 接通执行与运行面
 /// （[`dispatch::RunChannel`]）；`wired` 为 false 的条目（当前仅
 /// rip.search_knowledge）在 tools/call 返回结构化 isError，不伪造执行结果。
-pub const CAPABILITY_TOOLS: [(&str, bool); 6] = [
+/// MA-3（D4）：协作派发七工具 additive 接通（既有五枚 wired 词形零 diff
+/// ——run_subtask/get_subtask_status/claim_task/complete_claim/send_message
+/// /fetch_messages/contribute_knowledge 全走 [`dispatch::RunChannel`]，
+/// caller 未解析时结构化拒绝 fail-closed）。
+pub const CAPABILITY_TOOLS: [(&str, bool); 13] = [
     ("rip.list_tools", true),
     ("rip.get_tool_schema", true),
     ("rip.run_tool", true),
     ("rip.search_knowledge", false),
     ("rip.get_run_status", true),
     ("rip.cancel_run", true),
+    ("rip.run_subtask", true),
+    ("rip.get_subtask_status", true),
+    ("rip.claim_task", true),
+    ("rip.complete_claim", true),
+    ("rip.send_message", true),
+    ("rip.fetch_messages", true),
+    ("rip.contribute_knowledge", true),
 ];
 
 /// 能力面工具的一行 description（标准 Tool 对象可选字段；只描述平台交互面，
@@ -110,6 +121,13 @@ pub fn capability_description(tool: &str) -> &'static str {
         "rip.search_knowledge" => "知识检索（尚未接线，调用返回结构化 isError）",
         "rip.get_run_status" => "查询 tool_run 终态与 Artifact / Evidence 引用",
         "rip.cancel_run" => "协作式取消（RUNNING / WAITING_FOR_RUNNER 期受理）",
+        "rip.run_subtask" => "派发子任务（spawn rp-agent wait 终态返回 JSON 信封；caller 未署名结构化拒绝）",
+        "rip.get_subtask_status" => "查询 agent_run 子任务行状态（caller_id 归属可见）",
+        "rip.claim_task" => "TaskClaim 登记/原子领取（无 claim_id = 编排方登记新 claim；有 claim_id = 单语句 CAS 领取）",
+        "rip.complete_claim" => "claim 完成/失败回写（仅 claimed_by 本人可写；result_json 或 error_json 二选一）",
+        "rip.send_message" => "邮箱消息发送（from = 会话 caller；to 必须在用 caller）",
+        "rip.fetch_messages" => "邮箱收件（拉模型：未读行每次 fetch 均返回，首拉落 delivered_at）",
+        "rip.contribute_knowledge" => "知识供体写入即候选（spawn rp-kc donor-submit；收据 {knowledge_id, review_status, normalized_hash}）",
         _ => "",
     }
 }
@@ -172,6 +190,71 @@ pub fn capability_input_schema(tool: &str) -> Value {
                 "run_id": { "type": "string", "description": "tool_run.run_id（RUNNING / WAITING_FOR_RUNNER 可发起协作式取消，D-TC-04）" }
             }),
             &["run_id"],
+        ),
+        "rip.run_subtask" => s(
+            json!({
+                "agent_id": { "type": "string", "description": "agent 定义 id（登记存在性由 agent-engine 受理面校验）" },
+                "goal": { "type": "string", "description": "run 目标文本" },
+                "task_id": { "type": "string", "description": "关联研究任务（可选）" },
+                "workspace_id": { "type": "string", "description": "工作区隔离边界（可选）" },
+                "max_tool_calls": { "type": "integer", "description": "步数帽覆盖（可选）" },
+                "timeout_s": { "type": "integer", "description": "保留位：超时以 RP_SUBTASK_TIMEOUT_S 环境为准" }
+            }),
+            &["agent_id", "goal"],
+        ),
+        "rip.get_subtask_status" => s(
+            json!({
+                "run_id": { "type": "string", "description": "agent_run.run_id" }
+            }),
+            &["run_id"],
+        ),
+        "rip.claim_task" => s(
+            json!({
+                "claim_id": { "type": "string", "description": "有 = D2 CAS 原子领取该 claim；无 = 编排方登记新 claim（claimable）" },
+                "kind": { "type": "string", "description": "agent_subtask|review（创建语义必填）" },
+                "title": { "type": "string", "description": "任务标题（创建语义必填，<=512）" },
+                "payload": { "type": "string", "description": "任务载荷 JSON 文本（创建语义必填，<=1MiB）" },
+                "run_id": { "type": "string", "description": "关联 workflow run（可选，wfr- 词形）" },
+                "node_id": { "type": "string", "description": "关联节点 id（可选）" },
+                "agent_id": { "type": "string", "description": "关联 agent 定义 id（可选）" },
+                "depends_on_claim_id": { "type": "string", "description": "依赖 claim（可选；依赖门 = 该行 completed 才可领取）" }
+            }),
+            &[],
+        ),
+        "rip.complete_claim" => s(
+            json!({
+                "claim_id": { "type": "string", "description": "claim id（tcl-）" },
+                "result_json": { "type": "string", "description": "完成载荷 JSON（与 error_json 二选一）" },
+                "error_json": { "type": "string", "description": "失败载荷 JSON（与 result_json 二选一）" }
+            }),
+            &["claim_id"],
+        ),
+        "rip.send_message" => s(
+            json!({
+                "to_caller": { "type": "string", "description": "收件 caller（必须是在用 caller）" },
+                "payload": { "type": "string", "description": "消息载荷 JSON 文本（<=1MiB）" },
+                "claim_id": { "type": "string", "description": "关联 claim（可选）" },
+                "run_id": { "type": "string", "description": "关联 run（可选，wfr- 词形）" }
+            }),
+            &["to_caller", "payload"],
+        ),
+        "rip.fetch_messages" => s(
+            json!({
+                "limit": { "type": "integer", "description": "条数上限（缺省 50）" }
+            }),
+            &[],
+        ),
+        "rip.contribute_knowledge" => s(
+            json!({
+                "type": { "type": "string", "description": "知识类型词表（knowledge_type）" },
+                "title": { "type": "string", "description": "卡片标题" },
+                "content": { "type": "string", "description": "卡片正文（D2 规范化哈希输入）" },
+                "summary": { "type": "string", "description": "摘要（可选）" },
+                "workspace": { "type": "string", "description": "工作区（可选，缺省 default）" },
+                "confidence": { "type": "number", "description": "置信度 0..1（可选，缺省 0.5）" },
+                "flags": { "type": "string", "description": "风险标记 csv（可选，R2 5.3 词形）" }
+            }),
+            &["type", "title", "content"],
         ),
         _ => permissive_object_schema(),
     }

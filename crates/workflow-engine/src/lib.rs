@@ -34,6 +34,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod collab;
 pub mod control;
 pub mod dsl;
 pub mod error;
@@ -42,6 +43,10 @@ pub mod state;
 pub mod store;
 pub mod validate;
 
+pub use collab::{
+    ClaimCreateInput, ClaimKind, ClaimRow, ClaimState, ClaimStore, CollabError, MessageRow,
+    MessageSendInput, MessageStore,
+};
 pub use control::{ControlRow, WorkflowControl};
 pub use dsl::{
     canonical_document, check_schema_document, from_domain, parse_definition, schema_document,

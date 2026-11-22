@@ -47,6 +47,7 @@ use agent_engine::store::AgentStore;
 use agent_engine::tool_link::{PythonWorkerDriver, ToolLink};
 use agent_engine::{agent_loop::AgentLoop, LoopConfig};
 use database::{migrate, DbPath, Pool, PoolConfig};
+use database::rusqlite::OptionalExtension;
 use tool_engine::adapter::python_worker::{
     execute_via_engine, AdapterCall, PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };
@@ -81,7 +82,9 @@ fn usage_text() -> &'static str {
      \x20   003 workflow 表存量行只读参考导入（compat=legacy-method-reference）\n\
      \x20 run <workflow_id> --input '<json>' [--version <n>] [--node-timeout-ms <n>]\n\
      \x20      [--db <path>] [--rulepack-dir <dir>] [--manifest-dirs <csv>]\n\
-     \x20   受理门后执行到终态（四类非智能节点，Agent 节点属 P8-3 拒绝）\n\
+     \x20      [--caller-id <caller>]\n\
+     \x20   受理门后执行到终态（四类非智能节点，Agent 节点属 P8-3 拒绝）；\n\
+     \x20   --caller-id 落 run 级 caller 归属（MA-3 节点角色绑定，缺省 legacy）\n\
      \x20 status <run_id> [--db <path>]\n\
      \x20   run 头行投影（六态 + 输入/输出/错误载荷）\n\
      \x20 nodes <run_id> [--db <path>]\n\
@@ -510,6 +513,9 @@ struct RunFlags {
     run_id: Option<String>,
     workspace: String,
     max_tool_calls: usize,
+    /// run 级 caller 归属（MA-3 D1①：--caller-id，缺省 None = legacy；
+    /// run 落 workflow_run.caller_id 列，节点绑定双层解析的 run 级兜底）。
+    caller_id: Option<String>,
     quiet: bool,
 }
 
@@ -535,6 +541,7 @@ fn parse_run_flags(args: &[String]) -> RunFlags {
         run_id: None,
         workspace: "ws-workflow".to_string(),
         max_tool_calls: 4,
+        caller_id: None,
         quiet: false,
     };
     let mut iter = args.iter();
@@ -567,6 +574,14 @@ fn parse_run_flags(args: &[String]) -> RunFlags {
             }
             "--node" => flags.node = Some(flag_value(&mut iter)),
             "--run-id" => flags.run_id = Some(flag_value(&mut iter)),
+            "--caller-id" => {
+                let raw = flag_value(&mut iter);
+                if raw.trim().is_empty() {
+                    eprintln!("--caller-id must be a non-empty caller id (caller- 前缀)");
+                    exit(2);
+                }
+                flags.caller_id = Some(raw);
+            }
             "--workspace" => flags.workspace = flag_value(&mut iter),
             "--max-tool-calls" => match flag_value(&mut iter).parse::<usize>() {
                 Ok(v) if v >= 1 => flags.max_tool_calls = v,
@@ -801,6 +816,10 @@ struct AgentLoopDriver {
     manifest_dirs: Vec<PathBuf>,
     workspace: String,
     max_tool_calls: usize,
+    /// run 级 caller 兜底（MA-3 D1：--caller-id 装配面透传；仅当节点
+    /// params 未绑定且 workflow_run.caller_id 为 NULL（legacy run）时生效
+    /// ——解析序「节点 params 显式 > run 级（行）> 装配兜底 > None」）。
+    run_caller: Option<String>,
 }
 
 impl node_agent::AgentNodeDriver for AgentLoopDriver {
@@ -850,6 +869,14 @@ impl AgentLoopDriver {
         let broker_link = self.build_broker_link();
         let evidence = EvidenceRegistrar::new(self.pool.clone());
         let audit = Some(audit_engine::AuditEngine::new(self.pool.clone()));
+        // MA-3 D1：节点 caller 角色绑定双层解析——节点 params 显式 >
+        // run 级（workflow_run.caller_id 持久化值）> 装配兜底（--caller-id，
+        // legacy run resume 场景）> None legacy。
+        let resolved_caller = request
+            .caller_id
+            .clone()
+            .or_else(|| self.lookup_run_caller(&request.run_id))
+            .or_else(|| self.run_caller.clone());
         let loop_ = AgentLoop::new(
             store,
             broker_link,
@@ -864,6 +891,31 @@ impl AgentLoopDriver {
                 max_tool_calls: self.max_tool_calls,
             },
         );
+        // MA-3 D8（D7 帽值解析点同款）：caller 绑定在位时 caller_budget 表
+        // 启动一次性读入内存映射挂 with_control（rp-agent.rs:746-782 装配
+        // 先例同型；读取失败降级串行并记一次 warn，不炸 run）。caller None
+        // = legacy 路径零挂接（既有行为零变化）。
+        let loop_ = match &resolved_caller {
+            Some(_) => {
+                let caller_budgets = match agent_engine::control::load_caller_budgets(&self.pool)
+                {
+                    Ok(map) => map,
+                    Err(e) => {
+                        eprintln!(
+                            "{}",
+                            serde_json::json!({"warning": "caller_budget load failed; parallel disabled (serial fallback)",
+                                               "error": e.to_string()})
+                        );
+                        std::collections::HashMap::new()
+                    }
+                };
+                loop_.with_control(agent_engine::control::RunControlConfig {
+                    caller_budgets,
+                    ..agent_engine::control::RunControlConfig::default()
+                })
+            }
+            None => loop_,
+        };
         let report = match existing {
             Some(stored) if stored.run.state() == domain::AgentRunState::Paused => {
                 // PAUSED 续接：目标文本从 014 goal_text 续接，已完成步骤不重跑。
@@ -886,7 +938,9 @@ impl AgentLoopDriver {
                     trace_id: Some(request.run_id.clone()),
                     run_id: Some(request.agent_run_id.clone()),
                     input: None,
-                    caller_id: None,
+                    // MA-3 D1 接线点（原硬编码 None）：节点 caller 绑定解析
+                    // 值直通 MA-2 既有通道（agent-engine 零 diff 全链生效）。
+                    caller_id: resolved_caller,
                     planner: Box::new(agent_engine::KeywordSearchPlanner),
                     confirmer: Box::new(self.build_confirmer()?),
                 };
@@ -921,6 +975,24 @@ impl AgentLoopDriver {
         let intent_config = context_broker::IntentConfig::from_dir(&self.rulepack_dir)
             .map_err(|e| format!("intent config: {e}"))?;
         Ok(FirstFamilyConfirmer::new(intent_config))
+    }
+
+    /// run 级 caller 读回（MA-3 D1：workflow_run.caller_id 持久化值；
+    /// 行缺失/读失败如实按 None 处理——绑定解析 fail-open 到装配兜底，
+    /// 不炸节点）。
+    fn lookup_run_caller(&self, run_id: &str) -> Option<String> {
+        self.pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT caller_id FROM workflow_run WHERE run_id = ?1",
+                    [run_id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()
+            })
+            .ok()
+            .flatten()
+            .flatten()
     }
 
     /// rp-agent build_broker_link 同款装配（rulepack + registry + artifact +
@@ -1111,6 +1183,7 @@ fn build_executor(flags: &RunFlags, pool: Pool) -> WorkflowExecutor {
         manifest_dirs: flags.manifest_dirs.clone(),
         workspace: flags.workspace.clone(),
         max_tool_calls: flags.max_tool_calls,
+        run_caller: flags.caller_id.clone(),
     });
     let broker = build_broker(flags, &pool);
     WorkflowExecutor::new(pool)
@@ -1188,7 +1261,15 @@ fn cmd_run(args: &[String]) -> i32 {
     let input = parse_input(&flags);
     let pool = open_pool(&flags.db, &flags.migrations_dir);
     let executor = build_executor(&flags, pool);
-    match executor.start_with_id(&workflow_id, flags.version, &input, flags.run_id.as_deref()) {
+    // MA-3 D1①：--caller-id 显式时落 workflow_run.caller_id（双层解析的
+    // run 级权威）；缺省 None = legacy 零回归。
+    match executor.start_with_caller(
+        &workflow_id,
+        flags.version,
+        &input,
+        flags.run_id.as_deref(),
+        flags.caller_id.as_deref(),
+    ) {
         Ok(outcome) => print_outcome(&outcome),
         Err(err) => {
             eprintln!("{err}");

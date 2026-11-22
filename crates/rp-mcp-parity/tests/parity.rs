@@ -490,8 +490,8 @@ fn op1_list_tools_same_read_face_both_channels() {
         .collect();
     // rmcp 迁移批次（2026-11-14）：tools/list 标准 Tool 对象不再携带平台
     // tier 字段（P0：标准必需 name + inputSchema，平台元数据经
-    // rip.list_tools 信封承载），能力面前段固定 6 条（CAPABILITY_TOOLS 次序
-    // = 目录前段次序），wire 级断言改为前段名序对账 + 标准 Tool 形状断言。
+    // rip.list_tools 信封承载），能力面前段固定（CAPABILITY_TOOLS 次序，MA-3 后 13 条：
+    // 既有五枚 + MA-3 七枚 additive），wire 级断言改为前段名序对账 + 标准 Tool 形状断言。
     let combined = mcp_roundtrip(
         fix,
         json!({"jsonrpc":"2.0","id":102,"method":"tools/list","params":{}}),

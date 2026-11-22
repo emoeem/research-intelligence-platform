@@ -108,6 +108,9 @@ PLUGIN_DB_PATH = (os.environ.get("RIP_PLUGIN_DB") or "").strip() \
 # RP_AUX_DB 只读 ATTACH 通道（主库无 016/017/018 迁移，守卫降级空态说明）。
 WORKFLOW_DB_PATH = (os.environ.get("RP_WORKFLOW_DB") or "").strip()     or (AUX_DB_PATH or "")
 WORKFLOW_BIN = (os.environ.get("RP_WORKFLOW_BIN") or "target/debug/rp-workflow").strip()
+# MA-3（D4②）：REST 派发面 rp-agent 子进程（三面同源 = 同一 rp-agent CLI
+# 路径，零第二派发实现；本文件零直连 SQL 写红线维持）。
+AGENT_BIN = (os.environ.get("RP_AGENT_BIN") or "target/debug/rp-agent").strip()
 # RIP3 P1-2 文档面：rp-doc 子进程（intel-db PG 存取，python 侧零 PG 驱动依赖；
 # 进程边界即数据边界：文档读取与导入一律经 rp-doc JSON stdout，本文件零直连 PG）。
 DOC_BIN = (os.environ.get("RP_DOC_BIN") or "target/debug/rp-doc").strip()
@@ -2218,10 +2221,14 @@ def sort_by(rows: list[dict], column: str) -> list[dict]:
 
 def agent_run_list_sql(conn: sqlite3.Connection, src: str) -> str:
     """agent_run 列表列：trace_id 列按库水位条件追加（015 之后开发副本含列），
-    steps_count 子查询在 agent_run_step 同库在场时带上（缺表库不伪造计数）。"""
+    steps_count 子查询在 agent_run_step 同库在场时带上（缺表库不伪造计数）。
+    MA-3：caller_id 列按库水位条件追加（027 之后开发副本含列；判据 3
+    REST 派发面 caller 归属读面可见）。"""
     cols = AGENT_RUN_LIST_COLUMNS
     if has_column(conn, src, "agent_run", "trace_id"):
         cols += ", trace_id"
+    if has_column(conn, src, "agent_run", "caller_id"):
+        cols += ", caller_id"
     if table_exists(conn, src, "agent_run_step"):
         cols += f", (SELECT COUNT(*) FROM {src}.agent_run_step s WHERE s.run_id = a.run_id) AS steps_count"
     return f"SELECT {cols} FROM {src}.agent_run a"
@@ -2666,7 +2673,8 @@ def handle_workflow_runs(conn: sqlite3.Connection, params: dict) -> dict:
                 f" {_wf_col(conn, src, 'workflow_run', 'agent_run_id')},"
                 f" {_wf_col(conn, src, 'workflow_run', 'tool_run_id')},"
                 f" {_wf_col(conn, src, 'workflow_run', 'artifact_id')},"
-                f" {_wf_col(conn, src, 'workflow_run', 'evidence_id')}"
+                f" {_wf_col(conn, src, 'workflow_run', 'evidence_id')},"
+                f" {_wf_col(conn, src, 'workflow_run', 'caller_id')}"
                 f" FROM {src}.workflow_run{where} ORDER BY created_at DESC, run_id LIMIT ?",
                 args + (limit,),
             ).fetchall()
@@ -2883,9 +2891,13 @@ def workflow_put(body: dict) -> dict:
                    f"definition 装载失败（JSON/Schema 违规）：{out.get('stderr_tail') or out}")
 
 
-def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
+def workflow_write(action: str, run_id: str | None, body: dict,
+                   caller: str | None = None) -> dict:
     """workflow 写面统一入口（run/pause/resume/retry）：形状校验 → CLI 子进程。
-    本进程零直连 SQL 写；非零退出 → 502 带错误 JSON（CLI stderr 尾部透传）。"""
+    本进程零直连 SQL 写；非零退出 → 502 带错误 JSON（CLI stderr 尾部透传）。
+    MA-3（D4③）：caller 恒取鉴权面（多 key 命中的 caller_id；legacy default
+    = None → workflow_run.caller_id 落 NULL 零回归），body 传入的 caller 键
+    拒绝——身份不信任 body。"""
     if not os.path.isfile(WORKFLOW_BIN):
         raise ApiError(502, "workflow_bin_missing",
                        f"rp-workflow 可执行缺失：{WORKFLOW_BIN}（先 cargo build --offline -p workflow-engine --bin rp-workflow）")
@@ -2901,6 +2913,10 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
             inp = {}
         if not isinstance(inp, dict):
             raise ApiError(400, "bad_input", "input 必须是 JSON object（run-request-v1）")
+        # MA-3（D4③）：caller 键不信任 body（身份恒取鉴权面）。
+        if "caller_id" in body:
+            raise ApiError(400, "caller_in_body_rejected",
+                           "caller_id 不接受 body 传入（身份恒取鉴权面；多 key 命中自动署名）")
         args = ["run", workflow_id, "--input", json.dumps(inp, ensure_ascii=False)]
         version = body.get("version")
         if version is not None:
@@ -2910,6 +2926,8 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
         run_id = (body.get("run_id") or "").strip() or _generate_run_id()
         if not _RUN_ID_RE.match(run_id):
             raise ApiError(400, "bad_run_id", "run_id 形状须为 wfr-<alnum>（run-request-v1）")
+        if caller:
+            args += ["--caller-id", caller]
         args += ["--run-id", run_id, *common]
         spawned = _spawn_workflow(args, f"run-{run_id}.log")
         return {"result": "accepted", "action": "run", "run_id": run_id,
@@ -2957,6 +2975,53 @@ def workflow_write(action: str, run_id: str | None, body: dict) -> dict:
                 "status_query": f"/api/workflow-runs?id={new_run_id}"}
 
     raise ApiError(404, "no_route", f"未知 workflow 写动作：{action}")
+
+
+# MA-3（D4②）REST 派发面：POST /api/subtasks —— 外部 AI 经 REST 派发子任务
+# 契约（计划 :54「caller 由 MCP 会话鉴权映射」同构：REST 面鉴权映射 = require_auth
+# 多 key 三态）。caller 未署名（legacy default / 鉴权关闭）→ 403 fail-closed
+# （派发必须署名，硬验收需要 caller 归属可测）；多 key 命中 → spawn
+# `rp-agent run <agent_id> --goal <goal> --caller-id <caller> --db
+# <RP_WORKFLOW_DB>` 子进程（_spawn_workflow 先例同型；本进程零直连 SQL 写
+# 红线维持；RP_WORKFLOW_DB 开发副本守卫复用 _workflow_db_guard，生产
+# platform*.db 零触碰）。既有 POST /api/agents 与 /api/agent-runs 405 钉值
+# 零改动（selftest_phase7_agents.sh:236-237）——REST 派发走新路径。
+def subtask_dispatch(body: dict, caller: str | None) -> dict:
+    """REST 子任务派发（署名面 fail-closed + rp-agent 子进程异步承载）。"""
+    if not caller or caller == "default":
+        raise ApiError(403, "caller_required",
+                       "派发必须署名：多 key 命中的 caller 才可派发子任务"
+                       "（legacy 单令牌/鉴权关闭 = 未署名，fail-closed）")
+    if not os.path.isfile(AGENT_BIN):
+        raise ApiError(502, "agent_bin_missing",
+                       f"rp-agent 可执行缺失：{AGENT_BIN}（先 cargo build --offline -p agent-engine --bin rp-agent）")
+    agent_id = (body.get("agent_id") or "").strip()
+    if not agent_id or len(agent_id) > 128:
+        raise ApiError(400, "agent_id_required", "subtask 需要 agent_id（非空 <=128）")
+    goal = body.get("goal")
+    if not isinstance(goal, str) or not goal.strip():
+        raise ApiError(400, "goal_required", "subtask 需要 goal（非空文本）")
+    db = _workflow_db_guard()
+    args = ["run", agent_id, "--goal", goal, "--caller-id", caller, "--db", db]
+    task_id = (body.get("task_id") or "").strip()
+    if task_id:
+        if len(task_id) > 128:
+            raise ApiError(400, "bad_task_id", "task_id 非空 <=128")
+        args += ["--task-id", task_id]
+    workspace = (body.get("workspace_id") or "").strip()
+    if workspace:
+        args += ["--workspace", workspace]
+    max_tool_calls = body.get("max_tool_calls")
+    if max_tool_calls is not None:
+        if not isinstance(max_tool_calls, int) or max_tool_calls < 1:
+            raise ApiError(400, "bad_max_tool_calls", "max_tool_calls 必须是 >= 1 的整数")
+        args += ["--max-tool-calls", str(max_tool_calls)]
+    # 子任务幂等钉定：agent run id 由 rp-agent 受理面生成（wfr- 同款预生成
+    # 是 workflow run 面语义；agent run 回执经 /api/agent-runs caller_id 对账）。
+    spawned = _spawn_workflow(args, f"subtask-{_generate_run_id()}.log")
+    return {"result": "accepted", "action": "subtask", "caller": caller,
+            "agent_id": agent_id, **spawned,
+            "status_query": "/api/agent-runs"}
 
 
 # ---------------------------------------------------------------------------
@@ -4817,6 +4882,16 @@ class RpHandler(BaseHTTPRequestHandler):
                 body = self._read_json_body()
                 self.send_json(workflow_put(body))
                 return
+            # MA-3（D4②）REST 派发面：POST /api/subtasks（多 key 命中的
+            # caller 才可派发；legacy/鉴权关闭 403 fail-closed）。
+            if parsed.path == "/api/subtasks":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "子任务派发端点要求启用鉴权（多 key 署名面）")
+                body = self._read_json_body()
+                self.send_json(subtask_dispatch(body, self._audit_caller))
+                return
             # P8-3 workflow 写面（run 走集合路径，pause/resume/retry 走动态路径）。
             if parsed.path == "/api/workflow-runs":
                 self.require_auth()
@@ -4824,7 +4899,12 @@ class RpHandler(BaseHTTPRequestHandler):
                     raise ApiError(403, "auth_required_for_write",
                                    "workflow 写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
                 body = self._read_json_body()
-                self.send_json(workflow_write("run", None, body))
+                # MA-3（D4③）：run 级 caller 恒取鉴权面（多 key 命中的
+                # caller_id；legacy default / 鉴权关闭 = None 零回归）。
+                run_caller = (self._audit_caller
+                              if self._audit_caller and self._audit_caller != "default"
+                              else None)
+                self.send_json(workflow_write("run", None, body, run_caller))
                 return
             parts = parsed.path.strip("/").split("/")
             # 形状一：/api/workflow-runs/<action>（run_id 在 body）。

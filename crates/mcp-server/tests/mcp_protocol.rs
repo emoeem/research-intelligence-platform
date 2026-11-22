@@ -284,7 +284,7 @@ fn tools_list_entries_are_standard_tool_objects() {
         pages += 1;
         assert!(pages < 50, "分页游标失灵");
     }
-    // 组合目录 = 能力面前段 6 条（固定次序）+ 注册面 5 行（4 主库 + 1 aux 新行，
+    // 组合目录 = 能力面前段 13 条（MA-3 七枚 additive；CAPABILITY_TOOLS 固定次序）+ 注册面 5 行（4 主库 + 1 aux 新行，
     // dup 去重）；注册面 Schema 缺省 = 宽松 object 形态（不省略必需 Schema）。
     let mut expected: Vec<String> = mcp_server::CAPABILITY_TOOLS
         .iter()
@@ -328,10 +328,11 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
     let (_m, _a, mut proc) = fixture("pagination");
     proc.handshake("2024-11-05");
     // 服务端固定页大小（MCP 标准分页只含 cursor；limit 参数不在标准面），
-    // 首页 = 6 能力面 + 14 注册面中的 14 行：11 总条数 → 首页 11 行无下一页。
+    // 首页 = 13 能力面（MA-3 七枚协作派发工具 additive）+ 5 注册面：
+    // 18 总条数 <= 页大小 20 → 首页 18 行无下一页。
     let reply = proc.request("tools/list", json!({}));
     let tools = reply["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 11, "夹具 11 条全量（6 能力面 + 5 注册面）: {}", tools.len());
+    assert_eq!(tools.len(), 18, "夹具 18 条全量（13 能力面 + 5 注册面）: {}", tools.len());
     assert!(
         reply["result"].get("nextCursor").is_none(),
         "全量一页内无 nextCursor"
@@ -374,7 +375,7 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
             _ => break,
         }
     }
-    assert_eq!(seen.len(), 36, "30 注册面 + 6 能力面全量遍历");
+    assert_eq!(seen.len(), 43, "30 注册面 + 13 能力面全量遍历（MA-3 七枚协作派发工具 additive）");
     let mut uniq = seen.clone();
     uniq.sort();
     uniq.dedup();

@@ -90,6 +90,10 @@ pub struct CardInput {
     /// 风险标记（D2/D3/D4/D5 与导入面产出的判定依据随行）。
     pub quality_flags: Vec<RiskFlag>,
     pub workspace_id: String,
+    /// 供体署名 caller（MA-3 V0007；None = 既有路径产出，行落 NULL 零回归）。
+    pub donor_caller_id: Option<String>,
+    /// 供体写入通道词表（'mcp'|'cli'，V0007 CHECK；None = 既有路径）。
+    pub donor_channel: Option<String>,
 }
 
 /// 创建卡片（幂等键不在本面：D2 相同哈希产 SAME_CONTENT 候选边，不拒绝创建，
@@ -103,12 +107,27 @@ pub fn create_card(pool: &PgPool, input: &CardInput) -> IntelResult<KnowledgeCar
     }
     let id = KnowledgeCardId::try_new(new_entity_id("kc-"))?;
     let norm = normalized_hash(&input.content);
+    // MA-3（V0007 D5）：供体通道词表 fail-closed（'mcp'|'cli'，与 V0007
+    // CHECK 双保险）；None = 既有路径零回归。
+    if let Some(channel) = &input.donor_channel {
+        if channel != "mcp" && channel != "cli" {
+            return Err(IntelError::Invalid(format!(
+                "donor_channel must be 'mcp' or 'cli', got {channel:?}"
+            )));
+        }
+    }
+    if input.donor_caller_id.is_some() && input.donor_channel.is_none() {
+        return Err(IntelError::Invalid(
+            "donor_caller_id requires donor_channel (mcp/cli)".to_string(),
+        ));
+    }
     let mut conn = pool.get()?;
     conn.execute(
         "INSERT INTO knowledge_cards (knowledge_id, knowledge_type, title, summary, content,
              structured_content, confidence, verification_status, review_status, evidence_level,
-             source_trust, ai_derived, normalized_hash, quality_flags, workspace_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'DISCOVERED',$9,$10,$11,$12,$13,$14)",
+             source_trust, ai_derived, normalized_hash, quality_flags, workspace_id,
+             donor_caller_id, donor_channel)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'DISCOVERED',$9,$10,$11,$12,$13,$14,$15,$16)",
         &[
             &id.as_str(),
             &input.knowledge_type.as_str(),
@@ -124,9 +143,22 @@ pub fn create_card(pool: &PgPool, input: &CardInput) -> IntelResult<KnowledgeCar
             &norm,
             &flags_to_strs(&input.quality_flags),
             &input.workspace_id,
+            &input.donor_caller_id,
+            &input.donor_channel,
         ],
     )?;
     Ok(id)
+}
+
+/// 供体署名读取面（MA-3 V0007：卡 → (donor_caller_id, donor_channel)；
+/// 既有路径行两者均 None）。
+pub fn donor_info(pool: &PgPool, card: &KnowledgeCardId) -> IntelResult<(Option<String>, Option<String>)> {
+    let mut conn = pool.get()?;
+    let row = conn.query_one(
+        "SELECT donor_caller_id, donor_channel FROM knowledge_cards WHERE knowledge_id = $1",
+        &[&card.as_str()],
+    )?;
+    Ok((row.get(0), row.get(1)))
 }
 
 /// 卡片-文档 N:M 关联（版本锚定；幂等：PRIMARY KEY 冲突忽略）。

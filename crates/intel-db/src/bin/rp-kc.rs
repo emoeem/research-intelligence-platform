@@ -22,6 +22,15 @@ subcommands:\n\
          [--confidence f] [--trust t] [--evidence K2] [--verified] [--ai-derived]\n\
          [--flags F1,F2] [--workspace W] [--document D --revision R]\n\
     创建卡片（DISCOVERED；D2 规范化哈希随行；--flags 用 R2 5.3 词形）\n\
+  donor-submit --donor-caller CALLER --type T --title T [--summary S]\n\
+         [--content-file F | --content S] [--content-json J] [--confidence f]\n\
+         [--flags F1,F2] [--workspace W] [--donor-channel mcp|cli]\n\
+    供体写入即候选（MA-3 D5：create 落 DISCOVERED（source_trust=agent_derived\n\
+    + ai_derived=TRUE 定死）→ 即 decide 转 CANDIDATE，review_log\n\
+    reviewer=donor_caller 留痕；供体永不直写 APPROVED——approve 只经既有\n\
+    review 双闸；收据 JSON stdout {{knowledge_id, review_status,\n\
+    normalized_hash}}）；--donor-caller 必填 fail-closed；去重走既有 D2\n\
+    语义（同哈希产 SAME_CONTENT 候选边不拒绝创建）\n\
   relate --src KC --dst KC --type T [--confidence f] [--evidence-json J] [--source S]\n\
     追加知识关系（十型；CONTRADICTS 命中即回退候选进审核，D5）\n\
   list [--status S] [--workspace W]     卡片列表（按审核态过滤）\n\
@@ -191,6 +200,8 @@ fn main() {
                     ai_derived: args.flags.contains_key("ai-derived"),
                     quality_flags: flags,
                     workspace_id: opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string()),
+                    donor_caller_id: None,
+                    donor_channel: None,
                 };
                 let card = card_repo::create_card(&pool, &input)?;
                 let mut out = serde_json::json!({ "knowledge_id": card.as_str() });
@@ -202,6 +213,93 @@ fn main() {
                     out["linked_revision"] = serde_json::json!(revision.as_str());
                 }
                 Ok(out)
+            }
+            "donor-submit" => {
+                // MA-3（D5）供体写入即候选唯一入口：--donor-caller 必填
+                // fail-closed；source_trust/ai_derived 定死（供体 = AI 派生
+                // 事实，原则 C，不暴露覆盖旗标）；两步 create→decide 同一
+                // 治理面（card_repo/decide/review_log 本体，非第二写入路径）。
+                let donor = require_flag(&args, "donor-caller");
+                if donor.trim().is_empty() {
+                    return Err(IntelError::Invalid(
+                        "donor-submit requires --donor-caller (fail-closed)".to_string(),
+                    ));
+                }
+                let channel = match opt_flag(&args, "donor-channel") {
+                    Some(raw) => {
+                        if raw != "mcp" && raw != "cli" {
+                            return Err(IntelError::Invalid(format!(
+                                "donor-channel must be 'mcp' or 'cli', got {raw:?}"
+                            )));
+                        }
+                        raw
+                    }
+                    None => "cli".to_string(),
+                };
+                let ktype = KnowledgeType::parse(&require_flag(&args, "type"))
+                    .map_err(IntelError::from)?;
+                let content = if let Some(f) = opt_flag(&args, "content-file") {
+                    std::fs::read_to_string(PathBuf::from(f)).map_err(IntelError::from)?
+                } else {
+                    opt_flag(&args, "content").unwrap_or_default()
+                };
+                if content.trim().is_empty() {
+                    return Err(IntelError::Invalid(
+                        "donor-submit requires non-empty content".to_string(),
+                    ));
+                }
+                let structured = opt_flag(&args, "content-json")
+                    .map(|raw| serde_json::from_str::<serde_json::Value>(&raw))
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("content-json parse: {e}")))?;
+                let confidence = opt_flag(&args, "confidence")
+                    .map(|s| s.parse::<f32>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("confidence parse: {e}")))?
+                    .unwrap_or(0.5);
+                let flags = match opt_flag(&args, "flags") {
+                    Some(raw) => raw
+                        .split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| RiskFlag::parse(s.trim()).map_err(IntelError::from))
+                        .collect::<IntelResult<Vec<RiskFlag>>>()?,
+                    None => Vec::new(),
+                };
+                let input = CardInput {
+                    knowledge_type: ktype,
+                    title: require_flag(&args, "title"),
+                    summary: opt_flag(&args, "summary").unwrap_or_default(),
+                    content,
+                    structured_content: structured,
+                    confidence,
+                    verification: VerificationStatus::Unverified,
+                    evidence_level: None,
+                    source_trust: SourceTrust::AgentDerived,
+                    ai_derived: true,
+                    quality_flags: flags,
+                    workspace_id: opt_flag(&args, "workspace")
+                        .unwrap_or_else(|| "default".to_string()),
+                    donor_caller_id: Some(donor.clone()),
+                    donor_channel: Some(channel),
+                };
+                let card = card_repo::create_card(&pool, &input)?;
+                // 写入即候选：DISCOVERED → CANDIDATE 立即转移（合法转移表
+                // Discovered→Candidate 在位；review_log reviewer=donor_caller
+                // 留痕——reconciliation 人工确认语义同构）。
+                card_repo::decide(
+                    &pool,
+                    &card,
+                    ReviewStatus::Candidate,
+                    &format!("donor-submit 写入即候选（donor={donor}）"),
+                    &donor,
+                )?;
+                // 收据（brain-mark 收据语义；normalized_hash = D2 去重对账锚）。
+                let norm = card_repo::normalized_hash(&input.content);
+                Ok(serde_json::json!({
+                    "knowledge_id": card.as_str(),
+                    "review_status": "CANDIDATE",
+                    "normalized_hash": norm,
+                }))
             }
             "relate" => {
                 let src = KnowledgeCardId::try_new(require_flag(&args, "src"))?;

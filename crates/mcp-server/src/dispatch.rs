@@ -54,6 +54,8 @@ use tool_engine::adapter::{
 };
 use tool_engine::capability::StaticCatalogProvider;
 use tool_engine::{DriveOutcome, Engine, EngineError};
+
+use database::rusqlite::OptionalExtension;
 use tool_registry::Registry;
 
 // DI-1 S5：native_rust 派发分支消费面（D2：Router 是文档域编排层，派发链
@@ -102,6 +104,33 @@ pub struct RunChannel {
     /// 来源；bin 层 RP_CAPABILITY_SEED，缺省 manifests/capabilities/
     /// host-catalog-seed.json）。
     pub capability_seed_path: PathBuf,
+    /// MA-3（D4）会话 caller：bin 启动时一次性解析 RP_MCP_TOKEN（sha256 →
+    /// api_key JOIN caller 吊销判定，rp_server.py _resolve_caller_key 同款
+    /// SQL 直查只读）；None = caller 未知/吊销/未解析 → 七枚协作派发工具
+    /// 结构化拒绝 fail-closed（目录既有 rip.* 工具零影响）。
+    pub collab_caller: Option<String>,
+    /// rp-agent 可执行路径（run_subtask spawn；bin 层 RP_AGENT_BIN，缺省
+    /// target/debug/rp-agent，仓库根 CWD 相对——working_dir 执行纪律）。
+    pub agent_bin: PathBuf,
+    /// rp-kc 可执行路径（contribute_knowledge spawn；bin 层 RP_KC_BIN，
+    /// 缺省 target/debug/rp-kc；RP_PG_DSN 环境继承——进程边界即数据边界，
+    /// mcp-server 零 PG 依赖维持）。
+    pub kc_bin: PathBuf,
+    /// 子任务超时秒（bin 层 RP_SUBTASK_TIMEOUT_S，缺省 600；超时结构化
+    /// 信封 + agent_run 行留查）。
+    pub subtask_timeout_s: u64,
+}
+
+impl RunChannel {
+    /// RunChannel 缺省协作面参数（测试装配与 bin 共用的缺省词形）。
+    pub fn default_collab_fields() -> (Option<String>, PathBuf, PathBuf, u64) {
+        (
+            None,
+            PathBuf::from("target/debug/rp-agent"),
+            PathBuf::from("target/debug/rp-kc"),
+            600,
+        )
+    }
 }
 
 impl RunChannel {
@@ -994,4 +1023,433 @@ impl RunChannel {
         })
         .map_err(|e| format!("run db read failed: {e}"))
     }
+}
+
+// ---------------------------------------------------------------------------
+// MA-3 协作派发面（D4）：rip.run_subtask / rip.get_subtask_status /
+// rip.claim_task / rip.complete_claim / rip.send_message / rip.fetch_messages
+// / rip.contribute_knowledge 七工具的 RunChannel 承载。写面统一库 =
+// RP_RUN_DB 可写运行库（rp-mcp.rs:85-90 既有可写数据面纪律延伸，gitignore
+// 运行时数据，生产 platform*.db 零触碰）；进程边界即数据边界：run_subtask
+// spawn rp-agent、contribute_knowledge spawn rp-kc 子进程（mcp-server 零
+// PG 依赖维持，rp_server.py DOC_BIN 先例同型）。
+// ---------------------------------------------------------------------------
+
+/// 会话 caller 必填守卫（None = 未知/吊销 → 结构化拒绝 fail-closed，
+/// POLICY_DENIED 词形；目录既有 rip.* 工具零影响）。
+fn caller_required(caller: &Option<String>) -> Result<String, Value> {
+    caller.clone().ok_or_else(|| {
+        err_payload(
+            "collab caller unknown or revoked: dispatch tools fail-closed (RP_MCP_TOKEN 必须映射到在用 caller)",
+            "POLICY_DENIED",
+        )
+    })
+}
+
+/// 必填字符串入参（VALIDATION 词形）。
+fn need_str(args: &Value, key: &str) -> Result<String, Value> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|v| !v.trim().is_empty())
+        .ok_or_else(|| err_payload(&format!("{key} is required"), "VALIDATION"))
+}
+
+/// 可选字符串入参。
+fn opt_str(args: &Value, key: &str) -> Option<String> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|v| !v.trim().is_empty())
+}
+
+/// 可选正整数入参。
+fn opt_usize_arg(args: &Value, key: &str) -> Result<Option<usize>, Value> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_u64()
+            .map(|n| Some(n as usize))
+            .ok_or_else(|| err_payload(&format!("{key} must be a positive integer"), "VALIDATION")),
+    }
+}
+
+impl RunChannel {
+    /// 协作写面运行库池（029 迁移幂等随 open_pool；claim/message store
+    /// 挂 RP_RUN_DB Pool——D4/D7 写面统一库）。
+    fn collab_pool(&self) -> Result<database::Pool, Value> {
+        self.open_pool().map_err(|e| err_payload(&e, "INFRA"))
+    }
+
+    /// rip.claim_task：双语义（D7 创建面 + D2 CAS 领取经 RunChannel 持有的
+    /// Pool）——无 claim_id = 编排方登记新 claim（claimable，attempt=1）；
+    /// 有 claim_id = 单语句 CAS 原子领取（collab_caller 署名）。
+    pub fn claim_task(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        if !args.is_object() {
+            return Err(err_payload("claim_task arguments must be a JSON object", "VALIDATION"));
+        }
+        let store = workflow_engine::collab::ClaimStore::new(self.collab_pool()?);
+        match opt_str(args, "claim_id") {
+            Some(claim_id) => {
+                let row = store
+                    .claim(&claim_id, &caller)
+                    .map_err(|e| err_payload(&e.to_string(), claim_category(&e)))?;
+                Ok(json!({"ok": true, "action": "claimed", "claim": claim_row_payload(&row)}))
+            }
+            None => {
+                let kind_raw = need_str(args, "kind")?;
+                let kind = workflow_engine::collab::ClaimKind::parse(&kind_raw)
+                    .map_err(|e| err_payload(&e.to_string(), "VALIDATION"))?;
+                let input = workflow_engine::collab::ClaimCreateInput {
+                    kind,
+                    title: need_str(args, "title")?,
+                    payload_json: need_str(args, "payload")?,
+                    run_id: opt_str(args, "run_id"),
+                    node_id: opt_str(args, "node_id"),
+                    agent_id: opt_str(args, "agent_id"),
+                    depends_on_claim_id: opt_str(args, "depends_on_claim_id"),
+                    created_by: caller,
+                };
+                let row = store
+                    .create(&input)
+                    .map_err(|e| err_payload(&e.to_string(), claim_category(&e)))?;
+                Ok(json!({"ok": true, "action": "created", "claim": claim_row_payload(&row)}))
+            }
+        }
+    }
+
+    /// rip.complete_claim：仅 claimed_by 本人可写（D2 引擎侧记账 CAS）——
+    /// result_json 在场 = completed，error_json 在场 = failed。
+    pub fn complete_claim(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        let claim_id = need_str(args, "claim_id")?;
+        let store = workflow_engine::collab::ClaimStore::new(self.collab_pool()?);
+        let result_json = opt_str(args, "result_json");
+        let error_json = opt_str(args, "error_json");
+        let row = match (result_json, error_json) {
+            (Some(result), None) => store
+                .complete(&claim_id, &caller, &result)
+                .map_err(|e| err_payload(&e.to_string(), claim_category(&e)))?,
+            (None, Some(error)) => store
+                .fail(&claim_id, &caller, &error)
+                .map_err(|e| err_payload(&e.to_string(), claim_category(&e)))?,
+            (None, None) => {
+                return Err(err_payload(
+                    "complete_claim requires result_json or error_json",
+                    "VALIDATION",
+                ))
+            }
+            (Some(_), Some(_)) => {
+                return Err(err_payload(
+                    "complete_claim accepts result_json or error_json, not both",
+                    "VALIDATION",
+                ))
+            }
+        };
+        Ok(json!({"ok": true, "claim": claim_row_payload(&row)}))
+    }
+
+    /// rip.send_message：邮箱发送（D3；from = 会话 caller——路由主语强
+    /// 一致 fail-closed；to 必须是在用 caller）。
+    pub fn send_message(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        let input = workflow_engine::collab::MessageSendInput {
+            from_caller: caller,
+            to_caller: need_str(args, "to_caller")?,
+            payload_json: need_str(args, "payload")?,
+            claim_id: opt_str(args, "claim_id"),
+            run_id: opt_str(args, "run_id"),
+        };
+        let row = workflow_engine::collab::MessageStore::new(self.collab_pool()?)
+            .send(&input)
+            .map_err(|e| err_payload(&e.to_string(), message_category(&e)))?;
+        Ok(json!({"ok": true, "message": message_row_payload(&row)}))
+    }
+
+    /// rip.fetch_messages：本人邮箱收件（D3 拉模型——未读行每次 fetch 均
+    /// 返回（持久重投语义），首拉落 delivered_at 不覆盖；read 确认经
+    /// rip.fetch_messages 响应内 message_id + read 语义由 rp-collab msg-read
+    /// 或本面 complete？——read 标记 = ma_message read_at CAS（to_caller
+    /// 本人守卫）。
+    pub fn fetch_messages(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        let limit = opt_usize_arg(args, "limit")?.unwrap_or(50);
+        let store = workflow_engine::collab::MessageStore::new(self.collab_pool()?);
+        let rows = store
+            .fetch(&caller, limit)
+            .map_err(|e| err_payload(&e.to_string(), message_category(&e)))?;
+        Ok(json!({
+            "ok": true,
+            "to_caller": caller,
+            "total": rows.len(),
+            "items": rows.iter().map(message_row_payload).collect::<Vec<_>>(),
+        }))
+    }
+
+    /// rip.send_message 的读标记伴随面：未在七工具词表内单列（邮箱 read
+    /// 标记 = fetch 响应内 message_id 的 read_at CAS 经 rp-collab msg-read
+    /// 承载；MA-4 SSE 面扩展）。
+    ///
+    /// rip.run_subtask：spawn `rp-agent run <agent_id> --goal <goal> --db
+    /// <RP_RUN_DB> --caller-id <caller>` 子进程 wait 终态返回 JSON 信封
+    /// （D4② 三面同源 = 同一 rp-agent CLI 路径，零第二派发实现）；超时 =
+    /// RP_SUBTASK_TIMEOUT_S（缺省 600s）结构化超时信封 + agent_run 行留查；
+    /// caller None = 结构化拒绝 fail-closed。
+    pub fn run_subtask(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        let agent_id = need_str(args, "agent_id")?;
+        let goal = need_str(args, "goal")?;
+        let mut cmd = std::process::Command::new(&self.agent_bin);
+        cmd.arg("run")
+            .arg(&agent_id)
+            .arg("--goal")
+            .arg(&goal)
+            .arg("--db")
+            .arg(&self.run_db)
+            .arg("--caller-id")
+            .arg(&caller)
+            .arg("--manifest-dirs")
+            .arg(
+                self.manifest_dirs
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        if let Some(task_id) = opt_str(args, "task_id") {
+            cmd.arg("--task-id").arg(&task_id);
+        }
+        if let Some(workspace) = opt_str(args, "workspace_id") {
+            cmd.arg("--workspace").arg(&workspace);
+        }
+        if let Some(max_calls) = opt_usize_arg(args, "max_tool_calls")? {
+            cmd.arg("--max-tool-calls").arg(max_calls.to_string());
+        }
+        cmd.current_dir(
+            self.working_dir
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+        );
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| {
+            err_payload(
+                &format!("rp-agent spawn failed (构建产物在位? {}): {e}", self.agent_bin.display()),
+                "INFRA",
+            )
+        })?;
+        let started = std::time::Instant::now();
+        let timeout = Duration::from_secs(self.subtask_timeout_s.max(1));
+        // wait 终态（timeout 轮询；超时 kill + 结构化信封，run 行留查）。
+        loop {
+            match child.try_wait().map_err(|e| {
+                err_payload(&format!("rp-agent wait failed: {e}"), "INFRA")
+            })? {
+                Some(status) => {
+                    let mut stdout = String::new();
+                    if let Some(mut out) = child.stdout.take() {
+                        use std::io::Read;
+                        let _ = out.read_to_string(&mut stdout);
+                    }
+                    let mut stderr = String::new();
+                    if let Some(mut err) = child.stderr.take() {
+                        use std::io::Read;
+                        let _ = err.read_to_string(&mut stderr);
+                    }
+                    if !status.success() {
+                        let tail: String = stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n");
+                        return Err(err_payload(
+                            &format!("rp-agent exited {}: {}", status, tail),
+                            "EXECUTION",
+                        ));
+                    }
+                    let report = stdout
+                        .lines()
+                        .rev()
+                        .find(|l| serde_json::from_str::<Value>(l).is_ok())
+                        .and_then(|l| serde_json::from_str::<Value>(l).ok())
+                        .ok_or_else(|| {
+                            err_payload("rp-agent produced no JSON report", "EXECUTION")
+                        })?;
+                    return Ok(json!({
+                        "ok": true,
+                        "caller": caller,
+                        "elapsed_ms": started.elapsed().as_millis() as u64,
+                        "report": report,
+                    }));
+                }
+                None => {
+                    if started.elapsed() > timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(json!({
+                            "ok": false,
+                            "error": {
+                                "category": "INFRA",
+                                "code": "subtask_timeout",
+                                "message": format!(
+                                    "run_subtask exceeded RP_SUBTASK_TIMEOUT_S={}s; agent_run 行留查（rip.get_subtask_status）",
+                                    self.subtask_timeout_s
+                                ),
+                            }
+                        }));
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
+    }
+
+    /// rip.get_subtask_status：读 agent_run 行（027 caller_id 列随全链迁移
+    /// 在位；read-only 打开）。
+    pub fn subtask_status(&self, args: &Value) -> Result<Value, Value> {
+        let run_id = need_str(args, "run_id")?;
+        let pool = self
+            .open_pool_readonly()
+            .map_err(|e| err_payload(&e, "INFRA"))?;
+        let row = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT run_id, agent_id, agent_version, state, task_id, caller_id, \
+                     trace_id, created_at, started_at, finished_at, updated_at \
+                     FROM agent_run WHERE run_id = ?1",
+                    [&run_id],
+                    |r| {
+                        Ok(json!({
+                            "run_id": r.get::<_, String>(0)?,
+                            "agent_id": r.get::<_, String>(1)?,
+                            "agent_version": r.get::<_, String>(2)?,
+                            "state": r.get::<_, String>(3)?,
+                            "task_id": r.get::<_, Option<String>>(4)?,
+                            "caller_id": r.get::<_, Option<String>>(5)?,
+                            "trace_id": r.get::<_, Option<String>>(6)?,
+                            "created_at": r.get::<_, String>(7)?,
+                            "started_at": r.get::<_, Option<String>>(8)?,
+                            "finished_at": r.get::<_, Option<String>>(9)?,
+                            "updated_at": r.get::<_, String>(10)?,
+                        }))
+                    },
+                )
+                .optional()
+            })
+            .map_err(|e| err_payload(&format!("agent_run read failed: {e}"), "INFRA"))?;
+        row.ok_or_else(|| err_payload(&format!("agent run {run_id:?} not found"), "VALIDATION"))
+    }
+
+    /// rip.contribute_knowledge：spawn rp-kc donor-submit 子进程（D5：写入
+    /// 即候选；--donor-caller = 会话 caller，--donor-channel mcp；收据
+    /// JSON stdout 透传）。mcp-server 零 PG 依赖维持（RP_PG_DSN 环境
+    /// 继承，进程边界即数据边界）。
+    pub fn contribute_knowledge(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        let mut cmd = std::process::Command::new(&self.kc_bin);
+        cmd.arg("donor-submit")
+            .arg("--donor-caller")
+            .arg(&caller)
+            .arg("--donor-channel")
+            .arg("mcp")
+            .arg("--type")
+            .arg(need_str(args, "type")?)
+            .arg("--title")
+            .arg(need_str(args, "title")?)
+            .arg("--content")
+            .arg(need_str(args, "content")?);
+        if let Some(summary) = opt_str(args, "summary") {
+            cmd.arg("--summary").arg(&summary);
+        }
+        if let Some(workspace) = opt_str(args, "workspace") {
+            cmd.arg("--workspace").arg(&workspace);
+        }
+        if let Some(conf) = args.get("confidence") {
+            let v = conf
+                .as_f64()
+                .ok_or_else(|| err_payload("confidence must be a number", "VALIDATION"))?;
+            cmd.arg("--confidence").arg(v.to_string());
+        }
+        if let Some(flags) = opt_str(args, "flags") {
+            cmd.arg("--flags").arg(&flags);
+        }
+        cmd.current_dir(
+            self.working_dir
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+        );
+        let output = cmd
+            .output()
+            .map_err(|e| {
+                err_payload(
+                    &format!("rp-kc spawn failed (构建产物在位? {}): {e}", self.kc_bin.display()),
+                    "INFRA",
+                )
+            })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let tail: String = stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n");
+            return Err(err_payload(
+                &format!("rp-kc donor-submit failed: {} {}", stdout.trim(), tail),
+                "EXECUTION",
+            ));
+        }
+        let receipt: Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+            err_payload(&format!("rp-kc receipt parse failed: {e}; raw={stdout:?}"), "INFRA")
+        })?;
+        Ok(json!({"ok": true, "receipt": receipt}))
+    }
+}
+
+/// CollabError → 错误 category 词形（§5.3 词表）。
+fn claim_category(e: &workflow_engine::collab::CollabError) -> &'static str {
+    use workflow_engine::collab::CollabError as E;
+    match e {
+        E::NotFound(_) | E::NotClaimable { .. } | E::DependencyNotCompleted(_)
+        | E::NotClaimer(_) | E::CycleDetected(_) | E::InvalidInput(_) => "VALIDATION",
+        E::Storage(_) => "INFRA",
+    }
+}
+
+/// CollabError（邮箱面）→ 错误 category 词形。
+fn message_category(e: &workflow_engine::collab::CollabError) -> &'static str {
+    claim_category(e)
+}
+
+/// claim 行 → MCP 载荷投影。
+fn claim_row_payload(row: &workflow_engine::collab::ClaimRow) -> Value {
+    json!({
+        "claim_id": row.claim_id,
+        "kind": row.kind.as_str(),
+        "title": row.title,
+        "payload_json": row.payload_json,
+        "run_id": row.run_id,
+        "node_id": row.node_id,
+        "agent_id": row.agent_id,
+        "depends_on_claim_id": row.depends_on_claim_id,
+        "state": row.state.as_str(),
+        "claimed_by": row.claimed_by,
+        "attempt": row.attempt,
+        "result_json": row.result_json,
+        "error_json": row.error_json,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "claimed_at": row.claimed_at,
+        "finished_at": row.finished_at,
+        "updated_at": row.updated_at,
+    })
+}
+
+/// message 行 → MCP 载荷投影。
+fn message_row_payload(row: &workflow_engine::collab::MessageRow) -> Value {
+    json!({
+        "message_id": row.message_id,
+        "from_caller": row.from_caller,
+        "to_caller": row.to_caller,
+        "claim_id": row.claim_id,
+        "run_id": row.run_id,
+        "payload_json": row.payload_json,
+        "delivered_at": row.delivered_at,
+        "read_at": row.read_at,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    })
 }

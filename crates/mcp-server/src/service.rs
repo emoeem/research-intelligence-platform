@@ -344,6 +344,33 @@ impl ServerHandler for McpServer {
                 .await
                 .map(Into::into)
             }
+            // MA-3（D4）协作派发七工具（additive；既有五枚词形零 diff）：
+            // 全走 RunChannel（claim/message store 挂 RP_RUN_DB Pool +
+            // run_subtask spawn rp-agent wait + contribute_knowledge spawn
+            // rp-kc）；caller 未解析时结构化拒绝 fail-closed（RunChannel
+            // collab_caller None → POLICY_DENIED 载荷），目录面零影响。
+            "rip.run_subtask" | "rip.get_subtask_status" | "rip.claim_task"
+            | "rip.complete_claim" | "rip.send_message" | "rip.fetch_messages"
+            | "rip.contribute_knowledge" => {
+                let kind = name.clone();
+                run_face_blocking(self.run_channel.clone(), &name, move |channel| {
+                    match kind.as_str() {
+                        "rip.run_subtask" => channel.run_subtask(&args),
+                        "rip.get_subtask_status" => channel.subtask_status(&args),
+                        "rip.claim_task" => channel.claim_task(&args),
+                        "rip.complete_claim" => channel.complete_claim(&args),
+                        "rip.send_message" => channel.send_message(&args),
+                        "rip.fetch_messages" => channel.fetch_messages(&args),
+                        "rip.contribute_knowledge" => channel.contribute_knowledge(&args),
+                        other => Err(serde_json::json!({
+                            "ok": false,
+                            "error": {"category": "INFRA", "message": format!("unrouted collab tool {other}")}
+                        })),
+                    }
+                })
+                .await
+                .map(Into::into)
+            }
             _ => {
                 if CAPABILITY_TOOLS.iter().any(|(n, _)| *n == name.as_str()) {
                     return Ok(unwired_result(&name).into());

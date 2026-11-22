@@ -63,6 +63,8 @@ use domain::{
 use serde_json::{json, Map, Value};
 use tool_engine::Engine;
 
+use database::rusqlite::OptionalExtension;
+
 /// 节点默认超时（600s，与 tool-engine budget 显式帽上限同值）。
 pub const DEFAULT_NODE_TIMEOUT_MS: u64 = 600_000;
 
@@ -202,12 +204,29 @@ impl WorkflowExecutor {
 
     /// 受理并启动一次 run，钉定 run id（P8-3：API 写面经 rp-workflow
     /// --run-id 异步承载时由调用方预生成，受理面校验形状与唯一性）。
+    ///
+    /// legacy 入口（run 级 caller = None，既有调用方行为零变化）；显式
+    /// run 级 caller 归属走 [`WorkflowExecutor::start_with_caller`]（MA-3 D1①）。
     pub fn start_with_id(
         &self,
         workflow_id: &str,
         version: Option<u32>,
         input: &Value,
         run_id: Option<&str>,
+    ) -> Result<RunOutcome, WorkflowError> {
+        self.start_with_caller(workflow_id, version, input, run_id, None)
+    }
+
+    /// 受理并启动一次 run 并落 run 级 caller 归属（MA-3 D1①：workflow_run
+    /// .caller_id 写面接线；caller_id 落 027 列，节点绑定双层解析的 run 级
+    /// 权威 = 该列持久化值）。None = legacy 零回归。
+    pub fn start_with_caller(
+        &self,
+        workflow_id: &str,
+        version: Option<u32>,
+        input: &Value,
+        run_id: Option<&str>,
+        caller_id: Option<&str>,
     ) -> Result<RunOutcome, WorkflowError> {
         let stored = self.definitions.get(workflow_id, version)?;
         let def = stored.definition;
@@ -224,8 +243,14 @@ impl WorkflowExecutor {
             .iter()
             .map(|n| (n.id().to_string(), n.kind().as_str().to_string()))
             .collect::<Vec<_>>();
-        self.runs
-            .create_run(&run_id, workflow_id, def.version(), input, &node_kinds)?;
+        self.runs.create_run_with_caller(
+            &run_id,
+            workflow_id,
+            def.version(),
+            input,
+            &node_kinds,
+            caller_id,
+        )?;
         self.control.ensure_control_row(&run_id)?;
         self.runs.transition_run(&run_id, WorkflowRunState::Queued, WorkflowRunState::Running, None, None)?;
         self.drive_run(&run_id, &def, input.clone())
@@ -374,8 +399,18 @@ impl WorkflowExecutor {
             .iter()
             .map(|n| (n.id().to_string(), n.kind().as_str().to_string()))
             .collect::<Vec<_>>();
-        self.runs
-            .create_run(&new_run_id, &row.workflow_id, row.workflow_version, &row.input, &node_kinds)?;
+        // MA-3（D1）：retry 新 run 继承原 run 的 run 级 caller（MA-2 retry
+        // 继承 caller 口径同源，control.rs:332 先例）；原行 legacy NULL 即
+        // 继承 None 零回归。
+        let inherited_caller = self.run_caller_of(run_id)?;
+        self.runs.create_run_with_caller(
+            &new_run_id,
+            &row.workflow_id,
+            row.workflow_version,
+            &row.input,
+            &node_kinds,
+            inherited_caller.as_deref(),
+        )?;
         self.runs.restore_from_snapshot(&new_run_id, &checkpoint.snapshot)?;
         self.runs.node_reset_pending(&new_run_id, node_id)?;
         self.runs
@@ -812,6 +847,7 @@ impl WorkflowExecutor {
                         goal: String::new(),
                         task_id: None,
                         workspace_id: None,
+                        caller_id: None,
                     };
                     match node_agent::execute(
                         agent_driver.as_deref(),
@@ -867,6 +903,25 @@ impl WorkflowExecutor {
                 ),
             ))),
         }
+    }
+
+    /// run 级 caller 归属读回（MA-3 D1：workflow_run.caller_id 持久化值；
+    /// NULL = legacy 无绑定）。retry 继承与端口实现侧 run 级解析共用读形。
+    fn run_caller_of(&self, run_id: &str) -> Result<Option<String>, WorkflowError> {
+        self.pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT caller_id FROM workflow_run WHERE run_id = ?1",
+                    [run_id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(database::DbError::Sqlite)
+            })
+            .map_err(WorkflowError::from)?
+            .ok_or_else(|| WorkflowError::RunNotFound {
+                run_id: run_id.to_string(),
+            })
     }
 
     /// run 行钉定定义回放（resume/retry/parallel fan 拓扑读取共用；

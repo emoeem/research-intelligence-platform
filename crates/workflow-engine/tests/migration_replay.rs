@@ -145,8 +145,8 @@ fn migration_017_replay_twice_is_idempotent() {
         "重放不应重复应用: {second:?}"
     );
     // WSW-4 追加 028_wsw_fuzz 后，当前链尾为 028（追加结构，workflow 面零改动）。
-    assert_eq!(version_1, 28);
-    assert_eq!(version_2, 28);
+    assert_eq!(version_1, 29);
+    assert_eq!(version_2, 29);
     assert_eq!(tables_1, tables_2, "两次重放表清单一致（幂等）");
     assert!(tables_1.contains(&"workflow_definition".to_string()));
     assert!(tables_1.contains(&"workflow_run".to_string()));

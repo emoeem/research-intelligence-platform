@@ -44,6 +44,8 @@ fn card_ws(title: &str, content: &str, flags: Vec<RiskFlag>, workspace: &str) ->
         ai_derived: false,
         quality_flags: flags,
         workspace_id: workspace.to_string(),
+        donor_caller_id: None,
+        donor_channel: None,
     }
 }
 

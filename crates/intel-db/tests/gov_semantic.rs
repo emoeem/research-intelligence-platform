@@ -38,6 +38,8 @@ fn card_input(title: &str, content: &str) -> CardInput {
         ai_derived: false,
         quality_flags: vec![],
         workspace_id: "ws-p3-sem".to_string(),
+        donor_caller_id: None,
+        donor_channel: None,
     }
 }
 
