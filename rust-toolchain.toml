@@ -1,0 +1,8 @@
+# Rust 工具链钉定（RT-7 D1②）：channel = 本机 rustc 1.99.1（2026-10-13）实测串，
+# 与 .github/workflows/ci.yml dtolnay/rust-toolchain@1.99.1 ref 同串——CI 工具链
+# 与本地基线一致，消除 @stable 浮动漂移面。components clippy 镜像 ci.yml
+# dtolnay 步骤现状词形。本文件 = rustup 工具链选择文件，非 crate 依赖面
+# （不进 Cargo.lock——RT-7 D5 零新依赖）。
+[toolchain]
+channel = "1.99.1"
+components = ["clippy"]

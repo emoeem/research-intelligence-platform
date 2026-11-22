@@ -36,7 +36,7 @@ echo "== 0. 环境：工作目录 $WORK / 二进制 $BIN"
 cp migrations/dev-b1.db "$DB"
 "$BIN" db migrate --db "$DB" >/dev/null 2>&1
 UV=$(sqlite3 "file:$DB?mode=ro" "PRAGMA user_version")
-ck "迁移水位 user_version=28" "28" "$UV"
+ck "迁移水位 user_version=30（WSW-8 链头新基线——随链尾演进批同步，RT-7 D2 重钉）" "30" "$UV"
 
 # --- 真实 HTTP 靶机（python3 标准库；随机端口；请求计数器）---
 cat > "$WORK/target.py" <<'EOF'

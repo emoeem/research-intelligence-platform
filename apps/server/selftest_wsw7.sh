@@ -282,16 +282,16 @@ done
 ck "platform.db 生产库水位未被触碰" "1" "$(sqlite3 "file:migrations/platform.db?mode=ro" "PRAGMA user_version" 2>/dev/null)"
 RTIS_DIFF=$(git status --porcelain -- integrations/rtis/ | wc -l)
 ck "integrations/rtis 零 diff（红线 5）" "0" "$RTIS_DIFF"
-# 跨轨零 diff（判据 10）：Cargo.lock 面 = D4 路径依赖强制写入的 wsw-runtime
-# 依赖块 3 行（[[package]] 399 恒定零新包——git diff 逐行核对；任务书
-# 「Cargo.lock 零 diff」字面与 D4 内在冲突如实走批次报告坏消息节）；其余
-# 跨轨（web/vendor/sender/scope/tool-engine src/mcp-server src/migrations/
-# plugin-*）零 diff。
+# 跨轨零 diff（判据 10）：Cargo.lock 收口态断言（RT-7 D2 按收口态重钉）——
+# WSW-8 收口（chromiumoxide 0.9.1 vendor 基线跃迁）后 Cargo.lock 干净树恒零
+# diff（收口后恒 0；WSW-8-BATCH-REPORT :166「收口后 417 为新基线，wsw7 四钉
+# 随下一链尾演进批随更」= owner 预授权词形）；其余跨轨（web/vendor/sender/
+# scope/tool-engine src/mcp-server src/migrations/plugin-*）零 diff。
 LOCK_DIFF=$(git diff Cargo.lock | grep -cE '^\+ "(tool-engine|tool-registry|verification-engine)",$')
 LOCK_DIFF_ALL=$(git diff Cargo.lock | grep -cE '^\+[^+]')
-ck "Cargo.lock diff = wsw-runtime 依赖块 3 行（D4 强制面）" "3" "$LOCK_DIFF"
-ck "Cargo.lock diff 无其它行" "3" "$LOCK_DIFF_ALL"
-ck "Cargo.lock [[package]] 399 恒定（判据 10）" "399" "$(grep -cE '^\[\[package\]\]' Cargo.lock)"
+ck "Cargo.lock diff 收口后恒 0（WSW-8 收口态——RT-7 D2 重钉）" "0" "$LOCK_DIFF"
+ck "Cargo.lock diff 无其它行（收口后恒 0——RT-7 D2 重钉）" "0" "$LOCK_DIFF_ALL"
+ck "Cargo.lock [[package]] 417 恒定（WSW-8 新基线——随链尾演进批同步，WSW-8-BATCH-REPORT :166）" "417" "$(grep -cE '^\[\[package\]\]' Cargo.lock)"
 CROSS=$(git status --porcelain | grep -c "web/\|vendor/\|sender.rs\|scope.rs\|tool-engine/src\|mcp-server/src\|migrations/\|plugin-registry/\|plugin-runtime/")
 ck "跨轨零 diff（web/vendor/sender/scope/tool-engine src/mcp-server src/migrations/plugin-*）" "0" "$CROSS"
 
