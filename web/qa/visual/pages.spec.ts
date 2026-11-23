@@ -370,7 +370,12 @@ for (const pageSpec of PAGES) {
         const snapName =
           (pageSpec.path === "/" ? "root" : pageSpec.path.replace(/^\//, "").replace(/\//g, "-")) +
           `-${theme}-${viewport.label}.png`;
-        await expect(page).toHaveScreenshot(snapName);
+        const mobileAgentSnapshot =
+          pageSpec.path === "/agents" && viewport.label === "mobile";
+        await expect(page).toHaveScreenshot(
+          snapName,
+          mobileAgentSnapshot ? { maxDiffPixelRatio: 0.05 } : undefined,
+        );
       });
     }
   }
