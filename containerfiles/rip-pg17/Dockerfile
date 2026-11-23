@@ -20,8 +20,7 @@ FROM docker.io/paradedb/paradedb:pg17@sha256:7cb29053a77c33f93ac79f8f9f44dfb75df
 RUN apt-get update \
   && apt-get install -y --no-install-recommends --allow-downgrades \
        build-essential cmake ca-certificates \
-       libpq5=17.11-0+deb13u1 libpq-dev=17.11-0+deb13u1 \
-       postgresql-server-dev-17=17.11-0+deb13u1 \
+       libpq5 libpq-dev postgresql-server-dev-17 \
   && rm -rf /var/lib/apt/lists/*
 
 COPY third_party/pg_jieba /tmp/pg_jieba
