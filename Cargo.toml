@@ -36,6 +36,9 @@ rust-version = "1.99"
 authors = ["RIP core team"]
 
 [workspace.dependencies]
+# URL 解析安全修复线（RUSTSEC-2026-0592：nested blob origin stack overflow）。
+# pinned exact at the first patched release.
+url = "=2.5.9"
 # 依赖锁定最少集（DEC-001 / PROBE-RESULT.md 约定：rusqlite bundled 免系统 sqlite）。
 # backup feature（P10-1）：rusqlite 自带 backup 模块（Online Backup API 快照，
 # 纯 Rust 门控模块，bundled libsqlite3-sys 内置完整 SQLite，无新增 C 依赖与

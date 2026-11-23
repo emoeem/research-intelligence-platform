@@ -16,6 +16,8 @@ publish = false
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+# URL parser security-pinned dependency (RUSTSEC-2026-0592).
+url = { workspace = true }
 # MITM 代理栈（ADR-0004 D1 钉版面；POC 先例 crates/wsw-poc/Cargo.toml:14-18）：
 # default-features=false（去 native-tls 与 decoder/zstd），只取 rcgen-ca（动态
 # 证书 CA）+ rustls-client（上游 TLS）+ http2（ALPN 面）。

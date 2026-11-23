@@ -8,8 +8,8 @@ use serde_json::json;
 fn pool() -> Option<intel_db::PgPool> {
     let dsn = match std::env::var("RP_TEST_PG_DSN") {
         Ok(value) => value,
-        Err(_) if std::env::var_os("CI").is_some() => {
-            panic!("RP_TEST_PG_DSN is required in CI")
+        Err(_) if std::env::var_os("RP_REQUIRE_PG_TESTS").is_some() => {
+            panic!("RP_TEST_PG_DSN is required when RP_REQUIRE_PG_TESTS=1")
         }
         Err(_) => {
             eprintln!("SKIP: RP_TEST_PG_DSN not configured (local-only PG integration)");
@@ -22,21 +22,21 @@ fn pool() -> Option<intel_db::PgPool> {
     });
     let pool = match pool {
         Ok(pool) => pool,
-        Err(error) if std::env::var_os("CI").is_some() => {
-            panic!("PostgreSQL test pool unavailable in CI: {error}")
+        Err(error) if std::env::var_os("RP_REQUIRE_PG_TESTS").is_some() => {
+            panic!("PostgreSQL test pool unavailable with RP_REQUIRE_PG_TESTS=1: {error}")
         }
         Err(_) => return None,
     };
     let mut conn = match pool.get() {
         Ok(conn) => conn,
-        Err(error) if std::env::var_os("CI").is_some() => {
-            panic!("PostgreSQL test connection unavailable in CI: {error}")
+        Err(error) if std::env::var_os("RP_REQUIRE_PG_TESTS").is_some() => {
+            panic!("PostgreSQL test connection unavailable with RP_REQUIRE_PG_TESTS=1: {error}")
         }
         Err(_) => return None,
     };
     if let Err(error) = run_migrations(&mut conn) {
-        if std::env::var_os("CI").is_some() {
-            panic!("PostgreSQL migration failed in CI: {error}");
+        if std::env::var_os("RP_REQUIRE_PG_TESTS").is_some() {
+            panic!("PostgreSQL migration failed with RP_REQUIRE_PG_TESTS=1: {error}");
         }
         return None;
     }

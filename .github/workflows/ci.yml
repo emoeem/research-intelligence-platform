@@ -31,22 +31,9 @@ jobs:
     name: PostgreSQL migrations and Phase 7 integration
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:17.11
-        env:
-          POSTGRES_DB: rip_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d rip_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 12
     env:
       RP_TEST_PG_DSN: postgres://postgres:postgres@127.0.0.1:5432/rip_test
+      RP_REQUIRE_PG_TESTS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -65,6 +52,24 @@ jobs:
 
       - name: 安装 PostgreSQL Python 驱动
         run: python3 -m pip install "psycopg[binary]>=3,<4"
+
+      - name: Build RIP PostgreSQL 17 image
+        run: docker build -t rip-pg17-test -f containerfiles/rip-pg17/Dockerfile containerfiles/rip-pg17/
+
+      - name: Start RIP PostgreSQL 17
+        run: |
+          docker run -d --name rip-pg17-test \
+            -e POSTGRES_DB=rip_test \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -p 127.0.0.1:5432:5432 \
+            rip-pg17-test
+          for i in $(seq 1 60); do
+            if docker exec rip-pg17-test pg_isready -U postgres -d rip_test >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          docker logs rip-pg17-test
+          exit 1
 
       - name: Phase 7 PostgreSQL integration tests
         run: cargo test --offline -p intel-db --test phase7_maintenance -- --test-threads=1
@@ -183,6 +188,8 @@ jobs:
       - name: Install Chromium
         working-directory: web
         run: npx playwright install chromium
+      - name: Install CJK browser fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji
       - name: Run visual and accessibility tests
         working-directory: web
         run: npm run test:visual:gate
