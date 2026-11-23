@@ -104,6 +104,30 @@ base64 = "=0.22.1"
 # 承载 markdown→HTML 片段面。exact 钉 = rmcp/chromiumoxide vendor 跃迁批先例。
 comrak = { version = "=1.1.0", default-features = false }
 
+# PHASE-6B（D1/D3 选型：docs/phase0/PHASE-6B-TASK.md §0）——轻量 PDF 链 +
+# DOCX stored-ZIP 容器四钉 exact。typst/typst-pdf 停批（deny advisories 6
+# error 级：quick-xml vulnerability×2 semver 堵死 + bincode/rustybuzz/
+# ttf-parser/yaml-rust unmaintained×4，锁 299 包 vendor +144M；探针实录任务书
+# A5/A6），六 DOCX crate 停批（A12），krilla/printpdf 停批（A13）。四钉组合
+# deny 双检全绿零改动（licenses ok + advisories ok——A7/A15），vendor 净增
+# 8 包 ≈9.0M。
+# pdf-writer：PDF 对象图写出（MIT OR Apache-2.0）；依赖 bitflags/itoa/memchr/
+# ryu 全在基线同版本零增量。
+pdf-writer = { version = "=0.15.0" }
+# subsetter：字体子集化（MIT OR Apache-2.0；forbid unsafe）。default-features
+# =false 剥 variable-fonts（kurbo/skrifa/write-fonts 全 optional）——运行时
+# 唯一依赖 rustc-hash（基线在位）。
+subsetter = { version = "=0.2.6", default-features = false }
+# skrifa：Google Fonts fontations 字体解析（MIT OR Apache-2.0）——
+# RUSTSEC-2026-0192(ttf-parser) 的维护替代面。default-features=false 剥
+# autohint_shaping 后须显式补 std（任务书 S2 预登记复核点：裸剥不可编译
+# ——read-fonts 0.39.2 varc.rs 在 no_std 缺 libm 三错 E0599；std feature
+# 透传 read-fonts/std，零新依赖，净增 8 包清单不变——坏消息登记批次报告）。
+skrifa = { version = "=0.42.1", default-features = false, features = ["std"] }
+# crc32fast：DOCX stored-ZIP 容器 CRC32（MIT OR Apache-2.0；cfg-if 基线在位
+# 零增量）；XLSX/PPTX 第二批格式同底座（D3③）。
+crc32fast = { version = "=1.5.5" }
+
 # workspace 内部依赖（模块边界见 security-research-upgrade/architecture-2.0/MODULE_BOUNDARIES.md §8）
 domain = { path = "crates/domain" }
 database = { path = "crates/database" }

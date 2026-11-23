@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 publish = false
-description = "Report Engine：Report IR v1 单源 + Markdown/HTML/JSON(SARIF) 三渲染器（PHASE-6A D2/D4——IR 内存模型零落库，渲染纯函数零 I/O；四渲染函数禁 AI 重跑 :541；PDF/DOCX 全量/装配面/落库属 6b——docx-rs 因 zip 8.x RUSTSEC 链于本批停批撤除，DOCX 顺延 6b 重新侦察）。"
+description = "Report Engine：Report IR v1 单源 + Markdown/HTML/JSON(SARIF)/PDF/DOCX 渲染器 + 导出质检三面（PHASE-6A D2/D4 + 6B D1-D7——IR 内存模型，渲染纯函数零 I/O；渲染函数禁 AI 重跑 :541；V0008 reports 落库属 6B intel-db 面）。"
 
 [dependencies]
 # D2① 依赖面（裁决 B 单 crate 修订）：domain（ID 类型词形根，零依赖纯类型库）+
@@ -17,3 +17,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tool-registry = { workspace = true }
 comrak = { workspace = true }
+# 6B 四钉（PHASE-6B-TASK.md §2.1 落点；选型记录 = workspace Cargo.toml 同位行注
+# + 任务书 D1/D3）：render_pdf（skrifa 解析 + subsetter 子集 + pdf-writer CID
+# Type0 嵌入）+ ooxml.rs（stored-ZIP CRC32 容器）。
+pdf-writer = { workspace = true }
+subsetter = { workspace = true }
+skrifa = { workspace = true }
+crc32fast = { workspace = true }
+# D2①：fonts.rs 系统字体目录遍历——walkdir 基线在位（lock 2.5.0 传递依赖
+# 既有），复用零 lock/vendor 增量（红线 2 允许面：非新增 crate）。
+walkdir = { version = "2.5", default-features = false }

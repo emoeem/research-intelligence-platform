@@ -7,11 +7,20 @@
 //! （红线 1；装配面属 6b）。
 
 pub mod escape;
+pub mod fonts;
 pub mod ir;
+pub mod ooxml;
+pub mod qc;
 pub mod render;
 
+pub use fonts::{discover_system_fonts, FontSource};
 pub use ir::{from_json, validate_ir, ReportIr};
+pub use ooxml::{crc32, OoxmlZip};
+pub use render::docx::render_docx;
+pub use qc::{qc_docx, qc_pdf, qc_sarif, QcCheck, QcReport};
 pub use render::html::render_html;
 pub use render::json::render_json;
 pub use render::markdown::render_markdown;
+pub use render::pdf::render_pdf;
 pub use render::sarif::render_sarif;
+pub use render::svg::render_attack_path_svg;

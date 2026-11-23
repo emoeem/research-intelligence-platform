@@ -52,7 +52,11 @@ pub fn render_sarif(ir: &ReportIr) -> Value {
                 "defaultConfiguration": {"level": severity_to_level(&f.severity)},
             });
             if let Some(help_md) = f.technical_explanation.as_deref() {
-                rule["help"] = json!({"markdown": help_md});
+                // 6B 收口（6A §8⑦ 登记差距——官方 SARIF schema 校验批）：
+                // multiformatMessageString required ["text"]——补 text 键
+                // （markdown 原文同值，语义无损 additive 一行 diff；红线 3
+                // 冲突点登记批次报告坏消息）。
+                rule["help"] = json!({"text": help_md, "markdown": help_md});
             }
             rule
         })
