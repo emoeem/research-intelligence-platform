@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
+import ssl
 import socket
 import sqlite3
 import sys
@@ -22,21 +24,39 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import psycopg
-import requests
-
-
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def validate_public_url(url: str) -> None:
+class CaseInsensitiveHeaders(dict):
+    def get(self, key, default=None):
+        wanted = key.lower()
+        for existing, value in self.items():
+            if existing.lower() == wanted:
+                return value
+        return default
+
+
+class PinnedResponse:
+    def __init__(self, status_code: int, headers: dict[str, str], body: bytes):
+        self.status_code = status_code
+        self.headers = CaseInsensitiveHeaders(headers)
+        self._body = body
+
+    def close(self) -> None:
+        return None
+
+    def iter_content(self, chunk_size: int):
+        for offset in range(0, len(self._body), chunk_size):
+            yield self._body[offset:offset + chunk_size]
+
+
+def resolve_public_url(url: str) -> tuple[str, int, str]:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("only absolute HTTP(S) source URLs are supported")
     if parsed.username or parsed.password:
         raise ValueError("credentials embedded in source URL are forbidden")
-    if os.environ.get("RIP3_SOURCE_MONITOR_ALLOW_PRIVATE") == "1":
-        return
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)}
     if not addresses:
@@ -45,17 +65,69 @@ def validate_public_url(url: str) -> None:
         address = ipaddress.ip_address(raw)
         if not address.is_global:
             raise ValueError(f"non-public source address rejected: {address}")
+    return parsed.hostname, port, sorted(addresses)[0]
+
+
+def validate_public_url(url: str) -> None:
+    resolve_public_url(url)
+
+
+class PinnedHTTPSConnection(http.client.HTTPConnection):
+    def __init__(self, host: str, port: int, server_hostname: str, timeout: float):
+        super().__init__(host, port, timeout=timeout)
+        self.server_hostname = server_hostname
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+        context = ssl.create_default_context()
+        self.sock = context.wrap_socket(sock, server_hostname=self.server_hostname)
+
+
+def pinned_request(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    timeout: float,
+    resolved_ip: str,
+    hostname: str,
+    port: int,
+) -> PinnedResponse:
+    parsed = urlparse(url)
+    target = parsed.path or "/"
+    if parsed.query:
+        target += "?" + parsed.query
+    host_header = hostname
+    if (parsed.scheme == "http" and port != 80) or (parsed.scheme == "https" and port != 443):
+        host_header += f":{port}"
+    request_headers = {
+        "Host": host_header,
+        "User-Agent": "RIP3-Source-Monitor/1.0",
+        **{key: value for key, value in headers.items() if value is not None},
+    }
+
+    if parsed.scheme == "https":
+        conn = PinnedHTTPSConnection(resolved_ip, port, hostname, timeout)
+    else:
+        conn = http.client.HTTPConnection(resolved_ip, port, timeout=timeout)
+    try:
+        conn.request(method, target, headers=request_headers)
+        response = conn.getresponse()
+        raw_headers = {key: value for key, value in response.getheaders()}
+        body = b""
+        if method != "HEAD":
+            body = response.read(256 * 1024 + 1)
+            if len(body) > 256 * 1024:
+                raise ValueError("source response body exceeds 256 KiB")
+        return PinnedResponse(response.status, raw_headers, body)
+    finally:
+        conn.close()
 
 
 def checked_request(method: str, url: str, headers: dict[str, str], timeout: float):
     current = url
-    request_headers = {"User-Agent": "RIP3-Source-Monitor/1.0", **headers}
     for _ in range(6):
-        validate_public_url(current)
-        response = requests.request(
-            method, current, headers=request_headers, timeout=timeout,
-            allow_redirects=False, stream=True,
-        )
+        hostname, port, resolved_ip = resolve_public_url(current)
+        response = pinned_request(method, current, headers, timeout, resolved_ip, hostname, port)
         if response.status_code in (301, 302, 303, 307, 308):
             location = response.headers.get("Location")
             response.close()

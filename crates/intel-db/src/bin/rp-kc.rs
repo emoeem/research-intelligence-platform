@@ -353,7 +353,9 @@ fn main() {
             }
             "show" => {
                 let card = KnowledgeCardId::try_new(require_flag(&args, "card"))?;
-                let detail = card_repo::get_card(&pool, &card)?;
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let detail = card_repo::get_card(&pool, &workspace, &card)?;
                 serde_json::to_value(detail).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             "review" => {
@@ -488,16 +490,21 @@ fn main() {
             }
             "feedback-show" => {
                 let candidate = require_flag(&args, "candidate-id");
-                intel_db::maintenance::get_feedback_candidate(&pool, &candidate)?.ok_or_else(|| {
-                    IntelError::Invalid(format!("feedback candidate not found: {candidate}"))
-                })
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                intel_db::maintenance::get_feedback_candidate(&pool, &workspace, &candidate)?
+                    .ok_or_else(|| {
+                        IntelError::Invalid(format!("feedback candidate not found: {candidate}"))
+                    })
             }
             "feedback-reject" => {
                 let candidate = require_flag(&args, "candidate-id");
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let reviewer = require_flag(&args, "reviewer");
                 let reason = require_flag(&args, "reason");
                 intel_db::maintenance::reject_feedback_candidate(
-                    &pool, &candidate, &reviewer, &reason,
+                    &pool, &workspace, &candidate, &reviewer, &reason,
                 )?;
                 Ok(serde_json::json!({"candidate_id":candidate,"review_status":"REJECTED"}))
             }
@@ -510,10 +517,12 @@ fn main() {
             }
             "feedback-promote" => {
                 let candidate = require_flag(&args, "candidate-id");
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let reviewer = require_flag(&args, "reviewer");
                 let reason = require_flag(&args, "reason");
                 let card = intel_db::maintenance::promote_feedback_candidate(
-                    &pool, &candidate, &reviewer, &reason,
+                    &pool, &workspace, &candidate, &reviewer, &reason,
                 )?;
                 Ok(
                     serde_json::json!({"candidate_id":candidate,"knowledge_id":card.as_str(),"review_status":"CANDIDATE"}),

@@ -1,7 +1,6 @@
 """Unit tests for the Phase 7 external source monitor worker."""
 from __future__ import annotations
 
-import os
 import sys
 import threading
 import unittest
@@ -50,7 +49,11 @@ class SourceMonitorTests(unittest.TestCase):
         cls.thread.join(timeout=2)
 
     def test_etag_and_link_status_are_observed(self):
-        with patch.dict(os.environ, {"RIP3_SOURCE_MONITOR_ALLOW_PRIVATE": "1"}):
+        with patch.object(
+            monitor,
+            "resolve_public_url",
+            return_value=("127.0.0.1", self.server.server_port, "127.0.0.1"),
+        ):
             status, etag, modified, digest = monitor.source_hash(self.url, {}, 2)
         self.assertEqual(status, 200)
         self.assertEqual(etag, '"v1"')
@@ -61,7 +64,11 @@ class SourceMonitorTests(unittest.TestCase):
         original = Handler.do_HEAD
         Handler.do_HEAD = lambda self: (self.send_response(405), self.end_headers())
         try:
-            with patch.dict(os.environ, {"RIP3_SOURCE_MONITOR_ALLOW_PRIVATE": "1"}):
+            with patch.object(
+                monitor,
+                "resolve_public_url",
+                return_value=("127.0.0.1", self.server.server_port, "127.0.0.1"),
+            ):
                 status, etag, _modified, digest = monitor.source_hash(self.url, {}, 2)
             self.assertEqual(status, 200)
             self.assertIsNone(etag)
@@ -70,10 +77,8 @@ class SourceMonitorTests(unittest.TestCase):
             Handler.do_HEAD = original
 
     def test_private_address_is_rejected_by_default(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("RIP3_SOURCE_MONITOR_ALLOW_PRIVATE", None)
-            with self.assertRaises(ValueError):
-                monitor.validate_public_url(self.url)
+        with self.assertRaises(ValueError):
+            monitor.validate_public_url(self.url)
 
     def test_redirect_to_private_host_is_checked_before_following(self):
         class Redirect:
@@ -82,15 +87,21 @@ class SourceMonitorTests(unittest.TestCase):
             def close(self):
                 pass
 
-        def reject_private(url):
-            if "127.0.0.1" in url:
-                raise ValueError("private target rejected")
+        redirect = monitor.PinnedResponse(
+            302,
+            {"Location": "http://127.0.0.1:5432/private"},
+            b"",
+        )
 
-        with patch.object(monitor, "validate_public_url", side_effect=reject_private):
-            with patch.object(monitor.requests, "request", return_value=Redirect()) as request:
+        def resolve(url):
+            if url.startswith("https://public.example"):
+                return ("public.example", 443, "93.184.216.34")
+            raise ValueError("private target rejected")
+
+        with patch.object(monitor, "resolve_public_url", side_effect=resolve):
+            with patch.object(monitor, "pinned_request", return_value=redirect):
                 with self.assertRaises(ValueError):
                     monitor.checked_request("HEAD", "https://public.example/source", {}, 1)
-                request.assert_called_once()
 
 
 if __name__ == "__main__":

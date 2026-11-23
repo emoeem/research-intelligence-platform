@@ -449,9 +449,13 @@ export function AgentsPage() {
                     <span className="break-all">
                       {run.agent_id} @ v{run.agent_version}
                     </span>
-                    {run.trace_id ? <TraceIdLink id={run.trace_id} /> : null}
                   </p>
                 </button>
+                {run.trace_id ? (
+                  <div className="-mt-1 px-3 pb-2 text-[11px]">
+                    <TraceIdLink id={run.trace_id} />
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

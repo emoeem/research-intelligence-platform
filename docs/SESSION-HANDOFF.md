@@ -2,6 +2,15 @@
 
 更新：2026-11-23　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
 
+## Quality remediation status（2026-11-23 续批）
+
+M0-M5 quality remediation has implementation and local verification evidence in
+`docs/quality-audit/`. Final report status is DONE for executable local items.
+Key additions: PostgreSQL real integration/concurrency/fault/backup gates,
+Source Monitor pinned-IP SSRF implementation, workspace predicates, repository
+security scan, browser CI gate, SQLite smoke, `/api/metrics`, and synchronized
+mobile visual baselines. No commit or push was created in this remediation batch.
+
 ## RIP3 最新状态（2026-11-23）
 
 RIP3 Phase 7 与 Phase 8 已完成实现、阶段验收、Git 提交和推送。阶段实现提交为 `0229bf01f1cc133e997f5bd644221c88da95de18`；当前 `main` 与 `origin/main` 已同步，文档状态以本文件最新提交为准。GitHub Actions [Run #180](https://github.com/emoeem/research-intelligence-platform/actions/runs/45141019769) 已完成，4/4 Jobs success。

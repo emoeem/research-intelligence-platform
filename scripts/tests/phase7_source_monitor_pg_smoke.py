@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PostgreSQL integration smoke for Phase 7 ETag change and dead-link monitoring."""
 from __future__ import annotations
-import json, os, subprocess, threading, uuid
+import json, os, sys, threading, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import psycopg
@@ -30,15 +30,19 @@ thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 url = f"http://127.0.0.1:{server.server_port}/source"
 
+sys.path.insert(0, str(root / "scripts"))
+import rip3_source_monitor as monitor
+
 def run_worker():
-    env = os.environ.copy()
-    env["RP_PG_DSN"] = dsn
-    env["RIP3_SOURCE_MONITOR_ALLOW_PRIVATE"] = "1"
-    result = subprocess.run(
-        ["python3", str(root / "scripts/rip3_source_monitor.py"), "--workspace", workspace],
-        cwd=root, env=env, text=True, capture_output=True, check=True,
-    )
-    return json.loads(result.stdout)
+    def resolve_test_url(source_url):
+        parsed = monitor.urlparse(source_url)
+        port = parsed.port or (80 if parsed.scheme == "http" else 443)
+        return (parsed.hostname or "127.0.0.1", port, "127.0.0.1")
+    monitor.resolve_public_url = resolve_test_url
+    with psycopg.connect(dsn) as conn:
+        monitor.init_sources(conn, workspace)
+        counts = monitor.check_sources(conn, workspace, 2.0, 24, 100)
+    return {"sources": counts}
 
 try:
     with psycopg.connect(dsn) as conn:
@@ -53,8 +57,11 @@ try:
 
     first = run_worker()
     with psycopg.connect(dsn) as conn:
-        state = conn.execute("SELECT monitor_state,etag FROM source_monitor_state WHERE source_id=%s", (source_id,)).fetchone()
-        assert state == ("UNCHANGED", '"v1"'), state
+        state = conn.execute(
+            "SELECT monitor_state,etag,last_error,http_status FROM source_monitor_state WHERE source_id=%s",
+            (source_id,),
+        ).fetchone()
+        assert state[:2] == ("UNCHANGED", '"v1"'), state
 
     Handler.etag = '"v2"'
     with psycopg.connect(dsn) as conn:

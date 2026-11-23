@@ -270,10 +270,14 @@ pub fn ingest_report(
 /// This function never writes APPROVED; approval remains rp-kc review's guarded path.
 pub fn promote_feedback_candidate(
     pool: &PgPool,
+    workspace_id: &str,
     candidate_id: &str,
     reviewer: &str,
     reason: &str,
 ) -> IntelResult<KnowledgeCardId> {
+    if workspace_id.trim().is_empty() {
+        return Err(IntelError::Invalid("workspace_id must be non-empty".into()));
+    }
     if reviewer.trim().is_empty() || reason.trim().is_empty() {
         return Err(IntelError::Invalid(
             "reviewer and reason are required".into(),
@@ -283,8 +287,8 @@ pub fn promote_feedback_candidate(
     let mut tx = conn.transaction()?;
     let row = tx.query_opt(
         "SELECT workspace_id,candidate_snapshot,candidate_hash,review_status,duplicate_of,knowledge_id
-         FROM knowledge_feedback_candidates WHERE candidate_id=$1 FOR UPDATE",
-        &[&candidate_id],
+         FROM knowledge_feedback_candidates WHERE candidate_id=$1 AND workspace_id=$2 FOR UPDATE",
+        &[&candidate_id, &workspace_id],
     )?.ok_or_else(|| IntelError::Invalid(format!("feedback candidate not found: {candidate_id}")))?;
     let workspace: String = row.get(0);
     let snapshot: Value = row.get(1);
@@ -328,8 +332,8 @@ pub fn promote_feedback_candidate(
         donor_caller_id: None,
         donor_channel: None,
     };
-    let card = card_repo::create_card(pool, &input)?;
-    card_repo::decide(pool, &card, ReviewStatus::Candidate, reason, reviewer)?;
+    let card = card_repo::create_card_tx(&mut tx, &input)?;
+    card_repo::decide_tx(&mut tx, &card, ReviewStatus::Candidate, reason, reviewer)?;
     tx.execute(
         "UPDATE knowledge_feedback_candidates SET review_status='PROMOTED',knowledge_id=$2,
          reviewer=$3,decision_reason=$4,updated_at=now() WHERE candidate_id=$1",
@@ -397,14 +401,21 @@ pub fn list_feedback_candidates(
 }
 
 /// Retrieve a candidate and all immutable Evidence provenance references.
-pub fn get_feedback_candidate(pool: &PgPool, candidate_id: &str) -> IntelResult<Option<Value>> {
+pub fn get_feedback_candidate(
+    pool: &PgPool,
+    workspace_id: &str,
+    candidate_id: &str,
+) -> IntelResult<Option<Value>> {
+    if workspace_id.trim().is_empty() {
+        return Err(IntelError::Invalid("workspace_id must be non-empty".into()));
+    }
     let mut conn = pool.get()?;
     let row = conn.query_opt(
         "SELECT candidate_id,report_id,task_id,finding_id,workspace_id,candidate_hash,
                 candidate_snapshot,evidence_refs,review_status,knowledge_id,duplicate_of,
                 reviewer,decision_reason,created_at::text,updated_at::text
-         FROM knowledge_feedback_candidates WHERE candidate_id=$1",
-        &[&candidate_id],
+         FROM knowledge_feedback_candidates WHERE candidate_id=$1 AND workspace_id=$2",
+        &[&candidate_id, &workspace_id],
     )?;
     let Some(row) = row else { return Ok(None) };
     let provenance = conn.query(
@@ -450,10 +461,14 @@ pub fn get_feedback_candidate(pool: &PgPool, candidate_id: &str) -> IntelResult<
 /// Explicit rejection before promotion. Rejections are immutable review decisions.
 pub fn reject_feedback_candidate(
     pool: &PgPool,
+    workspace_id: &str,
     candidate_id: &str,
     reviewer: &str,
     reason: &str,
 ) -> IntelResult<()> {
+    if workspace_id.trim().is_empty() {
+        return Err(IntelError::Invalid("workspace_id must be non-empty".into()));
+    }
     if reviewer.trim().is_empty() || reason.trim().is_empty() {
         return Err(IntelError::Invalid(
             "reviewer and reason are required".into(),
@@ -462,8 +477,8 @@ pub fn reject_feedback_candidate(
     let mut conn = pool.get()?;
     let mut tx = conn.transaction()?;
     let row = tx.query_opt(
-        "SELECT review_status FROM knowledge_feedback_candidates WHERE candidate_id=$1 FOR UPDATE",
-        &[&candidate_id],
+        "SELECT review_status FROM knowledge_feedback_candidates WHERE candidate_id=$1 AND workspace_id=$2 FOR UPDATE",
+        &[&candidate_id, &workspace_id],
     )?.ok_or_else(|| IntelError::Invalid(format!("feedback candidate not found: {candidate_id}")))?;
     let status: String = row.get(0);
     if status == "PROMOTED" {

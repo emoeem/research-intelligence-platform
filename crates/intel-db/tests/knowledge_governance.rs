@@ -133,7 +133,7 @@ fn d5_contradicts_flags_and_demotes() {
     )
     .unwrap();
 
-    let detail = card_repo::get_card(&pool, &dst).unwrap();
+    let detail = card_repo::get_card(&pool, "ws-a", &dst).unwrap();
     assert!(
         detail
             .summary
@@ -203,7 +203,7 @@ fn review_gate_blocks_hard_flag_and_unscored() {
         "test-reviewer",
     )
     .unwrap();
-    let detail = card_repo::get_card(&pool, &plain).unwrap();
+    let detail = card_repo::get_card(&pool, "ws-a", &plain).unwrap();
     assert_eq!(detail.summary.review_status, "APPROVED");
     assert!(detail
         .review_log

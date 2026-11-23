@@ -6,14 +6,40 @@ use intel_db::{open_pool, run_migrations, PgConfig};
 use serde_json::json;
 
 fn pool() -> Option<intel_db::PgPool> {
-    let dsn = std::env::var("RP_TEST_PG_DSN").ok()?;
+    let dsn = match std::env::var("RP_TEST_PG_DSN") {
+        Ok(value) => value,
+        Err(_) if std::env::var_os("CI").is_some() => {
+            panic!("RP_TEST_PG_DSN is required in CI")
+        }
+        Err(_) => {
+            eprintln!("SKIP: RP_TEST_PG_DSN not configured (local-only PG integration)");
+            return None;
+        }
+    };
     let pool = open_pool(&PgConfig {
         dsn,
         max_connections: 8,
-    })
-    .ok()?;
-    let mut conn = pool.get().ok()?;
-    run_migrations(&mut conn).ok()?;
+    });
+    let pool = match pool {
+        Ok(pool) => pool,
+        Err(error) if std::env::var_os("CI").is_some() => {
+            panic!("PostgreSQL test pool unavailable in CI: {error}")
+        }
+        Err(_) => return None,
+    };
+    let mut conn = match pool.get() {
+        Ok(conn) => conn,
+        Err(error) if std::env::var_os("CI").is_some() => {
+            panic!("PostgreSQL test connection unavailable in CI: {error}")
+        }
+        Err(_) => return None,
+    };
+    if let Err(error) = run_migrations(&mut conn) {
+        if std::env::var_os("CI").is_some() {
+            panic!("PostgreSQL migration failed in CI: {error}");
+        }
+        return None;
+    }
     Some(pool)
 }
 
@@ -81,9 +107,10 @@ fn phase7_report_feedback_provenance_and_human_promotion() {
     )
     .unwrap();
     assert_eq!(listed["count"], 1);
-    let detailed = maintenance::get_feedback_candidate(&pool, &candidate_id)
-        .unwrap()
-        .unwrap();
+    let detailed =
+        maintenance::get_feedback_candidate(&pool, &format!("ws-p7-{tag}"), &candidate_id)
+            .unwrap()
+            .unwrap();
     assert_eq!(detailed["evidence_provenance"].as_array().unwrap().len(), 1);
     let provenance: i64 = conn
         .query_one(
@@ -97,6 +124,7 @@ fn phase7_report_feedback_provenance_and_human_promotion() {
 
     let card = maintenance::promote_feedback_candidate(
         &pool,
+        &format!("ws-p7-{tag}"),
         &candidate_id,
         "reviewer-p7",
         "Evidence reviewed; promote to candidate queue",
@@ -153,6 +181,7 @@ fn phase7_candidate_rejection_is_explicit_and_terminal() {
     drop(conn);
     maintenance::reject_feedback_candidate(
         &pool,
+        &format!("ws-p7-reject-{tag}"),
         &candidate,
         "reviewer-p7",
         "Evidence insufficient",
@@ -160,6 +189,7 @@ fn phase7_candidate_rejection_is_explicit_and_terminal() {
     .unwrap();
     let promotion = maintenance::promote_feedback_candidate(
         &pool,
+        &format!("ws-p7-reject-{tag}"),
         &candidate,
         "reviewer-p7",
         "must not promote",
@@ -240,4 +270,205 @@ fn phase7_task_workspace_is_immutable_and_fail_closed() {
         report_count, 1,
         "rejected cross-workspace report must not link"
     );
+}
+
+#[test]
+fn phase7_duplicate_promotion_is_idempotent() {
+    let Some(pool) = pool() else { return };
+    let tag = suffix();
+    let task = format!("task-p7-idempotent-{tag}");
+    let report = report_repo::store_report(&pool, &fixture(&task)).unwrap();
+    maintenance::ingest_report(&pool, &report.report_id, &format!("ws-p7-idempotent-{tag}"))
+        .unwrap();
+
+    let mut conn = pool.get().unwrap();
+    let candidate: String = conn
+        .query_one(
+            "SELECT candidate_id FROM knowledge_feedback_candidates WHERE report_id=$1",
+            &[&report.report_id],
+        )
+        .unwrap()
+        .get(0);
+    drop(conn);
+
+    let first = maintenance::promote_feedback_candidate(
+        &pool,
+        &format!("ws-p7-idempotent-{tag}"),
+        &candidate,
+        "reviewer-p7",
+        "first promotion",
+    )
+    .unwrap();
+    let replay = maintenance::promote_feedback_candidate(
+        &pool,
+        &format!("ws-p7-idempotent-{tag}"),
+        &candidate,
+        "reviewer-p7",
+        "repeat promotion",
+    )
+    .unwrap();
+    assert_eq!(
+        first.as_str(),
+        replay.as_str(),
+        "repeat promotion must return the existing card"
+    );
+
+    let mut conn = pool.get().unwrap();
+    let card_count: i64 = conn
+        .query_one(
+            "SELECT COUNT(*) FROM knowledge_cards WHERE knowledge_id=$1",
+            &[&first.as_str()],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(card_count, 1);
+    let review_count: i64 = conn
+        .query_one(
+            "SELECT COUNT(*) FROM knowledge_review_log WHERE knowledge_id=$1",
+            &[&first.as_str()],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(
+        review_count, 1,
+        "repeat promotion must not add a second review log"
+    );
+}
+
+#[test]
+fn phase7_concurrent_promotion_has_one_card_and_one_review_log() {
+    let Some(pool) = pool() else { return };
+    let tag = suffix();
+    let task = format!("task-p7-concurrent-{tag}");
+    let workspace = format!("ws-p7-concurrent-{tag}");
+    let report = report_repo::store_report(&pool, &fixture(&task)).unwrap();
+    maintenance::ingest_report(&pool, &report.report_id, &workspace).unwrap();
+
+    let mut conn = pool.get().unwrap();
+    let candidate: String = conn
+        .query_one(
+            "SELECT candidate_id FROM knowledge_feedback_candidates WHERE report_id=$1",
+            &[&report.report_id],
+        )
+        .unwrap()
+        .get(0);
+    drop(conn);
+
+    let pool_a = pool.clone();
+    let pool_b = pool.clone();
+    let candidate_a = candidate.clone();
+    let candidate_b = candidate.clone();
+    let workspace_a = workspace.clone();
+    let workspace_b = workspace.clone();
+    let a = std::thread::spawn(move || {
+        maintenance::promote_feedback_candidate(
+            &pool_a,
+            &workspace_a,
+            &candidate_a,
+            "reviewer-a",
+            "concurrent promotion a",
+        )
+    });
+    let b = std::thread::spawn(move || {
+        maintenance::promote_feedback_candidate(
+            &pool_b,
+            &workspace_b,
+            &candidate_b,
+            "reviewer-b",
+            "concurrent promotion b",
+        )
+    });
+    let first = a.join().unwrap();
+    let second = b.join().unwrap();
+    let card_ids = [first.as_ref().ok(), second.as_ref().ok()]
+        .into_iter()
+        .flatten()
+        .map(|id| id.as_str().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        card_ids.len(),
+        1,
+        "concurrent promotion must reuse one card"
+    );
+
+    let mut conn = pool.get().unwrap();
+    let card_count: i64 = conn
+        .query_one(
+            "SELECT COUNT(*) FROM knowledge_cards WHERE knowledge_id=ANY($1)",
+            &[&card_ids.iter().cloned().collect::<Vec<_>>()],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(card_count, 1);
+}
+
+#[test]
+fn phase7_candidate_state_update_failure_rolls_back_card_and_review() {
+    let Some(pool) = pool() else { return };
+    let tag = suffix();
+    let task = format!("task-p7-rollback-{tag}");
+    let workspace = format!("ws-p7-rollback-{tag}");
+    let report = report_repo::store_report(&pool, &fixture(&task)).unwrap();
+    maintenance::ingest_report(&pool, &report.report_id, &workspace).unwrap();
+
+    let mut conn = pool.get().unwrap();
+    let candidate: String = conn
+        .query_one(
+            "SELECT candidate_id FROM knowledge_feedback_candidates WHERE report_id=$1",
+            &[&report.report_id],
+        )
+        .unwrap()
+        .get(0);
+    conn.batch_execute(
+        "DROP TRIGGER IF EXISTS fail_candidate_promotion_trigger ON knowledge_feedback_candidates;
+         DROP FUNCTION IF EXISTS fail_candidate_promotion();
+         CREATE OR REPLACE FUNCTION fail_candidate_promotion() RETURNS trigger AS $$
+         BEGIN
+           IF NEW.review_status = 'PROMOTED' THEN
+             RAISE EXCEPTION 'injected candidate update failure';
+           END IF;
+           RETURN NEW;
+         END;
+         $$ LANGUAGE plpgsql;",
+    )
+    .unwrap();
+    conn.batch_execute(
+        "CREATE TRIGGER fail_candidate_promotion_trigger
+         BEFORE UPDATE ON knowledge_feedback_candidates
+         FOR EACH ROW EXECUTE FUNCTION fail_candidate_promotion();",
+    )
+    .unwrap();
+    drop(conn);
+
+    let result = maintenance::promote_feedback_candidate(
+        &pool,
+        &workspace,
+        &candidate,
+        "reviewer-p7",
+        "rollback injection",
+    );
+    assert!(result.is_err());
+
+    let mut conn = pool.get().unwrap();
+    let status: String = conn
+        .query_one(
+            "SELECT review_status FROM knowledge_feedback_candidates WHERE candidate_id=$1",
+            &[&candidate],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(status, "PENDING_REVIEW");
+    let card_count: i64 = conn
+        .query_one(
+            "SELECT COUNT(*) FROM knowledge_cards WHERE workspace_id=$1",
+            &[&workspace],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(card_count, 0);
+    conn.batch_execute(
+        "DROP TRIGGER IF EXISTS fail_candidate_promotion_trigger ON knowledge_feedback_candidates;
+         DROP FUNCTION IF EXISTS fail_candidate_promotion();",
+    )
+    .unwrap();
 }

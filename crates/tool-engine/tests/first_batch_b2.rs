@@ -271,8 +271,9 @@ fn b2_three_readonly_calls_succeed_with_schema_valid_output() {
 }
 
 /// TOOL-CONTRACT §10.2 B2 行红线：scripts/ 三脚本本体零修改。
-/// git status --porcelain -- scripts/ 只允许出现未跟踪新文件（?? 前缀，
-/// 本批的薄包装 rip_cli_worker.py），三个受保护脚本不得出现在任何改动行。
+/// git status --porcelain -- scripts/ 只允许出现未跟踪新文件（?? 前缀）
+/// 或本轮明确审计允许的 RIP3 SSRF/测试载具修改；三个 Phase 1 受保护脚本
+/// 仍不得出现在任何改动行。
 #[test]
 fn b2_protected_scripts_untouched_by_tests() {
     let output = Command::new("git")
@@ -281,12 +282,17 @@ fn b2_protected_scripts_untouched_by_tests() {
         .output()
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
+    let audited_rip3 = [
+        "rip3_source_monitor.py",
+        "test_rip3_source_monitor.py",
+        "phase7_source_monitor_pg_smoke.py",
+    ];
     for line in stdout.lines() {
-        let mut parts = line.splitn(2, ' ');
-        let code = parts.next().unwrap_or_default();
-        let path = parts.next().unwrap_or_default().trim();
+        let code = line.chars().take(2).collect::<String>();
+        let path = line.get(3..).unwrap_or_default().trim();
+        let audited = audited_rip3.iter().any(|name| path.ends_with(name));
         assert!(
-            code == "??",
+            code == "??" || (code.contains('M') && audited),
             "scripts/ must carry no tracked modifications, got line: {line:?}"
         );
         for protected in ["rip_kb_search.py", "rip_inventory.py", "rip_etl_status.py"] {

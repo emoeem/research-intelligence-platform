@@ -100,6 +100,19 @@ pub struct CardInput {
 /// 创建卡片（幂等键不在本面：D2 相同哈希产 SAME_CONTENT 候选边，不拒绝创建，
 /// R2 5.2「语义相似不得直接触发自动合并」对 D2 同理——合并走审核）。
 pub fn create_card(pool: &PgPool, input: &CardInput) -> IntelResult<KnowledgeCardId> {
+    let mut conn = pool.get()?;
+    let mut tx = conn.transaction()?;
+    let id = create_card_tx(&mut tx, input)?;
+    tx.commit()?;
+    Ok(id)
+}
+
+/// Transaction-bound card creation. Promotion callers use this to keep candidate,
+/// card, review log, and candidate state updates in one PostgreSQL transaction.
+pub(crate) fn create_card_tx(
+    tx: &mut postgres::Transaction<'_>,
+    input: &CardInput,
+) -> IntelResult<KnowledgeCardId> {
     if input.title.trim().is_empty() {
         return Err(IntelError::Invalid("title must be non-empty".to_string()));
     }
@@ -124,8 +137,7 @@ pub fn create_card(pool: &PgPool, input: &CardInput) -> IntelResult<KnowledgeCar
             "donor_caller_id requires donor_channel (mcp/cli)".to_string(),
         ));
     }
-    let mut conn = pool.get()?;
-    conn.execute(
+    tx.execute(
         "INSERT INTO knowledge_cards (knowledge_id, knowledge_type, title, summary, content,
              structured_content, confidence, verification_status, review_status, evidence_level,
              source_trust, ai_derived, normalized_hash, quality_flags, workspace_id,
@@ -339,15 +351,22 @@ pub struct CardDetail {
 }
 
 /// 取卡片详情。
-pub fn get_card(pool: &PgPool, card: &KnowledgeCardId) -> IntelResult<CardDetail> {
+pub fn get_card(
+    pool: &PgPool,
+    workspace_id: &str,
+    card: &KnowledgeCardId,
+) -> IntelResult<CardDetail> {
+    if workspace_id.trim().is_empty() {
+        return Err(IntelError::Invalid("workspace_id must be non-empty".into()));
+    }
     let mut conn = pool.get()?;
     let row = conn
         .query_opt(
             "SELECT knowledge_id, knowledge_type, title, summary, content, structured_content,
                     confidence, verification_status, review_status, quality_score, quality_flags,
                     evidence_level, source_trust, ai_derived, normalized_hash, created_at
-             FROM knowledge_cards WHERE knowledge_id = $1",
-            &[&card.as_str()],
+             FROM knowledge_cards WHERE knowledge_id = $1 AND workspace_id = $2",
+            &[&card.as_str(), &workspace_id],
         )?
         .ok_or_else(|| IntelError::Invalid(format!("card {} not found", card.as_str())))?;
     let docs = conn.query(
@@ -426,6 +445,18 @@ pub fn decide(
 ) -> IntelResult<()> {
     let mut conn = pool.get()?;
     let mut tx = conn.transaction()?;
+    decide_tx(&mut tx, card, to, reason, reviewer)?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub(crate) fn decide_tx(
+    tx: &mut postgres::Transaction<'_>,
+    card: &KnowledgeCardId,
+    to: ReviewStatus,
+    reason: &str,
+    reviewer: &str,
+) -> IntelResult<()> {
     let row = tx.query_one(
         "SELECT review_status, quality_score, quality_flags FROM knowledge_cards WHERE knowledge_id = $1 FOR UPDATE",
         &[&card.as_str()],
@@ -493,7 +524,6 @@ pub fn decide(
             &reviewer,
         ],
     )?;
-    tx.commit()?;
     Ok(())
 }
 

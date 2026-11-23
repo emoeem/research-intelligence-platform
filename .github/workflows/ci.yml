@@ -16,6 +16,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * 0"
 
 permissions:
   contents: read
@@ -25,6 +27,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  postgres:
+    name: PostgreSQL migrations and Phase 7 integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_DB: rip_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rip_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      RP_TEST_PG_DSN: postgres://postgres:postgres@127.0.0.1:5432/rip_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@1.99.1
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-postgres-${{ hashFiles('Cargo.lock') }}
+
+      - name: 安装 PostgreSQL Python 驱动
+        run: python3 -m pip install "psycopg[binary]>=3,<4"
+
+      - name: Phase 7 PostgreSQL integration tests
+        run: cargo test --offline -p intel-db --test phase7_maintenance -- --test-threads=1
+
+      - name: PostgreSQL source monitor smoke
+        run: python3 scripts/tests/phase7_source_monitor_pg_smoke.py
+
+      - name: PostgreSQL backup and recovery gate
+        run: python3 scripts/rip_pg_recovery_gate.py --dsn "$RP_TEST_PG_DSN"
+
+      - name: PostgreSQL migration and Phase 7 test count
+        run: cargo test --offline -p intel-db --test phase7_maintenance -- --test-threads=1
+
   rust:
     name: Rust workspace（测试与 clippy 零警告）
     runs-on: ubuntu-latest
@@ -99,6 +152,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: 安装 Source Monitor Python 驱动
+        run: python3 -m pip install "psycopg[binary]>=3,<4"
+
       # RT-2 lock 完整性静态校验（纯 stdlib，零安装面保持——A11 分工纪律）：
       # 校验 requirements.lock.txt 每包 ≥1 sha256 哈希、直接依赖与 .in 钉定一致、无 .. 穿越。
       # CI 不装依赖、不跑 uv、不碰 venv（RT-2-ADR-VENV-GOVERNANCE.md D8.2）。
@@ -109,6 +165,51 @@ jobs:
       - name: 运行 worker 测试
         working-directory: workers/python
         run: python -m unittest discover -s tests -v
+
+  browser:
+    name: Browser visual and accessibility gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install chromium
+      - name: Run visual and accessibility tests
+        working-directory: web
+        run: npm run test:visual:gate
+
+  security:
+    name: Repository and dependency security gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Repository secret and artifact scan
+        run: python3 scripts/rip_quality_repo_scan.py
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.1
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Cargo dependency advisory scan
+        run: cargo audit
+
+  performance-smoke:
+    name: SQLite performance smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run bounded benchmark
+        run: python3 scripts/rip3_phase8_sqlite_compare.py --docs 1000 --chunks-per-doc 10 --workers 4 --queries 20 --output-dir /tmp/rip-quality-bench
 
   web:
     name: Web 工作台（构建与 vitest）

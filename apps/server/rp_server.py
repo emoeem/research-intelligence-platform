@@ -167,6 +167,39 @@ PLUGIN_BIN_ARGS = (_raw_bin_args if _raw_bin_args is not None
                    else "run --offline -q -p plugin-runtime --bin rp-plugin --").split()
 AUTH_FAIL_DELAY = 0.3
 
+API_METRICS_LOCK = threading.Lock()
+API_METRICS = {
+    "requests": 0,
+    "errors": 0,
+    "latency_ms_total": 0,
+    "status": {},
+}
+
+
+def record_api_metric(status: int, duration_ms: int) -> None:
+    with API_METRICS_LOCK:
+        API_METRICS["requests"] += 1
+        API_METRICS["latency_ms_total"] += max(duration_ms, 0)
+        if status >= 400:
+            API_METRICS["errors"] += 1
+        bucket = API_METRICS["status"]
+        key = str(status)
+        bucket[key] = bucket.get(key, 0) + 1
+
+
+def handle_api_metrics(_conn, _params) -> dict:
+    with API_METRICS_LOCK:
+        requests = API_METRICS["requests"]
+        latency_total = API_METRICS["latency_ms_total"]
+        status = dict(API_METRICS["status"])
+        errors = API_METRICS["errors"]
+    return {
+        "requests": requests,
+        "errors": errors,
+        "average_latency_ms": round(latency_total / requests, 3) if requests else 0.0,
+        "status": status,
+    }
+
 
 def _load_auth_token() -> str | None:
     """令牌来源优先级：RP_AUTH_TOKEN > RP_AUTH_TOKEN_FILE > 默认令牌文件。"""
@@ -5698,6 +5731,7 @@ API_ROUTES = {
     "/api/plugins/trust-policy": handle_plugin_trust_policy,
     "/api/knowledge_sources": handle_knowledge_sources,
     "/api/stats": lambda conn, params: handle_stats(conn),
+    "/api/metrics": handle_api_metrics,
     "/api/resources": handle_resources,
     "/api/reviews": handle_reviews,
     "/api/tasks": handle_tasks,
@@ -5830,7 +5864,12 @@ class RpHandler(BaseHTTPRequestHandler):
         caller_id（多 key 命中）/"-"（匿名未过鉴权，含鉴权关闭模式）；
         external_api_audit 表（019）零 ALTER，JSONL 行形状超集（装载侧
         兼容：019 对应前缀列序不变，caller 为追加列）。"""
-        if not API_AUDIT_LOG or not parsed_path.startswith("/api/"):
+        if not parsed_path.startswith("/api/"):
+            return
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        status = int(getattr(self, "_audit_status", 0) or 0)
+        record_api_metric(status or 200, duration_ms)
+        if not API_AUDIT_LOG:
             return
         audit_api_access({
             "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -5839,7 +5878,7 @@ class RpHandler(BaseHTTPRequestHandler):
             "path": parsed_path,
             "remote": self.address_string(),
             "status": int(getattr(self, "_audit_status", 0) or 0),
-            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "duration_ms": duration_ms,
             "trace_id": getattr(self, "_audit_trace_id", None),
             "correlation_id": getattr(self, "_audit_correlation_id", None),
             "rate_limited": 1 if getattr(self, "_audit_rate_limited", False) else 0,
