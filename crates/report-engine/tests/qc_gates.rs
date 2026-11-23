@@ -9,8 +9,8 @@
 //! 同过。
 
 use report_engine::{
-    qc_docx, qc_pdf, qc_sarif, render_attack_path_svg, render_docx, render_pdf,
-    render_sarif, discover_system_fonts, ReportIr,
+    discover_system_fonts, qc_docx, qc_pdf, qc_sarif, render_attack_path_svg, render_docx,
+    render_pdf, render_sarif, ReportIr,
 };
 
 const MAIN_REPORT_JSON: &str = include_str!("fixtures/main-report.json");
@@ -41,7 +41,12 @@ fn fonts_or_skip() -> Option<Vec<report_engine::FontSource>> {
 /// 打印质检报告（诊断回显——批次报告数字来源）。
 fn dump(report: &report_engine::QcReport) {
     for check in &report.checks {
-        println!("  [{}] {} {}", if check.passed { "pass" } else { "FAIL" }, check.name, check.message);
+        println!(
+            "  [{}] {} {}",
+            if check.passed { "pass" } else { "FAIL" },
+            check.name,
+            check.message
+        );
     }
 }
 
@@ -97,9 +102,17 @@ fn qc_three_faces_mixed_fixture_all_pass() {
     let ir = parse_mixed();
     let sarif = render_sarif(&ir);
     let pdf_report = qc_sarif(&ir, &sarif);
-    assert!(pdf_report.all_passed(), "qc_sarif mixed: {:?}", pdf_report.failed_checks());
+    assert!(
+        pdf_report.all_passed(),
+        "qc_sarif mixed: {:?}",
+        pdf_report.failed_checks()
+    );
     let docx_report = qc_docx(&ir, &render_docx(&ir));
-    assert!(docx_report.all_passed(), "qc_docx mixed: {:?}", docx_report.failed_checks());
+    assert!(
+        docx_report.all_passed(),
+        "qc_docx mixed: {:?}",
+        docx_report.failed_checks()
+    );
 }
 
 /// 判据 9 资产：官方 schema 文件在位且与内嵌单点一致（sha256 落批次报告）。
@@ -124,7 +137,10 @@ fn render_attack_path_svg_fixture_reconciliation() {
     let ir = parse_main();
     let svg = render_attack_path_svg(&ir);
     assert!(svg.starts_with("<svg"), "svg root element first");
-    assert!(svg.trim_end().ends_with("</svg>"), "svg root element closed");
+    assert!(
+        svg.trim_end().ends_with("</svg>"),
+        "svg root element closed"
+    );
     // 步骤数 = 节点数（data-step-index 计数）。
     let expected_steps: usize = ir.attack_paths.iter().map(|p| p.steps.len()).sum();
     let nodes = svg.matches("data-step-index=").count();
@@ -137,7 +153,11 @@ fn render_attack_path_svg_fixture_reconciliation() {
                 "evidence_ref {evidence_ref} traceable in svg"
             );
         }
-        assert!(svg.contains(&path.path_id), "path_id {} in svg", path.path_id);
+        assert!(
+            svg.contains(&path.path_id),
+            "path_id {} in svg",
+            path.path_id
+        );
     }
     // 中文原样（XML UTF-8 直存）。
     assert!(svg.contains(&ir.title), "title zh in svg");

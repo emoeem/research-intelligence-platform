@@ -26,8 +26,7 @@ use tool_registry::jsonschema_lite;
 /// SARIF 2.1.0 官方 schema 文本（编译期内嵌；资产单点
 /// schemas/sarif/sarif-schema-2.1.0.json——oasis-tcs/sarif-spec main 分支
 /// 112768 字节 draft-04；sha256 落批次报告）。
-pub const SARIF_SCHEMA: &str =
-    include_str!("../../../schemas/sarif/sarif-schema-2.1.0.json");
+pub const SARIF_SCHEMA: &str = include_str!("../../../schemas/sarif/sarif-schema-2.1.0.json");
 
 /// 单项检查（D6②：name/passed/message——「保留错误信息」原文词形）。
 #[derive(Debug, Serialize)]
@@ -54,18 +53,30 @@ impl QcReport {
 
     /// fail 项名列表（诊断面）。
     pub fn failed_checks(&self) -> Vec<&'static str> {
-        self.checks.iter().filter(|c| !c.passed).map(|c| c.name).collect()
+        self.checks
+            .iter()
+            .filter(|c| !c.passed)
+            .map(|c| c.name)
+            .collect()
     }
 }
 
 /// 构造 pass 项。
 fn ok(name: &'static str) -> QcCheck {
-    QcCheck { name, passed: true, message: String::new() }
+    QcCheck {
+        name,
+        passed: true,
+        message: String::new(),
+    }
 }
 
 /// 构造 fail 项（message 非空——:545 保留错误信息词形）。
 fn fail(name: &'static str, message: impl Into<String>) -> QcCheck {
-    QcCheck { name, passed: false, message: message.into() }
+    QcCheck {
+        name,
+        passed: false,
+        message: message.into(),
+    }
 }
 
 /// IR 是否携带中文内容（U+4E00-9FFF 锚点——qc_pdf CJK 需求面探测；纯函数
@@ -79,7 +90,9 @@ fn ir_needs_cjk(ir: &ReportIr) -> bool {
     if let Some(summary) = &ir.executive_summary {
         probe.push_str(summary);
     }
-    probe.chars().any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c))
+    probe
+        .chars()
+        .any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c))
 }
 
 /// 字节面子串存在。
@@ -109,7 +122,13 @@ pub fn qc_pdf(ir: &ReportIr, bytes: &[u8]) -> QcReport {
     // 章节完整：五段标题（执行摘要/Finding 清单/Finding 详情/攻击路径/附录）
     // 每个非 ASCII 字符的 ToUnicode UTF-16BE hex 词形在字节面（render_pdf
     // 恒渲染五段标题——缺段即缺映射）。
-    let section_titles = ["执行摘要", "Finding 清单", "Finding 详情", "攻击路径", "附录"];
+    let section_titles = [
+        "执行摘要",
+        "Finding 清单",
+        "Finding 详情",
+        "攻击路径",
+        "附录",
+    ];
     let missing_sections: Vec<&str> = section_titles
         .iter()
         .filter(|title| {
@@ -252,7 +271,10 @@ pub fn qc_pdf(ir: &ReportIr, bytes: &[u8]) -> QcReport {
         )
     });
 
-    QcReport { format: "pdf", checks }
+    QcReport {
+        format: "pdf",
+        checks,
+    }
 }
 
 /// DOCX 质检（bytes = render_docx 产物）。
@@ -273,7 +295,10 @@ pub fn qc_docx(ir: &ReportIr, bytes: &[u8]) -> QcReport {
         Err(e) => fail("docx_container_crc", format!("zip reconciliation: {e}")),
     });
     // 零件在位（[Content_Types].xml / _rels/.rels / word/document.xml）。
-    let part_names = entries.as_ref().map(|e| e.iter().map(|(n, _, _)| n.clone()).collect::<Vec<_>>()).unwrap_or_default();
+    let part_names = entries
+        .as_ref()
+        .map(|e| e.iter().map(|(n, _, _)| n.clone()).collect::<Vec<_>>())
+        .unwrap_or_default();
     let required_parts = ["[Content_Types].xml", "_rels/.rels", "word/document.xml"];
     let missing_parts: Vec<&str> = required_parts
         .iter()
@@ -291,7 +316,13 @@ pub fn qc_docx(ir: &ReportIr, bytes: &[u8]) -> QcReport {
         .ok()
         .and_then(|_| extract_part(bytes, "word/document.xml"))
         .unwrap_or_default();
-    let section_titles = ["执行摘要", "Finding 清单", "Finding 详情", "攻击路径", "附录"];
+    let section_titles = [
+        "执行摘要",
+        "Finding 清单",
+        "Finding 详情",
+        "攻击路径",
+        "附录",
+    ];
     let missing_sections: Vec<&str> = section_titles
         .iter()
         .filter(|t| !doc.windows(t.len()).any(|w| w == t.as_bytes()))
@@ -300,7 +331,10 @@ pub fn qc_docx(ir: &ReportIr, bytes: &[u8]) -> QcReport {
     checks.push(if missing_sections.is_empty() {
         ok("docx_sections_present")
     } else {
-        fail("docx_sections_present", format!("sections missing: {missing_sections:?}"))
+        fail(
+            "docx_sections_present",
+            format!("sections missing: {missing_sections:?}"),
+        )
     });
     // 目录正确（Heading 层级结构）：pStyle Heading 出现次数 ≥ 段标题总数
     // （五段 H2 + 每 finding H3——计数对账）。
@@ -323,14 +357,18 @@ pub fn qc_docx(ir: &ReportIr, bytes: &[u8]) -> QcReport {
     let open_tables = count_occurrences(bytes, b"<w:tbl>");
     let close_tables = count_occurrences(bytes, b"</w:tbl>");
     let expected_tables = if ir.findings.is_empty() { 0 } else { 1 };
-    checks.push(if open_tables == expected_tables && close_tables == expected_tables {
-        ok("docx_table_closed")
-    } else {
-        fail(
-            "docx_table_closed",
-            format!("<w:tbl> {open_tables} / </w:tbl> {close_tables} != expected {expected_tables}"),
-        )
-    });
+    checks.push(
+        if open_tables == expected_tables && close_tables == expected_tables {
+            ok("docx_table_closed")
+        } else {
+            fail(
+                "docx_table_closed",
+                format!(
+                    "<w:tbl> {open_tables} / </w:tbl> {close_tables} != expected {expected_tables}"
+                ),
+            )
+        },
+    );
 
     // 事实可追溯面。
     let missing_words: Vec<String> = ir
@@ -355,7 +393,10 @@ pub fn qc_docx(ir: &ReportIr, bytes: &[u8]) -> QcReport {
         )
     });
 
-    QcReport { format: "docx", checks }
+    QcReport {
+        format: "docx",
+        checks,
+    }
 }
 
 /// SARIF 质检（sarif = render_sarif 产物；D6③ 官方 schema 校验收口）。
@@ -363,15 +404,21 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
     let mut checks = Vec::new();
 
     // 结构完整性面。
-    checks.push(if sarif.get("version").and_then(Value::as_str) == Some("2.1.0") {
-        ok("sarif_version")
-    } else {
-        fail(
-            "sarif_version",
-            format!("version = {:?} != \"2.1.0\"", sarif.get("version")),
-        )
-    });
-    let runs = sarif.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
+    checks.push(
+        if sarif.get("version").and_then(Value::as_str) == Some("2.1.0") {
+            ok("sarif_version")
+        } else {
+            fail(
+                "sarif_version",
+                format!("version = {:?} != \"2.1.0\"", sarif.get("version")),
+            )
+        },
+    );
+    let runs = sarif
+        .get("runs")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     checks.push(if runs.len() == 1 {
         ok("sarif_runs")
     } else {
@@ -387,7 +434,10 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
     checks.push(if driver_name == "research-platform-report-engine" {
         ok("sarif_tool_driver")
     } else {
-        fail("sarif_tool_driver", format!("tool.driver.name = {driver_name:?}"))
+        fail(
+            "sarif_tool_driver",
+            format!("tool.driver.name = {driver_name:?}"),
+        )
     });
 
     // 事实可追溯面（Finding 与 Evidence 对应——六 ID/rtis_ref/level/kind 逐
@@ -403,7 +453,11 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
     } else {
         fail(
             "sarif_results_count",
-            format!("results {} != findings {}", results.len(), ir.findings.len()),
+            format!(
+                "results {} != findings {}",
+                results.len(),
+                ir.findings.len()
+            ),
         )
     });
     // level/kind 六 ID/rtis_ref 逐 result 对账（ruleId = finding_id 键）。
@@ -437,7 +491,12 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
         let actual_rtis: Vec<String> = result
             .pointer("/properties/rip/rtis_refs")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
             .unwrap_or_default();
         if actual_rtis.len() != expected_rtis.len()
             || actual_rtis.iter().zip(&expected_rtis).any(|(a, b)| a != *b)
@@ -451,7 +510,10 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
     checks.push(if mapping_failures.is_empty() {
         ok("sarif_finding_mapping")
     } else {
-        fail("sarif_finding_mapping", format!("mapping failures: {mapping_failures:?}"))
+        fail(
+            "sarif_finding_mapping",
+            format!("mapping failures: {mapping_failures:?}"),
+        )
     });
     // 引用可追溯（六 ID 集合）：properties.rip.six_ids.evidence_ids 与 IR
     // evidence 集合对账。
@@ -464,10 +526,18 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
         let actual: Vec<String> = result
             .pointer("/properties/rip/six_ids/evidence_ids")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
             .unwrap_or_default();
-        let mut expected: Vec<&str> =
-            finding.evidence.iter().map(|e| e.evidence_id.as_str()).collect();
+        let mut expected: Vec<&str> = finding
+            .evidence
+            .iter()
+            .map(|e| e.evidence_id.as_str())
+            .collect();
         expected.sort_unstable();
         let mut actual_sorted = actual.clone();
         actual_sorted.sort_unstable();
@@ -481,7 +551,10 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
     checks.push(if six_id_failures.is_empty() {
         ok("sarif_six_ids")
     } else {
-        fail("sarif_six_ids", format!("six_ids failures: {six_id_failures:?}"))
+        fail(
+            "sarif_six_ids",
+            format!("six_ids failures: {six_id_failures:?}"),
+        )
     });
 
     // 资产正确性面（artifacts 与 evidence uri 对账——产物内容完整性）。
@@ -506,17 +579,26 @@ pub fn qc_sarif(ir: &ReportIr, sarif: &Value) -> QcReport {
     checks.push(if uri_failures.is_empty() {
         ok("sarif_artifacts")
     } else {
-        fail("sarif_artifacts", format!("artifact failures: {uri_failures:?}"))
+        fail(
+            "sarif_artifacts",
+            format!("artifact failures: {uri_failures:?}"),
+        )
     });
 
     // 官方 SARIF 2.1.0 schema 校验（D6③——jsonschema_lite 零新校验依赖；
     // draft-04 兼容面失败 → 停批上报负例面预登记词形——实测在 S5 收口）。
     checks.push(match parse_schema_and_validate(sarif) {
         Ok(()) => ok("sarif_official_schema"),
-        Err(e) => fail("sarif_official_schema", format!("official SARIF schema: {e}")),
+        Err(e) => fail(
+            "sarif_official_schema",
+            format!("official SARIF schema: {e}"),
+        ),
     });
 
-    QcReport { format: "sarif", checks }
+    QcReport {
+        format: "sarif",
+        checks,
+    }
 }
 
 /// 解析内嵌官方 schema 并校验实例（编译期单点 + 失败信息透传）。
@@ -629,7 +711,9 @@ fn extract_part(bytes: &[u8], part_name: &str) -> Option<Vec<u8>> {
                 bytes.get(local_offset + 29).copied()?,
             ]) as usize;
             let data_start = local_offset + 30 + local_name_len + local_extra_len;
-            return bytes.get(data_start..data_start + uncompressed).map(Vec::from);
+            return bytes
+                .get(data_start..data_start + uncompressed)
+                .map(Vec::from);
         }
         pos += 46 + name_len + extra_len + comment_len;
     }

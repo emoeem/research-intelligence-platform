@@ -8,8 +8,8 @@
 //!    enum 拒收 + 结构项 fail——负例面实测落档）。
 
 use report_engine::{
-    discover_system_fonts, qc_docx, qc_pdf, qc_sarif, render_docx, render_pdf,
-    render_sarif, ReportIr,
+    discover_system_fonts, qc_docx, qc_pdf, qc_sarif, render_docx, render_pdf, render_sarif,
+    ReportIr,
 };
 
 const MAIN_REPORT_JSON: &str = include_str!("fixtures/main-report.json");
@@ -51,7 +51,11 @@ fn qc_pdf_truncated_bytes_fail() {
     );
     for check in &report.checks {
         if !check.passed {
-            assert!(!check.message.is_empty(), "fail check {} must carry message", check.name);
+            assert!(
+                !check.message.is_empty(),
+                "fail check {} must carry message",
+                check.name
+            );
         }
     }
 }
@@ -80,7 +84,10 @@ fn qc_docx_crc_tamper_fail() {
         .iter()
         .find(|c| c.name == "docx_container_crc")
         .expect("crc check present");
-    assert!(!crc_check.message.is_empty(), "message non-empty (:545 保留错误信息词形)");
+    assert!(
+        !crc_check.message.is_empty(),
+        "message non-empty (:545 保留错误信息词形)"
+    );
 }
 
 /// 负例 3：SARIF 注入词表外 level（official schema enum 拒收）→ qc_sarif
@@ -144,5 +151,8 @@ fn qc_pdf_degraded_no_cjk_font_fail() {
         report.failed_checks()
     );
     // 结构完整性面不因降级丢失（%PDF- 头仍在——渲染器不 panic 红线 1）。
-    assert!(bytes.starts_with(b"%PDF-"), "degraded render still yields PDF structure");
+    assert!(
+        bytes.starts_with(b"%PDF-"),
+        "degraded render still yields PDF structure"
+    );
 }

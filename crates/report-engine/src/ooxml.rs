@@ -190,12 +190,9 @@ pub fn qc_zip_entries(bytes: &[u8]) -> Result<Vec<(String, u32, usize)>, String>
         if compressed != uncompressed {
             return Err("non-stored entry (compressed) in stored-only container".to_string());
         }
-        let name_len =
-            u16::from_le_bytes([bytes[pos + 28], bytes[pos + 29]]) as usize;
-        let extra_len =
-            u16::from_le_bytes([bytes[pos + 30], bytes[pos + 31]]) as usize;
-        let comment_len =
-            u16::from_le_bytes([bytes[pos + 32], bytes[pos + 33]]) as usize;
+        let name_len = u16::from_le_bytes([bytes[pos + 28], bytes[pos + 29]]) as usize;
+        let extra_len = u16::from_le_bytes([bytes[pos + 30], bytes[pos + 31]]) as usize;
+        let comment_len = u16::from_le_bytes([bytes[pos + 32], bytes[pos + 33]]) as usize;
         let local_offset = u32::from_le_bytes([
             bytes[pos + 42],
             bytes[pos + 43],
@@ -213,26 +210,18 @@ pub fn qc_zip_entries(bytes: &[u8]) -> Result<Vec<(String, u32, usize)>, String>
         if l + 30 > bytes.len() {
             return Err(format!("local header of {name:?} out of bounds"));
         }
-        let l_sig =
-            u32::from_le_bytes([bytes[l], bytes[l + 1], bytes[l + 2], bytes[l + 3]]);
+        let l_sig = u32::from_le_bytes([bytes[l], bytes[l + 1], bytes[l + 2], bytes[l + 3]]);
         if l_sig != 0x0403_4b50 {
             return Err(format!("bad local header signature for {name:?}"));
         }
-        let l_crc = u32::from_le_bytes([
-            bytes[l + 14],
-            bytes[l + 15],
-            bytes[l + 16],
-            bytes[l + 17],
-        ]);
+        let l_crc =
+            u32::from_le_bytes([bytes[l + 14], bytes[l + 15], bytes[l + 16], bytes[l + 17]]);
         if l_crc != crc {
             return Err(format!("local/central CRC mismatch for {name:?}"));
         }
-        let l_size = u32::from_le_bytes([
-            bytes[l + 22],
-            bytes[l + 23],
-            bytes[l + 24],
-            bytes[l + 25],
-        ]) as usize;
+        let l_size =
+            u32::from_le_bytes([bytes[l + 22], bytes[l + 23], bytes[l + 24], bytes[l + 25]])
+                as usize;
         if l_size != uncompressed {
             return Err(format!("local size mismatch for {name:?}"));
         }

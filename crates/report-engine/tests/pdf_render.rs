@@ -35,9 +35,9 @@ fn fonts_or_skip() -> Option<Vec<FontSource>> {
 
 /// CJK 字体在位探测（判据 5 CJK 嵌入面 skip 守卫——A9 本机在位态）。
 fn has_cjk_face(fonts: &[FontSource]) -> bool {
-    fonts.iter().any(|source| {
-        skrifa_probe_has_cjk(&source.data, source.index)
-    })
+    fonts
+        .iter()
+        .any(|source| skrifa_probe_has_cjk(&source.data, source.index))
 }
 
 /// skrifa cmap CJK 探测（render_pdf 同款锚点——3 面独立）。
@@ -56,7 +56,10 @@ fn skrifa_probe_has_cjk(data: &[u8], index: u32) -> bool {
 
 /// `/Type /Page` 计数（字节面 grep——判据 5 排版页数对账位）。
 fn count_type_page(bytes: &[u8]) -> usize {
-    bytes.windows(b"/Type /Page".len()).filter(|w| w == b"/Type /Page").count()
+    bytes
+        .windows(b"/Type /Page".len())
+        .filter(|w| w == b"/Type /Page")
+        .count()
 }
 
 /// 子串在字节面出现的次数。
@@ -91,7 +94,10 @@ fn render_pdf_cjk_embed_and_traceability() {
     }
     let ir = parse_main();
     let bytes = render_pdf(&ir, &fonts);
-    assert!(count_sub(&bytes, b"/FontFile2") >= 1, "CJK face embedded via /FontFile2");
+    assert!(
+        count_sub(&bytes, b"/FontFile2") >= 1,
+        "CJK face embedded via /FontFile2"
+    );
     // finding_id（ASCII）经 DocumentInfo /Subject 字面可见。
     let finding_ids: Vec<&str> = ir.findings.iter().map(|f| f.finding_id.as_str()).collect();
     for id in &finding_ids {

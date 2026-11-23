@@ -28,6 +28,7 @@ pub mod document_repo;
 pub mod ir;
 pub mod object_store;
 pub mod parser;
+pub mod report_repo;
 
 use r2d2::Pool;
 use r2d2_postgres::{postgres::NoTls, PostgresConnectionManager};

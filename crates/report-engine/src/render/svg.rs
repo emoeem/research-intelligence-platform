@@ -43,8 +43,8 @@ pub fn render_attack_path_svg(ir: &ReportIr) -> String {
     let mut canvas_h: f32 = PADDING;
     for path in &ir.attack_paths {
         let rows = (path.steps.len().max(1) + PER_ROW - 1) / PER_ROW;
-        canvas_h += 24.0 + rows as f32 * (NODE_H + GAP_Y) + path.evidence_refs.len() as f32 * 18.0
-            + 12.0;
+        canvas_h +=
+            24.0 + rows as f32 * (NODE_H + GAP_Y) + path.evidence_refs.len() as f32 * 18.0 + 12.0;
     }
     if ir.attack_paths.is_empty() {
         canvas_h = PADDING * 2.0 + 24.0;

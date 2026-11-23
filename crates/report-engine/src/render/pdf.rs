@@ -64,27 +64,57 @@ struct TextLine {
 
 impl TextLine {
     fn body(text: impl Into<String>) -> Self {
-        Self { text: text.into(), size: 10.5, leading: 1.6, space_after: 3.0 }
+        Self {
+            text: text.into(),
+            size: 10.5,
+            leading: 1.6,
+            space_after: 3.0,
+        }
     }
 
     fn h1(text: impl Into<String>) -> Self {
-        Self { text: text.into(), size: 18.0, leading: 1.5, space_after: 8.0 }
+        Self {
+            text: text.into(),
+            size: 18.0,
+            leading: 1.5,
+            space_after: 8.0,
+        }
     }
 
     fn h2(text: impl Into<String>) -> Self {
-        Self { text: text.into(), size: 13.5, leading: 1.5, space_after: 6.0 }
+        Self {
+            text: text.into(),
+            size: 13.5,
+            leading: 1.5,
+            space_after: 6.0,
+        }
     }
 
     fn h3(text: impl Into<String>) -> Self {
-        Self { text: text.into(), size: 11.5, leading: 1.5, space_after: 5.0 }
+        Self {
+            text: text.into(),
+            size: 11.5,
+            leading: 1.5,
+            space_after: 5.0,
+        }
     }
 
     fn meta(text: impl Into<String>) -> Self {
-        Self { text: text.into(), size: 9.5, leading: 1.5, space_after: 1.5 }
+        Self {
+            text: text.into(),
+            size: 9.5,
+            leading: 1.5,
+            space_after: 1.5,
+        }
     }
 
     fn indent(text: impl Into<String>) -> Self {
-        Self { text: format!("  {}", text.into()), size: 9.5, leading: 1.5, space_after: 1.5 }
+        Self {
+            text: format!("  {}", text.into()),
+            size: 9.5,
+            leading: 1.5,
+            space_after: 1.5,
+        }
     }
 }
 
@@ -174,7 +204,10 @@ fn collect_lines(ir: &ReportIr) -> Vec<TextLine> {
             push_markdown_field(&mut lines, "影响", Some(impact));
         }
         if let Some(remediation) = &finding.remediation {
-            lines.push(TextLine::indent(format!("修复优先级：{}", remediation.priority)));
+            lines.push(TextLine::indent(format!(
+                "修复优先级：{}",
+                remediation.priority
+            )));
             for suggestion in &remediation.suggestions {
                 lines.push(TextLine::indent(format!("修复建议：{suggestion}")));
             }
@@ -252,7 +285,8 @@ impl<'a> Face<'a> {
             Some(font) => {
                 let charmap = font.charmap();
                 let glyph_metrics = font.glyph_metrics(Size::unscaled(), LocationRef::default());
-                let units_per_em = font.metrics(Size::unscaled(), LocationRef::default())
+                let units_per_em = font
+                    .metrics(Size::unscaled(), LocationRef::default())
                     .units_per_em
                     .max(1) as f32;
                 Self {
@@ -356,7 +390,11 @@ fn paginate(lines: &[TextLine], face: &Face) -> Vec<Vec<PlacedLine>> {
                 y = PAGE_H - MARGIN;
             }
             y -= line_h;
-            current.push(PlacedLine { y, size: line.size, text });
+            current.push(PlacedLine {
+                y,
+                size: line.size,
+                text,
+            });
             y -= line.space_after;
         }
     }
@@ -405,7 +443,12 @@ fn encode_pages(pages: &[Vec<PlacedLine>], face: &Face) -> Encoded {
         encoded.push(lines);
     }
     let num_cids = remapper.num_gids();
-    Encoded { pages: encoded, to_unicode, remapper, num_cids }
+    Encoded {
+        pages: encoded,
+        to_unicode,
+        remapper,
+        num_cids,
+    }
 }
 
 /// IR → PDF 字节（确定性纯函数——同 IR 同 fonts 两次渲染字节一致）。
@@ -424,13 +467,19 @@ pub fn render_pdf(ir: &ReportIr, fonts: &[FontSource]) -> Vec<u8> {
         let index = font.ttc_index().unwrap_or(0);
         subsetter::subset(raw, index, &encoded.remapper).ok()
     });
-    let has_font_file =
-        subset_bytes.as_ref().map(|b| !b.is_empty()).unwrap_or(false);
+    let has_font_file = subset_bytes
+        .as_ref()
+        .map(|b| !b.is_empty())
+        .unwrap_or(false);
 
     // ToUnicode CMap（cid → unicode——pdf-writer UnicodeCmap builder）。
     let mut cmap = UnicodeCmap::new(
         Name(BASE_FONT),
-        SystemInfo { registry: Str(b"Adobe"), ordering: Str(b"UCS"), supplement: 0 },
+        SystemInfo {
+            registry: Str(b"Adobe"),
+            ordering: Str(b"UCS"),
+            supplement: 0,
+        },
     );
     for (cid, chars) in &encoded.to_unicode {
         cmap.pair_with_multiple(*cid, chars.iter().copied());
@@ -452,12 +501,16 @@ pub fn render_pdf(ir: &ReportIr, fonts: &[FontSource]) -> Vec<u8> {
     let default_width = widths.first().copied().unwrap_or(1000.0);
 
     // 度量面（FontDescriptor 字段——font units → PDF 1000-em units）。
-    let metrics = face.font.as_ref().map(|font| {
-        font.metrics(Size::unscaled(), LocationRef::default())
-    });
+    let metrics = face
+        .font
+        .as_ref()
+        .map(|font| font.metrics(Size::unscaled(), LocationRef::default()));
     let scale = 1000.0 / face.units_per_em;
     let ascent = metrics.as_ref().map(|m| m.ascent * scale).unwrap_or(800.0);
-    let descent = metrics.as_ref().map(|m| m.descent * scale).unwrap_or(-200.0);
+    let descent = metrics
+        .as_ref()
+        .map(|m| m.descent * scale)
+        .unwrap_or(-200.0);
     let cap_height = metrics
         .as_ref()
         .and_then(|m| m.cap_height)
@@ -466,7 +519,14 @@ pub fn render_pdf(ir: &ReportIr, fonts: &[FontSource]) -> Vec<u8> {
     let bbox = metrics
         .as_ref()
         .and_then(|m| m.bounds)
-        .map(|b| Rect::new(b.x_min * scale, b.y_min * scale, b.x_max * scale, b.y_max * scale))
+        .map(|b| {
+            Rect::new(
+                b.x_min * scale,
+                b.y_min * scale,
+                b.x_max * scale,
+                b.y_max * scale,
+            )
+        })
         .unwrap_or_else(|| Rect::new(0.0, -200.0, 1000.0, 900.0));
     let italic_angle = metrics.as_ref().map(|m| m.italic_angle).unwrap_or(0.0);
 
@@ -531,9 +591,12 @@ pub fn render_pdf(ir: &ReportIr, fonts: &[FontSource]) -> Vec<u8> {
     drop(type0_font);
 
     // 页树：/Count + /Kids。
-    let page_ids: Vec<Ref> =
-        (0..page_count).map(|i| Ref::new(3 + (i as i32) * 2)).collect();
-    pdf.pages(pages_id).kids(page_ids.iter().copied()).count(page_count as i32);
+    let page_ids: Vec<Ref> = (0..page_count)
+        .map(|i| Ref::new(3 + (i as i32) * 2))
+        .collect();
+    pdf.pages(pages_id)
+        .kids(page_ids.iter().copied())
+        .count(page_count as i32);
 
     // 页对象 + 内容流。
     for (i, page_lines) in encoded.pages.iter().enumerate() {

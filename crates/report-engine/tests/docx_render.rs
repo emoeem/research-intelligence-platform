@@ -39,7 +39,10 @@ fn render_docx_container_structure() {
     let bytes = render_docx(&ir);
     assert!(!bytes.is_empty(), "render_docx output must be non-empty");
     assert!(bytes.starts_with(b"PK\x03\x04"), "ZIP local header magic");
-    assert!(bytes.ends_with(b"PK\x05\x06") == false, "EOCD has trailing comment length field");
+    assert!(
+        bytes.ends_with(b"PK\x05\x06") == false,
+        "EOCD has trailing comment length field"
+    );
     assert!(
         bytes.windows(4).rposition(|w| w == b"PK\x05\x06").is_some(),
         "EOCD signature present"
@@ -82,7 +85,10 @@ fn render_docx_crc_and_content_words() {
             "finding_id {} in document.xml",
             finding.finding_id
         );
-        assert!(doc.contains(&finding.title), "finding title zh in document.xml");
+        assert!(
+            doc.contains(&finding.title),
+            "finding title zh in document.xml"
+        );
         if let Some(rtis_ref) = &finding.rtis_ref {
             // rtis:// 词形原样透传（红线 2——零解析零改写）。
             assert!(
@@ -110,7 +116,10 @@ fn render_docx_crc_and_content_words() {
 /// 从容器字节提取 word/document.xml 数据段（自解析——判据 6 断言面）。
 fn document_part(bytes: &[u8]) -> Vec<u8> {
     let eocd_sig = b"PK\x05\x06";
-    let eocd_pos = bytes.windows(4).rposition(|w| w == eocd_sig).expect("EOCD present");
+    let eocd_pos = bytes
+        .windows(4)
+        .rposition(|w| w == eocd_sig)
+        .expect("EOCD present");
     let cd_offset = u32::from_le_bytes([
         bytes[eocd_pos + 16],
         bytes[eocd_pos + 17],
@@ -135,17 +144,12 @@ fn document_part(bytes: &[u8]) -> Vec<u8> {
             bytes[pos + 44],
             bytes[pos + 45],
         ]) as usize;
-        let name =
-            std::str::from_utf8(&bytes[pos + 46..pos + 46 + name_len]).expect("name UTF-8");
+        let name = std::str::from_utf8(&bytes[pos + 46..pos + 46 + name_len]).expect("name UTF-8");
         if name == "word/document.xml" {
-            let local_name_len = u16::from_le_bytes([
-                bytes[local_offset + 26],
-                bytes[local_offset + 27],
-            ]) as usize;
-            let local_extra_len = u16::from_le_bytes([
-                bytes[local_offset + 28],
-                bytes[local_offset + 29],
-            ]) as usize;
+            let local_name_len =
+                u16::from_le_bytes([bytes[local_offset + 26], bytes[local_offset + 27]]) as usize;
+            let local_extra_len =
+                u16::from_le_bytes([bytes[local_offset + 28], bytes[local_offset + 29]]) as usize;
             let data_start = local_offset + 30 + local_name_len + local_extra_len;
             return bytes[data_start..data_start + uncompressed].to_vec();
         }
@@ -189,6 +193,12 @@ fn render_docx_crc_tamper_fails() {
     let err = qc_zip_entries(&bytes)
         .err()
         .expect("tampered container must fail CRC/structure reconciliation");
-    assert!(!err.is_empty(), "error message must be non-empty (:545 保留错误信息词形)");
-    assert!(count_sub(&bytes, b"PK\x05\x06") >= 1, "EOCD signature present");
+    assert!(
+        !err.is_empty(),
+        "error message must be non-empty (:545 保留错误信息词形)"
+    );
+    assert!(
+        count_sub(&bytes, b"PK\x05\x06") >= 1,
+        "EOCD signature present"
+    );
 }

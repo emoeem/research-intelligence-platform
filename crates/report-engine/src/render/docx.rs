@@ -240,7 +240,9 @@ fn content_types_xml() -> String {
 fn rels_xml() -> String {
     let mut out = String::with_capacity(512);
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
-    out.push_str("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
+    out.push_str(
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+    );
     out.push_str("<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>");
     out.push_str("</Relationships>");
     out

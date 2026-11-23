@@ -6,6 +6,9 @@
 # 目录在位 + deny 双检（Unicode-DFS-2016 新行）+ 三格式对账（cargo test -p
 # report-engine 载具，--test-threads=1）+ 生产库五文件只读指纹（user_version=30）
 # + 跨轨零 diff 反证。既有 selftest_wsw8.sh:13-20 ck/sk + SKIP 守卫词形先例。
+# 连带收口（PHASE-6B，RT-7→wsw8 先例 8b79bd26 词形）：lock 432→440 / vendor
+# 406→414（四钉净增 8）/ report-engine 测试数 26→46（6B 二十测入册）三处
+# 基线钉随 6b vendor 跃迁与测试增量更新，其余 6A 面零改动。
 # 纪律：全部目标 = 临时目录 fixture + 只读 PRAGMA（红线 5——生产库零触碰）。
 # 用法：bash apps/server/selftest_p6a.sh
 set -u
@@ -32,8 +35,8 @@ if [ "$GUARD_MISS" = "1" ]; then
   exit 0
 fi
 
-echo "== 1. lock 双检（裁决 B 新基线 432 / reqwest=1 / zip+docx-rs 清零）"
-ck "Cargo.lock package 计数" "432" "$(grep -cE '^\[\[package\]\]' Cargo.lock)"
+echo "== 1. lock 双检（6b 连带收口新基线 440 / reqwest=1 / zip+docx-rs 清零）"
+ck "Cargo.lock package 计数" "440" "$(grep -cE '^\[\[package\]\]' Cargo.lock)"
 ck "reqwest 计数（WSW-8 §7.4 词形恒定）" "1" "$(grep -c 'name = "reqwest"' Cargo.lock)"
 ck "zip 计数（docx-rs 停批撤除后清零）" "0" "$(grep -c 'name = "zip"' Cargo.lock)"
 ck "docx-rs 计数（裁决 B 撤除）" "0" "$(grep -c 'name = "docx-rs"' Cargo.lock)"
@@ -41,7 +44,7 @@ ck "comrak exact 钉在位" "1" "$(grep -c 'comrak = { version = "=1.1.0", defau
 ck "Cargo.toml docx-rs 依赖行清零" "0" "$(grep -c 'docx-rs = ' Cargo.toml)"
 
 echo "== 2. vendor 面（目录计数 + 关键目录在位 + 既有目录抽查）"
-ck "vendor 目录计数（392 基线 + 14）" "406" "$(ls vendor/ | wc -l)"
+ck "vendor 目录计数（392 基线 + 14 + 6b 四钉净增 8）" "414" "$(ls vendor/ | wc -l)"
 for d in comrak caseless finl_unicode typed-arena phf phf-0.13.1; do
   [ -d "vendor/$d" ] || { FAIL=$((FAIL+1)); echo "  [FAIL] vendor/$d 缺失"; }
 done
@@ -67,7 +70,7 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/home/emo/rt3-target}"
 if cargo test -p report-engine --offline -- --test-threads=1 >/tmp/p6a_selftest_test.log 2>&1; then
   REPORT_ENGINE_PASSED="$(grep -oE '[0-9]+ passed' /tmp/p6a_selftest_test.log | awk '{s+=$1} END {print s+0}')"
   ck "report-engine 测试全绿" "yes" "yes"
-  ck "report-engine 测试数（26）" "26" "$REPORT_ENGINE_PASSED"
+  ck "report-engine 测试数（26 6A 面 + 20 6B 面 = 46）" "46" "$REPORT_ENGINE_PASSED"
 else
   ck "report-engine 测试全绿" "yes" "FAILED（见 /tmp/p6a_selftest_test.log）"
 fi
@@ -96,11 +99,11 @@ for f in migrations/platform.db migrations/platform-dryrun.db migrations/platfor
   [ "$UV" = "${EXPECTED_UV[$f]}" ] || RO_FINGERPRINT_OK=no
 done
 
-echo "== 6. 跨轨零 diff 反证（wsw/verification/agent-engine/web/workers/rtis/migrations/CI）"
-CROSS_TRACK="$(git status --porcelain -- crates/wsw-runtime/ crates/verification-engine/ crates/agent-engine/ web/ workers/ integrations/rtis/ migrations/ migrations_pg/ .github/ 2>/dev/null | wc -l)"
+echo "== 6. 跨轨零 diff 反证（wsw/verification/agent-engine/web/workers/rtis/migrations/CI；migrations_pg 面由 selftest_p6b.sh 承载——6b V0008 合法落点）"
+CROSS_TRACK="$(git status --porcelain -- crates/wsw-runtime/ crates/verification-engine/ crates/agent-engine/ web/ workers/ integrations/rtis/ migrations/ .github/ 2>/dev/null | wc -l)"
 ck "跨轨 git status 行数" "0" "$CROSS_TRACK"
 ck "migrations/*.sql 计数" "30" "$(ls migrations/*.sql | wc -l)"
-ck "migrations_pg/*.sql 计数" "7" "$(ls migrations_pg/*.sql | wc -l)"
+ck "migrations_pg/*.sql 计数（6b V0008 入链）" "8" "$(ls migrations_pg/*.sql | wc -l)"
 
 echo "== 7. 工作树落点核对（§2.1 清单 + 判据 14）"
 echo "  -- git status --porcelain 落点："
