@@ -17,7 +17,7 @@
 | 4 | 新渲染函数签名钉定 + 零 I/O 反证 | 七签名 re-export grep 各 =1（selftest ==5）；渲染/质检零 I/O 反证：render/{pdf,docx,svg}.rs + qc.rs 内 `std::fs\|std::process\|Command` grep = **0**（selftest ==5）；discover_system_fonts 唯一 I/O 面独立 fonts.rs（grep =1） |
 | 5 | IR→PDF 渲染对账 | pdf_render.rs 4 测试：字节非空 + `%PDF-` 头 + `%%EOF` 尾；`/Type /Page` 计数 = Pages `/Count`；CJK 嵌入 `/FontFile2`（本机 A9 在位态，SKIP 守卫分计）；finding_id 经 `/Subject` 字面 grep；中文 title 经 ToUnicode CMap UTF-16BE hex 词形可见；同 IR 同 fonts 两次渲染字节一致（确定性） |
 | 6 | IR→DOCX 渲染对账 | docx_render.rs 5 测试：`PK\x03\x04` 头 + EOCD 在位 + 逐条目 stored CRC32 全对（自解析断言）+ `[Content_Types].xml` 与 `word/document.xml` 两零件在位 + 中文/finding_id/rtis_ref 在 document.xml 字节面 grep 同值 + 确定性 + mixed fixture |
-| 7 | 质检三面正例 | qc_gates.rs 6 测试：qc_pdf/qc_docx/qc_sarif 对 main fixture 全 pass + mixed fixture 三面全 pass + SARIF schema 资产与编译期内嵌字节一致 + SVG 对账；QcCheck.message 结构化承载（pass 时空串） |
+| 7 | 质检三面正例 | qc_gates.rs 6 测试：qc_pdf/qc_docx/qc_sarif 对 main fixture 全 pass + mixed fixture 三面全 pass + SARIF schema 资产与编译期内嵌字节一致 + SVG 对账；QcCheck.message 结构化承载（pass 时空串）；**qc_pdf 正例对 CJK 面分环境计**：系统无 CJK 字体时 pdf_sections_present/pdf_attack_paths/pdf_code_blocks 三项按 SKIP 分计（D2⑤），其余八项在任何环境都是硬判据（坏消息 7——CI runner 实测面） |
 | 8 | 质检负例 | qc_negative.rs 5 测试：截断 PDF fail + CRC 篡改 DOCX fail + SARIF 词表外 severity fail + SARIF version 错 fail + 渲染降级无 CJK 字体面 qc_pdf fail（D2④ fail 不 abort 承载实测）——全部 message 非空 |
 | 9 | SARIF 官方 schema 校验 | `schemas/sarif/sarif-schema-2.1.0.json` 在位（sha256 `c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e`；oasis-tcs/sarif-spec main 实拉 112768 字节 draft-04）；qc_sarif 经既有 `tool_registry::jsonschema_lite::validate_instance` 校验 render_sarif 输出 = Ok（main + mixed 两 fixture 同过；draft-04 兼容性成立，停批预案未触发） |
 | 10 | SVG 攻击路径面 | render_attack_path_svg：`<svg` 起头 + XML 标签平衡 + attack_paths 步骤数 = 节点数断言 + evidence_refs 词形 grep 命中 + 中文原样（qc_gates.rs:123 承载） |
@@ -48,6 +48,7 @@
 4. **selftest_p6a.sh 连带收口五处陈旧钉**：6b vendor 跃迁与测试增量使 6A 自检钉值过时（lock 432≠440 / vendor 406≠414 / 测试数 26≠46 / migrations_pg 7≠8 / 跨轨清单含 migrations_pg 误报 V0008 untracked）。按 RT-7 批连带收口 selftest_wsw8 先例（commit 8b79bd26）更新五处，其余 6A 面零改动，复跑 25/0。
 5. **WIP 批 S3-S5 文件 fmt 未自净**：`deba165b` 态 fmt --all --check = 1004 hunks（943 存量 + 6b 新文件 61 hunks，S7 fmt 门拦下）——`cargo fmt -p report-engine` 定点自净（脏面恰为 6b 十文件，6A 面与 IR 钉名单零命中）复跑 943 恒定 + report-engine 零命中 + 46 测试复绿。任务书红线 8「新增文件必须 fmt 自净」在 S7 门处补兑。
 6. **SARIF schema 资产 sha256 落档**：`c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e`（任务书 A11 只落字节数 112768 未落 hash——本批补钉；selftest ==4 在位断言）。
+7. **CI runner 无 CJK 字体面（D2⑤ 守卫首实战）**：`18a657c7` 的 CI run 45094990554 红在 `qc_pdf_main_fixture_all_pass`——runner（ubuntu-latest）只有 Liberation/DejaVu 面，2000+ 面 CJK 字体是**本机环境特权**；render_pdf 按 D2④ 正确降级 .notdef，qc_pdf 的 pdf_sections_present/pdf_attack_paths 如实 fail（中文词形不在 ToUnicode 面），而正例测试却硬断言 all_passed——**是测试面缺陷不是渲染器缺陷**。修法：qc_gates.rs 加 `has_cjk_face`（skrifa cmap 三码点探测，pdf_render.rs:37 同款）+ `CJK_DEPENDENT_CHECKS` 三分组 + `assert_all_pass_cjk_aware`（无 CJK 面时三项 SKIP 分计，其余八项硬判）。本机 mount namespace 模拟（仅 LiberationSans 可见）实测：`qc_pdf (11 checks, cjk_face=false)` 两 SKIP + 九 pass，整 crate 46 全绿；CI 环境即该分支的真实执行面。归入 CI 环境敏感三型之外的第④型：**字体面环境差**（后续渲染批一律在 CJK 依赖断言前做 face 探测）。
 
 ## 4. vendor 八包许可台账（deny 零增行兑现）
 

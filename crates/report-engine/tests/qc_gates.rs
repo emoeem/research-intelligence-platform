@@ -38,6 +38,47 @@ fn fonts_or_skip() -> Option<Vec<report_engine::FontSource>> {
     Some(fonts)
 }
 
+/// CJK 依赖检查名：系统无 CJK 字体面时 render_pdf 降级 .notdef，这三项对
+/// 中文字形敏感、必然 fail——按 D2⑤「中文判据 SKIP 分开计数」处理，不计
+/// 渲染器缺陷（CI runner 无 CJK 字体的真实环境面：qc_pdf 五绿两 SKIP）。
+const CJK_DEPENDENT_CHECKS: &[&str] = &[
+    "pdf_sections_present",
+    "pdf_attack_paths",
+    "pdf_code_blocks",
+];
+
+/// CJK 字体在位探测（pdf_render.rs:37 `has_cjk_face` 同款锚点——D2⑤）。
+fn has_cjk_face(fonts: &[report_engine::FontSource]) -> bool {
+    use skrifa::MetadataProvider;
+    fonts.iter().any(
+        |source| match skrifa::FontRef::from_index(&source.data, source.index) {
+            Ok(font) => {
+                let charmap = font.charmap();
+                charmap.map('\u{4E00}').is_some()
+                    && charmap.map('\u{6C34}').is_some()
+                    && charmap.map('\u{9FA5}').is_some()
+            }
+            Err(_) => false,
+        },
+    )
+}
+
+/// 正例断言：无 CJK 字体面时 CJK 依赖检查按 SKIP 分计（D2⑤）；其余必须全
+/// pass（非 CJK 面在任何环境下都是硬判据——不给环境噪声留门）。
+fn assert_all_pass_cjk_aware(report: &report_engine::QcReport, cjk: bool, label: &str) {
+    let (cjk_skipped, real_failed): (Vec<&'static str>, Vec<&'static str>) = report
+        .failed_checks()
+        .into_iter()
+        .partition(|name| !cjk && CJK_DEPENDENT_CHECKS.contains(name));
+    if !cjk_skipped.is_empty() {
+        eprintln!(
+            "SKIP: {label} 无 CJK 字体面，跳过 {} 项中文判据（D2⑤）：{cjk_skipped:?}",
+            cjk_skipped.len()
+        );
+    }
+    assert!(real_failed.is_empty(), "{label} must pass: {real_failed:?}");
+}
+
 /// 打印质检报告（诊断回显——批次报告数字来源）。
 fn dump(report: &report_engine::QcReport) {
     for check in &report.checks {
@@ -50,20 +91,17 @@ fn dump(report: &report_engine::QcReport) {
     }
 }
 
-/// 判据 7：qc_pdf(main PDF) 全 passed。
+/// 判据 7：qc_pdf(main PDF) 全 passed（无 CJK 字体面时中文判据 SKIP 分计）。
 #[test]
 fn qc_pdf_main_fixture_all_pass() {
     let Some(fonts) = fonts_or_skip() else { return };
+    let cjk = has_cjk_face(&fonts);
     let ir = parse_main();
     let bytes = render_pdf(&ir, &fonts);
     let report = qc_pdf(&ir, &bytes);
-    println!("qc_pdf ({} checks):", report.checks.len());
+    println!("qc_pdf ({} checks, cjk_face={cjk}):", report.checks.len());
     dump(&report);
-    assert!(
-        report.all_passed(),
-        "qc_pdf must pass all checks on main fixture: {:?}",
-        report.failed_checks()
-    );
+    assert_all_pass_cjk_aware(&report, cjk, "qc_pdf");
 }
 
 /// 判据 7：qc_docx(main DOCX) 全 passed。
