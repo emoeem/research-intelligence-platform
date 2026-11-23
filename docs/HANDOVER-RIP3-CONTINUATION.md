@@ -6,11 +6,13 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-23：RIP3 Phase 7 与 Phase 8 本地实现及验收完成；Phase 6b 基线 daecc2a0；本轮代码与报告尚未 commit/push，GitHub Actions 未宣称通过。Phase 7/8 交付见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md 与 docs/rip3/PHASE-8-SCALE-TESTING.md；100k 文档 / 1M Chunk PostgreSQL + SQLite 对照实测完成） |
+| 状态 | 生效中（2026-11-23：RIP3 Phase 7/8 已实现、验收、提交并推送；阶段实现提交 `0229bf01f1cc133e997f5bd644221c88da95de18`；GitHub Actions #180 4/4 Jobs success。Phase 7/8 交付见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md 与 docs/rip3/PHASE-8-SCALE-TESTING.md；100k 文档 / 1M Chunk PostgreSQL + SQLite 对照实测完成） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
-| 适用版本 | 本轮阶段基线 daecc2a0（Phase 6b 收口）；Phase 7/8 当前实现仍在本地工作树 |
-| CI | 本地串行 Workspace 回归 1,396 passed / 0 failed / 3 ignored；Workspace Clippy 通过；本轮未 push，GitHub Actions 未触发 |
+| 阶段实现提交 | `0229bf01f1cc133e997f5bd644221c88da95de18`（Phase 7/8 阶段收口提交；后续文档同步提交不改变实现基线） |
+| CI | [GitHub Actions #180](https://github.com/emoeem/research-intelligence-platform/actions/runs/45141019769)：Rust workspace 测试与 Clippy、Python worker、Web build/Vitest、REST/MCP parity 四个 Job 全部 success；注意 CI 未配置 PostgreSQL service / `RP_TEST_PG_DSN`，Phase 7 PG 集成测试在 CI 中会提前返回，本地专用 PG 环境 4 项实跑通过 |
 | 相关 | docs/rip3/00-ARCHITECTURE-AUDIT.md；docs/releases/RELEASE_2026-11-23_RIP3-PHASE7-8.md；docs/releases/RELEASE_2026-11-15_RIP3-PHASE1.md |
+**CI 口径补充（2026-11-23）**：CI #180 全绿代表已配置的四个 job 全部成功，不代表 CI 已运行所有 PostgreSQL 集成验收。`.github/workflows/ci.yml` 当前没有 PostgreSQL service / `RP_TEST_PG_DSN`，`phase7_maintenance.rs` 的 `pool()` 在 DSN 缺失时返回 `None`，测试函数会提前结束；Phase 7 的 PostgreSQL 行为由本机 `apps/server/selftest_p7p8.sh` 专用容器验收。后续应将 PG service 与 DSN 纳入 Rust CI，并把缺少 DSN 时的静默成功改为明确 skip/专用门禁，避免误读覆盖率。
+
 | 自动化收官 | `.zcode/workflows/rip3-finish.dwf.ts`（动态工作流保存式脚本：Phase 3→8 + §17/D8 收官自查逐阶段编排，批次自动入库 + 编排面五道门禁复测 + HEAD CI 确认 + 受阻处置站）；启动 = 在有动态工作流工具面的会话（仓库根）`CreateWorkflow saved: { name: "rip3-finish" }` 或以 path 直提该文件；编译诊断按 §13 改文件后 path 重提 |
 
 ## 一、项目现状（30 秒版）
@@ -29,8 +31,8 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 | Phase 4 混合检索 | 完成（P4-1 到 P4-4，CI 全绿） | RELEASE_2026-11-17_RIP3-PHASE4.md；RRF/MMR、reranker、tokenizers、缓存与 RTIS 语料 Benchmark |
 | Phase 5 工作流与研究 | 完成（2026-11-18） | RELEASE_2026-11-17_RIP3-PHASE5.md；研究工作流、覆盖矩阵、假设生成、五态纪律 |
 | Phase 6 报告智能 | 完成（Phase 6b 收口基线 daecc2a0） | docs/phase0/PHASE-6B-BATCH-REPORT.md；Report IR、导出与质检、六阶段交接记录 |
-| Phase 7 知识回流与维护 | 完成（2026-11-23，本地验收） | V0009/V0010 + Report IR 校验 + workspace 隔离 + Finding/Evidence 六 ID 溯源 + 候选审核 promote/reuse/reject + 上游/链接/RTIS POC 监测 + 质量巡检/维护报告；详见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md |
-| Phase 8 规模测试与基准 | 完成（2026-11-23，100k 文档 / 1M Chunk） | PostgreSQL 17.11 与 SQLite 3.54.1 同规模对照，导入/索引/检索/内存/存储/并发/迁移/重建/备份恢复；运营核继续 SQLite；详见 docs/rip3/PHASE-8-SCALE-TESTING.md |
+| Phase 7 知识回流与维护 | 完成并推送（2026-11-23，commit `0229bf01`，CI #180 success） | V0009/V0010 + Report IR 校验 + workspace 隔离 + Finding/Evidence 六 ID 溯源 + 候选审核 promote/reuse/reject + 上游/链接/RTIS POC 监测 + 质量巡检/维护报告；详见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md；PG 集成 4 项在本地专用 PG 实跑，CI 未配置 PG service |
+| Phase 8 规模测试与基准 | 完成并推送（2026-11-23，100k 文档 / 1M Chunk，commit `0229bf01`，CI #180 success） | PostgreSQL 17.11 与 SQLite 3.54.1 同规模对照，导入/索引/检索/内存/存储/并发/迁移/重建/备份恢复；运营核继续 SQLite；详见 docs/rip3/PHASE-8-SCALE-TESTING.md；基准在本地隔离环境执行，不属于 GitHub CI Job |
 
 用户三项已生效裁决（执行代理不得重开）：
 
@@ -141,8 +143,12 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 
 ## 六、已知遗留（清账候选，非阻塞）
 
-1. CI 无 PG service：intel-db 集成测试 CI 侧跳过（V-9 口径），本地真容器实跑为准；
-   PG service job 随 Phase 4 批评估。
+1. **CI PostgreSQL 覆盖缺口（明确遗留）**：GitHub Actions #180 的四个 Job 全部 success，
+   但 `.github/workflows/ci.yml` 没有 PostgreSQL service，也没有设置 `RP_TEST_PG_DSN`。
+   `crates/intel-db/tests/phase7_maintenance.rs` 的 `pool()` 在 DSN 缺失或连接失败时返回
+   `None`，四个测试会直接 return，因此 CI 的绿色不代表这四项执行了数据库断言。本地专用
+   `rip-p7p8-pg` 容器已实跑 4/4。后续应增加健康检查 PostgreSQL service、显式设置 DSN，
+   并把 CI 环境下缺少 DSN 改为失败而不是静默跳过。
 2. pg_search BM25 索引建演练未做（V0002 尚无全文/向量列，Phase 4 批）。
 3. /documents 页未纳入视觉门矩阵（Phase 5/6 页面族统一扩展）。
 4. vendor 手工增量口径（依赖缓存在位；跨机全量重跑用 UPGRADE.md 增量 vendor 流程）。

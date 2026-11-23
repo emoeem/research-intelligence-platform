@@ -24,24 +24,20 @@
 
 ## 0.1 与 RIP 2.0 的硬性顺序约束
 
-RIP 2.0 尚未收口。收口清单（以 `docs/SESSION-HANDOFF.md` 第三节与 `docs/HANDOVER-RIP2-CONTINUATION.md` 为准）：
+RIP 2.0 已于 2026-11-14 完成收口（历史收口依据见 `docs/HANDOVER-RIP2-CONTINUATION.md` 与 `docs/SESSION-HANDOFF.md`）。以下条目保留为当时的顺序约束与审计轨迹，不再是当前阻塞项：
 
-1. Phase 8 Workflow Studio：批次 1 到 3 已实施（WIP 备份 `7707d13`），批次 4（web 画布）进行中，之后是五道门禁、独立验收、RELEASE 入库。
-2. Phase 9：MCP/REST/CLI 对外能力。
-3. Phase 10：生态与发布（backup/restore、FTS 重建校验、视觉基线、性能基准）＋发布物统一携带使用免责声明（一切由使用者自行承担，2026-11-14 用户裁决）。
-4. 收尾闭环：SESSION-HANDOFF §十二与 §十四（ChatGPT 全面审阅、GitHub 知识库与武器库补齐、实战校验三面，循环到 2.0 计划 §17 全绿）。
+1. Phase 8 Workflow Studio：已完成批次 1 到 4、五道门禁、独立验收与 RELEASE 入库。
+2. Phase 9：MCP/REST/CLI 对外能力已完成。
+3. Phase 10：生态与发布（backup/restore、FTS 重建校验、视觉基线、性能基准）已完成并登记 RELEASE。
+4. RIP 2.0 收尾闭环按交接文档记录完成；RIP3 按本计划继续独立推进。
 
-**在 2.0 收口之前：**
+**当前状态（2026-11-23）**：RIP3 Phase 0 到 Phase 8 已完成；Phase 7/8 已提交到 `main`（`0229bf01`），GitHub Actions #180 的四个 job 全部成功。Phase 7 PostgreSQL 集成测试在 CI 中尚未执行（CI 未配置 PG service），本机专用 PostgreSQL 验收已通过；此项作为后续 CI 质量改进跟踪。
 
-- 只允许：阅读仓库、准备和讨论本计划、完成与本计划相关的纯文档工作（且不得写入 research-platform 仓库树，见第十六部分）。
-- 禁止：暂停、修改、替换、提前迁移正在运行的 2.0 工作流；在本计划名义下修改任何 crates、migrations、web、apps、workers 代码；执行任何数据库迁移；在 research-platform 仓库执行 git commit/push。
-- 2.0 的既有纪律（批次入库、每阶段 CI 硬门槛、RELEASE 登记）继续按原样执行，本计划不做任何变更。
-
-**Phase 0 在 2.0 收口后立即开始**，以收口后的真实仓库状态为审计基线。Phase 0 只做只读审计与架构文档，不做功能开发。
+原「在 2.0 收口之前」的禁止代码修改、禁止迁移和禁止 commit/push 规则属于历史阶段约束，已随 2.0 收口解除；RIP3 后续仍须遵循本计划的安全边界、阶段验收与入库纪律。Phase 0 只读审计已完成，当前不再是待启动事项。
 
 ## 0.2 版本命名决策（延后）
 
-RIP 2.0 收口前，本升级不建立独立的 3.0 Release 或 Session-Handoff 体系，不引入「3.0」标签到任何 RELEASE 文档。2.0 收口后，根据兼容性评估（新增实体与既有 18 个迁移、RTIS 数据面、Web 工作台的兼容成本）决定：作为 2.x 的 Phase 11+ 扩展演进，或正式升级版本号。该决策记录为 D8（见第十九部分），Phase 0 审计给出评估输入。
+历史约束：RIP 2.0 收口前不建立独立的 3.0 Release 或 Session-Handoff 体系。2.0 已收口；当前版本命名仍由 D8（第十九部分）根据兼容性评估决定：作为 2.x 的 Phase 11+ 扩展演进，或正式升级版本号。Phase 0 审计已提供评估输入。
 
 ## 0.3 预算
 
@@ -866,4 +862,6 @@ Finding 验证完成 → 提取候选 Knowledge Card → 查重查冲突 → 关
 - `intel-db` 单元测试：32 passed；Phase 7 PostgreSQL 集成：4 passed（含 workspace 越界写入拒绝）。
 - Python Worker 单元测试：4 passed；来源监测 PostgreSQL 实测与 RTIS 只读 workspace fixture 实测通过。
 - `cargo clippy --offline --workspace --all-targets -- -D warnings` 通过；`cargo fmt -p intel-db -- --check` 通过。
-- 本地全 Workspace 串行回归：1,396 passed / 0 failed / 3 ignored；`cargo clippy --offline --workspace --all-targets -- -D warnings` 通过。GitHub Actions 未触发（本轮未 push），远程 CI 状态不作宣称。
+- 本地全 Workspace 串行回归：1,396 passed / 0 failed / 3 ignored；`cargo clippy --offline --workspace --all-targets -- -D warnings` 通过。
+- GitHub Actions：[Run #180](https://github.com/emoeem/research-intelligence-platform/actions/runs/45141019769)，对应 commit `0229bf01f1cc133e997f5bd644221c88da95de18`，2026-11-23 08:54:28 UTC 完成，4/4 Jobs success：Rust workspace 测试与 Clippy、Python worker、Web build/Vitest、REST/MCP parity。
+- CI 覆盖边界：workflow 未配置 PostgreSQL service / `RP_TEST_PG_DSN`；`phase7_maintenance` 的 `pool()` 在 DSN 缺失时返回 `None`，因此四个 PG 集成测试在 CI 中提前返回。它们已在本地专用 PostgreSQL 容器中实跑 4/4。Phase 7 来源监测/RTIS smoke 与 Phase 8 100k/1M 基准同样属于本地隔离环境验收，不计入 CI 覆盖。建议后续为 CI 增加 PG service 并将 CI 环境缺失 DSN 改为 fail-fast。

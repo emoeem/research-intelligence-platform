@@ -2,7 +2,8 @@
 
 - 日期：2026-11-23
 - 基线：`daecc2a0`
-- 状态：本地实现与阶段验收完成；工作树未 commit/push。
+- 状态：实现与阶段验收完成，已提交并推送至 `main`；commit `0229bf01f1cc133e997f5bd644221c88da95de18`。
+- GitHub Actions：[Run #180](https://github.com/emoeem/research-intelligence-platform/actions/runs/45141019769)，2026-11-23 08:54:28 UTC 完成，4/4 Jobs success。
 - 生产数据：未修改 RTIS `knowledge.db`，未修改运营 `platform*.db`。
 
 ## Phase 7 — Knowledge Feedback & Maintenance
@@ -77,5 +78,6 @@ PostgreSQL 检索计划命中 `chunks_search_gin`，Bitmap Index Scan 约 0.009 
 - Phase 7 与 Phase 8 的定向门禁通过：`apps/server/selftest_p7p8.sh` 输出 `PHASE7_PHASE8_SELFTEST=PASS`。
 - 全 Workspace 测试串行复验通过：1,396 passed，0 failed，3 ignored（包含已知 Chromium 截断保真环境敏感测试）；并行重复启动曾触发 browser_adapter 临时 user-data-dir 清理竞争，因此验收采用单实例串行结果。
 - 全 Workspace Clippy：`cargo clippy --offline --workspace --all-targets -- -D warnings` passed；intel-db format check passed。
-- GitHub Actions 未触发（本轮未 push），不宣称远程 CI 已通过。
-- 本轮没有 commit/push；没有修改 RTIS 生产库、运营 SQLite 数据库；没有自动批准、合并或删除知识；没有进行生产数据库切换。
+- GitHub Actions #180 四个 Job 均 success：Rust workspace 测试与 Clippy、Python worker、Web 构建与 Vitest、REST/MCP 协议一致性。
+- **CI 覆盖限制**：`.github/workflows/ci.yml` 未配置 PostgreSQL service / `RP_TEST_PG_DSN`。`phase7_maintenance` 测试在 DSN 缺失时提前 return，因此 CI 绿色不代表 PG 集成断言已执行；本地专用 `rip-p7p8-pg` 容器实跑 4/4 通过。来源监测/RTIS smoke 与 Phase 8 规模基准也未纳入远程 CI。
+- 推送后工作区干净；没有修改 RTIS 生产库、运营 SQLite 数据库；没有自动批准、合并或删除知识；没有进行生产数据库切换。
