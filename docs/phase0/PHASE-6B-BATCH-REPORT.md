@@ -49,6 +49,7 @@
 5. **WIP 批 S3-S5 文件 fmt 未自净**：`deba165b` 态 fmt --all --check = 1004 hunks（943 存量 + 6b 新文件 61 hunks，S7 fmt 门拦下）——`cargo fmt -p report-engine` 定点自净（脏面恰为 6b 十文件，6A 面与 IR 钉名单零命中）复跑 943 恒定 + report-engine 零命中 + 46 测试复绿。任务书红线 8「新增文件必须 fmt 自净」在 S7 门处补兑。
 6. **SARIF schema 资产 sha256 落档**：`c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e`（任务书 A11 只落字节数 112768 未落 hash——本批补钉；selftest ==4 在位断言）。
 7. **CI runner 无 CJK 字体面（D2⑤ 守卫首实战）**：`18a657c7` 的 CI run 45094990554 红在 `qc_pdf_main_fixture_all_pass`——runner（ubuntu-latest）只有 Liberation/DejaVu 面，2000+ 面 CJK 字体是**本机环境特权**；render_pdf 按 D2④ 正确降级 .notdef，qc_pdf 的 pdf_sections_present/pdf_attack_paths 如实 fail（中文词形不在 ToUnicode 面），而正例测试却硬断言 all_passed——**是测试面缺陷不是渲染器缺陷**。修法：qc_gates.rs 加 `has_cjk_face`（skrifa cmap 三码点探测，pdf_render.rs:37 同款）+ `CJK_DEPENDENT_CHECKS` 三分组 + `assert_all_pass_cjk_aware`（无 CJK 面时三项 SKIP 分计，其余八项硬判）。本机 mount namespace 模拟（仅 LiberationSans 可见）实测：`qc_pdf (11 checks, cjk_face=false)` 两 SKIP + 九 pass，整 crate 46 全绿；CI 环境即该分支的真实执行面。归入 CI 环境敏感三型之外的第④型：**字体面环境差**（后续渲染批一律在 CJK 依赖断言前做 face 探测）。
+8. **clippy 四条真 lint（WIP 批遗留 + 本地门假绿）**：CI run 45127175594 测试步绿、clippy 步红 4 error——`OoxmlZip` public len 无 is_empty / pdf.rs `unwrap_or_else(|| const)` / svg.rs `(n + PER_ROW - 1) / PER_ROW` ×2 / docx_render 测试 `== false` + `.err().expect()`。**根因是本地门判据缺陷**：`cargo clippy ... | tail -3; echo $?` 取到的是 tail 的退出码（同一坑的 push 版已在环境事实 8 固化，clippy 版漏了）——本地假绿一次。修法：四条定点修（补 is_empty / 去闭包 / div_ceil / `!ends_with` + expect_err），复跑 `cargo clippy --offline --workspace --all-targets -- -D warnings` 重定向后 **exit 0** + workspace 1389 零红 + fmt 943 恒定。**纪律固化**：所有门禁命令退出码必须以重定向文件判（`> log 2>&1; echo $?`），禁管道串联。
 
 ## 4. vendor 八包许可台账（deny 零增行兑现）
 
@@ -102,7 +103,7 @@ grep -c 'name = "typst"' Cargo.lock           # 0
 ls vendor/ | wc -l                            # 414
 CARGO_TARGET_DIR=/home/emo/rt3-target cargo test --offline --workspace --no-fail-fast
 #   → 1389 passed / 0 failed（195 个 test result 行汇总）
-CARGO_TARGET_DIR=/home/emo/rt3-target cargo clippy --offline --workspace --all-targets -- -D warnings   # exit 0
+CARGO_TARGET_DIR=/home/emo/rt3-target cargo clippy --offline --workspace --all-targets -- -D warnings > /tmp/clippy.log 2>&1; echo $?   # 0（禁管道判据——坏消息 8）
 cargo fmt --all -- --check 2>&1 | grep -c "^Diff in"    # 943（存量恒定；report-engine 零命中）
 cargo deny check advisories && cargo deny check licenses # 双 ok；git diff deny.toml = 空
 cargo --config 'source.crates-io.replace-with="rsproxy-sparse"' vendor vendor --locked  # exit 0；vendor/ tracked diff=0
