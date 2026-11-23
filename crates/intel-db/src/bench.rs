@@ -7,9 +7,9 @@
 //! 评测纪律（R2 6.8）：测试集 = RTIS 真实语料播种（元数据方法论面，POC 正文
 //! 不进 RIP3 库）+ 固定合成集；qrel 显式声明，不用检索结果自判相关性。
 
-use crate::search::{self, SearchFilters, RerankWorkerConfig};
-use crate::{IntelResult, PgPool};
 use crate::embed_worker::EmbedWorkerConfig;
+use crate::search::{self, RerankWorkerConfig, SearchFilters};
+use crate::{IntelResult, PgPool};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::time::Instant;
@@ -84,9 +84,7 @@ pub fn ndcg_at_k(ranked: &[String], relevant: &HashSet<String>, k: usize) -> f64
         })
         .sum();
     let ideal_hits = relevant.len().min(k);
-    let idcg: f64 = (0..ideal_hits)
-        .map(|i| 1.0 / (i as f64 + 2.0).log2())
-        .sum();
+    let idcg: f64 = (0..ideal_hits).map(|i| 1.0 / (i as f64 + 2.0).log2()).sum();
     if idcg == 0.0 {
         return 0.0;
     }
@@ -129,7 +127,14 @@ pub fn run_benchmark(
         rows.push(evaluate("vector", q, &ids(&vec), k as usize, ms(t)));
 
         let t = Instant::now();
-        let hyb = search::hybrid_search(pool, embed_config, filters, &q.query, k, search::DEFAULT_MMR_LAMBDA)?;
+        let hyb = search::hybrid_search(
+            pool,
+            embed_config,
+            filters,
+            &q.query,
+            k,
+            search::DEFAULT_MMR_LAMBDA,
+        )?;
         rows.push(evaluate("hybrid", q, &ids(&hyb), k as usize, ms(t)));
 
         let t = Instant::now();
@@ -158,7 +163,10 @@ mod tests {
     #[test]
     fn recall_precision_mrr_ndcg_pinned_values() {
         let rel = set(&["a", "b", "c"]);
-        let ranked: Vec<String> = ["x", "a", "y", "b", "z"].iter().map(|s| s.to_string()).collect();
+        let ranked: Vec<String> = ["x", "a", "y", "b", "z"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         // recall@5 = 2/3（a、b 命中）；precision@5 = 2/5；mrr = 1/2（a 在位 2）。
         assert_eq!(recall_at_k(&ranked, &rel, 5), 2.0 / 3.0);
         assert_eq!(precision_at_k(&ranked, &rel, 5), 2.0 / 5.0);

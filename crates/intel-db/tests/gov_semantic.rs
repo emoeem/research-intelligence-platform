@@ -8,14 +8,18 @@
 //! （relation_source = gov_worker.semantic:0.1.0，evidence rule = D4 semantic
 //! cosine）；**禁自动合并**（候选边非卡片合并）；二跑幂等。
 
+use domain::kcard::{KnowledgeType, SourceTrust, VerificationStatus};
 use intel_db::card_repo::{self, CardInput};
 use intel_db::embed_worker::{self, EmbedWorkerConfig};
 use intel_db::{open_pool, run_migrations, PgConfig};
-use domain::kcard::{KnowledgeType, SourceTrust, VerificationStatus};
 
-fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>> {
+fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>>
+{
     let dsn = std::env::var("RP_TEST_PG_DSN").ok()?;
-    match open_pool(&PgConfig { dsn, max_connections: 4 }) {
+    match open_pool(&PgConfig {
+        dsn,
+        max_connections: 4,
+    }) {
         Ok(p) => Some(p),
         Err(_) => {
             eprintln!("SKIP: RP_TEST_PG_DSN 不可达（V-9）");

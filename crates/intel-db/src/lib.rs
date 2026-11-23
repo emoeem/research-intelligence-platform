@@ -17,18 +17,19 @@
 //! 迁移：migrations_pg/V0001 扩展装载 + V0002 起 Document 域，refinery 每文件
 //! 事务 + checksum（12-STORAGE 第三节纪律）。
 
-pub mod card_repo;
-pub mod gov_worker;
-pub mod embed_worker;
-pub mod search;
 pub mod bench;
-pub mod search_cache;
+pub mod card_repo;
 pub mod commit;
 pub mod document_repo;
+pub mod embed_worker;
+pub mod gov_worker;
 pub mod ir;
+pub mod maintenance;
 pub mod object_store;
 pub mod parser;
 pub mod report_repo;
+pub mod search;
+pub mod search_cache;
 
 use r2d2::Pool;
 use r2d2_postgres::{postgres::NoTls, PostgresConnectionManager};
@@ -120,8 +121,10 @@ impl Default for PgConfig {
 
 /// 打开同步连接池。
 pub fn open_pool(cfg: &PgConfig) -> IntelResult<PgPool> {
-    let config: postgres::Config =
-        cfg.dsn.parse().map_err(|e| IntelError::Invalid(format!("bad RP_PG_DSN: {e}")))?;
+    let config: postgres::Config = cfg
+        .dsn
+        .parse()
+        .map_err(|e| IntelError::Invalid(format!("bad RP_PG_DSN: {e}")))?;
     let manager = PostgresConnectionManager::new(config, NoTls);
     let pool = Pool::builder()
         .max_size(cfg.max_connections)
@@ -142,7 +145,11 @@ pub fn run_migrations(client: &mut PgConn) -> IntelResult<Vec<u32>> {
     let report = embedded::migrations::runner()
         .run(client)
         .map_err(|e| IntelError::Migrate(e.to_string()))?;
-    Ok(report.applied_migrations().iter().map(|m| m.version()).collect())
+    Ok(report
+        .applied_migrations()
+        .iter()
+        .map(|m| m.version())
+        .collect())
 }
 
 /// 健康面（selftest 与 /api/documents 健康卡共用）。

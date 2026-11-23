@@ -101,7 +101,10 @@ pub struct EmbedWorkerProvider {
 
 impl EmbedWorkerProvider {
     pub fn new(config: EmbedWorkerConfig) -> Self {
-        Self { config, env: OnceLock::new() }
+        Self {
+            config,
+            env: OnceLock::new(),
+        }
     }
 
     fn env(&self) -> Result<&RunEnv, ParserErr> {
@@ -121,7 +124,8 @@ impl EmbedWorkerProvider {
             busy_timeout: Duration::from_secs(5),
         })
         .map_err(|e| ParserErr(format!("ops db open: {e}")))?;
-        pool.enable_wal().map_err(|e| ParserErr(format!("ops db wal: {e}")))?;
+        pool.enable_wal()
+            .map_err(|e| ParserErr(format!("ops db wal: {e}")))?;
         database::migrate(&pool, &self.config.sqlite_migrations_dir)
             .map_err(|e| ParserErr(format!("ops db migrate: {e}")))?;
         let registry = Registry::open(pool.clone()).with_options(Options {
@@ -151,7 +155,11 @@ impl EmbedWorkerProvider {
             Err(e) => return Err(ParserErr(format!("registry query: {e}"))),
         }
         let engine = Engine::open(pool.clone(), registry);
-        Ok(RunEnv { pool, engine, manifest: value })
+        Ok(RunEnv {
+            pool,
+            engine,
+            manifest: value,
+        })
     }
 
     pub(crate) fn dispatch(&self, input: Value) -> Result<Value, ParserErr> {
@@ -162,15 +170,26 @@ impl EmbedWorkerProvider {
             .to_string();
         let entrypoint: Vec<String> = env.manifest["runtime"]["entrypoint"]
             .as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default();
         if entrypoint.is_empty() {
             return Err(ParserErr("manifest entrypoint empty".to_string()));
         }
-        let family = env.manifest["family"].as_str().unwrap_or("document").to_string();
+        let family = env.manifest["family"]
+            .as_str()
+            .unwrap_or("document")
+            .to_string();
         let network = match env.manifest["network"]["mode"].as_str().unwrap_or("none") {
             "none" => tool_engine::adapter::NetworkPlan::None,
-            other => return Err(ParserErr(format!("network {other:?} 不可派发（none 之外拒绝）"))),
+            other => {
+                return Err(ParserErr(format!(
+                    "network {other:?} 不可派发（none 之外拒绝）"
+                )))
+            }
         };
         let memory_bytes = env.manifest["resources"]["memory"]
             .as_str()
@@ -297,7 +316,8 @@ pub fn embed_cards(
         .map(|r| (r.get::<_, String>(0), r.get::<_, String>(1)))
         .collect();
     while !pending.is_empty() {
-        let batch: Vec<(String, String)> = pending.drain(..EMBED_BATCH.min(pending.len())).collect();
+        let batch: Vec<(String, String)> =
+            pending.drain(..EMBED_BATCH.min(pending.len())).collect();
         let texts: Vec<Value> = batch.iter().map(|(_, t)| json!(t)).collect();
         let data = provider
             .dispatch(json!({ "texts": texts }))
@@ -340,7 +360,10 @@ pub fn embed_cards(
         }
         tx.commit()?;
     }
-    Ok(EmbedOutcome { embedded, skipped_existing })
+    Ok(EmbedOutcome {
+        embedded,
+        skipped_existing,
+    })
 }
 
 /// D4 语义候选扫描：每个有向量卡片取 top-K 余弦近邻（阈值上）→
@@ -399,7 +422,11 @@ pub fn semantic_scan(
             let src = KnowledgeCardId::try_new(card_id.clone()).map_err(IntelError::from)?;
             let dst = KnowledgeCardId::try_new(other_id).map_err(IntelError::from)?;
             // 无向候选统一 (min,max) 有向化（字典序），幂等语义稳定。
-            let (src, dst) = if src.as_str() < dst.as_str() { (src, dst) } else { (dst, src) };
+            let (src, dst) = if src.as_str() < dst.as_str() {
+                (src, dst)
+            } else {
+                (dst, src)
+            };
             let outcome = card_repo::add_relation(
                 pool,
                 &src,
@@ -419,5 +446,9 @@ pub fn semantic_scan(
             }
         }
     }
-    Ok(SemanticOutcome { searched, pairs, relations_created })
+    Ok(SemanticOutcome {
+        searched,
+        pairs,
+        relations_created,
+    })
 }

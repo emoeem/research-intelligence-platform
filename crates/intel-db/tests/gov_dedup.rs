@@ -7,14 +7,18 @@
 //! evidence 落库、confidence=估计值）；完全无关文本不建边；扫描幂等（二跑
 //! relations_created=0）。
 
+use domain::kcard::{KnowledgeType, SourceTrust, VerificationStatus};
 use intel_db::card_repo::{self, CardInput};
 use intel_db::gov_worker::{self, GovWorkerConfig};
 use intel_db::{open_pool, run_migrations, PgConfig};
-use domain::kcard::{KnowledgeType, SourceTrust, VerificationStatus};
 
-fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>> {
+fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>>
+{
     let dsn = std::env::var("RP_TEST_PG_DSN").ok()?;
-    match open_pool(&PgConfig { dsn, max_connections: 4 }) {
+    match open_pool(&PgConfig {
+        dsn,
+        max_connections: 4,
+    }) {
         Ok(p) => Some(p),
         Err(_) => {
             eprintln!("SKIP: RP_TEST_PG_DSN 不可达（V-9）");
@@ -98,8 +102,15 @@ fn d3_minhash_scan_builds_near_duplicate_candidates() {
     };
     let outcome = gov_worker::minhash_scan(&pool, "ws-p3-gov", 0.5, 128, &cfg).unwrap();
     assert_eq!(outcome.scanned, 3, "三卡全部参扫");
-    assert!(outcome.pairs >= 1, "近似对必须被召回（got pairs={}）", outcome.pairs);
-    assert!(outcome.relations_created >= 1, "NEAR_DUPLICATE 候选边必须新建");
+    assert!(
+        outcome.pairs >= 1,
+        "近似对必须被召回（got pairs={}）",
+        outcome.pairs
+    );
+    assert!(
+        outcome.relations_created >= 1,
+        "NEAR_DUPLICATE 候选边必须新建"
+    );
 
     // 幂等：二跑不新建（UNIQUE(src,dst,type)）。
     let again = gov_worker::minhash_scan(&pool, "ws-p3-gov", 0.5, 128, &cfg).unwrap();

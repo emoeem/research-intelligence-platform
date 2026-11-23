@@ -128,7 +128,11 @@ fn embed_cfg_from(args: &Args) -> IntelResult<intel_db::embed_worker::EmbedWorke
 fn main() {
     let mut argv = std::env::args().peekable();
     let _bin = argv.next();
-    if argv.peek().map(|s| s == "--help" || s == "-h").unwrap_or(false) {
+    if argv
+        .peek()
+        .map(|s| s == "--help" || s == "-h")
+        .unwrap_or(false)
+    {
         help_only();
     }
     let args = parse_args(argv);
@@ -151,8 +155,8 @@ fn main() {
     let result: IntelResult<serde_json::Value> = (|| {
         match sub.as_str() {
             "create" => {
-                let ktype = KnowledgeType::parse(&require_flag(&args, "type"))
-                    .map_err(IntelError::from)?;
+                let ktype =
+                    KnowledgeType::parse(&require_flag(&args, "type")).map_err(IntelError::from)?;
                 let content = if let Some(f) = opt_flag(&args, "content-file") {
                     std::fs::read_to_string(PathBuf::from(f)).map_err(IntelError::from)?
                 } else {
@@ -168,7 +172,9 @@ fn main() {
                     .map_err(|e| IntelError::Invalid(format!("confidence parse: {e}")))?
                     .unwrap_or(0.5);
                 let trust = SourceTrust::parse(
-                    opt_flag(&args, "trust").unwrap_or_else(|| "external_import".to_string()).as_str(),
+                    opt_flag(&args, "trust")
+                        .unwrap_or_else(|| "external_import".to_string())
+                        .as_str(),
                 )
                 .map_err(IntelError::from)?;
                 let evidence = match opt_flag(&args, "evidence") {
@@ -199,13 +205,16 @@ fn main() {
                     source_trust: trust,
                     ai_derived: args.flags.contains_key("ai-derived"),
                     quality_flags: flags,
-                    workspace_id: opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string()),
+                    workspace_id: opt_flag(&args, "workspace")
+                        .unwrap_or_else(|| "default".to_string()),
                     donor_caller_id: None,
                     donor_channel: None,
                 };
                 let card = card_repo::create_card(&pool, &input)?;
                 let mut out = serde_json::json!({ "knowledge_id": card.as_str() });
-                if let (Some(d), Some(r)) = (opt_flag(&args, "document"), opt_flag(&args, "revision")) {
+                if let (Some(d), Some(r)) =
+                    (opt_flag(&args, "document"), opt_flag(&args, "revision"))
+                {
                     let document = domain::DocumentId::try_new(d)?;
                     let revision = domain::DocumentRevisionId::try_new(r)?;
                     card_repo::link_document(&pool, &document, &revision, &card)?;
@@ -236,8 +245,8 @@ fn main() {
                     }
                     None => "cli".to_string(),
                 };
-                let ktype = KnowledgeType::parse(&require_flag(&args, "type"))
-                    .map_err(IntelError::from)?;
+                let ktype =
+                    KnowledgeType::parse(&require_flag(&args, "type")).map_err(IntelError::from)?;
                 let content = if let Some(f) = opt_flag(&args, "content-file") {
                     std::fs::read_to_string(PathBuf::from(f)).map_err(IntelError::from)?
                 } else {
@@ -304,7 +313,8 @@ fn main() {
             "relate" => {
                 let src = KnowledgeCardId::try_new(require_flag(&args, "src"))?;
                 let dst = KnowledgeCardId::try_new(require_flag(&args, "dst"))?;
-                let rtype = RelationType::parse(&require_flag(&args, "type")).map_err(IntelError::from)?;
+                let rtype =
+                    RelationType::parse(&require_flag(&args, "type")).map_err(IntelError::from)?;
                 let confidence = opt_flag(&args, "confidence")
                     .map(|s| s.parse::<f32>())
                     .transpose()
@@ -314,9 +324,17 @@ fn main() {
                     .map(|raw| serde_json::from_str::<serde_json::Value>(&raw))
                     .transpose()
                     .map_err(|e| IntelError::Invalid(format!("evidence-json parse: {e}")))?;
-                let source = opt_flag(&args, "source").unwrap_or_else(|| "manual:rp-kc".to_string());
-                let (rid, created) =
-                    card_repo::add_relation(&pool, &src, &dst, rtype, evidence.as_ref(), &source, confidence)?;
+                let source =
+                    opt_flag(&args, "source").unwrap_or_else(|| "manual:rp-kc".to_string());
+                let (rid, created) = card_repo::add_relation(
+                    &pool,
+                    &src,
+                    &dst,
+                    rtype,
+                    evidence.as_ref(),
+                    &source,
+                    confidence,
+                )?;
                 Ok(serde_json::json!({
                     "relation_id": rid.as_str(),
                     "created": created,
@@ -324,7 +342,8 @@ fn main() {
                 }))
             }
             "list" => {
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let status = match opt_flag(&args, "status") {
                     Some(raw) => Some(ReviewStatus::parse(&raw).map_err(IntelError::from)?),
                     None => None,
@@ -366,9 +385,12 @@ fn main() {
             }
             "batch-review" => {
                 // 批量审核面（R2 5.4 批量审核；低质量双闸在 decide 内逐卡生效）。
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let status = ReviewStatus::parse(
-                    opt_flag(&args, "status").unwrap_or_else(|| "CANDIDATE".to_string()).as_str(),
+                    opt_flag(&args, "status")
+                        .unwrap_or_else(|| "CANDIDATE".to_string())
+                        .as_str(),
                 )
                 .map_err(IntelError::from)?;
                 let min_score = opt_flag(&args, "min-score")
@@ -385,7 +407,8 @@ fn main() {
                         )))
                     }
                 };
-                let reason = opt_flag(&args, "reason").unwrap_or_else(|| "batch-review".to_string());
+                let reason =
+                    opt_flag(&args, "reason").unwrap_or_else(|| "batch-review".to_string());
                 let reviewer = opt_flag(&args, "reviewer").unwrap_or_else(|| "batch".to_string());
                 let dry_run = args.flags.contains_key("dry-run");
                 let mut conn = pool.get()?;
@@ -406,7 +429,9 @@ fn main() {
                     let card = KnowledgeCardId::try_new(id.clone())?;
                     // 硬标记与地板双闸预检（approve 面；与 decide 内闸一致）。
                     let hard_hit = flags.iter().any(|f| {
-                        RiskFlag::parse(f).map(|rf| rf.is_hard_block()).unwrap_or(false)
+                        RiskFlag::parse(f)
+                            .map(|rf| rf.is_hard_block())
+                            .unwrap_or(false)
                     });
                     // 地板：--min-score 覆盖（approve 面），缺省 = LOW_QUALITY_FLOOR。
                     let floor = match (to, min_score) {
@@ -445,10 +470,85 @@ fn main() {
                     "skipped": skipped,
                 }))
             }
+            "feedback-list" => {
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let status = opt_flag(&args, "status");
+                let limit = opt_flag(&args, "limit")
+                    .map(|s| s.parse::<i64>())
+                    .transpose()
+                    .map_err(|e| IntelError::Invalid(format!("limit parse: {e}")))?
+                    .unwrap_or(100);
+                intel_db::maintenance::list_feedback_candidates(
+                    &pool,
+                    &workspace,
+                    status.as_deref(),
+                    limit,
+                )
+            }
+            "feedback-show" => {
+                let candidate = require_flag(&args, "candidate-id");
+                intel_db::maintenance::get_feedback_candidate(&pool, &candidate)?.ok_or_else(|| {
+                    IntelError::Invalid(format!("feedback candidate not found: {candidate}"))
+                })
+            }
+            "feedback-reject" => {
+                let candidate = require_flag(&args, "candidate-id");
+                let reviewer = require_flag(&args, "reviewer");
+                let reason = require_flag(&args, "reason");
+                intel_db::maintenance::reject_feedback_candidate(
+                    &pool, &candidate, &reviewer, &reason,
+                )?;
+                Ok(serde_json::json!({"candidate_id":candidate,"review_status":"REJECTED"}))
+            }
+            "feedback-ingest" => {
+                let report_id = require_flag(&args, "report-id");
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let outcome = intel_db::maintenance::ingest_report(&pool, &report_id, &workspace)?;
+                serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
+            }
+            "feedback-promote" => {
+                let candidate = require_flag(&args, "candidate-id");
+                let reviewer = require_flag(&args, "reviewer");
+                let reason = require_flag(&args, "reason");
+                let card = intel_db::maintenance::promote_feedback_candidate(
+                    &pool, &candidate, &reviewer, &reason,
+                )?;
+                Ok(
+                    serde_json::json!({"candidate_id":candidate,"knowledge_id":card.as_str(),"review_status":"CANDIDATE"}),
+                )
+            }
+            "feedback-reuse" => {
+                let candidate = require_flag(&args, "candidate-id");
+                let reviewer = require_flag(&args, "reviewer");
+                let reason = require_flag(&args, "reason");
+                let card = intel_db::maintenance::reuse_duplicate_candidate(
+                    &pool, &candidate, &reviewer, &reason,
+                )?;
+                Ok(
+                    serde_json::json!({"candidate_id":candidate,"knowledge_id":card.as_str(),"reused":true}),
+                )
+            }
+            "maintenance-audit" => {
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let outcome = intel_db::maintenance::run_maintenance_audit(&pool, &workspace)?;
+                serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
+            }
+            "maintenance-report" => {
+                let run_id = require_flag(&args, "run-id");
+                intel_db::maintenance::load_maintenance_report(&pool, &run_id)?.ok_or_else(|| {
+                    IntelError::Invalid(format!("maintenance run not found: {run_id}"))
+                })
+            }
             "dedup-scan" => {
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let created = card_repo::dedup_scan_same_content(&pool, &workspace)?;
-                Ok(serde_json::json!({ "workspace": workspace, "same_content_relations_created": created }))
+                Ok(
+                    serde_json::json!({ "workspace": workspace, "same_content_relations_created": created }),
+                )
             }
             "search" => {
                 // 统一检索入口（R2 6.1：唯一检索面；R2 6.4 结构化过滤 + 13 号
@@ -482,7 +582,8 @@ fn main() {
                     }
                     "vector" => {
                         let cfg = embed_cfg_from(&args)?;
-                        let hits = intel_db::search::vector_search(&pool, &cfg, &filters, &query, limit)?;
+                        let hits =
+                            intel_db::search::vector_search(&pool, &cfg, &filters, &query, limit)?;
                         serde_json::to_value(hits).map_err(|e| IntelError::Invalid(e.to_string()))
                     }
                     "hybrid" => {
@@ -503,7 +604,8 @@ fn main() {
                         rcfg.manifest_dir = std::path::absolute(&rcfg.manifest_dir)?;
                         rcfg.run_db = std::path::absolute(&rcfg.run_db)?;
                         rcfg.workspace_root = std::path::absolute(&rcfg.workspace_root)?;
-                        rcfg.sqlite_migrations_dir = std::path::absolute(&rcfg.sqlite_migrations_dir)?;
+                        rcfg.sqlite_migrations_dir =
+                            std::path::absolute(&rcfg.sqlite_migrations_dir)?;
                         let hits = intel_db::search::rerank_search(
                             &pool, &cfg, &rcfg, &filters, &query, limit,
                         )?;
@@ -523,7 +625,8 @@ fn main() {
                     .transpose()
                     .map_err(|e| IntelError::Invalid(format!("k parse: {e}")))?
                     .unwrap_or(10);
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let qrels: Vec<serde_json::Value> = serde_json::from_str(
                     &std::fs::read_to_string(&qrel_path)
                         .map_err(|e| IntelError::Invalid(format!("qrel read {qrel_path}: {e}")))?,
@@ -541,7 +644,10 @@ fn main() {
                         .iter()
                         .filter_map(|v| v.as_str().map(str::to_string))
                         .collect();
-                    queries.push(intel_db::bench::BenchQuery { query: text, relevant });
+                    queries.push(intel_db::bench::BenchQuery {
+                        query: text,
+                        relevant,
+                    });
                 }
                 let filters = intel_db::search::SearchFilters::new(&workspace);
                 let cfg = embed_cfg_from(&args)?;
@@ -553,11 +659,13 @@ fn main() {
                 rcfg.run_db = std::path::absolute(&rcfg.run_db)?;
                 rcfg.workspace_root = std::path::absolute(&rcfg.workspace_root)?;
                 rcfg.sqlite_migrations_dir = std::path::absolute(&rcfg.sqlite_migrations_dir)?;
-                let rows = intel_db::bench::run_benchmark(&pool, &cfg, &rcfg, &filters, &queries, k)?;
+                let rows =
+                    intel_db::bench::run_benchmark(&pool, &cfg, &rcfg, &filters, &queries, k)?;
                 serde_json::to_value(rows).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             "embed-cards" => {
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let mut cfg = intel_db::embed_worker::EmbedWorkerConfig::default();
                 if let Some(p) = opt_flag(&args, "run-db") {
                     cfg.run_db = PathBuf::from(p);
@@ -573,7 +681,8 @@ fn main() {
                 serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             "semantic-scan" => {
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let threshold = opt_flag(&args, "threshold")
                     .map(|s| s.parse::<f32>())
                     .transpose()
@@ -595,12 +704,14 @@ fn main() {
                 cfg.workspace_root = std::path::absolute(&cfg.workspace_root)?;
                 cfg.sqlite_migrations_dir = std::path::absolute(&cfg.sqlite_migrations_dir)?;
                 cfg.manifest_dir = std::path::absolute(&cfg.manifest_dir)?;
-                let outcome =
-                    intel_db::embed_worker::semantic_scan(&pool, &workspace, threshold, top_k, &cfg)?;
+                let outcome = intel_db::embed_worker::semantic_scan(
+                    &pool, &workspace, threshold, top_k, &cfg,
+                )?;
                 serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             "minhash-scan" => {
-                let workspace = opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
+                let workspace =
+                    opt_flag(&args, "workspace").unwrap_or_else(|| "default".to_string());
                 let threshold = opt_flag(&args, "threshold")
                     .map(|s| s.parse::<f64>())
                     .transpose()
@@ -622,7 +733,9 @@ fn main() {
                 cfg.workspace_root = std::path::absolute(&cfg.workspace_root)?;
                 cfg.sqlite_migrations_dir = std::path::absolute(&cfg.sqlite_migrations_dir)?;
                 cfg.manifest_dir = std::path::absolute(&cfg.manifest_dir)?;
-                let outcome = intel_db::gov_worker::minhash_scan(&pool, &workspace, threshold, num_perm, &cfg)?;
+                let outcome = intel_db::gov_worker::minhash_scan(
+                    &pool, &workspace, threshold, num_perm, &cfg,
+                )?;
                 serde_json::to_value(outcome).map_err(|e| IntelError::Invalid(e.to_string()))
             }
             _ => usage(),

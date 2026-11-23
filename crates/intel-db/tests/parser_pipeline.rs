@@ -27,7 +27,10 @@ fn skip_unless_pg() -> Option<(
     PathBuf,
 )> {
     let dsn = std::env::var("RP_TEST_PG_DSN").ok()?;
-    let pool = match open_pool(&PgConfig { dsn, max_connections: 4 }) {
+    let pool = match open_pool(&PgConfig {
+        dsn,
+        max_connections: 4,
+    }) {
         Ok(p) => p,
         Err(_) => {
             eprintln!("SKIP: RP_TEST_PG_DSN 不可达（V-9，容器端到端保持本地执行）");
@@ -117,7 +120,9 @@ fn ir_validation_and_tree_gates() {
 
 #[test]
 fn commit_roundtrip_and_idempotent_replay() {
-    let Some((pool, store, _root)) = skip_unless_pg() else { return };
+    let Some((pool, store, _root)) = skip_unless_pg() else {
+        return;
+    };
     let mut conn = pool.get().unwrap();
     run_migrations(&mut conn).unwrap();
     drop(conn);
@@ -134,7 +139,12 @@ fn commit_roundtrip_and_idempotent_replay() {
     let (ir, _raw) = sample_ir(false);
     let empty_assets = std::collections::HashMap::new();
     let first = commit::commit_parse_result(
-        &pool, &store, &outcome.document_id, &outcome.revision_id, &ir, &empty_assets,
+        &pool,
+        &store,
+        &outcome.document_id,
+        &outcome.revision_id,
+        &ir,
+        &empty_assets,
     )
     .unwrap();
     assert_eq!(first.parse_state, "APPROVED");
@@ -157,11 +167,19 @@ fn commit_roundtrip_and_idempotent_replay() {
         title["block_id"].as_str().unwrap(),
         "父子结构不压平"
     );
-    assert!(heading["location_metadata"]["bbox"].is_array(), "bbox 落 location_metadata");
+    assert!(
+        heading["location_metadata"]["bbox"].is_array(),
+        "bbox 落 location_metadata"
+    );
 
     // 幂等重放：同 IR 再提交 = replayed=true，块数零重复。
     let second = commit::commit_parse_result(
-        &pool, &store, &outcome.document_id, &outcome.revision_id, &ir, &empty_assets,
+        &pool,
+        &store,
+        &outcome.document_id,
+        &outcome.revision_id,
+        &ir,
+        &empty_assets,
     )
     .unwrap();
     assert!(second.replayed, "同 IR 二次提交必须命中重放键");
@@ -177,7 +195,10 @@ fn commit_roundtrip_and_idempotent_replay() {
             &[&outcome.revision_id.as_str()],
         )
         .unwrap();
-    assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("docling 2.150.1"));
+    assert_eq!(
+        row.get::<_, Option<String>>(0).as_deref(),
+        Some("docling 2.150.1")
+    );
     assert!(row.get::<_, Option<String>>(1).is_some());
     assert_eq!(row.get::<_, Option<String>>(3).as_deref(), Some("APPROVED"));
     let quality: serde_json::Value = row.get::<_, Option<serde_json::Value>>(2).unwrap();
@@ -186,7 +207,9 @@ fn commit_roundtrip_and_idempotent_replay() {
 
 #[test]
 fn injection_flag_routes_review_and_approve() {
-    let Some((pool, store, _root)) = skip_unless_pg() else { return };
+    let Some((pool, store, _root)) = skip_unless_pg() else {
+        return;
+    };
     let mut conn = pool.get().unwrap();
     run_migrations(&mut conn).unwrap();
     drop(conn);
@@ -203,7 +226,12 @@ fn injection_flag_routes_review_and_approve() {
     let (ir, _raw) = sample_ir(true);
     let empty_assets = std::collections::HashMap::new();
     let committed = commit::commit_parse_result(
-        &pool, &store, &outcome.document_id, &outcome.revision_id, &ir, &empty_assets,
+        &pool,
+        &store,
+        &outcome.document_id,
+        &outcome.revision_id,
+        &ir,
+        &empty_assets,
     )
     .unwrap();
     assert_eq!(
@@ -227,7 +255,9 @@ fn injection_flag_routes_review_and_approve() {
 
 #[test]
 fn parse_state_words_gated() {
-    let Some((pool, store, _root)) = skip_unless_pg() else { return };
+    let Some((pool, store, _root)) = skip_unless_pg() else {
+        return;
+    };
     let mut conn = pool.get().unwrap();
     run_migrations(&mut conn).unwrap();
     drop(conn);
@@ -249,7 +279,9 @@ fn parse_state_words_gated() {
 #[test]
 fn container_parse_end_to_end() {
     // 真容器面（V-9 双守卫：PG + 镜像 digest 钉死引用在本地镜像库）。
-    let Some((pool, store, _root)) = skip_unless_pg() else { return };
+    let Some((pool, store, _root)) = skip_unless_pg() else {
+        return;
+    };
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest_text = std::fs::read_to_string(
         repo_root.join("containerfiles/rip-parser/rip.parser.docling.json"),

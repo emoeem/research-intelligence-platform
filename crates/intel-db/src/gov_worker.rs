@@ -81,13 +81,14 @@ pub struct GovWorkerProvider {
 
 impl GovWorkerProvider {
     pub fn new(config: GovWorkerConfig) -> Self {
-        Self { config, env: OnceLock::new() }
+        Self {
+            config,
+            env: OnceLock::new(),
+        }
     }
 
     fn env(&self) -> Result<&RunEnv, ParserErr> {
-        let cell = self
-            .env
-            .get_or_init(|| self.init_env().map_err(|e| e.0));
+        let cell = self.env.get_or_init(|| self.init_env().map_err(|e| e.0));
         cell.as_ref().map_err(|e| ParserErr(e.clone()))
     }
 
@@ -103,13 +104,17 @@ impl GovWorkerProvider {
             busy_timeout: Duration::from_secs(5),
         })
         .map_err(|e| ParserErr(format!("ops db open: {e}")))?;
-        pool.enable_wal().map_err(|e| ParserErr(format!("ops db wal: {e}")))?;
+        pool.enable_wal()
+            .map_err(|e| ParserErr(format!("ops db wal: {e}")))?;
         database::migrate(&pool, &self.config.sqlite_migrations_dir)
             .map_err(|e| ParserErr(format!("ops db migrate: {e}")))?;
         let registry = Registry::open(pool.clone()).with_options(Options {
             allow_placeholder_digest: false,
         });
-        let path = self.config.manifest_dir.join(format!("{TOOL_MINHASH}.json"));
+        let path = self
+            .config
+            .manifest_dir
+            .join(format!("{TOOL_MINHASH}.json"));
         let value: Value = serde_json::from_str(
             &std::fs::read_to_string(&path)
                 .map_err(|e| ParserErr(format!("manifest read {path:?}: {e}")))?,
@@ -133,7 +138,11 @@ impl GovWorkerProvider {
             Err(e) => return Err(ParserErr(format!("registry query: {e}"))),
         }
         let engine = Engine::open(pool.clone(), registry);
-        Ok(RunEnv { pool, engine, manifest: value })
+        Ok(RunEnv {
+            pool,
+            engine,
+            manifest: value,
+        })
     }
 
     fn dispatch(&self, input: Value) -> Result<Value, ParserErr> {
@@ -144,15 +153,26 @@ impl GovWorkerProvider {
             .to_string();
         let entrypoint: Vec<String> = env.manifest["runtime"]["entrypoint"]
             .as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default();
         if entrypoint.is_empty() {
             return Err(ParserErr("manifest entrypoint empty".to_string()));
         }
-        let family = env.manifest["family"].as_str().unwrap_or("document").to_string();
+        let family = env.manifest["family"]
+            .as_str()
+            .unwrap_or("document")
+            .to_string();
         let network = match env.manifest["network"]["mode"].as_str().unwrap_or("none") {
             "none" => tool_engine::adapter::NetworkPlan::None,
-            other => return Err(ParserErr(format!("network {other:?} 不可派发（none 之外拒绝）"))),
+            other => {
+                return Err(ParserErr(format!(
+                    "network {other:?} 不可派发（none 之外拒绝）"
+                )))
+            }
         };
         let memory_bytes = env.manifest["resources"]["memory"]
             .as_str()
@@ -284,7 +304,12 @@ pub fn minhash_scan(
         })
         .collect();
     if items.is_empty() {
-        return Ok(MinhashScanOutcome { scanned: 0, pairs: 0, relations_created: 0, skipped_missing: 0 });
+        return Ok(MinhashScanOutcome {
+            scanned: 0,
+            pairs: 0,
+            relations_created: 0,
+            skipped_missing: 0,
+        });
     }
     let scanned = items.len();
     let data = provider

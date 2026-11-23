@@ -12,13 +12,12 @@
 //! REVIEW_PENDING（QUARANTINED 候选，13 号冻结物第三节；人工 approve 走
 //! [`review_approve`]），否则 APPROVED。
 
-use crate::ir::{validate_ir, remap_block_ids, DocumentIr, QUARANTINE_FLAGS};
+use crate::ir::{remap_block_ids, validate_ir, DocumentIr, QUARANTINE_FLAGS};
 use crate::object_store::{sha256_hex, ObjectStore};
 use crate::{IntelError, IntelResult, PgPool};
 use domain::{DocumentId, DocumentRevisionId};
 use serde_json::Value;
 use std::collections::HashMap;
-
 
 /// 提交结果。
 #[derive(Debug, serde::Serialize)]
@@ -53,7 +52,9 @@ fn check_parse_state(state: &str) -> IntelResult<()> {
     if PARSE_STATES.contains(&state) {
         Ok(())
     } else {
-        Err(IntelError::Invalid(format!("invalid parse_state {state:?} (V0003 CHECK domain)")))
+        Err(IntelError::Invalid(format!(
+            "invalid parse_state {state:?} (V0003 CHECK domain)"
+        )))
     }
 }
 
@@ -71,7 +72,9 @@ pub fn set_parse_state(
         &[&revision_id.as_str(), &state],
     )?;
     if updated == 0 {
-        return Err(IntelError::Invalid(format!("revision {revision_id} not found")));
+        return Err(IntelError::Invalid(format!(
+            "revision {revision_id} not found"
+        )));
     }
     Ok(())
 }
@@ -114,12 +117,9 @@ pub fn commit_parse_result(
     // 资产入 CAS：内容 sha256 必须与 IR 声明一致（fail-closed）。
     let mut asset_stored: Vec<(String, String, String)> = Vec::new(); // (asset_id, hash, uri)
     for asset in &ir.assets {
-        let path = asset_files
-            .get(&asset.asset_id)
-            .ok_or_else(|| IntelError::Invalid(format!(
-                "asset file missing for {}",
-                asset.asset_id
-            )))?;
+        let path = asset_files.get(&asset.asset_id).ok_or_else(|| {
+            IntelError::Invalid(format!("asset file missing for {}", asset.asset_id))
+        })?;
         let bytes = std::fs::read(path)?;
         let actual = sha256_hex(&bytes);
         if actual != asset.content_sha256 {
@@ -135,7 +135,11 @@ pub fn commit_parse_result(
             )));
         }
         let stored = store.put(&bytes)?;
-        asset_stored.push((asset.asset_id.clone(), stored.content_hash, stored.storage_uri));
+        asset_stored.push((
+            asset.asset_id.clone(),
+            stored.content_hash,
+            stored.storage_uri,
+        ));
     }
 
     // IR 文本进 CAS（解析产物原始凭证，可重放；04 号冻结物第四节）。
@@ -263,7 +267,9 @@ pub fn commit_parse_result(
     }
     for (asset, (aid, hash, uri)) in ir.assets.iter().zip(asset_stored.iter()) {
         if asset.asset_id != *aid {
-            return Err(IntelError::Invalid("asset zip ordering diverged".to_string()));
+            return Err(IntelError::Invalid(
+                "asset zip ordering diverged".to_string(),
+            ));
         }
         tx.execute(
             "INSERT INTO content_objects (content_hash, size_bytes, mime_type, storage_uri, ref_count)
@@ -315,7 +321,9 @@ pub fn commit_parse_result(
         ],
     )?;
     if updated == 0 {
-        return Err(IntelError::Invalid(format!("revision {revision_id} vanished mid-commit")));
+        return Err(IntelError::Invalid(format!(
+            "revision {revision_id} vanished mid-commit"
+        )));
     }
     tx.commit()?;
     Ok(CommitOutcome {
@@ -329,10 +337,7 @@ pub fn commit_parse_result(
 }
 
 /// 读回 blocks 树（roundtrip 对账面：parent/order/页码一致）。
-pub fn read_blocks(
-    pool: &PgPool,
-    revision_id: &DocumentRevisionId,
-) -> IntelResult<Vec<Value>> {
+pub fn read_blocks(pool: &PgPool, revision_id: &DocumentRevisionId) -> IntelResult<Vec<Value>> {
     let mut conn = pool.get()?;
     let rows = conn.query(
         "SELECT block_id, parent_block_id, block_type, order_index, content, page_number,

@@ -23,6 +23,8 @@ sha2 = "0.10"
 tool-engine = { workspace = true }
 tool-registry = { workspace = true }
 runtime-gateway = { workspace = true }
+# Report IR v1 is validated by its single-source schema before feedback ingestion.
+report-engine = { path = "../report-engine" }
 
 [[bin]]
 name = "rp-kc"

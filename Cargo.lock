@@ -1497,6 +1497,7 @@ dependencies = [
  "r2d2",
  "r2d2_postgres",
  "refinery",
+ "report-engine",
  "runtime-gateway",
  "serde",
  "serde_json",

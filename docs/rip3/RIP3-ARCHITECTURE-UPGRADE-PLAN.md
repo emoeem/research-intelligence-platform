@@ -829,3 +829,41 @@ Finding 验证完成 → 提取候选 Knowledge Card → 查重查冲突 → 关
 4. **继承清单（原则 G）是底线**：八项已有能力必须复用；遇任何「重新实现其中之一」的冲动，先回头重读本文件。
 5. **RTIS 红线**（11.5）与 **CI 硬门槛**（15.1）违反即返工，没有例外。
 6. 阶段推进遇阻时，如实报告（17.6 格式），不伪造通过、不降低验收标准。
+
+
+---
+
+## Phase 7 / Phase 8 执行验收记录（2026-11-23）
+
+本记录补充 R2 的执行结果，不改写原始设计目标与验收判据。
+
+### Phase 7：Knowledge Feedback & Maintenance
+
+状态：本地实现与验收完成。
+
+- 新增 `migrations_pg/V0009__knowledge_feedback_maintenance.sql` 与 `V0010__research_task_workspace.sql`，仅追加迁移，不改写 V0001-V0008；V0010 为 research_tasks 增加 workspace 归属，隔离 Finding 与 RTIS 监测。
+- 新增 `crates/intel-db/src/maintenance.rs`，在 Report IR v1 Schema 校验后，把 confirmed + 非空 Evidence 的 Finding 进入人工审核候选队列。
+- 六 ID Evidence 溯源、报告/任务/Finding 观察历史、候选知识 D2 哈希查重、人工 promote/reuse/reject 流程均已接通。
+- 上游 ETag / Last-Modified / SHA-256 监测、HTTP 失效链接检测、RTIS POC 引用存在性/新鲜度/验证状态检查、质量巡检和维护报告已实现。
+- RTIS 只读：Worker 通过 SQLite immutable read-only URI，只读取 POC ID 与可选验证/时间元数据，不读取 POC 正文，不向 RTIS 写入。
+- 详细设计、运行方式与验收记录：`docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md`。
+
+### Phase 8：Scale Testing & Benchmark
+
+状态：100k / 1M 基准实测完成。
+
+- PostgreSQL 17.11：100,000 文档 / 1,000,000 Chunk / 4,000 运行事件，完成导入、GIN 索引、检索、16 并发读、8 并发写、内存/存储采样、迁移 DDL、REINDEX、pg_dump / pg_restore。
+- SQLite 3.54.1 WAL + FTS5：同一合成数据规模完成导入、索引、检索、并发读写、内存/存储采样、迁移、重建与 backup API 恢复。
+- 两种后端均在恢复目标数据库后逐表计数核验 100k / 1M / 4k 一致。
+- 原始数据与解释：`docs/rip3/PHASE-8-SCALE-TESTING.md`、`docs/rip3/benchmarks/`。
+
+### 运营核迁移裁决
+
+**继续保留 SQLite，不在本阶段迁移运营核。** 本机嵌入式工作负载下 SQLite 读写、存储与恢复实测更快；当前没有足以证明必须迁移的 SQLite 写锁争用或多主机需求。PostgreSQL 继续承载情报核；运营核仅在持续写锁等待、跨主机共享或高可用需求成为事实后重新评估。详细触发条件见 Phase 8 报告。该结论不授权生产切库。
+
+### 阶段门禁状态
+
+- `intel-db` 单元测试：32 passed；Phase 7 PostgreSQL 集成：4 passed（含 workspace 越界写入拒绝）。
+- Python Worker 单元测试：4 passed；来源监测 PostgreSQL 实测与 RTIS 只读 workspace fixture 实测通过。
+- `cargo clippy --offline --workspace --all-targets -- -D warnings` 通过；`cargo fmt -p intel-db -- --check` 通过。
+- 本地全 Workspace 串行回归：1,396 passed / 0 failed / 3 ignored；`cargo clippy --offline --workspace --all-targets -- -D warnings` 通过。GitHub Actions 未触发（本轮未 push），远程 CI 状态不作宣称。

@@ -21,13 +21,19 @@
 
 #![deny(missing_docs)]
 
-use domain::kcard::{KnowledgeCardId, KnowledgeType, ReviewStatus, RiskFlag, SourceTrust, VerificationStatus};
+use domain::kcard::{
+    KnowledgeCardId, KnowledgeType, ReviewStatus, RiskFlag, SourceTrust, VerificationStatus,
+};
 use intel_db::card_repo::{self, CardInput};
 use intel_db::{open_pool, run_migrations, PgConfig};
 
-fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>> {
+fn skip_unless_pg() -> Option<r2d2::Pool<r2d2_postgres::PostgresConnectionManager<postgres::NoTls>>>
+{
     let dsn = std::env::var("RP_TEST_PG_DSN").ok()?;
-    match open_pool(&PgConfig { dsn, max_connections: 4 }) {
+    match open_pool(&PgConfig {
+        dsn,
+        max_connections: 4,
+    }) {
         Ok(p) => Some(p),
         Err(_) => {
             eprintln!("SKIP: RP_TEST_PG_DSN 不可达（V-9，容器端到端保持本地执行）");
@@ -146,8 +152,8 @@ fn concurrent_donor_submit_governance() {
         .collect();
     assert_eq!(logs.len(), N, "每卡一条转移日志");
     assert!(
-        logs.iter().all(|(t, r)| t == "DISCOVERED->CANDIDATE"
-            && r.starts_with("caller-donor-")),
+        logs.iter()
+            .all(|(t, r)| t == "DISCOVERED->CANDIDATE" && r.starts_with("caller-donor-")),
         "转移日志 reviewer=donor: {logs:?}"
     );
     drop(conn);
@@ -183,13 +189,30 @@ fn donor_cards_review_gates_and_search_predicate() {
     // 未计分 approve 拒（质量地板双闸之一）。
     let plain = card_repo::create_card(
         &pool,
-        &donor_input("MA-3 双闸负例未计分卡：WAF 绕过手法笔记。", vec![], "caller-gate", "cli"),
+        &donor_input(
+            "MA-3 双闸负例未计分卡：WAF 绕过手法笔记。",
+            vec![],
+            "caller-gate",
+            "cli",
+        ),
     )
     .unwrap();
-    card_repo::decide(&pool, &plain, ReviewStatus::Candidate, "donor gate", "caller-gate")
-        .unwrap();
-    let err = card_repo::decide(&pool, &plain, ReviewStatus::Approved, "未计分", "human-reviewer")
-        .unwrap_err();
+    card_repo::decide(
+        &pool,
+        &plain,
+        ReviewStatus::Candidate,
+        "donor gate",
+        "caller-gate",
+    )
+    .unwrap();
+    let err = card_repo::decide(
+        &pool,
+        &plain,
+        ReviewStatus::Approved,
+        "未计分",
+        "human-reviewer",
+    )
+    .unwrap_err();
     assert!(
         err.to_string().contains("quality score not computed yet"),
         "未计分 approve 拒: {err}"
@@ -206,30 +229,62 @@ fn donor_cards_review_gates_and_search_predicate() {
         ),
     )
     .unwrap();
-    card_repo::decide(&pool, &hard, ReviewStatus::Candidate, "donor gate", "caller-gate")
-        .unwrap();
-    card_repo::score_card(&pool, &hard, &domain::kcard::QualityWeights::default())
-        .unwrap();
-    let err = card_repo::decide(&pool, &hard, ReviewStatus::Approved, "硬标记", "human-reviewer")
-        .unwrap_err();
+    card_repo::decide(
+        &pool,
+        &hard,
+        ReviewStatus::Candidate,
+        "donor gate",
+        "caller-gate",
+    )
+    .unwrap();
+    card_repo::score_card(&pool, &hard, &domain::kcard::QualityWeights::default()).unwrap();
+    let err = card_repo::decide(
+        &pool,
+        &hard,
+        ReviewStatus::Approved,
+        "硬标记",
+        "human-reviewer",
+    )
+    .unwrap_err();
     assert!(
-        err.to_string().contains("approve blocked: hard risk flag present"),
+        err.to_string()
+            .contains("approve blocked: hard risk flag present"),
         "硬标记 approve 拒: {err}"
     );
 
     // approve 正例：计分后单卡 approve 成功 + 日志留痕。
     let good = card_repo::create_card(
         &pool,
-        &donor_input("MA-3 approve 正例卡：XSS 反射型 payload 特征与检测正则。", vec![], "caller-good", "mcp"),
+        &donor_input(
+            "MA-3 approve 正例卡：XSS 反射型 payload 特征与检测正则。",
+            vec![],
+            "caller-good",
+            "mcp",
+        ),
     )
     .unwrap();
-    card_repo::decide(&pool, &good, ReviewStatus::Candidate, "donor good", "caller-good")
-        .unwrap();
-    let score = card_repo::score_card(&pool, &good, &domain::kcard::QualityWeights::default())
-        .unwrap();
-    assert!(score >= card_repo::LOW_QUALITY_FLOOR, "正例卡过质量地板 {score}");
-    card_repo::decide(&pool, &good, ReviewStatus::Approved, "质量达标", "human-reviewer")
-        .unwrap();
+    card_repo::decide(
+        &pool,
+        &good,
+        ReviewStatus::Candidate,
+        "donor good",
+        "caller-good",
+    )
+    .unwrap();
+    let score =
+        card_repo::score_card(&pool, &good, &domain::kcard::QualityWeights::default()).unwrap();
+    assert!(
+        score >= card_repo::LOW_QUALITY_FLOOR,
+        "正例卡过质量地板 {score}"
+    );
+    card_repo::decide(
+        &pool,
+        &good,
+        ReviewStatus::Approved,
+        "质量达标",
+        "human-reviewer",
+    )
+    .unwrap();
     let logs: Vec<(String, String)> = {
         let mut conn = pool.get().unwrap();
         conn.query(

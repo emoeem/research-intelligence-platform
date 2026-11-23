@@ -10,8 +10,8 @@
 //! exit: ok=0，运行失败=1，用法错误=2（rp-* 家族惯例）。
 
 use intel_db::commit;
-use intel_db::ir::DocumentIr;
 use intel_db::document_repo::{self, ImportInput};
+use intel_db::ir::DocumentIr;
 use intel_db::object_store::LocalFsStore;
 use intel_db::parser::{DocumentParser, ParserProviderConfig, PodmanParserProvider};
 use intel_db::{health, run_migrations, IntelError, IntelResult, PgConfig};
@@ -100,7 +100,8 @@ fn detect_mime(path: &Path, content: &[u8]) -> String {
         .unwrap_or_default();
     if content.starts_with(b"%PDF-") {
         "application/pdf".to_string()
-    } else if content.starts_with(b"PK\x03\x04") && matches!(ext.as_str(), "docx" | "pptx" | "xlsx") {
+    } else if content.starts_with(b"PK\x03\x04") && matches!(ext.as_str(), "docx" | "pptx" | "xlsx")
+    {
         format!("application/{ext}")
     } else if content.starts_with(b"\x89PNG") {
         "image/png".to_string()
@@ -170,8 +171,11 @@ fn parse_command(
     store: &LocalFsStore,
 ) -> IntelResult<serde_json::Value> {
     let document = domain::DocumentId::try_new(require_flag(args, "document"))?;
-    let revision =
-        resolve_revision(pool, &document, args.flags.get("revision").map(|s| s.as_str()))?;
+    let revision = resolve_revision(
+        pool,
+        &document,
+        args.flags.get("revision").map(|s| s.as_str()),
+    )?;
     let mut cfg = ParserProviderConfig::default();
     if let Some(p) = args.flags.get("run-db") {
         cfg.run_db = PathBuf::from(p);
@@ -180,9 +184,9 @@ fn parse_command(
         cfg.manifest_dir = PathBuf::from(p);
     }
     if let Some(s) = args.flags.get("timeout") {
-        cfg.timeout_seconds = s.parse().map_err(|_| {
-            IntelError::Invalid("timeout must be integer seconds".to_string())
-        })?;
+        cfg.timeout_seconds = s
+            .parse()
+            .map_err(|_| IntelError::Invalid("timeout must be integer seconds".to_string()))?;
     }
     // podman 挂载与文件库路径一律绝对化（相对路径只对 cwd 成立，容器面不认）。
     cfg.run_db = std::path::absolute(&cfg.run_db)?;
@@ -212,9 +216,7 @@ fn parse_command(
     ) = (row.get(0), row.get(1), row.get(2), row.get(3), row.get(4));
     drop(conn);
     use intel_db::object_store::ObjectStore as _;
-    if !force
-        && ir_hash.is_some()
-        && matches!(parse_state.as_str(), "APPROVED" | "REVIEW_PENDING")
+    if !force && ir_hash.is_some() && matches!(parse_state.as_str(), "APPROVED" | "REVIEW_PENDING")
     {
         return Ok(serde_json::json!({
             "document_id": document.as_str(),
@@ -230,7 +232,9 @@ fn parse_command(
     // 文件名保留原始名（IR title 兜底用 original_filename，非临时名）。
     let bytes = store.read(&storage_uri)?;
     if document_repo::content_sha256_hex(&bytes) != content_hash {
-        return Err(IntelError::Invalid("revision content integrity mismatch".to_string()));
+        return Err(IntelError::Invalid(
+            "revision content integrity mismatch".to_string(),
+        ));
     }
     let input_dir = std::env::temp_dir()
         .join("rp-doc-parse")
@@ -278,9 +282,8 @@ fn parse_command(
         }
     }
 
-    let commit_outcome = commit::commit_parse_result(
-        pool, store, &document, &revision, &outcome.ir, &by_asset,
-    )?;
+    let commit_outcome =
+        commit::commit_parse_result(pool, store, &document, &revision, &outcome.ir, &by_asset)?;
     Ok(serde_json::json!({
         "document_id": document.as_str(),
         "revision_id": revision.as_str(),
@@ -329,10 +332,12 @@ fn parse_from_run(
             .map_err(database::DbError::Sqlite)
         })
         .ok();
-    let node_row = node_row.ok_or_else(|| IntelError::Invalid(format!(
-        "workflow run {wf_run} has no succeeded parsing node (in this ops db: {:?})",
-        cfg.run_db
-    )))?;
+    let node_row = node_row.ok_or_else(|| {
+        IntelError::Invalid(format!(
+            "workflow run {wf_run} has no succeeded parsing node (in this ops db: {:?})",
+            cfg.run_db
+        ))
+    })?;
     let data: serde_json::Value = serde_json::from_str(&node_row)
         .map_err(|e| IntelError::Invalid(format!("node output parse: {e}")))?;
     let raw_ir = data
@@ -384,8 +389,7 @@ fn parse_from_run(
             "run asset files missing for {missing} asset(s) (workspace out dir gone or hash mismatch)"
         )));
     }
-    let committed =
-        commit::commit_parse_result(pool, store, document, revision, &ir, &by_asset)?;
+    let committed = commit::commit_parse_result(pool, store, document, revision, &ir, &by_asset)?;
     Ok(serde_json::json!({
         "document_id": document.as_str(),
         "revision_id": revision.as_str(),
@@ -408,8 +412,11 @@ fn parse_from_run(
 /// 解析状态视图。
 fn parse_status_command(args: &Args, pool: &intel_db::PgPool) -> IntelResult<serde_json::Value> {
     let document = domain::DocumentId::try_new(require_flag(args, "document"))?;
-    let revision =
-        resolve_revision(pool, &document, args.flags.get("revision").map(|s| s.as_str()))?;
+    let revision = resolve_revision(
+        pool,
+        &document,
+        args.flags.get("revision").map(|s| s.as_str()),
+    )?;
     let mut conn = pool.get()?;
     let row = conn
         .query_opt(
@@ -440,7 +447,11 @@ fn parse_status_command(args: &Args, pool: &intel_db::PgPool) -> IntelResult<ser
 fn main() {
     let mut argv = std::env::args().peekable();
     let _bin = argv.next();
-    if argv.peek().map(|s| s == "--help" || s == "-h").unwrap_or(false) {
+    if argv
+        .peek()
+        .map(|s| s == "--help" || s == "-h")
+        .unwrap_or(false)
+    {
         help_only();
     }
     let args = parse_args(argv);
@@ -451,124 +462,132 @@ fn main() {
         Err(e) => die_json("pg_unavailable", &e.to_string()),
     };
 
-    let result: intel_db::IntelResult<serde_json::Value> = (|| {
-        match sub.as_str() {
-            "health" => {
-                let mut conn = pool.get()?;
-                run_migrations(&mut conn)?;
-                serde_json::to_value(health(&pool)?).map_err(|e| IntelError::Invalid(e.to_string()))
-            }
-            "import" => {
-                let file = PathBuf::from(require_flag(&args, "file"));
-                let content = std::fs::read(&file).map_err(IntelError::from)?;
-                let mime = detect_mime(&file, &content);
-                let ext = file
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or_default()
-                    .to_ascii_lowercase();
-                let input = ImportInput {
-                    title: require_flag(&args, "title"),
-                    document_type: args
-                        .flags
-                        .get("type")
-                        .cloned()
-                        .unwrap_or_else(|| document_type_from(&ext)),
-                    original_filename: args
-                        .flags
-                        .get("original-filename")
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            file.file_name()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_default()
-                        }),
-                    mime_type: mime,
-                    language: args.flags.get("language").cloned(),
-                    workspace_id: args
-                        .flags
-                        .get("workspace")
-                        .cloned()
-                        .unwrap_or_else(|| "default".to_string()),
-                    visibility: domain::DocumentVisibility::parse(
-                        args.flags.get("visibility").map(|s| s.as_str()).unwrap_or("private"),
-                    )?,
-                    source_type: args
-                        .flags
-                        .get("source-type")
-                        .cloned()
-                        .unwrap_or_else(|| "upload".to_string()),
-                    source_url: args.flags.get("source-url").cloned().unwrap_or_default(),
-                    source_commit: args.flags.get("source-commit").cloned(),
-                };
-                let mut conn = pool.get()?;
-                run_migrations(&mut conn)?;
-                let outcome = document_repo::import_document(&pool, &store, &input, &content)?;
-                let content_hash = document_repo::content_sha256_hex(&content);
-                Ok(serde_json::json!({
-                    "document_id": outcome.document_id.as_str(),
-                    "revision_id": outcome.revision_id.as_str(),
-                    "source_id": outcome.source_id.as_str(),
-                    "content_object_created": outcome.content_object_created,
-                    "content_hash": content_hash,
-                }))
-            }
-            "add-source" => {
-                let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
-                let source_type = require_flag(&args, "source-type");
-                let source_url = args.flags.get("source-url").cloned().unwrap_or_default();
-                let source_commit = args.flags.get("source-commit").map(|s| s.as_str());
-                let source =
-                    document_repo::add_source(&pool, &document, &source_type, &source_url, source_commit)?;
-                Ok(serde_json::json!({ "source_id": source.as_str() }))
-            }
-            "new-revision" => {
-                let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
-                let content = std::fs::read(require_flag(&args, "file")).map_err(IntelError::from)?;
-                let parser_version = args.flags.get("parser-version").map(|s| s.as_str());
-                let source_commit = args.flags.get("source-commit").map(|s| s.as_str());
-                let revision = document_repo::new_revision(
-                    &pool, &store, &document, &content, parser_version, source_commit,
-                )?;
-                Ok(serde_json::json!({ "revision_id": revision.as_str() }))
-            }
-            "delete-source" => {
-                let source = domain::SourceRecordId::try_new(require_flag(&args, "source"))?;
-                let ref_count = document_repo::delete_source(&pool, &source)?;
-                Ok(serde_json::json!({ "ref_count": ref_count }))
-            }
-            "soft-delete" => {
-                let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
-                document_repo::soft_delete_document(&pool, &document)?;
-                Ok(serde_json::json!({ "deleted": true }))
-            }
-            "list" => {
-                let mut conn = pool.get()?;
-                run_migrations(&mut conn)?;
-                let workspace = args
+    let result: intel_db::IntelResult<serde_json::Value> = (|| match sub.as_str() {
+        "health" => {
+            let mut conn = pool.get()?;
+            run_migrations(&mut conn)?;
+            serde_json::to_value(health(&pool)?).map_err(|e| IntelError::Invalid(e.to_string()))
+        }
+        "import" => {
+            let file = PathBuf::from(require_flag(&args, "file"));
+            let content = std::fs::read(&file).map_err(IntelError::from)?;
+            let mime = detect_mime(&file, &content);
+            let ext = file
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let input = ImportInput {
+                title: require_flag(&args, "title"),
+                document_type: args
+                    .flags
+                    .get("type")
+                    .cloned()
+                    .unwrap_or_else(|| document_type_from(&ext)),
+                original_filename: args.flags.get("original-filename").cloned().unwrap_or_else(
+                    || {
+                        file.file_name()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    },
+                ),
+                mime_type: mime,
+                language: args.flags.get("language").cloned(),
+                workspace_id: args
                     .flags
                     .get("workspace")
                     .cloned()
-                    .unwrap_or_else(|| "default".to_string());
-                let items =
-                    document_repo::list_documents(&pool, &workspace, args.flags.contains_key("all"))?;
-                Ok(serde_json::json!({ "items": items }))
-            }
-            "show" => {
-                let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
-                let revisions = document_repo::list_revisions(&pool, &document)?;
-                Ok(serde_json::json!({ "revisions": revisions }))
-            }
-            "parse" => Ok(parse_command(&args, &pool, &store)?),
-            "parse-status" => Ok(parse_status_command(&args, &pool)?),
-            "approve" => {
-                let revision =
-                    domain::DocumentRevisionId::try_new(require_flag(&args, "revision"))?;
-                commit::review_approve(&pool, &revision)?;
-                Ok(serde_json::json!({ "revision_id": revision.as_str(), "parse_state": "APPROVED" }))
-            }
-            _ => usage(),
+                    .unwrap_or_else(|| "default".to_string()),
+                visibility: domain::DocumentVisibility::parse(
+                    args.flags
+                        .get("visibility")
+                        .map(|s| s.as_str())
+                        .unwrap_or("private"),
+                )?,
+                source_type: args
+                    .flags
+                    .get("source-type")
+                    .cloned()
+                    .unwrap_or_else(|| "upload".to_string()),
+                source_url: args.flags.get("source-url").cloned().unwrap_or_default(),
+                source_commit: args.flags.get("source-commit").cloned(),
+            };
+            let mut conn = pool.get()?;
+            run_migrations(&mut conn)?;
+            let outcome = document_repo::import_document(&pool, &store, &input, &content)?;
+            let content_hash = document_repo::content_sha256_hex(&content);
+            Ok(serde_json::json!({
+                "document_id": outcome.document_id.as_str(),
+                "revision_id": outcome.revision_id.as_str(),
+                "source_id": outcome.source_id.as_str(),
+                "content_object_created": outcome.content_object_created,
+                "content_hash": content_hash,
+            }))
         }
+        "add-source" => {
+            let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
+            let source_type = require_flag(&args, "source-type");
+            let source_url = args.flags.get("source-url").cloned().unwrap_or_default();
+            let source_commit = args.flags.get("source-commit").map(|s| s.as_str());
+            let source = document_repo::add_source(
+                &pool,
+                &document,
+                &source_type,
+                &source_url,
+                source_commit,
+            )?;
+            Ok(serde_json::json!({ "source_id": source.as_str() }))
+        }
+        "new-revision" => {
+            let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
+            let content = std::fs::read(require_flag(&args, "file")).map_err(IntelError::from)?;
+            let parser_version = args.flags.get("parser-version").map(|s| s.as_str());
+            let source_commit = args.flags.get("source-commit").map(|s| s.as_str());
+            let revision = document_repo::new_revision(
+                &pool,
+                &store,
+                &document,
+                &content,
+                parser_version,
+                source_commit,
+            )?;
+            Ok(serde_json::json!({ "revision_id": revision.as_str() }))
+        }
+        "delete-source" => {
+            let source = domain::SourceRecordId::try_new(require_flag(&args, "source"))?;
+            let ref_count = document_repo::delete_source(&pool, &source)?;
+            Ok(serde_json::json!({ "ref_count": ref_count }))
+        }
+        "soft-delete" => {
+            let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
+            document_repo::soft_delete_document(&pool, &document)?;
+            Ok(serde_json::json!({ "deleted": true }))
+        }
+        "list" => {
+            let mut conn = pool.get()?;
+            run_migrations(&mut conn)?;
+            let workspace = args
+                .flags
+                .get("workspace")
+                .cloned()
+                .unwrap_or_else(|| "default".to_string());
+            let items =
+                document_repo::list_documents(&pool, &workspace, args.flags.contains_key("all"))?;
+            Ok(serde_json::json!({ "items": items }))
+        }
+        "show" => {
+            let document = domain::DocumentId::try_new(require_flag(&args, "document"))?;
+            let revisions = document_repo::list_revisions(&pool, &document)?;
+            Ok(serde_json::json!({ "revisions": revisions }))
+        }
+        "parse" => Ok(parse_command(&args, &pool, &store)?),
+        "parse-status" => Ok(parse_status_command(&args, &pool)?),
+        "approve" => {
+            let revision = domain::DocumentRevisionId::try_new(require_flag(&args, "revision"))?;
+            commit::review_approve(&pool, &revision)?;
+            Ok(serde_json::json!({ "revision_id": revision.as_str(), "parse_state": "APPROVED" }))
+        }
+        _ => usage(),
     })();
 
     match result {

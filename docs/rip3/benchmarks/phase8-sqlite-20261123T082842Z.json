@@ -1,0 +1,98 @@
+{
+  "schema_version": "rip3-phase8-sqlite-compare-v1",
+  "started_at": "2026-11-23T08:28:42.077456+00:00",
+  "environment": {
+    "python": "3.14.10",
+    "sqlite_version": "3.54.1",
+    "docs_target": 100000,
+    "chunks_per_doc": 10,
+    "workers": 16,
+    "queries": 100
+  },
+  "tiers": [
+    {
+      "documents_total": 1000,
+      "chunks_total": 10000,
+      "documents_added": 1000,
+      "chunks_added": 10000,
+      "document_import_seconds": 0.001,
+      "chunk_import_seconds": 0.008,
+      "documents_per_second": 1000000.0,
+      "chunks_per_second": 1250000.0
+    },
+    {
+      "documents_total": 10000,
+      "chunks_total": 100000,
+      "documents_added": 9000,
+      "chunks_added": 90000,
+      "document_import_seconds": 0.008,
+      "chunk_import_seconds": 0.08,
+      "documents_per_second": 1125000.0,
+      "chunks_per_second": 1125000.0
+    },
+    {
+      "documents_total": 100000,
+      "chunks_total": 1000000,
+      "documents_added": 90000,
+      "chunks_added": 900000,
+      "document_import_seconds": 0.099,
+      "chunk_import_seconds": 0.797,
+      "documents_per_second": 909090.9,
+      "chunks_per_second": 1129234.6
+    }
+  ],
+  "operations": {
+    "index_build_seconds": 1.719,
+    "retrieval": {
+      "samples": 100,
+      "p50_ms": 0.169,
+      "p95_ms": 0.253,
+      "max_ms": 0.258,
+      "mean_ms": 0.179
+    },
+    "concurrency": {
+      "workers": 16,
+      "queries": 100,
+      "elapsed_seconds": 0.036,
+      "throughput_queries_per_second": 2750.89,
+      "p50_ms": 3.94,
+      "p95_ms": 10.401
+    },
+    "concurrent_writes": {
+      "workers": 8,
+      "rows": 4000,
+      "elapsed_seconds": 0.039,
+      "rows_per_second": 102564.1,
+      "sqlite_wal_single_writer": true
+    },
+    "migration_probe_seconds": 0.0,
+    "index_rebuild_seconds": 3.747,
+    "storage": {
+      "database_bytes": 190050304,
+      "page_count": 46399,
+      "page_size": 4096,
+      "allocated_bytes": 190050304,
+      "freelist_pages": 489,
+      "wal_bytes": 0
+    },
+    "memory": {
+      "process_max_rss_bytes": 29077504,
+      "cache_size_pages": -2000,
+      "note": "process peak RSS includes Python harness and SQLite; not an isolated SQLite engine measurement"
+    },
+    "counts": {
+      "documents": 100000,
+      "chunks": 1000000,
+      "ops_events": 4000
+    },
+    "backup_restore": {
+      "backup_seconds": 0.178,
+      "restore_seconds": 0.161,
+      "restored_documents": 100000,
+      "restored_chunks": 1000000,
+      "verified": true,
+      "backup_bytes": 190050304
+    }
+  },
+  "finished_at": "2026-11-23T08:28:49.383814+00:00"
+}

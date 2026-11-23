@@ -182,7 +182,10 @@ pub struct PodmanParserProvider {
 
 impl PodmanParserProvider {
     pub fn new(config: ParserProviderConfig) -> Self {
-        Self { config, env: OnceLock::new() }
+        Self {
+            config,
+            env: OnceLock::new(),
+        }
     }
 
     fn env(&self) -> Result<&RunEnv, ParserError> {
@@ -203,7 +206,8 @@ impl PodmanParserProvider {
             busy_timeout: Duration::from_secs(5),
         })
         .map_err(|e| ParserError(format!("ops db open: {e}")))?;
-        pool.enable_wal().map_err(|e| ParserError(format!("ops db wal: {e}")))?;
+        pool.enable_wal()
+            .map_err(|e| ParserError(format!("ops db wal: {e}")))?;
         database::migrate(&pool, &self.config.sqlite_migrations_dir)
             .map_err(|e| ParserError(format!("ops db migrate: {e}")))?;
         let registry = Registry::open(pool.clone()).with_options(Options {
@@ -212,9 +216,8 @@ impl PodmanParserProvider {
         let mut manifests = std::collections::HashMap::new();
         for tool_id in [TOOL_DETECT, TOOL_PARSE, TOOL_OCR] {
             let path = self.config.manifest_dir.join(format!("{tool_id}.json"));
-            let raw = std::fs::read_to_string(&path).map_err(|e| {
-                ParserError(format!("manifest read {path:?}: {e}"))
-            })?;
+            let raw = std::fs::read_to_string(&path)
+                .map_err(|e| ParserError(format!("manifest read {path:?}: {e}")))?;
             let value: Value = serde_json::from_str(&raw)
                 .map_err(|e| ParserError(format!("manifest parse {path:?}: {e}")))?;
             // 幂等登记：已登记同版本则跳过（run 库跨次复用；digest 变更 =
@@ -237,7 +240,11 @@ impl PodmanParserProvider {
             manifests.insert(tool_id.to_string(), value);
         }
         let engine = Engine::open(pool.clone(), registry);
-        Ok(RunEnv { pool, engine, manifests })
+        Ok(RunEnv {
+            pool,
+            engine,
+            manifests,
+        })
     }
 
     /// 单 op 派发（submit → Gateway::dispatch → 容器执行 → 产物拷出）。
@@ -263,7 +270,10 @@ impl PodmanParserProvider {
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect();
-        let family = manifest["family"].as_str().unwrap_or("document").to_string();
+        let family = manifest["family"]
+            .as_str()
+            .unwrap_or("document")
+            .to_string();
         let network_mode = manifest["network"]["mode"].as_str().unwrap_or("none");
         let network = match network_mode {
             "none" => NetworkPlan::None,
@@ -330,8 +340,7 @@ impl PodmanParserProvider {
             .map_err(|e| ParserError(format!("prepare workspace: {e}")))?;
         if let Some(src) = input_file {
             let dst = ws.in_dir.join(input_name);
-            std::fs::copy(src, &dst)
-                .map_err(|e| ParserError(format!("input copy: {e}")))?;
+            std::fs::copy(src, &dst).map_err(|e| ParserError(format!("input copy: {e}")))?;
         }
 
         let outcome = execute_container_via_engine(ContainerCall {
@@ -355,10 +364,7 @@ impl PodmanParserProvider {
                 .unwrap_or_else(|| "unknown container failure".to_string());
             return Err(ParserError(format!("tool run failed: {msg}")));
         }
-        let data = outcome
-            .envelope
-            .result
-            .unwrap_or(Value::Null);
+        let data = outcome.envelope.result.unwrap_or(Value::Null);
 
         // 产物拷出（ws/out → staging/<run_id>/；容器用后即焚）。
         let staging = self.config.staging_root.join(&run_id);
@@ -403,10 +409,16 @@ impl DocumentParser for PodmanParserProvider {
         )?;
         Ok(DetectInfo {
             format: data["format"].as_str().unwrap_or("unknown").to_string(),
-            mime_type: data["mime_type"].as_str().unwrap_or("application/octet-stream").to_string(),
+            mime_type: data["mime_type"]
+                .as_str()
+                .unwrap_or("application/octet-stream")
+                .to_string(),
             size_bytes: data["size_bytes"].as_u64().unwrap_or(0),
             sha256: data["sha256"].as_str().unwrap_or_default().to_string(),
-            document_type: data["document_type"].as_str().unwrap_or("other").to_string(),
+            document_type: data["document_type"]
+                .as_str()
+                .unwrap_or("other")
+                .to_string(),
             zip: data.get("zip_verdict").cloned(),
             data,
         })
@@ -479,10 +491,14 @@ mod tests {
 
     #[test]
     fn manifests_present_digest_pinned_entrypoint_ops() {
-        for (tool_id, op) in [(TOOL_DETECT, "detect"), (TOOL_PARSE, "parse"), (TOOL_OCR, "ocr")] {
+        for (tool_id, op) in [
+            (TOOL_DETECT, "detect"),
+            (TOOL_PARSE, "parse"),
+            (TOOL_OCR, "ocr"),
+        ] {
             let path = repo_root().join(format!("containerfiles/rip-parser/{tool_id}.json"));
-            let raw = std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("{path:?} missing: {e}"));
+            let raw =
+                std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?} missing: {e}"));
             let m: Value = serde_json::from_str(&raw).unwrap();
             assert_eq!(m["id"].as_str(), Some(tool_id), "{tool_id} id mismatch");
             let image = m["runtime"]["image"].as_str().expect("runtime.image");
@@ -494,7 +510,10 @@ mod tests {
             assert_eq!(m["permission_level"].as_str(), Some("T1"));
             let ep = m["runtime"]["entrypoint"].as_array().unwrap();
             assert_eq!(ep.last().and_then(|v| v.as_str()), Some(op));
-            assert_eq!(m["runtime"]["entrypoint"][1].as_str(), Some("/app/parser_tools.py"));
+            assert_eq!(
+                m["runtime"]["entrypoint"][1].as_str(),
+                Some("/app/parser_tools.py")
+            );
         }
     }
 
@@ -506,12 +525,17 @@ mod tests {
             let raw = std::fs::read_to_string(&yaml_path).unwrap();
             let y: Value = serde_yaml_ng::from_str(&raw).unwrap();
             let j: Value = serde_json::from_str(
-                &std::fs::read_to_string(repo_root().join(format!("containerfiles/rip-parser/{tool_id}.json")))
-                    .unwrap(),
+                &std::fs::read_to_string(
+                    repo_root().join(format!("containerfiles/rip-parser/{tool_id}.json")),
+                )
+                .unwrap(),
             )
             .unwrap();
             assert_eq!(y["id"], j["id"], "{tool_id} yaml/json id diverged");
-            assert_eq!(y["runtime"]["image"], j["runtime"]["image"], "{tool_id} digest diverged (台账三处同步)");
+            assert_eq!(
+                y["runtime"]["image"], j["runtime"]["image"],
+                "{tool_id} digest diverged (台账三处同步)"
+            );
             assert_eq!(y["runtime"]["entrypoint"], j["runtime"]["entrypoint"]);
         }
     }

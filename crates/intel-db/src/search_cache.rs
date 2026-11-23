@@ -32,7 +32,9 @@ pub fn default_dir() -> PathBuf {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "rip-data".to_string());
-    PathBuf::from(data_root).join("runtime").join("search-cache")
+    PathBuf::from(data_root)
+        .join("runtime")
+        .join("search-cache")
 }
 
 /// 内容寻址键（cache.rs cache_key 同构：sha256(kind ‖ id ‖ version ‖ params
@@ -93,7 +95,13 @@ impl SearchCache {
     }
 
     /// 写（原子 tmp + rename；仅成功取数后调用——失败不落缓存、无负缓存）。
-    pub fn put(&self, key: &str, version: &str, fingerprint: &str, payload: &str) -> IntelResult<()> {
+    pub fn put(
+        &self,
+        key: &str,
+        version: &str,
+        fingerprint: &str,
+        payload: &str,
+    ) -> IntelResult<()> {
         let path = self.path_for(key);
         let tmp = path.with_extension("json.tmp");
         let entry = CacheEntry {
@@ -103,10 +111,15 @@ impl SearchCache {
         };
         let text = serde_json::to_string(&entry)
             .map_err(|e| IntelError::Invalid(format!("search-cache serialize: {e}")))?;
-        std::fs::write(&tmp, text)
-            .map_err(|e| IntelError::Invalid(format!("search-cache write {}: {e}", tmp.display())))?;
+        std::fs::write(&tmp, text).map_err(|e| {
+            IntelError::Invalid(format!("search-cache write {}: {e}", tmp.display()))
+        })?;
         std::fs::rename(&tmp, &path).map_err(|e| {
-            IntelError::Invalid(format!("search-cache rename {} -> {}: {e}", tmp.display(), path.display()))
+            IntelError::Invalid(format!(
+                "search-cache rename {} -> {}: {e}",
+                tmp.display(),
+                path.display()
+            ))
         })?;
         Ok(())
     }
@@ -135,23 +148,36 @@ mod tests {
 
     #[test]
     fn cache_roundtrip_and_invalidations() {
-        let dir = std::env::temp_dir().join(format!("rip-search-cache-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("rip-search-cache-test-{}", std::process::id()));
         let cache = SearchCache::open(dir.clone()).unwrap();
         let key = cache_key("query-vector", "ws-x", "embed-v1", "SQL 注入", "fp-a");
-        cache.put(&key, "embed-v1", "fp-a", "[0.1,0.2,0.3]").unwrap();
+        cache
+            .put(&key, "embed-v1", "fp-a", "[0.1,0.2,0.3]")
+            .unwrap();
         assert_eq!(
-            cache.get(&key, "embed-v1", "fp-a", TTL_QUERY_VECTOR).as_deref(),
+            cache
+                .get(&key, "embed-v1", "fp-a", TTL_QUERY_VECTOR)
+                .as_deref(),
             Some("[0.1,0.2,0.3]")
         );
         // 指纹变化 = 未命中（模型更换/治理跃迁失效语义）。
-        assert!(cache.get(&key, "embed-v1", "fp-b", TTL_QUERY_VECTOR).is_none());
-        assert!(cache.get(&key, "embed-v2", "fp-a", TTL_QUERY_VECTOR).is_none());
+        assert!(cache
+            .get(&key, "embed-v1", "fp-b", TTL_QUERY_VECTOR)
+            .is_none());
+        assert!(cache
+            .get(&key, "embed-v2", "fp-a", TTL_QUERY_VECTOR)
+            .is_none());
         // TTL 过期 = 未命中。
-        assert!(cache.get(&key, "embed-v1", "fp-a", Duration::from_secs(0)).is_none());
+        assert!(cache
+            .get(&key, "embed-v1", "fp-a", Duration::from_secs(0))
+            .is_none());
         // 坏条目视同未命中（不 panic）。
         let bad = cache.path_for(&key);
         std::fs::write(&bad, "not-json").unwrap();
-        assert!(cache.get(&key, "embed-v1", "fp-a", TTL_QUERY_VECTOR).is_none());
+        assert!(cache
+            .get(&key, "embed-v1", "fp-a", TTL_QUERY_VECTOR)
+            .is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
 

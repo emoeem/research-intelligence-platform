@@ -6,11 +6,11 @@
 
 | 项 | 值 |
 | --- | --- |
-| 状态 | 生效中（2026-11-18，**Phase 5 已收口**：P5-0 至 P5-9c 全批入库（P5-9a dd0860ae / P5-9b 90311c1b / P5-9c 9833aedc，CI 全绿），RELEASE 文档 docs/releases/RELEASE_2026-11-17_RIP3-PHASE5.md（门禁 775 passed + selftest 全集 14/14 + RTIS 零 diff）；下一阶段入口 = WSW-0 只读审计（用户任务书第三阶段）与 Phase 6 报告智能（主队列序 5）；Phase 5 断点专档 docs/HANDOVER-P5-WIP.md 已收档留账） |
+| 状态 | 生效中（2026-11-23：RIP3 Phase 7 与 Phase 8 本地实现及验收完成；Phase 6b 基线 daecc2a0；本轮代码与报告尚未 commit/push，GitHub Actions 未宣称通过。Phase 7/8 交付见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md 与 docs/rip3/PHASE-8-SCALE-TESTING.md；100k 文档 / 1M Chunk PostgreSQL + SQLite 对照实测完成） |
 | 计划书 | docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md（修订版 R2 + 修订记录段，唯一权威） |
-| 适用版本 | git 41bf3359 及之后（Phase 1 收口 aabc3894） |
-| CI | 主分支全绿基线（最新 run 见 GitHub Actions） |
-| 相关 | docs/rip3/00-ARCHITECTURE-AUDIT.md（文档序首篇）；docs/releases/RELEASE_2026-11-15_RIP3-PHASE1.md |
+| 适用版本 | 本轮阶段基线 daecc2a0（Phase 6b 收口）；Phase 7/8 当前实现仍在本地工作树 |
+| CI | 本地串行 Workspace 回归 1,396 passed / 0 failed / 3 ignored；Workspace Clippy 通过；本轮未 push，GitHub Actions 未触发 |
+| 相关 | docs/rip3/00-ARCHITECTURE-AUDIT.md；docs/releases/RELEASE_2026-11-23_RIP3-PHASE7-8.md；docs/releases/RELEASE_2026-11-15_RIP3-PHASE1.md |
 | 自动化收官 | `.zcode/workflows/rip3-finish.dwf.ts`（动态工作流保存式脚本：Phase 3→8 + §17/D8 收官自查逐阶段编排，批次自动入库 + 编排面五道门禁复测 + HEAD CI 确认 + 受阻处置站）；启动 = 在有动态工作流工具面的会话（仓库根）`CreateWorkflow saved: { name: "rip3-finish" }` 或以 path 直提该文件；编译诊断按 §13 改文件后 path 重提 |
 
 ## 一、项目现状（30 秒版）
@@ -26,13 +26,19 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 | Phase 1 文档域与存储 | 完成（c4c76a9 + 41bf3359 + aabc3894，CI 全绿） | rip-pg17 镜像族 + crates/intel-db + migrations_pg PG-0001/0002 + rp-doc CLI + REST 通道 + /documents 页 + 备份双轨演练；RELEASE_2026-11-15_RIP3-PHASE1.md |
 | Phase 2 文档智能 | 完成（4139ed58 + P2-2 收口批，CI 全绿） | 批次报告 docs/rip3/batches/P2-1-BATCH-REPORT.md 与 P2-2-BATCH-REPORT.md；阶段总账 docs/releases/RELEASE_2026-11-15_RIP3-PHASE2.md；实施面 docs/rip3/05-DOCUMENT-INTELLIGENCE.md；遗留见批次报告 G 节（Parallel 分片调度随 Phase 8 / 解析状态卡随页面族批 / docling 误判观察面） |
 | Phase 3 知识治理 | 完成（P3-1 到 P3-4 四批，CI 全绿） | 阶段总账 docs/releases/RELEASE_2026-11-15_RIP3-PHASE3.md；批次报告 docs/rip3/batches/P3-1 到 P3-4；D1-D5 五级去重 + Relations 十型 + 质量分六权重 + 审核工作流（018 Human 复用）+ 批量审核面；rp-kc CLI；容器族 +rip-gov/+rip-embed；遗留见批次报告 G 节（D4 阈值校准随 Phase 4 / evidence_level 导入侧接线随 Phase 4/7） |
+| Phase 4 混合检索 | 完成（P4-1 到 P4-4，CI 全绿） | RELEASE_2026-11-17_RIP3-PHASE4.md；RRF/MMR、reranker、tokenizers、缓存与 RTIS 语料 Benchmark |
+| Phase 5 工作流与研究 | 完成（2026-11-18） | RELEASE_2026-11-17_RIP3-PHASE5.md；研究工作流、覆盖矩阵、假设生成、五态纪律 |
+| Phase 6 报告智能 | 完成（Phase 6b 收口基线 daecc2a0） | docs/phase0/PHASE-6B-BATCH-REPORT.md；Report IR、导出与质检、六阶段交接记录 |
+| Phase 7 知识回流与维护 | 完成（2026-11-23，本地验收） | V0009/V0010 + Report IR 校验 + workspace 隔离 + Finding/Evidence 六 ID 溯源 + 候选审核 promote/reuse/reject + 上游/链接/RTIS POC 监测 + 质量巡检/维护报告；详见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md |
+| Phase 8 规模测试与基准 | 完成（2026-11-23，100k 文档 / 1M Chunk） | PostgreSQL 17.11 与 SQLite 3.54.1 同规模对照，导入/索引/检索/内存/存储/并发/迁移/重建/备份恢复；运营核继续 SQLite；详见 docs/rip3/PHASE-8-SCALE-TESTING.md |
 
 用户三项已生效裁决（执行代理不得重开）：
 
 1. **数据库**：情报核（Document/Chunk/Vector/KnowledgeCard/Relation/Finding/Report/
    治理面）= PostgreSQL 17 + pgvector 0.8 + pg_jieba + pg_search，绞杀者路线
-   （ADR-0001），新增域永不落 SQLite；运营核（tool_run/agent_run/workflow_run/plugin/
-   runtime_node/audit）暂留 SQLite（020+ 编号），Phase 8 基准后再定移植。
+   （ADR-0001），新增情报域永不落 SQLite；运营核（tool_run/agent_run/workflow_run/plugin/
+   runtime_node/audit）继续保留 SQLite（020+ 编号）。Phase 8 同规模 PG/SQLite 实测后，
+   当前裁决为不迁移；重新评估触发条件见 docs/rip3/PHASE-8-SCALE-TESTING.md。
 2. **成熟库优先**（AGENTS.md 硬约束）：通用能力先评估成熟维护库；vendor 不在不是拒绝理由。
 3. **许可证只记录不做淘汰门槛**（能力优先，2026-11-14 裁决）：PyMuPDF（AGPL）与
    ParadeDB pg_search（AGPL）按能力转正选型，AGPL 组件在容器/服务侧使用并记录。
@@ -69,13 +75,13 @@ Workflow/Report Intelligence），计划书修订版 R2 经用户评审定稿，
 
 | 序 | 任务 | 验收基准（R2 第十四部分原文为判据源） |
 | --- | --- | --- |
-| 1 | Phase 2 文档智能 | rip-parser 容器族（Docling/PyMuPDF/Tesseract 模型烘焙离线 + digest 台账）；Parser Registry + Provider 接口；解析管线 = workflow 定义（九态状态机映射既有八类节点）；Document IR v1 落库（04 号冻结物 Schema）；解析质量检查；OCR 面。验收：PDF/EPUB/MD/DOCX/PPTX/XLSX/HTML/TXT/图片/ZIP 统一入库；结构正确；页码可定位；失败可重试；解析器版本可记录；network=none |
-| 2 | Phase 3 知识治理 | D1 sha256 / D2 规范化哈希 / D3 datasketch MinHash+LSH worker（容器）/ D4 语义候选（pgvector，禁自动合并）/ D5 CONTRADICTS 进审核；KnowledgeRelation 10 型；质量分六权重 + 七类风险标记；审核工作流（复用 018 控制面 + Human 节点）；RTIS 对账零回归（15155 口径） |
-| 3 | Phase 4 混合检索 | 统一 Search API（PG 面：pg_search BM25 + pgvector + JSONB 过滤）；RRF/MMR 融合在 Rust 检索层（跨 SQLite 知识面与 PG 文档面）；reranker worker（bge-reranker ONNX）；tokenizers 接入替换 est_tokens；缓存升级；Benchmark（RTIS 语料播种，Recall@K/MRR/NDCG） |
-| 4 | Phase 5 工作流与安全研究 | **已收口（2026-11-18，RELEASE_2026-11-17_RIP3-PHASE5.md）**：workflow 模板机制（十三步双模板入库）；自适应研究引擎（覆盖矩阵七维/假设生成/五态纪律）；画布增强（Evidence/Coverage 页）；Findings 经 RTIS 接口落库（900064 闭环正例） |
-| 5 | Phase 6 报告智能 | Report Domain/IR（事实引用 RTIS）；typst PDF 渲染（字体烘焙离线）；DOCX/HTML/MD/JSON 渲染器（统一 IR 单源）；Diagram Engine（Mermaid + typst cetz/fletcher）；通俗+技术双解释；导出质检 |
-| 6 | Phase 7 知识回流 | Finding 到候选 KnowledgeCard 流水线（复用 k_proposal 模式）；Evidence 溯源（六 ID）；上游更新监测（复用 source_sync） |
-| 7 | Phase 8 规模测试 | 1k/10k/100k 文档 + 百万 chunk 合成语料；导入/索引/检索/内存/存储/并发/迁移/重建/备份基准报告；决定运营核是否移植 PG |
+| 1 | Phase 2 文档智能 | **完成**：rip-parser 容器族、Parser Registry/Provider、Document IR v1、质量检查与 OCR 面；PDF/EPUB/MD/DOCX/PPTX/XLSX/HTML/TXT/图片/ZIP 统一入库；详见 P2-1/P2-2 批次报告 |
+| 2 | Phase 3 知识治理 | **完成**：D1-D5 去重、十类 KnowledgeRelation、六权重质量分、七类风险、Human 审核与 RTIS 对账；详见 RELEASE_2026-11-15_RIP3-PHASE3.md |
+| 3 | Phase 4 混合检索 | **完成**：BM25/向量/JSONB、RRF/MMR、reranker、tokenizers、缓存与 RTIS qrel 基准；详见 RELEASE_2026-11-17_RIP3-PHASE4.md |
+| 4 | Phase 5 工作流与安全研究 | **完成（2026-11-18）**：workflow 模板、自适应研究引擎、覆盖矩阵、假设生成、五态纪律与 RTIS Finding 落库；详见 RELEASE_2026-11-17_RIP3-PHASE5.md |
+| 5 | Phase 6 报告智能 | **完成（Phase 6b 收口基线 daecc2a0）**：Report Domain/IR、PDF/DOCX/HTML/MD/JSON 渲染、Diagram、双解释与导出质检；详见 docs/phase0/PHASE-6B-BATCH-REPORT.md |
+| 6 | Phase 7 知识回流 | **完成（2026-11-23）**：V0009/V0010 + Report IR 校验 + workspace 隔离 + Finding/Evidence 溯源 + 人工候选审核 + 上游/失效链接/RTIS POC 检查 + 质量巡检与维护报告；见 docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md |
+| 7 | Phase 8 规模测试 | **完成（2026-11-23）**：PG 与 SQLite 同规模实测 100k 文档 / 1M Chunk + 4k 事件；导入/索引/检索/内存/存储/并发/迁移/重建/备份恢复全部测量；运营核裁决继续 SQLite；见 docs/rip3/PHASE-8-SCALE-TESTING.md |
 | 8 | 现状接续（独立待办，不占窗口） | RTIS 侧清账（rtis.py 自测 10 过 7 败 + license/maintenance 轴，RTIS 侧批次）；实战校验三面（用户门控，暂缓中） |
 
 ## 四、贯穿纪律（用户硬性要求，违反即返工）

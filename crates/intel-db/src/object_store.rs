@@ -47,7 +47,9 @@ fn uri_to_hash(storage_uri: &str) -> Result<&str, IntelError> {
 }
 
 fn object_path(root: &Path, content_hash: &str) -> PathBuf {
-    root.join(&content_hash[0..2]).join(&content_hash[2..4]).join(content_hash)
+    root.join(&content_hash[0..2])
+        .join(&content_hash[2..4])
+        .join(content_hash)
 }
 
 /// 本地文件系统实现（P1-3 起步面；数据根沿 RIP_DATA_DIR 惯例：默认
@@ -66,11 +68,16 @@ impl LocalFsStore {
             .filter(|s| !s.trim().is_empty())
             .or_else(|| {
                 std::env::var("RIP_DATA_DIR").ok().map(|d| {
-                    PathBuf::from(d).join("object-store").to_string_lossy().to_string()
+                    PathBuf::from(d)
+                        .join("object-store")
+                        .to_string_lossy()
+                        .to_string()
                 })
             })
             .unwrap_or_else(|| "rip-data/object-store".to_string());
-        Self { root: PathBuf::from(root) }
+        Self {
+            root: PathBuf::from(root),
+        }
     }
 
     /// 显式根构造（测试用）。
@@ -143,7 +150,8 @@ mod tests {
 
     #[test]
     fn put_read_roundtrip_with_integrity() {
-        let store = LocalFsStore::new(std::env::temp_dir().join(format!("os-{}", std::process::id())));
+        let store =
+            LocalFsStore::new(std::env::temp_dir().join(format!("os-{}", std::process::id())));
         let content = b"RIP3 CAS roundtrip test content";
         let stored = store.put(content).unwrap();
         assert!(stored.storage_uri.starts_with("cas://"));
@@ -157,7 +165,8 @@ mod tests {
 
     #[test]
     fn dedup_same_content_same_object() {
-        let store = LocalFsStore::new(std::env::temp_dir().join(format!("os2-{}", std::process::id())));
+        let store =
+            LocalFsStore::new(std::env::temp_dir().join(format!("os2-{}", std::process::id())));
         let a = store.put(b"same bytes").unwrap();
         let b = store.put(b"same bytes").unwrap();
         assert_eq!(a.content_hash, b.content_hash);
@@ -166,14 +175,16 @@ mod tests {
 
     #[test]
     fn invalid_uri_rejected() {
-        let store = LocalFsStore::new(std::env::temp_dir().join(format!("os3-{}", std::process::id())));
+        let store =
+            LocalFsStore::new(std::env::temp_dir().join(format!("os3-{}", std::process::id())));
         assert!(store.read("cas://short").is_err());
         assert!(store.read("file:///etc/passwd").is_err());
     }
 
     #[test]
     fn corruption_detected_on_read() {
-        let store = LocalFsStore::new(std::env::temp_dir().join(format!("os4-{}", std::process::id())));
+        let store =
+            LocalFsStore::new(std::env::temp_dir().join(format!("os4-{}", std::process::id())));
         let stored = store.put(b"original").unwrap();
         let hash = stored.storage_uri.strip_prefix("cas://").unwrap();
         let path = store.path_for(hash).unwrap();

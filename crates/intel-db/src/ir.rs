@@ -175,7 +175,10 @@ pub fn validate_tree(ir: &DocumentIr) -> IntelResult<()> {
     let mut ids: HashMap<&str, &Block> = HashMap::new();
     for b in &ir.blocks {
         if ids.insert(b.block_id.as_str(), b).is_some() {
-            return Err(IntelError::Invalid(format!("duplicate block_id {}", b.block_id)));
+            return Err(IntelError::Invalid(format!(
+                "duplicate block_id {}",
+                b.block_id
+            )));
         }
     }
     // parent 引用存在 + 环检测（沿父链走，重复到达即环）。
@@ -189,22 +192,25 @@ pub fn validate_tree(ir: &DocumentIr) -> IntelResult<()> {
                     b.block_id
                 )));
             }
-            let parent = ids
-                .get(pid)
-                .ok_or_else(|| IntelError::Invalid(format!(
+            let parent = ids.get(pid).ok_or_else(|| {
+                IntelError::Invalid(format!(
                     "block {} references missing parent {}",
                     b.block_id, pid
-                )))?;
+                ))
+            })?;
             cur = parent.parent_id.as_deref();
         }
     }
     // root 一致性：root 块存在、root 无父、structure.children 与「父为 root
     // 的块」一致（root 的直接子集；深层块经 parent 链挂在 children 子树上）。
     let root_id = ir.structure.root.block_id.as_str();
-    let root = ids.get(root_id)
+    let root = ids
+        .get(root_id)
         .ok_or_else(|| IntelError::Invalid(format!("structure root {root_id} not in blocks")))?;
     if root.parent_id.is_some() {
-        return Err(IntelError::Invalid("structure root must have no parent".to_string()));
+        return Err(IntelError::Invalid(
+            "structure root must have no parent".to_string(),
+        ));
     }
     let root_children: HashSet<&str> = ir
         .blocks
@@ -212,7 +218,13 @@ pub fn validate_tree(ir: &DocumentIr) -> IntelResult<()> {
         .filter(|b| b.parent_id.as_deref() == Some(root_id))
         .map(|b| b.block_id.as_str())
         .collect();
-    let declared: HashSet<&str> = ir.structure.root.children.iter().map(|s| s.as_str()).collect();
+    let declared: HashSet<&str> = ir
+        .structure
+        .root
+        .children
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
     let actual = root_children;
     if declared != actual {
         return Err(IntelError::Invalid(
@@ -358,7 +370,10 @@ mod tests {
     #[test]
     fn schema_rejects_heading_without_level() {
         let (ir, mut raw) = valid_ir();
-        raw["blocks"][1].as_object_mut().unwrap().remove("heading_level");
+        raw["blocks"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("heading_level");
         assert!(validate_ir(&ir, &raw).is_err());
     }
 
@@ -422,9 +437,16 @@ mod tests {
         assert_ne!(a.blocks[0].block_id, c.blocks[0].block_id);
         // 映射一致性：父引用同步重写（blk-c 的 parent 是 blk-b）。
         let new_b = &a.blocks[1].block_id;
-        let c_block = a.blocks.iter().find(|x| x.block_type == "paragraph").unwrap();
+        let c_block = a
+            .blocks
+            .iter()
+            .find(|x| x.block_type == "paragraph")
+            .unwrap();
         assert_eq!(c_block.parent_id.as_deref(), Some(new_b.as_str()));
-        assert_eq!(c_block.block_id, a.source_mapping.block_to_source[0].block_id);
+        assert_eq!(
+            c_block.block_id,
+            a.source_mapping.block_to_source[0].block_id
+        );
         // 重映射后树门仍过。
         validate_tree(&a).unwrap();
     }

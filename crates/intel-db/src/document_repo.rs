@@ -370,7 +370,12 @@ pub(crate) fn timestamp_to_string(value: std::time::SystemTime) -> String {
     let days = (secs / 86400) as i64;
     let rem = secs % 86400;
     let (y, m, d) = civil_from_days(days);
-    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, (rem % 3600) / 60, rem % 60)
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
 }
 
 fn civil_from_days(z: i64) -> (i64, u32, u32) {

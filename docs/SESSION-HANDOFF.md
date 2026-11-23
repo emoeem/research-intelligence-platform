@@ -1,6 +1,16 @@
 # SESSION HANDOFF：跨会话交接文档（RIP 主线）
 
-更新：2026-11-13　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
+更新：2026-11-23　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
+
+## RIP3 最新状态（2026-11-23）
+
+RIP3 Phase 7 与 Phase 8 已在本地工作树完成实现和阶段验收，Phase 6b 基线为 `daecc2a0`。本轮代码、测试、基准与文档尚未 commit/push；远程 GitHub Actions 尚未由本轮变更触发，不能宣称远程 CI 已通过。
+
+- Phase 7：新增 PostgreSQL V0009/V0010 与 Rust `intel-db::maintenance`，完成 Report IR Schema 校验、Finding→候选 KnowledgeCard、六 ID Evidence 溯源、候选 promote/reuse/reject 人工审核、workspace 隔离、来源 ETag/Last-Modified/SHA-256 监测、失效链接检查、RTIS POC 只读新鲜度检查、质量巡检和维护报告。RTIS 生产库未写入、POC 正文未复制。
+- Phase 8：PostgreSQL 17.11 与 SQLite 3.54.1 完成 100k 文档 / 1M Chunk / 4k 运行事件对照；导入、索引、检索、内存、存储、并发、迁移、重建、备份恢复均有原始报告。决策：运营核继续 SQLite，不切库。
+- 阶段文档：`docs/rip3/PHASE-7-KNOWLEDGE-FEEDBACK.md`、`docs/rip3/PHASE-8-SCALE-TESTING.md`、`docs/rip3/RIP3-ARCHITECTURE-UPGRADE-PLAN.md`。
+- 自动复验入口：`apps/server/selftest_p7p8.sh`。本轮最终 selftest 已通过 intel-db 单元 32、PG 集成 4、Python Worker 单测 4、来源监测 PG smoke（含 URL 轮换）、RTIS 临时只读 fixture smoke、PG/SQLite 100k/1M 基准与 intel-db Clippy。全 Workspace 串行回归 1,396 passed / 0 failed / 3 ignored；全 Workspace Clippy 通过。并行重复启动曾触发 browser_adapter 临时 user-data-dir 清理竞争，验收采用单实例串行结果。
+- 生产 `platform*.db`、RTIS `knowledge.db` 未修改。测试 PostgreSQL 容器与临时目录须在最终收尾后清理。
 
 ## 一、授权口径（用户三轮授权，已生效）
 

@@ -13,8 +13,9 @@
 
 use crate::{new_entity_id, IntelError, IntelResult, PgPool};
 use domain::kcard::{
-    quality_score, EvidenceLevel, KnowledgeCardId, KnowledgeRelationId, KnowledgeType, QualityInputs,
-    QualityWeights, RelationType, ReviewStatus, RiskFlag, SourceTrust, VerificationStatus,
+    quality_score, EvidenceLevel, KnowledgeCardId, KnowledgeRelationId, KnowledgeType,
+    QualityInputs, QualityWeights, RelationType, ReviewStatus, RiskFlag, SourceTrust,
+    VerificationStatus,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -103,7 +104,9 @@ pub fn create_card(pool: &PgPool, input: &CardInput) -> IntelResult<KnowledgeCar
         return Err(IntelError::Invalid("title must be non-empty".to_string()));
     }
     if !(0.0..=1.0).contains(&input.confidence) {
-        return Err(IntelError::Invalid("confidence must be within [0,1]".to_string()));
+        return Err(IntelError::Invalid(
+            "confidence must be within [0,1]".to_string(),
+        ));
     }
     let id = KnowledgeCardId::try_new(new_entity_id("kc-"))?;
     let norm = normalized_hash(&input.content);
@@ -152,7 +155,10 @@ pub fn create_card(pool: &PgPool, input: &CardInput) -> IntelResult<KnowledgeCar
 
 /// 供体署名读取面（MA-3 V0007：卡 → (donor_caller_id, donor_channel)；
 /// 既有路径行两者均 None）。
-pub fn donor_info(pool: &PgPool, card: &KnowledgeCardId) -> IntelResult<(Option<String>, Option<String>)> {
+pub fn donor_info(
+    pool: &PgPool,
+    card: &KnowledgeCardId,
+) -> IntelResult<(Option<String>, Option<String>)> {
     let mut conn = pool.get()?;
     let row = conn.query_one(
         "SELECT donor_caller_id, donor_channel FROM knowledge_cards WHERE knowledge_id = $1",
@@ -191,10 +197,14 @@ pub fn add_relation(
     confidence: f32,
 ) -> IntelResult<(KnowledgeRelationId, bool)> {
     if !(0.0..=1.0).contains(&confidence) {
-        return Err(IntelError::Invalid("confidence must be within [0,1]".to_string()));
+        return Err(IntelError::Invalid(
+            "confidence must be within [0,1]".to_string(),
+        ));
     }
     if source.trim().is_empty() {
-        return Err(IntelError::Invalid("relation source must be non-empty (R2 3.1)".to_string()));
+        return Err(IntelError::Invalid(
+            "relation source must be non-empty (R2 3.1)".to_string(),
+        ));
     }
     let mut conn = pool.get()?;
     let mut tx = conn.transaction()?;
@@ -420,7 +430,8 @@ pub fn decide(
         "SELECT review_status, quality_score, quality_flags FROM knowledge_cards WHERE knowledge_id = $1 FOR UPDATE",
         &[&card.as_str()],
     )?;
-    let (from, score, flags): (String, Option<f32>, Vec<String>) = (row.get(0), row.get(1), row.get(2));
+    let (from, score, flags): (String, Option<f32>, Vec<String>) =
+        (row.get(0), row.get(1), row.get(2));
     let flags = check_flags(&flags)?;
     let hard_hit = flags.iter().any(|f| f.is_hard_block());
     if to == ReviewStatus::Approved {
@@ -497,18 +508,24 @@ fn heuristic_inputs(
     doc_count: i64,
     age_days: i64,
 ) -> QualityInputs {
-    let trust = match SourceTrust::parse(source_trust).ok().unwrap_or(SourceTrust::ExternalImport) {
+    let trust = match SourceTrust::parse(source_trust)
+        .ok()
+        .unwrap_or(SourceTrust::ExternalImport)
+    {
         SourceTrust::Manual => 0.8,
         SourceTrust::RtisSnapshot => 0.9,
         SourceTrust::ExternalImport => 0.5,
         SourceTrust::AgentDerived => 0.35,
     };
-    let k = EvidenceLevel::parse(evidence.unwrap_or("K0")).ok().unwrap_or(EvidenceLevel::K0);
-    let source_reliability: f32 = (trust + match k {
-        EvidenceLevel::K4 => 0.05_f32,
-        EvidenceLevel::K3 => 0.05_f32,
-        _ => 0.0_f32,
-    })
+    let k = EvidenceLevel::parse(evidence.unwrap_or("K0"))
+        .ok()
+        .unwrap_or(EvidenceLevel::K0);
+    let source_reliability: f32 = (trust
+        + match k {
+            EvidenceLevel::K4 => 0.05_f32,
+            EvidenceLevel::K3 => 0.05_f32,
+            _ => 0.0_f32,
+        })
     .clamp(0.0, 1.0);
     let c_struct: f32 = if structured.is_some() { 0.3 } else { 0.0 };
     let c_summary: f32 = if summary.trim().is_empty() { 0.0 } else { 0.3 };
@@ -543,7 +560,11 @@ fn heuristic_inputs(
 }
 
 /// 计算并回填质量分（六权重 R2 5.3 缺省；输入面见 heuristic_inputs，可追溯）。
-pub fn score_card(pool: &PgPool, card: &KnowledgeCardId, weights: &QualityWeights) -> IntelResult<f32> {
+pub fn score_card(
+    pool: &PgPool,
+    card: &KnowledgeCardId,
+    weights: &QualityWeights,
+) -> IntelResult<f32> {
     weights.validate().map_err(IntelError::from)?;
     let mut conn = pool.get()?;
     let row = conn
@@ -591,7 +612,8 @@ pub fn dedup_scan_same_content(pool: &PgPool, workspace_id: &str) -> IntelResult
          ORDER BY created_at",
         &[&workspace_id],
     )?;
-    let mut groups: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for r in rows {
         let hash: String = r.get(1);
         groups.entry(hash).or_default().push(r.get(0));
@@ -664,6 +686,9 @@ mod tests {
             independence: 0.3,
             accuracy: 0.3,
         };
-        assert!(quality_score(&w, &weak) < LOW_QUALITY_FLOOR, "弱输入必须低于地板");
+        assert!(
+            quality_score(&w, &weak) < LOW_QUALITY_FLOOR,
+            "弱输入必须低于地板"
+        );
     }
 }

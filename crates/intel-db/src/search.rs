@@ -96,9 +96,14 @@ pub fn bm25_search(
     // 占位符按 SQL 出现顺序编号：$1 ws，$2 query，$3 type(可选)，$4 json(可选)，
     // 末位 limit（坑位实录：未引用占位符会被 PG 拒推断，必须四态精确匹配）。
     let type_idx = if has_type { Some(3) } else { None };
-    let json_idx = if has_json { Some(if has_type { 4 } else { 3 }) } else { None };
+    let json_idx = if has_json {
+        Some(if has_type { 4 } else { 3 })
+    } else {
+        None
+    };
     let lim_idx = 3 + (has_type as usize) + (has_json as usize);
-    let where_sql = filters_where(filters, 1, type_idx).replace("$JSON", &format!("${}", json_idx.unwrap_or(0)));
+    let where_sql = filters_where(filters, 1, type_idx)
+        .replace("$JSON", &format!("${}", json_idx.unwrap_or(0)));
     let sql = format!(
         "SELECT c.knowledge_id, c.title, c.knowledge_type, paradedb.score(c.knowledge_id) AS score
          FROM knowledge_cards c
@@ -108,18 +113,30 @@ pub fn bm25_search(
     let ktype = filters.knowledge_type.map(|k| k.as_str().to_string());
     let mut conn = pool.get()?;
     let rows = match (has_type, has_json) {
-        (true, true) => {
-            conn.query(&sql, &[&filters.workspace_id, &query, &ktype, &filters.json_contains, &(limit as i64)])?
-        }
-        (true, false) => {
-            conn.query(&sql, &[&filters.workspace_id, &query, &ktype, &(limit as i64)])?
-        }
-        (false, true) => {
-            conn.query(&sql, &[&filters.workspace_id, &query, &filters.json_contains, &(limit as i64)])?
-        }
-        (false, false) => {
-            conn.query(&sql, &[&filters.workspace_id, &query, &(limit as i64)])?
-        }
+        (true, true) => conn.query(
+            &sql,
+            &[
+                &filters.workspace_id,
+                &query,
+                &ktype,
+                &filters.json_contains,
+                &(limit as i64),
+            ],
+        )?,
+        (true, false) => conn.query(
+            &sql,
+            &[&filters.workspace_id, &query, &ktype, &(limit as i64)],
+        )?,
+        (false, true) => conn.query(
+            &sql,
+            &[
+                &filters.workspace_id,
+                &query,
+                &filters.json_contains,
+                &(limit as i64),
+            ],
+        )?,
+        (false, false) => conn.query(&sql, &[&filters.workspace_id, &query, &(limit as i64)])?,
     };
     Ok(rows
         .iter()
@@ -148,13 +165,28 @@ pub fn vector_search(
     limit: u32,
 ) -> IntelResult<Vec<SearchHit>> {
     let model_fp = config.manifest_dir.display().to_string();
-    let cache = crate::search_cache::SearchCache::open_default().ok().map(|c| {
-        let k = crate::search_cache::cache_key("query-vector", "query", &model_fp, query, "embed-query-v1");
-        (c, k)
-    });
+    let cache = crate::search_cache::SearchCache::open_default()
+        .ok()
+        .map(|c| {
+            let k = crate::search_cache::cache_key(
+                "query-vector",
+                "query",
+                &model_fp,
+                query,
+                "embed-query-v1",
+            );
+            (c, k)
+        });
     let query_vector: pgvector::Vector = match cache
         .as_ref()
-        .and_then(|(c, k)| c.get(k, &model_fp, "embed-query-v1", crate::search_cache::TTL_QUERY_VECTOR))
+        .and_then(|(c, k)| {
+            c.get(
+                k,
+                &model_fp,
+                "embed-query-v1",
+                crate::search_cache::TTL_QUERY_VECTOR,
+            )
+        })
         .and_then(|payload| serde_json::from_str::<Vec<f32>>(&payload).ok())
     {
         Some(vec_vals) => pgvector::Vector::from(vec_vals),
@@ -188,9 +220,20 @@ pub fn vector_search(
     let ktype = ktype_of(filters);
     let mut conn = pool.get()?;
     let rows = if has_type {
-        conn.query(&sql, &[&query_vector, &filters.workspace_id, &(limit as i64), &ktype])?
+        conn.query(
+            &sql,
+            &[
+                &query_vector,
+                &filters.workspace_id,
+                &(limit as i64),
+                &ktype,
+            ],
+        )?
     } else {
-        conn.query(&sql, &[&query_vector, &filters.workspace_id, &(limit as i64)])?
+        conn.query(
+            &sql,
+            &[&query_vector, &filters.workspace_id, &(limit as i64)],
+        )?
     };
     Ok(rows
         .iter()
@@ -234,7 +277,11 @@ pub fn rrf_fuse(channels: &[Vec<SearchHit>], limit: u32) -> Vec<SearchHit> {
             hit
         })
         .collect();
-    merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    merged.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     merged.truncate(limit as usize);
     merged
 }
@@ -308,13 +355,27 @@ pub fn hybrid_search(
     );
     // 缓存键必须含 query（P4-4 基准实录：漏 query 时 10 查询共用一键，
     // 后续查询全部命中首查询缓存，hybrid Recall@10 从 0.54 掉到 0.04）。
-    let params = format!("{query}|{limit}|{mmr_lambda}|{}", serde_json::to_string(&filters.json_contains).unwrap_or_default());
+    let params = format!(
+        "{query}|{limit}|{mmr_lambda}|{}",
+        serde_json::to_string(&filters.json_contains).unwrap_or_default()
+    );
     let cache = cache.map(|c| {
-        let k = crate::search_cache::cache_key("retrieval", "hybrid", SEARCH_CACHE_VERSION, &params, &fp);
+        let k = crate::search_cache::cache_key(
+            "retrieval",
+            "hybrid",
+            SEARCH_CACHE_VERSION,
+            &params,
+            &fp,
+        );
         (c, k)
     });
     if let Some((c, k)) = cache.as_ref() {
-        if let Some(payload) = c.get(k, SEARCH_CACHE_VERSION, &fp, crate::search_cache::TTL_RETRIEVAL) {
+        if let Some(payload) = c.get(
+            k,
+            SEARCH_CACHE_VERSION,
+            &fp,
+            crate::search_cache::TTL_RETRIEVAL,
+        ) {
             if let Ok(hits) = serde_json::from_str::<Vec<SearchHit>>(&payload) {
                 return Ok(hits);
             }
@@ -457,7 +518,10 @@ pub struct RerankWorkerProvider {
 
 impl RerankWorkerProvider {
     pub fn new(config: RerankWorkerConfig) -> Self {
-        Self { config, env: OnceLock::new() }
+        Self {
+            config,
+            env: OnceLock::new(),
+        }
     }
 
     fn env(&self) -> Result<&RerankRunEnv, RerankErr> {
@@ -477,7 +541,8 @@ impl RerankWorkerProvider {
             busy_timeout: Duration::from_secs(5),
         })
         .map_err(|e| RerankErr(format!("ops db open: {e}")))?;
-        pool.enable_wal().map_err(|e| RerankErr(format!("ops db wal: {e}")))?;
+        pool.enable_wal()
+            .map_err(|e| RerankErr(format!("ops db wal: {e}")))?;
         database::migrate(&pool, &self.config.sqlite_migrations_dir)
             .map_err(|e| RerankErr(format!("ops db migrate: {e}")))?;
         let registry = Registry::open(pool.clone()).with_options(Options {
@@ -507,7 +572,11 @@ impl RerankWorkerProvider {
             Err(e) => return Err(RerankErr(format!("registry query: {e}"))),
         }
         let engine = Engine::open(pool.clone(), registry);
-        Ok(RerankRunEnv { pool, engine, manifest: value })
+        Ok(RerankRunEnv {
+            pool,
+            engine,
+            manifest: value,
+        })
     }
 
     fn dispatch(&self, input: Value) -> Result<Value, RerankErr> {
@@ -518,15 +587,26 @@ impl RerankWorkerProvider {
             .to_string();
         let entrypoint: Vec<String> = env.manifest["runtime"]["entrypoint"]
             .as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default();
         if entrypoint.is_empty() {
             return Err(RerankErr("manifest entrypoint empty".to_string()));
         }
-        let family = env.manifest["family"].as_str().unwrap_or("document").to_string();
+        let family = env.manifest["family"]
+            .as_str()
+            .unwrap_or("document")
+            .to_string();
         let network = match env.manifest["network"]["mode"].as_str().unwrap_or("none") {
             "none" => NetworkPlan::None,
-            other => return Err(RerankErr(format!("network {other:?} 不可派发（none 之外拒绝）"))),
+            other => {
+                return Err(RerankErr(format!(
+                    "network {other:?} 不可派发（none 之外拒绝）"
+                )))
+            }
         };
         let adapter = PodmanHostAdapter::new(PodmanHostConfig {
             workspace_root: self.config.workspace_root.clone(),
@@ -611,7 +691,14 @@ pub fn rerank_search(
     limit: u32,
 ) -> IntelResult<Vec<SearchHit>> {
     // 检索集 = hybrid 产出（RRF + MMR，双通道并归后多样化）。
-    let candidates = hybrid_search(pool, embed_config, filters, query, limit, DEFAULT_MMR_LAMBDA)?;
+    let candidates = hybrid_search(
+        pool,
+        embed_config,
+        filters,
+        query,
+        limit,
+        DEFAULT_MMR_LAMBDA,
+    )?;
     if candidates.is_empty() {
         return Ok(candidates);
     }
@@ -657,7 +744,10 @@ pub fn rerank_hits(
     let texts: Vec<Value> = hits
         .iter()
         .map(|h| {
-            let body = bodies.get(&h.knowledge_id).cloned().unwrap_or_else(|| h.title.clone());
+            let body = bodies
+                .get(&h.knowledge_id)
+                .cloned()
+                .unwrap_or_else(|| h.title.clone());
             let body = truncate_utf8(&body, RERANK_TEXT_CAP_BYTES);
             json!({ "id": h.knowledge_id, "text": body })
         })
@@ -685,6 +775,10 @@ pub fn rerank_hits(
             c
         })
         .collect();
-    out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(out)
 }
