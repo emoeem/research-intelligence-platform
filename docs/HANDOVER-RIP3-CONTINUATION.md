@@ -11,9 +11,9 @@
 | 阶段实现提交 | `0229bf01f1cc133e997f5bd644221c88da95de18`（Phase 7/8 阶段收口提交；后续文档同步提交不改变实现基线） |
 | CI | [GitHub Actions #180](https://github.com/emoeem/research-intelligence-platform/actions/runs/45141019769)：Rust workspace 测试与 Clippy、Python worker、Web build/Vitest、REST/MCP parity 四个 Job 全部 success；注意 CI 未配置 PostgreSQL service / `RP_TEST_PG_DSN`，Phase 7 PG 集成测试在 CI 中会提前返回，本地专用 PG 环境 4 项实跑通过 |
 | 相关 | docs/rip3/00-ARCHITECTURE-AUDIT.md；docs/releases/RELEASE_2026-11-23_RIP3-PHASE7-8.md；docs/releases/RELEASE_2026-11-15_RIP3-PHASE1.md |
-**CI 口径补充（2026-11-23）**：CI #180 全绿代表已配置的四个 job 全部成功，不代表 CI 已运行所有 PostgreSQL 集成验收。`.github/workflows/ci.yml` 当前没有 PostgreSQL service / `RP_TEST_PG_DSN`，`phase7_maintenance.rs` 的 `pool()` 在 DSN 缺失时返回 `None`，测试函数会提前结束；Phase 7 的 PostgreSQL 行为由本机 `apps/server/selftest_p7p8.sh` 专用容器验收。后续应将 PG service 与 DSN 纳入 Rust CI，并把缺少 DSN 时的静默成功改为明确 skip/专用门禁，避免误读覆盖率。
-
 | 自动化收官 | `.zcode/workflows/rip3-finish.dwf.ts`（动态工作流保存式脚本：Phase 3→8 + §17/D8 收官自查逐阶段编排，批次自动入库 + 编排面五道门禁复测 + HEAD CI 确认 + 受阻处置站）；启动 = 在有动态工作流工具面的会话（仓库根）`CreateWorkflow saved: { name: "rip3-finish" }` 或以 path 直提该文件；编译诊断按 §13 改文件后 path 重提 |
+
+**CI 口径补充（2026-11-23）**：CI #180 全绿代表已配置的四个 job 全部成功，不代表 CI 已运行所有 PostgreSQL 集成验收。`.github/workflows/ci.yml` 当前没有 PostgreSQL service / `RP_TEST_PG_DSN`，`phase7_maintenance.rs` 的 `pool()` 在 DSN 缺失时返回 `None`，测试函数会提前结束；Phase 7 的 PostgreSQL 行为由本机 `apps/server/selftest_p7p8.sh` 专用容器验收。后续应将 PG service 与 DSN 纳入 Rust CI，并把缺少 DSN 时的静默成功改为明确 skip/专用门禁，避免误读覆盖率。
 
 ## 一、项目现状（30 秒版）
 
