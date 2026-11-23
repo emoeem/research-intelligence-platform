@@ -69,6 +69,11 @@ impl OoxmlZip {
         self.entries.len()
     }
 
+    /// 空容器判定（clippy len_without_is_empty 面；空 ZIP 非法包）。
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// 组装完整 stored-ZIP 字节（local file header×n + central directory×n
     /// + EOCD；确定性——同条目两次 build 字节一致）。
     pub fn build(mut self) -> Vec<u8> {

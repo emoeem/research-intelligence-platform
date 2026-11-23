@@ -40,7 +40,7 @@ fn render_docx_container_structure() {
     assert!(!bytes.is_empty(), "render_docx output must be non-empty");
     assert!(bytes.starts_with(b"PK\x03\x04"), "ZIP local header magic");
     assert!(
-        bytes.ends_with(b"PK\x05\x06") == false,
+        !bytes.ends_with(b"PK\x05\x06"),
         "EOCD has trailing comment length field"
     );
     assert!(
@@ -191,8 +191,7 @@ fn render_docx_crc_tamper_fails() {
     let mid = bytes.len() / 2;
     bytes[mid] ^= 0xFF;
     let err = qc_zip_entries(&bytes)
-        .err()
-        .expect("tampered container must fail CRC/structure reconciliation");
+        .expect_err("tampered container must fail CRC/structure reconciliation");
     assert!(
         !err.is_empty(),
         "error message must be non-empty (:545 保留错误信息词形)"

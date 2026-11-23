@@ -42,7 +42,7 @@ pub fn render_attack_path_svg(ir: &ReportIr) -> String {
     // 断言由测试数 data-step-index 出现次数承载——判据 10）。
     let mut canvas_h: f32 = PADDING;
     for path in &ir.attack_paths {
-        let rows = (path.steps.len().max(1) + PER_ROW - 1) / PER_ROW;
+        let rows = path.steps.len().max(1).div_ceil(PER_ROW);
         canvas_h +=
             24.0 + rows as f32 * (NODE_H + GAP_Y) + path.evidence_refs.len() as f32 * 18.0 + 12.0;
     }
@@ -111,7 +111,7 @@ pub fn render_attack_path_svg(ir: &ReportIr) -> String {
                 ));
             }
         }
-        cursor_y += ((path.steps.len().max(1) + PER_ROW - 1) / PER_ROW) as f32 * (NODE_H + GAP_Y);
+        cursor_y += path.steps.len().max(1).div_ceil(PER_ROW) as f32 * (NODE_H + GAP_Y);
         for evidence_ref in &path.evidence_refs {
             out.push_str(&format!(
                 "<text class=\"evidence-ref\" x=\"{}\" y=\"{}\" font-size=\"11\" fill=\"#6b7280\">证据引用：{}</text>",

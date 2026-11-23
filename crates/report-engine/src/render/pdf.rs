@@ -322,7 +322,7 @@ impl<'a> Face<'a> {
                 let gid = GlyphId::new(self.glyph_id(c) as u32);
                 metrics
                     .advance_width(gid)
-                    .unwrap_or_else(|| NOTDEF_WIDTH_RATIO * self.units_per_em)
+                    .unwrap_or(NOTDEF_WIDTH_RATIO * self.units_per_em)
             }
             None => NOTDEF_WIDTH_RATIO * self.units_per_em,
         };
