@@ -30,23 +30,22 @@ pub mod evaluator;
 pub mod fingerprint;
 pub mod matcher;
 pub mod planner;
+pub mod project_assets;
 pub mod provider;
 pub mod scheduler;
 pub mod store;
 
 pub use contract::{SCHEMA_DIR, SCHEMA_VERSION};
+pub use coverage::{coverage_matrix, generate_blind_spot_hypotheses, CoverageCell, CoverageMatrix};
+pub use evaluator::{evaluate, normalized_doc, NormalizedResult, OutcomeView};
 pub use fingerprint::dedup_fingerprint;
 pub use matcher::{
     run_match, KnowledgeChannel, MatchExcluded, MatchHit, MatchQuery, MatchResult, RtisPocChannel,
     UnifiedSearchChannel,
 };
 pub use planner::{draft_from_match, persist_draft, CacheDecision, PlanBudget, PlanDraft};
-pub use evaluator::{evaluate, normalized_doc, NormalizedResult, OutcomeView};
-pub use scheduler::{
-    budget_exhausted_result, pending_items, runtime_budget_ok, NormalizedOutcome,
-};
-pub use coverage::{coverage_matrix, generate_blind_spot_hypotheses, CoverageCell, CoverageMatrix};
 pub use provider::{
     execute_nuclei, NucleiProvider, ProviderOutcome, RtisPocProvider, VerificationProvider,
 };
+pub use scheduler::{budget_exhausted_result, pending_items, runtime_budget_ok, NormalizedOutcome};
 pub use store::{PlanRecord, PlanStore, PlanStoreError, PlanSummary, ResultGuard, StoreEvent};

@@ -2,9 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend, ApiError } from "../lib/api";
-import { ErrorPanel, PageHeader } from "../components/ui";
+import { EmptyPanel, ErrorPanel, PageHeader } from "../components/ui";
 import { VirtualList } from "../components/VirtualList";
-import { MessageViews, parseQueryParams, type HeaderPair } from "../components/MessageViews";
+import {
+  MessageViews,
+  decodeBodyBase64,
+  parseQueryParams,
+  type HeaderPair,
+} from "../components/MessageViews";
+import { ResizableSplitView } from "../components/ResizableSplitView";
+import { useUiText } from "../i18n";
 
 /** HTTP History 页（WSW-3-ADR W3-D8.3；PLAN §5.3 :396-404 布局规格）：
  * 顶部过滤构建器（防抖 300ms）→ 虚拟滚动列表（默认时间倒序，自研窗口化
@@ -93,7 +100,7 @@ interface BodyPayload {
   body: string;
 }
 
-const ROW_HEIGHT = 28;
+const ROW_HEIGHT = 36;
 const DEBOUNCE_MS = 300;
 
 const SCOPE_TONES: Record<string, string> = {
@@ -160,6 +167,7 @@ const EMPTY_FILTERS: FilterState = {
 };
 
 export function WswHistoryPage() {
+  const ui = useUiText();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   // 防抖过滤态（300ms；e2e §四.3.3 断言 5 次快速键入窗口内 ≤2 次请求）。
@@ -187,12 +195,23 @@ export function WswHistoryPage() {
   }, [draftFilters]);
 
   const query = useMemo(() => filtersToQuery(filters, ""), [filters]);
+  const hasDraftFilters = Object.values(draftFilters).some(Boolean);
+  const resetFilters = useCallback(() => {
+    setDraftFilters(EMPTY_FILTERS);
+    setFilters(EMPTY_FILTERS);
+  }, []);
 
   // 首页加载（过滤族重置游标）。
   useEffect(() => {
     let cancelled = false;
     setLoadingList(true);
     setListError(null);
+    setSelected(null);
+    setDetail(null);
+    setDetailError(null);
+    setRequestBody(null);
+    setResponseBody(null);
+    setBodyNote(null);
     apiGet<HistoryListData>(`/api/wsw/history?${query}`)
       .then((data) => {
         if (cancelled) return;
@@ -250,33 +269,34 @@ export function WswHistoryPage() {
 
   // Body 按需加载（W3-D3：列表/详情零 body 字节；打开 Body 视图才请求
   // ——e2e §四.3.4 断言「列表全程零 /body、详情恰一次」）。
-  const loadBody = useCallback(async (direction: "request" | "response") => {
-    if (!selected) return;
-    const setter = direction === "request" ? setRequestBody : setResponseBody;
-    setter(null);
-    setBodyNote(null);
-    try {
-      const data = await apiGet<BodyPayload>(
-        `/api/wsw/history/${selected.exchange_id}/body?direction=${direction}`,
-      );
-      setter(data);
-    } catch (error) {
-      setBodyNote(
-        error instanceof ApiError
-          ? `${direction} 体按需加载：${error.message}`
-          : String(error),
-      );
-    }
-  }, [selected]);
+  const loadBody = useCallback(
+    async (direction: "request" | "response") => {
+      if (!selected) return;
+      const setter = direction === "request" ? setRequestBody : setResponseBody;
+      setter(null);
+      setBodyNote(null);
+      try {
+        const data = await apiGet<BodyPayload>(
+          `/api/wsw/history/${selected.exchange_id}/body?direction=${direction}`,
+        );
+        setter(data);
+      } catch (error) {
+        setBodyNote(
+          error instanceof ApiError ? `${direction} 体按需加载：${error.message}` : String(error),
+        );
+      }
+    },
+    [selected],
+  );
 
   async function sendToRepeater(row: HistoryRow) {
     setActionMessage(null);
     try {
-      const result = await apiSend<{ tab_id: string; version_no: number; rebuild_fidelity: string }>(
-        "POST",
-        `/api/wsw/history/${row.exchange_id}/send-to-repeater`,
-        {},
-      );
+      const result = await apiSend<{
+        tab_id: string;
+        version_no: number;
+        rebuild_fidelity: string;
+      }>("POST", `/api/wsw/history/${row.exchange_id}/send-to-repeater`, {});
       setActionMessage(
         `已送入 Repeater（tab ${result.tab_id} v${result.version_no}；保真 ${result.rebuild_fidelity}——头序/绝对形式不保证逐字节）`,
       );
@@ -296,37 +316,42 @@ export function WswHistoryPage() {
       const input = window.prompt("编辑 tags（逗号分隔）", tags);
       if (input === null) return;
       await apiSend("PATCH", `/api/wsw/history/${detail.exchange_id}`, {
-        tags: input.split(",").map((t) => t.trim()).filter(Boolean),
+        tags: input
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
         notes: detail.notes ?? "",
       });
-      const fresh = await apiGet<HistoryDetail>(
-        `/api/wsw/history/${detail.exchange_id}`,
-      );
+      const fresh = await apiGet<HistoryDetail>(`/api/wsw/history/${detail.exchange_id}`);
       setDetail(fresh);
       void queryClient.invalidateQueries();
     } catch (error) {
-      setActionMessage(
-        error instanceof ApiError ? `保存失败：${error.message}` : String(error),
-      );
+      setActionMessage(error instanceof ApiError ? `保存失败：${error.message}` : String(error));
     }
   }
 
-  const totalText = `${total} 行${hasMore ? "（已载入 " + rows.length + "）" : ""}`;
+  const totalText = `${total} ${ui("条记录")}${hasMore ? `（${ui("已载入")} ${rows.length}）` : ""}`;
 
   return (
     <main className="page" data-testid="wsw-history-page">
-      <PageHeader title="HTTP History" />
+      <PageHeader title={ui("HTTP History")} />
       <p className="muted">
-        捕获/发送交换行（025 单行纪律）；列表零 body 字节、Body 按需端点单响应帽
-        8MiB；游标分页 (started_at, exchange_id) 倒序 + 过滤指纹守卫。
+        {ui(
+          "捕获/发送交换行（025 单行纪律）；列表零 body 字节、Body 按需端点单响应帽 8MiB；游标分页 (started_at, exchange_id) 倒序 + 过滤指纹守卫。",
+        )}
       </p>
 
       {/* 过滤构建器（防抖 300ms） */}
-      <section className="panel" data-testid="wsw-history-filters">
+      <section
+        className="panel wsw-history-filters"
+        data-testid="wsw-history-filters"
+        aria-label={ui("HTTP History filters")}
+      >
         <div className="flex flex-wrap gap-2 items-center">
           <input
             className="input input-sm"
-            placeholder="关键词搜索（authority/路径/头名/体前 4KiB）"
+            placeholder={ui("关键词搜索（authority/路径/头名/体前 4KiB）")}
+            aria-label={ui("关键词搜索（authority/路径/头名/体前 4KiB）")}
             data-testid="wsw-history-filter-q"
             value={draftFilters.q}
             onChange={(e) => setDraftFilters({ ...draftFilters, q: e.target.value })}
@@ -335,10 +360,11 @@ export function WswHistoryPage() {
           <select
             className="select select-sm"
             data-testid="wsw-history-filter-method"
+            aria-label={ui("方法")}
             value={draftFilters.method}
             onChange={(e) => setDraftFilters({ ...draftFilters, method: e.target.value })}
           >
-            <option value="">方法</option>
+            <option value="">{ui("方法")}</option>
             {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -348,6 +374,7 @@ export function WswHistoryPage() {
           <input
             className="input input-sm"
             placeholder="authority"
+            aria-label="authority"
             data-testid="wsw-history-filter-authority"
             value={draftFilters.authority}
             onChange={(e) => setDraftFilters({ ...draftFilters, authority: e.target.value })}
@@ -355,7 +382,8 @@ export function WswHistoryPage() {
           />
           <input
             className="input input-sm"
-            placeholder="路径前缀"
+            placeholder={ui("路径前缀")}
+            aria-label={ui("路径前缀")}
             data-testid="wsw-history-filter-path"
             value={draftFilters.path}
             onChange={(e) => setDraftFilters({ ...draftFilters, path: e.target.value })}
@@ -363,7 +391,8 @@ export function WswHistoryPage() {
           />
           <input
             className="input input-sm"
-            placeholder="状态码"
+            placeholder={ui("状态码")}
+            aria-label={ui("状态码")}
             data-testid="wsw-history-filter-status"
             value={draftFilters.status}
             onChange={(e) => setDraftFilters({ ...draftFilters, status: e.target.value })}
@@ -372,189 +401,305 @@ export function WswHistoryPage() {
           <select
             className="select select-sm"
             data-testid="wsw-history-filter-source"
+            aria-label={ui("来源")}
             value={draftFilters.source}
             onChange={(e) => setDraftFilters({ ...draftFilters, source: e.target.value })}
           >
-            <option value="">来源</option>
+            <option value="">{ui("来源")}</option>
             <option value="proxy_capture">proxy_capture</option>
             <option value="repeater">repeater</option>
           </select>
+          <input
+            className="input input-sm wsw-history-filter-input"
+            placeholder={ui("MIME 类型")}
+            aria-label={ui("MIME 类型")}
+            data-testid="wsw-history-filter-mime"
+            value={draftFilters.mime}
+            onChange={(e) => setDraftFilters({ ...draftFilters, mime: e.target.value })}
+          />
+          <input
+            className="input input-sm wsw-history-filter-input"
+            placeholder={ui("标签（逗号分隔）")}
+            aria-label={ui("标签（逗号分隔）")}
+            data-testid="wsw-history-filter-tags"
+            value={draftFilters.tags}
+            onChange={(e) => setDraftFilters({ ...draftFilters, tags: e.target.value })}
+          />
+          <label className="wsw-history-date-filter">
+            <span>{ui("开始时间")}</span>
+            <input
+              type="datetime-local"
+              className="input input-sm"
+              aria-label={ui("开始时间")}
+              data-testid="wsw-history-filter-from"
+              value={draftFilters.from}
+              onChange={(e) => setDraftFilters({ ...draftFilters, from: e.target.value })}
+            />
+          </label>
+          <label className="wsw-history-date-filter">
+            <span>{ui("结束时间")}</span>
+            <input
+              type="datetime-local"
+              className="input input-sm"
+              aria-label={ui("结束时间")}
+              data-testid="wsw-history-filter-to"
+              value={draftFilters.to}
+              onChange={(e) => setDraftFilters({ ...draftFilters, to: e.target.value })}
+            />
+          </label>
           <button
             type="button"
             className="btn btn-sm"
             data-testid="wsw-history-filter-reset"
             onClick={() => setDraftFilters(EMPTY_FILTERS)}
           >
-            重置
+            {ui("重置过滤器")}
           </button>
           <span className="muted text-xs" data-testid="wsw-history-total">
-            {loadingList ? "加载中…" : totalText}
+            {loadingList ? ui("加载中…") : totalText}
           </span>
         </div>
       </section>
 
-      {listError && <ErrorPanel error={listError} onRetry={() => setFilters({ ...filters })} />}
-
-      {/* 虚拟滚动列表（仅视口渲染）+ 详情区 */}
-      <section className="panel" style={{ height: "20rem" }} data-testid="wsw-history-list-panel">
-        <VirtualList
-          itemCount={rows.length}
-          rowHeight={ROW_HEIGHT}
-          testId="wsw-history-list"
-          onScrollOffset={(offset) => {
-            // 触底加载下一页（游标协议，禁 OFFSET）。
-            if (hasMore && offset + 20 * ROW_HEIGHT >= rows.length * ROW_HEIGHT) {
-              void loadMore();
-            }
-          }}
-          renderItem={(index) => {
-            const row = rows[index];
-            if (!row) return null;
-            const isSelected = selected?.exchange_id === row.exchange_id;
-            return (
-              <div
-                role="row"
-                data-testid="wsw-history-row"
-                data-exchange-id={row.exchange_id}
-                className={`flex items-center gap-2 px-2 text-xs w-full ${isSelected ? "bg-base-200" : ""}`}
-                style={{ height: ROW_HEIGHT, cursor: "pointer" }}
-                onClick={() => void selectRow(row)}
-              >
-                <span className={`badge badge-xs ${statusTone(row.response_status)}`}>
-                  {row.response_status ?? "-"}
-                </span>
-                <span className="font-mono" style={{ width: "3.5rem" }}>
-                  {row.method ?? "-"}
-                </span>
-                <span className="font-mono truncate flex-1">
-                  {row.authority ?? "-"}
-                  {row.path ?? "/"}
-                </span>
-                <span className="badge badge-ghost badge-xs">{row.source}</span>
-                {row.scope_decision && (
-                  <span className={`badge badge-xs ${SCOPE_TONES[row.scope_decision] ?? "badge-ghost"}`}>
-                    {row.scope_decision}
-                  </span>
-                )}
-                <span className="muted" style={{ width: "5rem", textAlign: "right" }}>
-                  {row.duration_ms != null ? `${row.duration_ms}ms` : "-"}
-                </span>
-                <span className="muted" style={{ width: "9rem" }}>
-                  {row.started_at ?? "-"}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-xs"
-                  data-testid="wsw-history-send-to-repeater"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void sendToRepeater(row);
-                  }}
-                >
-                  Send to Repeater
-                </button>
-              </div>
-            );
-          }}
-        />
-      </section>
+      {listError && rows.length > 0 && (
+        <ErrorPanel error={listError} onRetry={() => setFilters({ ...filters })} />
+      )}
 
       {actionMessage && (
         <p className="badge-info" data-testid="wsw-history-action-message">
           {actionMessage}
         </p>
       )}
-
-      {selected && (
-        <section className="panel" data-testid="wsw-history-detail">
-          <div className="flex items-center justify-between">
-            <h2>
-              详情 <span className="font-mono text-sm">{selected.exchange_id}</span>
-            </h2>
-            <div className="flex gap-2">
-              <button type="button" className="btn btn-sm" onClick={() => void saveTagsNotes()}>
-                编辑 tags/notes
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => void sendToRepeater(selected)}
-              >
-                Send to Repeater
-              </button>
-            </div>
-          </div>
-          {detailError && <p className="badge-error">{detailError}</p>}
-          {detail && (
-            <>
-              <dl className="kv">
-                <dt>请求</dt>
-                <dd className="font-mono">
-                  {detail.method} {detail.scheme}://{detail.authority}
-                  {detail.path}
-                </dd>
-                <dt>状态 / 耗时 / TTFB</dt>
-                <dd>
-                  {detail.response_status ?? "-"} / {detail.duration_ms ?? "-"}ms /{" "}
-                  {detail.ttfb_ms ?? "-"}ms
-                </dd>
-                <dt>捕获保真 / 解析</dt>
-                <dd>
-                  {detail.capture_fidelity} / {detail.parse_status}
-                  {detail.error_code ? `（${detail.error_code}）` : ""}
-                </dd>
-                <dt>体引用（请求 / 响应）</dt>
-                <dd className="font-mono text-xs">
-                  req len={detail.request_body_len ?? "-"} fidelity={detail.request_body_fidelity ?? "-"}<br />
-                  res len={detail.response_body_len ?? "-"} fidelity={detail.response_body_fidelity ?? "-"}
-                </dd>
-                <dt>tags</dt>
-                <dd>{detail.tags?.join("，") || "（无）"}</dd>
-                <dt>notes</dt>
-                <dd>{detail.notes || "（无）"}</dd>
-              </dl>
-              <h3 className="text-sm mt-2">请求报文</h3>
-              <MessageViews
-                testIdPrefix="wsw-history-req"
-                headers={detail.request_headers ?? []}
-                params={parseQueryParams(detail.path)}
-                rawBody={requestBodyText(requestBody)}
-                bodyIsBinary={requestBodyIsBinary(requestBody, detail.request_mime)}
-                bodyTruncated={detail.request_body_fidelity === 'truncated'}
-              />
-              <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  data-testid="wsw-history-load-request-body"
-                  onClick={() => void loadBody("request")}
-                >
-                  按需加载请求体
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  data-testid="wsw-history-load-response-body"
-                  onClick={() => void loadBody("response")}
-                >
-                  按需加载响应体
-                </button>
-              </div>
-              {bodyNote && (
-                <p className="muted text-xs" data-testid="wsw-history-body-note">
-                  {bodyNote}
-                </p>
+      {rows.length === 0 && !loadingList ? (
+        <section className="panel wsw-history-no-results" data-testid="wsw-history-empty-state">
+          {listError ? (
+            <ErrorPanel error={listError} onRetry={() => setFilters({ ...filters })} />
+          ) : (
+            <EmptyPanel
+              text={ui(
+                hasDraftFilters
+                  ? "没有找到匹配的 HTTP 流量。"
+                  : "暂无 HTTP 流量。启动 Proxy/MITM 捕获请求，或从 Repeater 发送请求后会显示在这里。",
               )}
-              <h3 className="text-sm mt-2">响应报文</h3>
-              <MessageViews
-                testIdPrefix="wsw-history-res"
-                headers={detail.response_headers ?? []}
-                rawBody={responseBodyText(responseBody)}
-                bodyIsBinary={responseBodyIsBinary(responseBody, detail.response_mime)}
-              />
-            </>
+              actionLabel={hasDraftFilters ? ui("重置过滤器") : undefined}
+              onAction={hasDraftFilters ? resetFilters : undefined}
+            />
           )}
         </section>
+      ) : (
+        <ResizableSplitView
+          className="wsw-history-split"
+          layoutKey="wsw-history-list-detail"
+          secondCollapsible
+          firstLabel={ui("HTTP History list")}
+          secondLabel={ui("Request and response details")}
+          first={
+            <>
+              {" "}
+              {/* 虚拟滚动列表（仅视口渲染）+ 详情区 */}
+              <section
+                className="panel wsw-history-list-panel"
+                data-testid="wsw-history-list-panel"
+                aria-label={ui("HTTP 请求列表")}
+              >
+                {rows.length === 0 && !loadingList ? (
+                  <div className="wsw-history-list-empty">
+                    <EmptyPanel
+                      text={ui(
+                        hasDraftFilters
+                          ? "没有找到匹配的 HTTP 流量。"
+                          : "暂无 HTTP 流量。启动 Proxy/MITM 捕获请求，或从 Repeater 发送请求后会显示在这里。",
+                      )}
+                      actionLabel={hasDraftFilters ? ui("重置过滤器") : undefined}
+                      onAction={hasDraftFilters ? resetFilters : undefined}
+                    />
+                  </div>
+                ) : (
+                  <VirtualList
+                    itemCount={rows.length}
+                    rowHeight={ROW_HEIGHT}
+                    itemKey={(index) => rows[index]?.exchange_id ?? index}
+                    testId="wsw-history-list"
+                    onScrollOffset={(offset) => {
+                      // 触底加载下一页（游标协议，禁 OFFSET）。
+                      if (hasMore && offset + 20 * ROW_HEIGHT >= rows.length * ROW_HEIGHT) {
+                        void loadMore();
+                      }
+                    }}
+                    renderItem={(index) => {
+                      const row = rows[index];
+                      if (!row) return null;
+                      const isSelected = selected?.exchange_id === row.exchange_id;
+                      return (
+                        <div
+                          role="row"
+                          tabIndex={0}
+                          aria-selected={isSelected}
+                          aria-label={`HTTP ${row.response_status ?? "-"} ${row.method ?? "-"} ${row.authority ?? ""}${row.path ?? "/"}`}
+                          data-testid="wsw-history-row"
+                          data-exchange-id={row.exchange_id}
+                          className={`flex items-center gap-2 px-2 text-xs w-full ${isSelected ? "bg-base-200" : ""}`}
+                          style={{ height: ROW_HEIGHT, cursor: "pointer" }}
+                          onClick={() => void selectRow(row)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              void selectRow(row);
+                            }
+                          }}
+                        >
+                          <span className={`badge badge-xs ${statusTone(row.response_status)}`}>
+                            {row.response_status ?? "-"}
+                          </span>
+                          <span className="font-mono" style={{ width: "3.5rem" }}>
+                            {row.method ?? "-"}
+                          </span>
+                          <span className="font-mono truncate flex-1">
+                            {row.authority ?? "-"}
+                            {row.path ?? "/"}
+                          </span>
+                          <span className="badge badge-ghost badge-xs">{row.source}</span>
+                          {row.scope_decision && (
+                            <span
+                              className={`badge badge-xs ${SCOPE_TONES[row.scope_decision] ?? "badge-ghost"}`}
+                            >
+                              {row.scope_decision}
+                            </span>
+                          )}
+                          <span className="muted" style={{ width: "5rem", textAlign: "right" }}>
+                            {row.duration_ms != null ? `${row.duration_ms}ms` : "-"}
+                          </span>
+                          <span className="muted" style={{ width: "9rem" }}>
+                            {row.started_at ?? "-"}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-xs"
+                            data-testid="wsw-history-send-to-repeater"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void sendToRepeater(row);
+                            }}
+                          >
+                            {ui("Send to Repeater")}
+                          </button>
+                        </div>
+                      );
+                    }}
+                  />
+                )}
+              </section>
+            </>
+          }
+          second={
+            <>
+              {selected ? (
+                <section className="panel" data-testid="wsw-history-detail">
+                  <div className="flex items-center justify-between">
+                    <h2>
+                      {ui("详情")} <span className="font-mono text-sm">{selected.exchange_id}</span>
+                    </h2>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => void saveTagsNotes()}
+                      >
+                        {ui("编辑 tags/notes")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => void sendToRepeater(selected)}
+                      >
+                        {ui("Send to Repeater")}
+                      </button>
+                    </div>
+                  </div>
+                  {detailError && <p className="badge-error">{detailError}</p>}
+                  {detail && (
+                    <>
+                      <dl className="kv">
+                        <dt>{ui("请求")}</dt>
+                        <dd className="font-mono">
+                          {detail.method} {detail.scheme}://{detail.authority}
+                          {detail.path}
+                        </dd>
+                        <dt>{ui("状态 / 耗时 / TTFB")}</dt>
+                        <dd>
+                          {detail.response_status ?? "-"} / {detail.duration_ms ?? "-"}ms /{" "}
+                          {detail.ttfb_ms ?? "-"}ms
+                        </dd>
+                        <dt>{ui("捕获保真 / 解析")}</dt>
+                        <dd>
+                          {detail.capture_fidelity} / {detail.parse_status}
+                          {detail.error_code ? `（${detail.error_code}）` : ""}
+                        </dd>
+                        <dt>{ui("体引用（请求 / 响应）")}</dt>
+                        <dd className="font-mono text-xs">
+                          req len={detail.request_body_len ?? "-"} fidelity=
+                          {detail.request_body_fidelity ?? "-"}
+                          <br />
+                          res len={detail.response_body_len ?? "-"} fidelity=
+                          {detail.response_body_fidelity ?? "-"}
+                        </dd>
+                        <dt>tags</dt>
+                        <dd>{detail.tags?.join("，") || "（无）"}</dd>
+                        <dt>notes</dt>
+                        <dd>{detail.notes || "（无）"}</dd>
+                      </dl>
+                      <h3 className="text-sm mt-2">{ui("请求报文")}</h3>
+                      <MessageViews
+                        testIdPrefix="wsw-history-req"
+                        headers={detail.request_headers ?? []}
+                        params={parseQueryParams(detail.path)}
+                        rawBody={requestBodyText(requestBody)}
+                        rawBytes={decodeBodyBase64(requestBody?.body) ?? undefined}
+                        bodyIsBinary={requestBodyIsBinary(requestBody, detail.request_mime)}
+                        bodyTruncated={detail.request_body_fidelity === "truncated"}
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          data-testid="wsw-history-load-request-body"
+                          onClick={() => void loadBody("request")}
+                        >
+                          {ui("按需加载请求体")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          data-testid="wsw-history-load-response-body"
+                          onClick={() => void loadBody("response")}
+                        >
+                          {ui("按需加载响应体")}
+                        </button>
+                      </div>
+                      {bodyNote && (
+                        <p className="muted text-xs" data-testid="wsw-history-body-note">
+                          {bodyNote}
+                        </p>
+                      )}
+                      <h3 className="text-sm mt-2">{ui("响应报文")}</h3>
+                      <MessageViews
+                        testIdPrefix="wsw-history-res"
+                        headers={detail.response_headers ?? []}
+                        rawBody={responseBodyText(responseBody)}
+                        rawBytes={decodeBodyBase64(responseBody?.body) ?? undefined}
+                        bodyIsBinary={responseBodyIsBinary(responseBody, detail.response_mime)}
+                      />
+                    </>
+                  )}
+                </section>
+              ) : (
+                <section className="panel wsw-history-empty-detail">
+                  <EmptyPanel text={ui("选择一条请求以查看完整详情。")} />
+                </section>
+              )}
+            </>
+          }
+        />
       )}
     </main>
   );
@@ -599,4 +744,3 @@ function base64ToBytes(b64: string): Uint8Array {
   for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
-

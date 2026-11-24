@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 import { formatDateTime } from "../../lib/format";
 import type { WorkflowDefinitionRow } from "../../lib/api";
 
@@ -39,12 +40,12 @@ export function VersionList({
     <section
       data-testid="workflows-versions-section"
       className="rounded-surface border border-edge bg-base-100 p-3"
-      aria-label="Workflow 版本列表与历史回看"
+      aria-label={translateUi("Workflow 版本列表与历史回看")}
     >
       <h2 className="text-xs font-semibold text-base-content/70">
-        Workflow 版本与历史回看
+        {translateUi("Workflow 版本与历史回看")}
         <span className="ml-2 text-[10px] font-normal text-muted">
-          016 workflow_definition · 存储侧版本递增
+          {translateUi("016 workflow_definition · 存储侧版本递增")}
         </span>
       </h2>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -56,7 +57,7 @@ export function VersionList({
             list="workflow-id-options"
             data-testid="workflow-id-select"
             value={workflowId}
-            placeholder="（无定义时可键入新 workflow_id）"
+            placeholder={translateUi("（无定义时可键入新 workflow_id）")}
             onChange={(event) => onSelectWorkflow(event.target.value)}
           />
           <datalist id="workflow-id-options">
@@ -67,7 +68,9 @@ export function VersionList({
         </label>
         <div className="flex flex-wrap items-center gap-1" data-testid="version-chips">
           {versions.length === 0 ? (
-            <span className="text-[10px] text-muted">该 workflow 尚无已保存版本</span>
+            <span className="text-[10px] text-muted">
+              {translateUi("该 workflow 尚无已保存版本")}
+            </span>
           ) : (
             versions.map((row) => (
               <button
@@ -89,7 +92,7 @@ export function VersionList({
         </div>
         {readOnly ? (
           <span className="badge badge-ghost badge-sm" data-testid="readonly-history-badge">
-            历史回看 v{selectedVersion}（只读）
+            {translateUi("历史回看")} v{selectedVersion}（{translateUi("只读")}）
           </span>
         ) : null}
         {readOnly || latest !== null ? (
@@ -99,11 +102,14 @@ export function VersionList({
             onClick={() => onSelectVersion(null)}
             disabled={!readOnly}
           >
-            编辑最新{latest !== null ? `（v${latest} 基础上）` : ""}
+            {translateUi("编辑最新")}
+            {latest !== null ? `（v${latest} 基础上）` : ""}
           </button>
         ) : null}
         <span className="ml-auto flex items-center gap-2">
-          {dirty ? <span className="badge badge-warning badge-sm">未保存改动</span> : null}
+          {dirty ? (
+            <span className="badge badge-warning badge-sm">{translateUi("未保存改动")}</span>
+          ) : null}
           <button
             type="button"
             data-testid="save-definition-btn"
@@ -111,7 +117,7 @@ export function VersionList({
             disabled={saving || readOnly}
             onClick={onSave}
           >
-            {saving ? "保存中…" : "保存（版本递增）"}
+            {saving ? translateUi("保存中…") : translateUi("保存（版本递增）")}
           </button>
         </span>
       </div>
@@ -131,8 +137,9 @@ export function VersionList({
         </p>
       ) : null}
       <p className="mt-1 text-[10px] leading-4 text-muted">
-        画布图保存为 definition-v1 JSON：graph 节点/边向量经 rp-workflow put 四道门后追加一版， 文档
-        version 仅作声明，落库版本由存储侧分配（现有最大版本 + 1）。
+        {translateUi(
+          "画布图保存为 definition-v1 JSON：graph 节点/边向量经 rp-workflow put 四道门后追加一版，文档 version 仅作声明，落库版本由存储侧分配（现有最大版本 + 1）。",
+        )}
       </p>
     </section>
   );

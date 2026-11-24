@@ -2,7 +2,7 @@ import { type Page, test, expect } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 
 /** 视觉矩阵（P5-10，ROADMAP P5-9 裁剪版；P7-1 五区壳层重拍；P10-4 基线与阻断化）：
- *  11 页 × 2 主题 × 2 视口 = 44 组合（新壳含 Inspector/Activity，axe 断言并轨覆盖）。
+ *  12 页 × 2 主题 × 2 视口 = 48 视觉组合；另有 12 页 × 5 视口响应式 smoke（新壳含 Inspector/Activity，axe 断言并轨覆盖）。
  *  断言：
  *  1. 零 console.error 与零 pageerror；
  *  2. 无横向溢出（scrollWidth <= innerWidth + 1）；
@@ -283,11 +283,56 @@ const API_STUBS: Record<string, unknown> = {
       },
     ],
   },
+  "/api/projects": {
+    available: true,
+    source: "verification-engine",
+    workspace_id: "default",
+    total: 1,
+    items: [
+      {
+        project_id: "prj-visual-kernel",
+        workspace_id: "default",
+        name: "Linux kernel attack surface review",
+        slug: "linux-kernel-review",
+        summary: "Map exposed kernel interfaces and prioritize reachable attack paths.",
+        objective: "Map exposed kernel interfaces and prioritize reachable attack paths.",
+        status: "active",
+        priority: "high",
+        scope: {},
+        tags: ["kernel", "security"],
+        owner_id: "visual-fixture",
+        created_at: "2026-11-20T09:00:00Z",
+        updated_at: "2026-11-24T10:00:00Z",
+      },
+    ],
+  },
+  "/api/research/assets": {
+    available: true,
+    source: "verification-engine",
+    workspace_id: "default",
+    total: 1,
+    items: [
+      {
+        asset_id: "ast-visual-kernel",
+        workspace_id: "default",
+        asset_type: "domain",
+        canonical_value: "kernel.example.test",
+        display_name: "Kernel research target",
+        description: "Visual fixture only; not a production discovery result.",
+        lifecycle_status: "active",
+        first_seen_at: "2026-11-20T09:00:00Z",
+        last_seen_at: "2026-11-24T10:00:00Z",
+        created_at: "2026-11-20T09:00:00Z",
+        updated_at: "2026-11-24T10:00:00Z",
+      },
+    ],
+  },
 };
 
 const PAGES = [
-  { path: "/", marker: "知识生命周期分布" },
-  { path: "/projects", marker: "共 42 个任务" },
+  { path: "/", marker: "待处理" },
+  { path: "/projects", marker: "项目目录" },
+  { path: "/research/assets", marker: "资产清单" },
   { path: "/research", marker: "研究总览" },
   { path: "/knowledge", marker: "共 46 条" },
   { path: "/tools", marker: "共 20 个工具" },
@@ -296,7 +341,7 @@ const PAGES = [
   { path: "/workflows", marker: "节点分类面板" },
   { path: "/runs", marker: "rn-b5-rt-py" },
   { path: "/runtime", marker: "node-py-1" },
-  { path: "/settings", marker: "界面偏好" },
+  { path: "/settings", marker: "界面语言" },
 ];
 
 const THEMES = ["rip-dark", "rip-light"] as const;
@@ -305,17 +350,22 @@ const VIEWPORTS = [
   { width: 390, height: 844, label: "mobile" },
 ];
 
+const initializedPages = new WeakSet<Page>();
+
 async function openPage(page: Page, path: string, theme: string): Promise<void> {
-  await page.addInitScript((stored) => {
-    window.localStorage.setItem("rip_theme", stored);
-  }, theme);
-  await page.route("**/api/**", (route) => {
-    const path = new URL(route.request().url()).pathname;
-    route.fulfill({
-      contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(API_STUBS[path] ?? {}),
+  if (!initializedPages.has(page)) {
+    await page.addInitScript((stored) => {
+      window.localStorage.setItem("rip_theme", stored);
+    }, theme);
+    await page.route("**/api/**", (route) => {
+      const apiPath = new URL(route.request().url()).pathname;
+      route.fulfill({
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(API_STUBS[apiPath] ?? {}),
+      });
     });
-  });
+    initializedPages.add(page);
+  }
   await page.goto(`http://127.0.0.1:4177${path}`);
   await page.waitForLoadState("domcontentloaded");
   // 统一字体环境（P10-4）：快照与渲染钉死单一 CJK 字族，机器无关（参照项目
@@ -326,6 +376,67 @@ async function openPage(page: Page, path: string, theme: string): Promise<void> 
       ':root { --font-sans: "Noto Sans CJK SC", sans-serif !important; --font-mono: "Noto Sans Mono CJK SC", monospace !important; }',
   });
 }
+
+test("全路由三语言双主题五视口矩阵 smoke", async ({ page }) => {
+  test.setTimeout(180_000);
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.route("**/api/**", (route) => {
+    const apiPath = new URL(route.request().url()).pathname;
+    route.fulfill({
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(API_STUBS[apiPath] ?? {}),
+    });
+  });
+
+  const locales = ["zh-CN", "en-US", "ja-JP"] as const;
+  const responsiveViewports = [
+    { width: 360, height: 800, label: "small-mobile" },
+    { width: 768, height: 1024, label: "tablet" },
+    { width: 1024, height: 768, label: "small-desktop" },
+    { width: 1280, height: 900, label: "desktop" },
+    { width: 1600, height: 1000, label: "wide-desktop" },
+  ];
+
+  for (const locale of locales) {
+    for (const theme of THEMES) {
+      for (const viewport of responsiveViewports) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto("http://127.0.0.1:4177/");
+        await page.evaluate(
+          ({ selectedLocale, selectedTheme }) => {
+            window.localStorage.setItem("rip_language", selectedLocale);
+            window.localStorage.setItem("rip_theme", selectedTheme);
+          },
+          { selectedLocale: locale, selectedTheme: theme },
+        );
+        for (const pageSpec of PAGES) {
+          await page.goto(`http://127.0.0.1:4177${pageSpec.path}`);
+          await expect(page.locator("main").getByRole("heading").first()).toBeVisible({
+            timeout: 5000,
+          });
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+          const dimensions = await page.evaluate(() => ({
+            width: document.documentElement.clientWidth,
+            scroll: document.documentElement.scrollWidth,
+          }));
+          expect(
+            dimensions.scroll,
+            `overflow on ${pageSpec.path} / ${locale} / ${theme} at ${viewport.label}: ${dimensions.scroll} > ${dimensions.width}`,
+          ).toBeLessThanOrEqual(dimensions.width + 1);
+        }
+      }
+    }
+  }
+
+  expect(consoleErrors, "locale/theme/viewport route sweep console errors").toEqual([]);
+  expect(pageErrors, "locale/theme/viewport route sweep page errors").toEqual([]);
+});
 
 for (const pageSpec of PAGES) {
   for (const theme of THEMES) {
@@ -342,7 +453,9 @@ for (const pageSpec of PAGES) {
         await openPage(page, pageSpec.path, theme);
 
         // 关键内容标记（真实形状 mock 数据落地）
-        await expect(page.getByText(pageSpec.marker).first()).toBeVisible({ timeout: 5000 });
+        await expect(page.locator("main").getByText(pageSpec.marker).first()).toBeVisible({
+          timeout: 5000,
+        });
         // 图表类页面（echarts canvas）等待首帧渲染完成再快照
         await page.waitForTimeout(400);
 
@@ -370,8 +483,7 @@ for (const pageSpec of PAGES) {
         const snapName =
           (pageSpec.path === "/" ? "root" : pageSpec.path.replace(/^\//, "").replace(/\//g, "-")) +
           `-${theme}-${viewport.label}.png`;
-        const mobileAgentSnapshot =
-          pageSpec.path === "/agents" && viewport.label === "mobile";
+        const mobileAgentSnapshot = pageSpec.path === "/agents" && viewport.label === "mobile";
         await expect(page).toHaveScreenshot(
           snapName,
           mobileAgentSnapshot ? { maxDiffPixelRatio: 0.05 } : undefined,

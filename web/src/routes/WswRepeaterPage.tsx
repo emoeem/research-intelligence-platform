@@ -4,6 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend, ApiError } from "../lib/api";
 import { ErrorPanel, PageHeader, StatusBadge } from "../components/ui";
 import { MessageViews, type HeaderPair } from "../components/MessageViews";
+import { MessageEditor } from "../components/editor/MessageEditor";
+import { ResizableSplitView } from "../components/ResizableSplitView";
+import { useUiText } from "../i18n";
 
 /** Repeater 页（WSW-3-ADR W3-D8.3；PLAN §5.4 :406-415 布局规格）：顶部 Tab
  * 栏（新建/重命名/关闭/版本历史下拉回退）→ 左 Request 编辑器（Raw/结构化
@@ -59,7 +62,12 @@ interface SendRow {
   response_mime?: string | null;
   duration_ms?: number | null;
   ttfb_ms?: number | null;
-  redirect_chain?: Array<{ status: number; location: string; url: string; remote_ip?: string | null }>;
+  redirect_chain?: Array<{
+    status: number;
+    location: string;
+    url: string;
+    remote_ip?: string | null;
+  }>;
 }
 
 const SEND_STATE_TONES: Record<string, string> = {
@@ -137,8 +145,23 @@ function parseRawToDraft(raw: string, fallback: OutboundDraft): OutboundDraft {
 }
 
 export function WswRepeaterPage() {
+  const ui = useUiText();
+  const [editorTheme, setEditorTheme] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "rip-light"
+      ? "light"
+      : "dark",
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  useEffect(() => {
+    const syncTheme = () =>
+      setEditorTheme(
+        document.documentElement.getAttribute("data-theme") === "rip-light" ? "light" : "dark",
+      );
+    window.addEventListener("rip-theme-change", syncTheme);
+    return () => window.removeEventListener("rip-theme-change", syncTheme);
+  }, []);
   const [tabs, setTabs] = useState<TabRow[]>([]);
   const [tabsError, setTabsError] = useState<ApiError | null>(null);
   const [activeTab, setActiveTab] = useState<string | null>(null);
@@ -325,7 +348,10 @@ export function WswRepeaterPage() {
     setResponseBody("");
     try {
       if (dirty || editorMode === "raw") {
-        const outgoing = editorMode === "raw" ? parseRawToDraft(rawText, draft ?? emptyDraft()) : draft ?? emptyDraft();
+        const outgoing =
+          editorMode === "raw"
+            ? parseRawToDraft(rawText, draft ?? emptyDraft())
+            : (draft ?? emptyDraft());
         const saved = await apiSend<{ version_no: number; append_only: boolean }>(
           "PUT",
           `/api/wsw/repeater/tabs/${activeTab}/request`,
@@ -369,7 +395,7 @@ export function WswRepeaterPage() {
   return (
     <main className="page" data-testid="wsw-repeater-page">
       <PageHeader
-        title="Repeater"
+        title={ui("Repeater")}
         actions={
           <>
             <button
@@ -379,7 +405,7 @@ export function WswRepeaterPage() {
               data-testid="wsw-repeater-new-tab"
               onClick={() => void createTab()}
             >
-              新建 Tab
+              {ui("新建 Tab")}
             </button>
             <button
               type="button"
@@ -388,7 +414,7 @@ export function WswRepeaterPage() {
               data-testid="wsw-repeater-rename-tab"
               onClick={() => void renameTab()}
             >
-              重命名
+              {ui("重命名")}
             </button>
             <button
               type="button"
@@ -397,15 +423,15 @@ export function WswRepeaterPage() {
               data-testid="wsw-repeater-close-tab"
               onClick={() => void closeTab()}
             >
-              关闭
+              {ui("关闭")}
             </button>
           </>
         }
       />
       <p className="muted">
-        Tab 修改历史 append-only（每次编辑 = 新版本行；回退 = origin=restore 新行；
-        UPDATE/DELETE 端点不存在）。Send 经 rp-wsw 子进程（Outbound 唯一事实，
-        编辑头序保持）。
+        {ui(
+          "Tab 修改历史 append-only（每次编辑 = 新版本行；回退 = origin=restore 新行； UPDATE/DELETE 端点不存在）。Send 经 rp-wsw 子进程（Outbound 唯一事实， 编辑头序保持）。",
+        )}
       </p>
       {message && (
         <p className="badge-info" data-testid="wsw-repeater-message">
@@ -430,7 +456,7 @@ export function WswRepeaterPage() {
             </span>
           </button>
         ))}
-        {tabs.length === 0 && <span className="muted">（无打开 tab——右上角新建）</span>}
+        {tabs.length === 0 && <span className="muted">{ui("（无打开 tab——右上角新建）")}</span>}
         {detail && (
           <select
             className="select select-sm"
@@ -441,7 +467,7 @@ export function WswRepeaterPage() {
               if (v >= 1) void restoreVersion(v);
             }}
           >
-            <option value="">版本历史回退…</option>
+            <option value="">{ui("版本历史回退…")}</option>
             {detail.versions.map((v) => (
               <option key={v.version_no} value={v.version_no}>
                 v{v.version_no} · {v.origin}
@@ -453,200 +479,228 @@ export function WswRepeaterPage() {
       </div>
 
       {detail && draft && (
-        <div className="grid grid-cols-2 gap-4 mt-2">
-          {/* 左：Request 编辑器（Raw/结构化双模） */}
-          <section className="panel" data-testid="wsw-repeater-request">
-            <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-sm">Request（v{detail.latest_version_no ?? "-"}）</h2>
-              <button
-                type="button"
-                className={`btn btn-xs ${editorMode === "raw" ? "btn-primary" : ""}`}
-                data-testid="wsw-repeater-mode-raw"
-                onClick={() => {
-                  if (editorMode !== "raw") setRawText(draftToRawText(draft));
-                  setEditorMode("raw");
-                }}
-              >
-                Raw
-              </button>
-              <button
-                type="button"
-                className={`btn btn-xs ${editorMode === "structured" ? "btn-primary" : ""}`}
-                data-testid="wsw-repeater-mode-structured"
-                onClick={() => {
-                  if (editorMode !== "structured" && rawText) {
-                    setDraft(parseRawToDraft(rawText, draft));
-                  }
-                  setEditorMode("structured");
-                }}
-              >
-                结构化
-              </button>
-              <span className="flex-1" />
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                data-testid="wsw-repeater-save"
-                onClick={() => void saveDraft()}
-              >
-                保存版本
-              </button>
-            </div>
-            {editorMode === "raw" ? (
-              <textarea
-                className="textarea font-mono text-xs"
-                data-testid="wsw-repeater-raw-editor"
-                style={{ minHeight: "18rem", whiteSpace: "pre" }}
-                value={rawText}
-                onChange={(e) => {
-                  setRawText(e.target.value);
-                  setDirty(true);
-                }}
-              />
-            ) : (
-              <div className="flex flex-col gap-2">
-                <div className="flex gap-2">
-                  <input
-                    className="input input-sm font-mono"
-                    style={{ width: "7rem" }}
-                    value={draft.method}
-                    aria-label="method"
-                    onChange={(e) => {
-                      setDraft({ ...draft, method: e.target.value.toUpperCase() });
-                      setDirty(true);
+        <ResizableSplitView
+          className="wsw-repeater-split"
+          firstLabel={ui("Request Editor")}
+          secondLabel={ui("Response Viewer")}
+          layoutKey="wsw-repeater-request-response"
+          first={
+            <>
+              {/* 左：Request 编辑器（Raw/结构化双模） */}
+              <section className="panel" data-testid="wsw-repeater-request">
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className="text-sm">Request（v{detail.latest_version_no ?? "-"}）</h2>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${editorMode === "raw" ? "btn-primary" : ""}`}
+                    data-testid="wsw-repeater-mode-raw"
+                    onClick={() => {
+                      if (editorMode !== "raw") setRawText(draftToRawText(draft));
+                      setEditorMode("raw");
                     }}
-                  />
-                  <input
-                    className="input input-sm font-mono flex-1"
-                    value={draft.target}
-                    aria-label="target"
-                    onChange={(e) => {
-                      setDraft({ ...draft, target: e.target.value });
-                      setDirty(true);
+                  >
+                    Raw
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${editorMode === "structured" ? "btn-primary" : ""}`}
+                    data-testid="wsw-repeater-mode-structured"
+                    onClick={() => {
+                      if (editorMode !== "structured" && rawText) {
+                        setDraft(parseRawToDraft(rawText, draft));
+                      }
+                      setEditorMode("structured");
                     }}
-                  />
+                  >
+                    {ui("结构化")}
+                  </button>
+                  <span className="flex-1" />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    data-testid="wsw-repeater-save"
+                    onClick={() => void saveDraft()}
+                  >
+                    {ui("保存版本")}
+                  </button>
                 </div>
-                <table data-testid="wsw-repeater-headers-edit">
-                  <thead>
-                    <tr>
-                      <th>头名</th>
-                      <th>值</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {draft.headers.map((h, i) => (
-                      <tr key={`${h.name}-${i}`}>
-                        <td>
-                          <input
-                            className="input input-sm"
-                            value={h.name}
-                            onChange={(e) => {
-                              const headers = [...draft.headers];
-                              headers[i] = { ...headers[i]!, name: e.target.value };
-                              setDraft({ ...draft, headers });
-                              setDirty(true);
-                            }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="input input-sm"
-                            value={h.value}
-                            onChange={(e) => {
-                              const headers = [...draft.headers];
-                              headers[i] = { ...headers[i]!, value: e.target.value };
-                              setDraft({ ...draft, headers });
-                              setDirty(true);
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <textarea
-                  className="textarea font-mono text-xs"
-                  style={{ minHeight: "6rem" }}
-                  placeholder="体（Raw 文本；保存时 base64 内联）"
-                  value={decodeDraftBody(draft.body)}
-                  onChange={(e) => {
-                    setDraft({ ...draft, body: encodeDraftBody(e.target.value) });
-                    setDirty(true);
-                  }}
-                />
-              </div>
-            )}
-          </section>
-
-          {/* 右：Response 视图 + Send/Cancel */}
-          <section className="panel" data-testid="wsw-repeater-response">
-            <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-sm">Response</h2>
-              {send && (
-                <>
-                  <StatusBadge status={send.state} tones={SEND_STATE_TONES} />
-                  <span className="muted text-xs">
-                    {send.response_status != null ? `HTTP ${send.response_status}` : ""}
-                    {send.duration_ms != null ? ` · ${send.duration_ms}ms` : ""}
-                  </span>
-                </>
-              )}
-              <span className="flex-1" />
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={busy || sendPolling}
-                data-testid="wsw-repeater-send"
-                onClick={() => void sendRequest()}
-              >
-                {sendPolling ? "发送中…" : "Send"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={!sendPolling}
-                data-testid="wsw-repeater-cancel"
-                onClick={() => void cancelSend()}
-              >
-                Cancel
-              </button>
-            </div>
-            {send?.error_code && (
-              <p className="badge-error text-xs" data-testid="wsw-repeater-send-error">
-                error_code = {send.error_code}
-                {send.state === "failed" && send.error_code === "scope_blocked"
-                  ? "（scope 闸拒发：越界目标/未配置规则——PLAN :527 主动面不自动扩大范围）"
-                  : ""}
-              </p>
-            )}
-            {send?.redirect_chain && send.redirect_chain.length > 0 && (
-              <div data-testid="wsw-repeater-redirect-chain">
-                <p className="text-xs muted">重定向链（逐跳 scope 闸 + IP 审计）：</p>
-                <ul className="text-xs">
-                  {send.redirect_chain.map((hop, i) => (
-                    <li key={`${hop.url}-${i}`}>
-                      {hop.status} → {hop.url}（remote_ip {hop.remote_ip ?? "-"}）
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {responseBody ? (
-              <MessageViews
-                testIdPrefix="wsw-repeater-res"
-                headers={[]}
-                rawBody={responseBody}
-              />
-            ) : (
-              <pre className="muted text-xs">
-                {sendPolling
-                  ? "（发送中——子进程执行中；终态后响应体按需读回）"
-                  : "（无响应——Send 后按需读回 /body）"}
-              </pre>
-            )}
-          </section>
-        </div>
+                {editorMode === "raw" ? (
+                  <MessageEditor
+                    className="wsw-code-editor"
+                    testId="wsw-repeater-raw-editor"
+                    label={ui("Request Editor")}
+                    value={rawText}
+                    height="min(58dvh, 720px)"
+                    minHeight="360px"
+                    theme={editorTheme}
+                    basicSetup={{
+                      lineNumbers: true,
+                      foldGutter: true,
+                      highlightActiveLine: true,
+                      autocompletion: false,
+                    }}
+                    onChange={(value) => {
+                      setRawText(value);
+                      setDirty(true);
+                    }}
+                  />
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <input
+                        className="input input-sm font-mono"
+                        style={{ width: "7rem" }}
+                        value={draft.method}
+                        aria-label="method"
+                        onChange={(e) => {
+                          setDraft({ ...draft, method: e.target.value.toUpperCase() });
+                          setDirty(true);
+                        }}
+                      />
+                      <input
+                        className="input input-sm font-mono flex-1"
+                        value={draft.target}
+                        aria-label="target"
+                        onChange={(e) => {
+                          setDraft({ ...draft, target: e.target.value });
+                          setDirty(true);
+                        }}
+                      />
+                    </div>
+                    <table data-testid="wsw-repeater-headers-edit">
+                      <thead>
+                        <tr>
+                          <th>{ui("头名")}</th>
+                          <th>{ui("值")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {draft.headers.map((h, i) => (
+                          <tr key={`${h.name}-${i}`}>
+                            <td>
+                              <input
+                                className="input input-sm"
+                                value={h.name}
+                                onChange={(e) => {
+                                  const headers = [...draft.headers];
+                                  headers[i] = { ...headers[i]!, name: e.target.value };
+                                  setDraft({ ...draft, headers });
+                                  setDirty(true);
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="input input-sm"
+                                value={h.value}
+                                onChange={(e) => {
+                                  const headers = [...draft.headers];
+                                  headers[i] = { ...headers[i]!, value: e.target.value };
+                                  setDraft({ ...draft, headers });
+                                  setDirty(true);
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <MessageEditor
+                      className="wsw-code-editor"
+                      label={ui("体（Raw 文本；保存时 base64 内联）")}
+                      placeholder={ui("体（Raw 文本；保存时 base64 内联）")}
+                      value={decodeDraftBody(draft.body)}
+                      height="160px"
+                      theme={editorTheme}
+                      basicSetup={{
+                        lineNumbers: true,
+                        foldGutter: false,
+                        highlightActiveLine: true,
+                        autocompletion: false,
+                      }}
+                      onChange={(value) => {
+                        setDraft({ ...draft, body: encodeDraftBody(value) });
+                        setDirty(true);
+                      }}
+                    />
+                  </div>
+                )}
+              </section>
+            </>
+          }
+          second={
+            <>
+              {/* 右：Response 视图 + Send/Cancel */}
+              <section className="panel" data-testid="wsw-repeater-response">
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className="text-sm">Response</h2>
+                  {send && (
+                    <>
+                      <StatusBadge status={send.state} tones={SEND_STATE_TONES} />
+                      <span className="muted text-xs">
+                        {send.response_status != null ? `HTTP ${send.response_status}` : ""}
+                        {send.duration_ms != null ? ` · ${send.duration_ms}ms` : ""}
+                      </span>
+                    </>
+                  )}
+                  <span className="flex-1" />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={busy || sendPolling}
+                    data-testid="wsw-repeater-send"
+                    onClick={() => void sendRequest()}
+                  >
+                    {sendPolling ? ui("发送中…") : ui("Send")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={!sendPolling}
+                    data-testid="wsw-repeater-cancel"
+                    onClick={() => void cancelSend()}
+                  >
+                    {ui("Cancel")}
+                  </button>
+                </div>
+                {send?.error_code && (
+                  <p className="badge-error text-xs" data-testid="wsw-repeater-send-error">
+                    error_code = {send.error_code}
+                    {send.state === "failed" && send.error_code === "scope_blocked"
+                      ? "（scope 闸拒发：越界目标/未配置规则——PLAN :527 主动面不自动扩大范围）"
+                      : ""}
+                  </p>
+                )}
+                {send?.redirect_chain && send.redirect_chain.length > 0 && (
+                  <div data-testid="wsw-repeater-redirect-chain">
+                    <p className="text-xs muted">{ui("重定向链（逐跳 scope 闸 + IP 审计）：")}</p>
+                    <ul className="text-xs">
+                      {send.redirect_chain.map((hop, i) => (
+                        <li key={`${hop.url}-${i}`}>
+                          {hop.status} → {hop.url}（remote_ip {hop.remote_ip ?? "-"}）
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {responseBody ? (
+                  <MessageViews
+                    testIdPrefix="wsw-repeater-res"
+                    headers={[]}
+                    rawBody={responseBody}
+                  />
+                ) : (
+                  <pre className="muted text-xs">
+                    {sendPolling
+                      ? "（发送中——子进程执行中；终态后响应体按需读回）"
+                      : "（无响应——Send 后按需读回 /body）"}
+                  </pre>
+                )}
+              </section>
+            </>
+          }
+        />
       )}
     </main>
   );

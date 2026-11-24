@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 /** Research Knowledge Context（P5-1 首版，Phase 5 §4.5.E）：本页是 RIP 相比
  *  普通扫描器最重要的界面之一。本版提供知识检索入口（/api/knowledge?q=
  *  既有服务端关键词过滤，五字段 LIKE），并如实标注：
@@ -60,15 +61,19 @@ export function ResearchKnowledgePage() {
   return (
     <div>
       <PageHeader
-        title="知识上下文"
-        actions={<span className="badge badge-ghost">数据源：/api/knowledge（服务端过滤）</span>}
+        title={translateUi("知识上下文")}
+        actions={
+          <span className="badge badge-ghost">
+            {translateUi("数据源：/api/knowledge（服务端过滤）")}
+          </span>
+        }
       />
 
       <div className="mb-2 flex flex-wrap items-center gap-3">
         <FilterSearch
-          label="检索"
+          label={translateUi("检索")}
           value={query}
-          placeholder="组件 / CVE / 类别 / 标题关键词"
+          placeholder={translateUi("组件 / CVE / 类别 / 标题关键词")}
           onChange={setQuery}
         />
         <button
@@ -78,30 +83,35 @@ export function ResearchKnowledgePage() {
             setSubmitted(query.trim());
           }}
         >
-          检索知识
+          {translateUi("检索知识")}
         </button>
       </div>
 
       <div className="mb-4 rounded-surface border border-edge bg-base-200/40 p-3 text-xs text-muted">
         <p>
-          当前能力边界：本页是知识条目检索（M 面知识库 LIKE 过滤）。Phase 5 知识
-          驱动验证的匹配解释面（命中理由、适用条件、排除原因、Token 预算、缓存 命中）由 Knowledge
-          Matcher（P5-3）经统一检索与 Context Broker 提供， 届时本页升级为命中/排除双栏视图。
+          {translateUi(
+            "当前能力边界：本页是知识条目检索（M 面知识库 LIKE 过滤）。Phase 5 知识驱动验证的匹配解释面（命中理由、适用条件、排除原因、Token 预算、缓存命中）由 Knowledge Matcher（P5-3）经统一检索与 Context Broker 提供，届时本页升级为命中/排除双栏视图。",
+          )}
         </p>
       </div>
 
       {!submitted ? (
-        <EmptyPanel text="输入关键词后检索（服务端过滤 title/ID/component/cve/category 五字段）。" />
+        <EmptyPanel
+          text={translateUi(
+            "输入关键词后检索（服务端过滤 title/ID/component/cve/category 五字段）。",
+          )}
+        />
       ) : list.loading ? (
         <SkeletonPanel lines={5} />
       ) : list.error !== null ? (
         <ErrorPanel error={list.error} onRetry={list.retry} />
       ) : items.length === 0 ? (
-        <EmptyPanel text={list.data?.message ?? "没有匹配的知识条目。"} />
+        <EmptyPanel text={list.data?.message ?? translateUi("没有匹配的知识条目。")} />
       ) : (
         <>
           <p className="mb-2 text-xs text-muted">
-            查询「{submitted}」：命中 {total ?? items.length} 条（显示 {items.length}）
+            {translateUi("查询")}「{submitted}」：{translateUi("命中")} {total ?? items.length}{" "}
+            {translateUi("条（显示")} {items.length}）
           </p>
           <ul className="space-y-2">
             {items.map((item) => (
@@ -136,7 +146,9 @@ export function ResearchKnowledgePage() {
                     <span className="badge badge-sm badge-outline">{item.versions}</span>
                   ) : null}
                   {typeof item.hit_count === "number" && item.hit_count > 0 ? (
-                    <span className="text-[11px] text-muted">历史复用 {item.hit_count}</span>
+                    <span className="text-[11px] text-muted">
+                      {translateUi("历史复用")} {item.hit_count}
+                    </span>
                   ) : null}
                 </div>
                 <p className="mt-1.5 text-sm font-medium leading-5">

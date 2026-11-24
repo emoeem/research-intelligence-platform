@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 /** Research Workspace 总览（P5-1，Phase 5 §4.5.A 首版）：当前研究概况
  *  全部来自既有真实 API（/api/tasks 状态计数 + /api/runs 运行面 + /api/overview
  *  知识计数），无假数据；子页深链接入口。
@@ -70,7 +71,7 @@ export function ResearchOverviewPage() {
   if (tasks.loading || runs.loading || overview.loading) {
     return (
       <div>
-        <PageHeader title="研究总览" />
+        <PageHeader title={translateUi("研究总览")} />
         <SkeletonPanel lines={6} />
       </div>
     );
@@ -78,7 +79,7 @@ export function ResearchOverviewPage() {
   if (tasks.error !== null) {
     return (
       <div>
-        <PageHeader title="研究总览" />
+        <PageHeader title={translateUi("研究总览")} />
         <ErrorPanel error={tasks.error} onRetry={tasks.retry} />
       </div>
     );
@@ -97,49 +98,59 @@ export function ResearchOverviewPage() {
   return (
     <div>
       <PageHeader
-        title="研究总览"
+        title={translateUi("研究总览")}
         actions={
-          <span className="badge badge-ghost">数据源：/api/tasks + /api/runs + /api/overview</span>
+          <span className="badge badge-ghost">
+            {translateUi("数据源：/api/tasks + /api/runs + /api/overview")}
+          </span>
         }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
-          label="研究任务"
+          label={translateUi("研究任务")}
           value={tasks.data?.total ?? 0}
-          hint={`显示 ${taskItems.length}（limit 200 口径）`}
+          hint={`${translateUi("显示")} ${taskItems.length}（limit 200 ${translateUi("口径")}）`}
           to="/research/tasks"
         />
         <KpiCard
-          label="活跃运行"
+          label={translateUi("活跃运行")}
           value={activeRuns.length}
-          hint={`失败/超时 ${failedRuns.length} · 共 ${runs.data?.total ?? runItems.length} 条`}
+          hint={`${translateUi("失败/超时")} ${failedRuns.length} · ${translateUi("共")} ${runs.data?.total ?? runItems.length} ${translateUi("条")}`}
           to="/research/tasks"
         />
         <KpiCard
-          label="知识条目"
-          value={knowledgeCount ?? "不可用"}
-          hint="来源 /api/overview 既有计数"
+          label={translateUi("知识条目")}
+          value={knowledgeCount ?? translateUi("不可用")}
+          hint={translateUi("来源 /api/overview 既有计数")}
           to="/research/knowledge"
         />
-        <KpiCard label="验证结果" value="待交付" hint="五态结果域随 P5-7 交付" />
+        <KpiCard
+          label={translateUi("验证结果")}
+          value={translateUi("待交付")}
+          hint={translateUi("五态结果域随 P5-7 交付")}
+        />
       </div>
 
       <div className="mt-5 flex flex-wrap gap-3">
-        <CountChips entries={byState} tones={TASK_STATE_TONES} label="任务状态计数" />
+        <CountChips
+          entries={byState}
+          tones={TASK_STATE_TONES}
+          label={translateUi("任务状态计数")}
+        />
       </div>
 
-      <section className="mt-5" aria-label="最近研究任务">
+      <section className="mt-5" aria-label={translateUi("最近研究任务")}>
         <header className="mb-2 flex items-center justify-between">
-          <h2 className="text-base font-semibold">最近研究任务</h2>
+          <h2 className="text-base font-semibold">{translateUi("最近研究任务")}</h2>
           <Link to="/research/tasks" className="link link-sm text-primary">
-            全部任务
+            {translateUi("全部任务")}
           </Link>
         </header>
         {!hasAnySource ? (
-          <EmptyPanel text="暂无研究数据：/api/tasks 与 /api/runs 均为空。" />
+          <EmptyPanel text={translateUi("暂无研究数据：/api/tasks 与 /api/runs 均为空。")} />
         ) : recentTasks.length === 0 ? (
-          <EmptyPanel text="暂无研究任务。" />
+          <EmptyPanel text={translateUi("暂无研究任务。")} />
         ) : (
           <ul className="space-y-2">
             {recentTasks.map((task) => (
@@ -159,7 +170,7 @@ export function ResearchOverviewPage() {
                     ) : null}
                     {runItems.some((run) => run.task_id === task.task_id) ? (
                       <span className={`badge badge-sm ${RUN_STATUS_TONES.RUNNING} badge-outline`}>
-                        有关联运行
+                        {translateUi("有关联运行")}
                       </span>
                     ) : null}
                     <span className="text-[11px] text-muted">
@@ -178,8 +189,9 @@ export function ResearchOverviewPage() {
       </section>
 
       <p className="mt-6 text-xs text-muted">
-        资产与知识上下文首版见 Tabs；Scan Center、Coverage、Findings、Evidence、 Trace 子页随 P5-5
-        至 P5-8 批次交付（骨架不渲染占位假数据）。
+        {translateUi(
+          "资产与知识上下文首版见 Tabs；Scan Center、Coverage、Findings、Evidence、Trace 子页随 P5-5 至 P5-8 批次交付（骨架不渲染占位假数据）。",
+        )}
       </p>
     </div>
   );

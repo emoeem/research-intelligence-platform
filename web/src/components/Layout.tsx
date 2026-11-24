@@ -1,49 +1,56 @@
-/** 壳层 Layout（P7-1 五区版）：顶部栏（工作区切换 / 全局搜索 / 运行任务 /
- *  Runner 状态 / 通知）+ 左侧主导航图标轨 + 中央多标签工作区（固定 tab /
- *  会话 tab，固定 tab 来自 workspaces.ts 数据）+ 右侧可折叠 Inspector +
- *  底部可折叠 Activity 面板。
- *
- *  布局与数据模型分离：TabArea / InspectorPanel / ActivityPanel 是与数据
- *  无关的通用组件，RIP 的 tab 组装、Inspector 分区内容、Activity 页签内容
- *  全部在本文件完成；工作区数据仍只来自 src/workspaces.ts（同一份数据源）。
- *  模式沿自参照实现 admin/src/components/Layout.tsx 与计划 §10.2 主布局。 */
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import {
   Bell,
   Bot,
+  ChevronRight,
   CirclePlay,
   Database,
   FolderKanban,
+  Globe,
   LayoutDashboard,
   Menu,
   Moon,
   PanelBottom,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRight,
   Puzzle,
   Radar,
+  RefreshCw,
   Search,
   ServerCog,
-  ShieldCheck,
   Settings,
+  ShieldCheck,
   Sun,
-  Globe,
-  RefreshCw,
   Workflow,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { ActivityPanel, type ActivityTab } from "./ActivityPanel";
+import { PersistentShellSplit } from "./PersistentShellSplit";
 import { ActivityPlansLive } from "./ActivityPlansLive";
+import { ActivityRunsLive } from "./ActivityRunsLive";
+import { ActivityRunDetails } from "./ActivityRunDetails";
+import { ActivityRuntimeLive } from "./ActivityRuntimeLive";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { GlobalSearchPalette } from "./GlobalSearchPalette";
 import { InspectorPanel, type InspectorSection } from "./InspectorPanel";
 import { TabArea, type TabAreaTab } from "./TabArea";
-import { applyTheme, getStoredTheme, THEME_OPTIONS, type ThemeId } from "../theme";
-import { WORKSPACES, WORKSPACES_BY_ORDER, tabNumberOf, type WorkspaceIconKey } from "../workspaces";
+import { applyTheme, getStoredTheme, type ThemeId } from "../theme";
+import { setAppLanguage, SUPPORTED_LANGUAGES, type AppLanguage } from "../i18n";
+import { useApi } from "../lib/hooks";
+import type { PluginList } from "../lib/api";
+import {
+  WORKSPACES,
+  WORKSPACES_BY_ORDER,
+  type Workspace,
+  type WorkspaceGroup,
+  type WorkspaceNavItem,
+  type WorkspaceIconKey,
+} from "../workspaces";
 
-/** workspaces.ts 的图标键 → lucide 组件。Record 全键覆盖：加新键漏映射会直接 tsc 报错。 */
 const ICONS: Record<WorkspaceIconKey, LucideIcon> = {
   layoutDashboard: LayoutDashboard,
   folderKanban: FolderKanban,
@@ -61,12 +68,8 @@ const ICONS: Record<WorkspaceIconKey, LucideIcon> = {
   refreshCw: RefreshCw,
 };
 
-/**
- * 沉浸态正则（预留）：命中时整宽渲染，图标轨/顶栏/标签区/Inspector/Activity
- * 隐藏（顶栏返回退出）。RIP 尚无沉浸页面（工具详情编辑、项目工作台等在后续
- * 批次落地时把路径模式加进这里即可，Layout 结构不用动）；当前正则刻意不命中
- * 任何既有路由。
- */
+const NAV_GROUPS: readonly WorkspaceGroup[] = ["workspace", "capabilities", "operations", "system"];
+
 export const IMMERSIVE_PATH = /\/(?:tools|projects|knowledge)\/[^/]+\/(?:edit|studio)$/;
 
 function isActivePath(itemPath: string, pathname: string): boolean {
@@ -75,30 +78,52 @@ function isActivePath(itemPath: string, pathname: string): boolean {
     : pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
+function normalizePath(pathname: string): string {
+  return pathname.replace(/\/+$/, "") || "/";
+}
+
 function workspaceIdOf(pathname: string): string | null {
-  const normalized = pathname.replace(/\/+$/, "") || "/";
+  const normalized = normalizePath(pathname);
   for (const workspace of WORKSPACES) {
     if (workspace.tabs.some((item) => isActivePath(item.to, normalized))) return workspace.id;
   }
   return null;
 }
 
-function normalizePath(pathname: string): string {
-  return pathname.replace(/\/+$/, "") || "/";
+function activeWorkspaceTab(
+  workspace: Workspace | null,
+  pathname: string,
+): WorkspaceNavItem | null {
+  if (!workspace) return null;
+  return (
+    [...workspace.tabs]
+      .sort((a, b) => b.to.length - a.to.length)
+      .find((item) => isActivePath(item.to, pathname)) ?? null
+  );
 }
 
-/** 会话 tab 的对象类别（Inspector「当前对象」用）；按详情路由前缀识别。 */
 const SESSION_OBJECT_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
-  kind: string;
+  kind: "tool" | "run" | "plugin" | "task" | "knowledge";
   labelOf: (match: RegExpMatchArray) => string;
 }> = [
-  { pattern: /^\/tools\/([^/]+)$/, kind: "工具", labelOf: (m) => decodeURIComponent(m[1] ?? "") },
-  { pattern: /^\/runs\/([^/]+)$/, kind: "Run", labelOf: (m) => decodeURIComponent(m[1] ?? "") },
-  { pattern: /^\/plugins\/([^/]+)$/, kind: "插件", labelOf: (m) => decodeURIComponent(m[1] ?? "") },
+  { pattern: /^\/tools\/([^/]+)$/, kind: "tool", labelOf: (m) => decodeURIComponent(m[1] ?? "") },
+  { pattern: /^\/runs\/([^/]+)$/, kind: "run", labelOf: (m) => decodeURIComponent(m[1] ?? "") },
+  {
+    pattern: /^\/plugins\/([^/]+)$/,
+    kind: "plugin",
+    labelOf: (m) => decodeURIComponent(m[1] ?? ""),
+  },
+  {
+    pattern: /^\/research\/tasks\/([^/]+)$/,
+    kind: "task",
+    labelOf: (m) => decodeURIComponent(m[1] ?? ""),
+  },
 ];
 
-function sessionObjectOf(path: string): { kind: string; label: string } | null {
+function sessionObjectOf(
+  path: string,
+): { kind: "tool" | "run" | "plugin" | "task" | "knowledge"; label: string } | null {
   for (const entry of SESSION_OBJECT_PATTERNS) {
     const match = path.match(entry.pattern);
     if (match) return { kind: entry.kind, label: entry.labelOf(match) };
@@ -106,53 +131,157 @@ function sessionObjectOf(path: string): { kind: string; label: string } | null {
   return null;
 }
 
-/** 中央区的会话 tab（对象详情 / 深链接打开的文档），按最近访问排序（末尾最新）。 */
 interface SessionTab {
   id: string;
   label: string;
 }
 
+function initialSidebarCollapsed(): boolean {
+  try {
+    const stored = localStorage.getItem("rip_sidebar_collapsed");
+    if (stored !== null) return stored === "true";
+  } catch {
+    // Use viewport defaults when storage is unavailable.
+  }
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(max-width: 1599px)").matches
+    : false;
+}
+
 export function Layout() {
+  const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
+  const serviceOverview = useApi<unknown>("/api/overview");
+  const serviceRuntime = useApi<{ available?: boolean }>("/api/runtime?limit=5");
   const [drawer, setDrawer] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [activityOpen, setActivityOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [activityTab, setActivityTab] = useState("queue");
+  const [wideShell, setWideShell] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(min-width: 1280px)").matches,
+  );
   const [sessionTabs, setSessionTabs] = useState<SessionTab[]>([]);
   const [theme, setTheme] = useState<ThemeId>(() => getStoredTheme());
-  const notifRef = useRef<HTMLDivElement>(null);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
 
-  const normalizedPath = normalizePath(location.pathname);
-  const immersive = IMMERSIVE_PATH.test(normalizedPath);
-
-  // 固定 tab id 全集（十一工作区的全部着陆 tab，来自 workspaces.ts 数据）。
-  const fixedIds = useMemo(
-    () => new Set(WORKSPACES_BY_ORDER.flatMap((workspace) => workspace.tabs.map((tab) => tab.to))),
-    [],
-  );
-
-  // 深链接 / 详情路由到达时登记会话 tab（固定 tab 不重复登记）。
   useEffect(() => {
-    if (immersive || fixedIds.has(normalizedPath)) return;
-    setSessionTabs((prev) => {
-      if (prev.length > 0 && prev[prev.length - 1]!.id === normalizedPath) {
-        const label = sessionObjectOf(normalizedPath)?.label ?? normalizedPath;
-        return prev[prev.length - 1]!.label === label
-          ? prev
-          : [...prev.slice(0, -1), { id: normalizedPath, label }];
+    if (typeof window.matchMedia !== "function") return undefined;
+    const query = window.matchMedia("(min-width: 1280px)");
+    const update = () => setWideShell(query.matches);
+    update();
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
+  }, []);
+
+  const normalizedPath = normalizePath(location.pathname);
+  const selectedRunId = normalizedPath.match(/^\/runs\/([^/]+)$/)?.[1] ?? null;
+  const selectedToolId = normalizedPath.match(/^\/tools\/([^/]+)$/)?.[1] ?? null;
+  const selectedPluginId = normalizedPath.match(/^\/plugins\/([^/]+)$/)?.[1] ?? null;
+  const selectedTaskId = normalizedPath.match(/^\/research\/tasks\/([^/]+)$/)?.[1] ?? null;
+  const selectedKnowledgeId =
+    normalizedPath === "/knowledge"
+      ? new URLSearchParams(location.search).get("knowledge_id")
+      : null;
+  const selectedTool = useApi<{
+    tool?: {
+      tool_id: string;
+      name: string;
+      kind?: string | null;
+      lifecycle?: string | null;
+      governance?: string | null;
+      health_state?: string | null;
+      permission_level?: string | null;
+      timeout_s?: number | null;
+    };
+  }>(selectedToolId ? `/api/tools?tool_id=${encodeURIComponent(selectedToolId)}` : null);
+  const selectedPlugins = useApi<PluginList>(selectedPluginId ? "/api/plugins" : null);
+  const selectedKnowledge = useApi<{
+    item?: {
+      knowledge_id: string;
+      title: string;
+      lifecycle?: string | null;
+      governance?: string | null;
+      component?: string | null;
+      severity?: string | null;
+      source?: string | null;
+      source_url?: string | null;
+      updated_at?: string | null;
+    };
+  }>(
+    selectedKnowledgeId
+      ? `/api/knowledge?knowledge_id=${encodeURIComponent(selectedKnowledgeId)}`
+      : null,
+  );
+  const selectedTask = useApi<{
+    item?: {
+      task_id: string;
+      title: string;
+      state?: string | null;
+      target?: string | null;
+      task_type?: string | null;
+      objective?: string | null;
+    };
+  }>(selectedTaskId ? `/api/tasks?task_id=${encodeURIComponent(selectedTaskId)}` : null);
+  const selectedTaskRuns = useApi<{
+    items?: { run_id: string; tool_id: string; task_id?: string | null; status?: string }[];
+  }>(selectedTaskId ? "/api/runs?limit=200" : null);
+  const selectedToolRuns = useApi<{
+    items?: { run_id: string; tool_id: string; status?: string }[];
+  }>(selectedToolId ? "/api/runs?limit=200" : null);
+  const selectedRun = useApi<{
+    run?: {
+      run_id: string;
+      tool_id: string;
+      status?: string;
+      duration_ms?: number | null;
+      error_category?: string | null;
+      task_id?: string | null;
+    };
+  }>(selectedRunId ? `/api/runs?run_id=${encodeURIComponent(selectedRunId)}` : null);
+  const immersive = IMMERSIVE_PATH.test(normalizedPath);
+  const activeWorkspaceId = workspaceIdOf(location.pathname);
+  const activeWorkspace =
+    WORKSPACES.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
+  const currentWorkspaceTab = activeWorkspaceTab(activeWorkspace, normalizedPath);
+  const title =
+    currentWorkspaceTab && activeWorkspace
+      ? t(`nav.tabs.${activeWorkspace.id}.${currentWorkspaceTab.order}`)
+      : activeWorkspace
+        ? t(`nav.workspaces.${activeWorkspace.id}`)
+        : t("nav.tabs.dashboard.1");
+
+  useEffect(() => {
+    const object =
+      sessionObjectOf(normalizedPath) ??
+      (selectedKnowledgeId ? { kind: "knowledge" as const, label: selectedKnowledgeId } : null);
+    if (immersive || !object) return;
+    setSessionTabs((previous) => {
+      if (previous.length > 0 && previous[previous.length - 1]!.id === normalizedPath) {
+        return previous[previous.length - 1]!.label === object.label
+          ? previous
+          : [...previous.slice(0, -1), { id: normalizedPath, label: object.label }];
       }
       return [
-        ...prev.filter((tab) => tab.id !== normalizedPath),
-        { id: normalizedPath, label: sessionObjectOf(normalizedPath)?.label ?? normalizedPath },
+        ...previous.filter((tab) => tab.id !== normalizedPath),
+        { id: normalizedPath, label: object.label },
       ];
     });
-  }, [normalizedPath, immersive, fixedIds]);
+  }, [normalizedPath, immersive]);
 
-  // ⌘K / Ctrl+K 开关全局搜索面板。
+  useEffect(() => {
+    try {
+      localStorage.setItem("rip_sidebar_collapsed", String(sidebarCollapsed));
+    } catch {
+      // Keep the current in-memory preference.
+    }
+  }, [sidebarCollapsed]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
@@ -163,26 +292,6 @@ export function Layout() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // 通知气泡：Esc 与点击面板外关闭。
-  useEffect(() => {
-    if (!notifOpen) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setNotifOpen(false);
-    };
-    const onMouseDown = (event: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
-        setNotifOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onMouseDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onMouseDown);
-    };
-  }, [notifOpen]);
-
-  // 抽屉打开期间锁 body 滚动 + Esc 关闭（参照实现事故教训：滚动锁与 Esc 缺一不可）。
   useEffect(() => {
     if (!drawer) return undefined;
     const previousOverflow = document.body.style.overflow;
@@ -197,54 +306,32 @@ export function Layout() {
     };
   }, [drawer]);
 
-  // 路由变化自动收起抽屉与通知气泡。
   useEffect(() => {
     setDrawer(false);
-    setNotifOpen(false);
   }, [location.pathname]);
 
-  const activeWorkspaceId = workspaceIdOf(location.pathname);
-  const activeWorkspace =
-    WORKSPACES.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
+  useEffect(() => {
+    const onThemeChange = (event: Event) => {
+      const next = (event as CustomEvent<ThemeId>).detail;
+      if (next === "rip-dark" || next === "rip-light") setTheme(next);
+    };
+    window.addEventListener("rip-theme-change", onThemeChange);
+    return () => window.removeEventListener("rip-theme-change", onThemeChange);
+  }, []);
 
-  const title = useMemo(() => {
-    if (activeWorkspace) {
-      const tab = activeWorkspace.tabs.find((item) => isActivePath(item.to, normalizedPath));
-      return tab ? tab.label : activeWorkspace.label;
-    }
-    return "总览";
-  }, [activeWorkspace, normalizedPath]);
+  const currentWorkspaceLabel = activeWorkspace
+    ? t(`nav.workspaces.${activeWorkspace.id}`)
+    : t("nav.workspaces.dashboard");
+  const currentWorkspaceHint = activeWorkspace
+    ? t(`nav.hints.${activeWorkspace.id}`)
+    : t("nav.hints.dashboard");
 
-  const activeTabId = useMemo(() => {
-    if (fixedIds.has(normalizedPath) || sessionTabs.some((tab) => tab.id === normalizedPath)) {
-      return normalizedPath;
-    }
-    const tab = activeWorkspace?.tabs.find((item) => isActivePath(item.to, normalizedPath));
-    return tab?.to ?? null;
-  }, [normalizedPath, fixedIds, sessionTabs, activeWorkspace]);
+  const activeTabId = sessionTabs.some((tab) => tab.id === normalizedPath) ? normalizedPath : null;
 
-  /** 中央标签区数据：固定 tab（十一工作区着陆页，pinned）+ 会话 tab（最近访问）。 */
-  const tabs = useMemo<TabAreaTab[]>(() => {
-    const fixed: TabAreaTab[] = WORKSPACES_BY_ORDER.flatMap((workspace) =>
-      workspace.tabs.map((tab) => {
-        const Icon = ICONS[tab.icon];
-        return {
-          id: tab.to,
-          label: tab.label,
-          icon: <Icon className="h-3.5 w-3.5" aria-hidden="true" />,
-          pinned: true,
-          number: tabNumberOf(workspace, tab),
-          title: `${tabNumberOf(workspace, tab)} · ${tab.label} · ${tab.hint}`,
-        };
-      }),
-    );
-    const session: TabAreaTab[] = sessionTabs.map((tab) => ({
-      id: tab.id,
-      label: tab.label,
-      title: tab.id,
-    }));
-    return [...fixed, ...session];
-  }, [sessionTabs]);
+  const tabs = useMemo<TabAreaTab[]>(
+    () => sessionTabs.map((tab) => ({ id: tab.id, label: tab.label, title: tab.id })),
+    [sessionTabs],
+  );
 
   const closeTab = useCallback(
     (id: string) => {
@@ -262,27 +349,81 @@ export function Layout() {
   );
 
   const inspectorSections = useMemo<InspectorSection[]>(() => {
-    const tab = activeWorkspace?.tabs.find((item) => isActivePath(item.to, normalizedPath));
-    const object = sessionObjectOf(normalizedPath);
+    const object =
+      sessionObjectOf(normalizedPath) ??
+      (selectedKnowledgeId ? { kind: "knowledge" as const, label: selectedKnowledgeId } : null);
     const rows: Array<[string, string]> = [
-      ["页面", tab ? tab.label : title],
-      [
-        "工作区",
-        activeWorkspace ? `${activeWorkspace.order} · ${activeWorkspace.label}` : "1 · Dashboard",
-      ],
+      [t("inspector.page"), title],
+      [t("inspector.workspace"), currentWorkspaceLabel],
     ];
-    if (activeWorkspace && tab) rows.push(["编号", tabNumberOf(activeWorkspace, tab)]);
-    if (object) {
-      rows.push(["对象", `${object.kind} ${object.label}`]);
-      rows.push(["路径", normalizedPath]);
-    } else {
-      rows.push(["路径", normalizedPath]);
+    if (currentWorkspaceTab && activeWorkspace) {
+      rows.push([t("inspector.number"), `${activeWorkspace.order}.${currentWorkspaceTab.order}`]);
     }
-    if (tab) rows.push(["说明", tab.hint]);
+    if (object) {
+      rows.push([
+        t("inspector.object"),
+        `${t(`inspector.objectKinds.${object.kind}`)} ${object.label}`,
+      ]);
+      rows.push([t("inspector.path"), normalizedPath]);
+    } else {
+      rows.push([t("inspector.path"), normalizedPath]);
+    }
+    const run = selectedRun.data?.run;
+    const tool = selectedTool.data?.tool;
+    const plugin = selectedPlugins.data?.items?.find((item) => item.plugin_id === selectedPluginId);
+    const task = selectedTask.data?.item;
+    const knowledge = selectedKnowledge.data?.item;
+    if (tool) {
+      rows.push([t("inspector.name"), tool.name]);
+      if (tool.kind) rows.push([t("inspector.kind"), tool.kind]);
+      if (tool.lifecycle) rows.push([t("inspector.lifecycle"), tool.lifecycle]);
+      if (tool.governance) rows.push([t("inspector.governance"), tool.governance]);
+      if (tool.health_state) rows.push([t("inspector.health"), tool.health_state]);
+      if (tool.permission_level) rows.push([t("inspector.permission"), tool.permission_level]);
+      if (tool.timeout_s !== null && tool.timeout_s !== undefined)
+        rows.push([t("inspector.timeout"), `${tool.timeout_s} s`]);
+    }
+    if (plugin) {
+      rows.push([t("inspector.name"), plugin.name]);
+      rows.push([t("inspector.version"), plugin.version]);
+      rows.push([t("inspector.kind"), plugin.kind]);
+      rows.push([t("inspector.lifecycle"), plugin.state]);
+      rows.push([t("inspector.trust"), plugin.trust_level]);
+      rows.push([t("inspector.license"), plugin.license]);
+    }
+    if (knowledge) {
+      rows.push([t("inspector.name"), knowledge.title]);
+      if (knowledge.lifecycle) rows.push([t("inspector.lifecycle"), knowledge.lifecycle]);
+      if (knowledge.governance) rows.push([t("inspector.governance"), knowledge.governance]);
+      if (knowledge.component) rows.push([t("inspector.kind"), knowledge.component]);
+      if (knowledge.severity) rows.push([t("inspector.severity"), knowledge.severity]);
+      if (knowledge.source) rows.push([t("inspector.source"), knowledge.source]);
+      if (knowledge.source_url) rows.push([t("inspector.sourceUrl"), knowledge.source_url]);
+    }
+    if (task) {
+      rows.push([t("inspector.name"), task.title]);
+      rows.push([t("inspector.state"), task.state ?? t("inspector.unknown")]);
+      if (task.task_type) rows.push([t("inspector.kind"), task.task_type]);
+      if (task.target) rows.push([t("inspector.target"), task.target]);
+      if (task.objective) rows.push([t("inspector.objective"), task.objective]);
+    }
+    if (run) {
+      rows.push([t("inspector.runStatus"), run.status ?? t("inspector.unknown")]);
+      rows.push([t("inspector.tool"), run.tool_id]);
+      if (run.duration_ms !== null && run.duration_ms !== undefined)
+        rows.push([t("inspector.duration"), `${run.duration_ms} ms`]);
+      if (run.error_category) rows.push([t("inspector.errorCategory"), run.error_category]);
+      if (run.task_id) rows.push([t("inspector.task"), run.task_id]);
+    }
+    if (currentWorkspaceTab)
+      rows.push([
+        t("inspector.description"),
+        t(`nav.tabHints.${activeWorkspace?.id}.${currentWorkspaceTab.order}`),
+      ]);
     return [
       {
         id: "object",
-        title: "当前对象",
+        title: t("inspector.currentObject"),
         body: (
           <dl className="inspector-rows">
             {rows.map(([key, value]) => (
@@ -296,76 +437,107 @@ export function Layout() {
       },
       {
         id: "related",
-        title: "关联知识 / 工具",
+        title: t("inspector.related"),
         body: (
           <div className="inspector-links">
-            <Link to="/knowledge">知识库</Link>
-            <Link to="/tools">工具中心</Link>
-            <p className="inspector-note">对象级关联（当前条目引用的知识与工具）随详情批次接入。</p>
+            {knowledge?.source_url ? (
+              <a href={knowledge.source_url} target="_blank" rel="noreferrer">
+                {t("inspector.sourceUrl")}
+              </a>
+            ) : null}
+            {run?.tool_id ? (
+              <Link to={`/tools/${encodeURIComponent(run.tool_id)}`}>
+                {t("inspector.relatedTool")}: {run.tool_id}
+              </Link>
+            ) : null}
+            {run?.task_id ? (
+              <Link to={`/research/tasks/${encodeURIComponent(run.task_id)}`}>
+                {t("inspector.relatedTask")}: {run.task_id}
+              </Link>
+            ) : null}
+            {task
+              ? (selectedTaskRuns.data?.items ?? [])
+                  .filter((item) => item.task_id === task.task_id)
+                  .slice(0, 4)
+                  .map((item) => (
+                    <Link key={item.run_id} to={`/runs/${encodeURIComponent(item.run_id)}`}>
+                      {t("inspector.relatedRun")}: {item.tool_id} · {item.status}
+                    </Link>
+                  ))
+              : null}
+            {tool
+              ? (selectedToolRuns.data?.items ?? [])
+                  .filter((item) => item.tool_id === tool.tool_id)
+                  .slice(0, 4)
+                  .map((item) => (
+                    <Link key={item.run_id} to={"/runs/" + encodeURIComponent(item.run_id)}>
+                      {t("inspector.relatedRun")}: {item.status ?? t("inspector.unknown")}
+                    </Link>
+                  ))
+              : null}
+            {plugin ? <Link to="/tools">{t("inspector.toolCenter")}</Link> : null}
+            {!run?.tool_id && !run?.task_id && !task && !tool && !plugin && !knowledge ? (
+              <p className="inspector-note">{t("inspector.noRelations")}</p>
+            ) : null}
           </div>
         ),
       },
       {
         id: "run",
-        title: "运行配置",
+        title: t("inspector.runConfig"),
         body: (
           <div className="inspector-links">
-            <Link to="/runs">运行记录</Link>
-            <Link to="/runtime">运行时</Link>
-            <p className="inspector-note">对象级试运行配置随工具详情批次接入。</p>
+            <Link to="/runs">{t("inspector.runs")}</Link>
+            <Link to="/runtime">{t("inspector.runtime")}</Link>
+            {tool?.timeout_s ? (
+              <p className="inspector-note">
+                {t("inspector.timeout")}: {tool.timeout_s} s
+              </p>
+            ) : null}
+            {run?.error_category ? (
+              <p className="inspector-note">
+                {t("inspector.errorCategory")}: {run.error_category}
+              </p>
+            ) : null}
           </div>
         ),
       },
     ];
-  }, [activeWorkspace, normalizedPath, title]);
+  }, [
+    activeWorkspace,
+    currentWorkspaceLabel,
+    currentWorkspaceTab,
+    normalizedPath,
+    selectedRun.data,
+    selectedTool.data,
+    selectedPlugins.data,
+    selectedPluginId,
+    selectedTask.data,
+    selectedTaskRuns.data,
+    selectedKnowledge.data,
+    selectedKnowledgeId,
+    selectedToolRuns.data,
+    t,
+    title,
+  ]);
 
   const activityTabs = useMemo<ActivityTab[]>(
     () => [
-      {
-        id: "queue",
-        label: "任务队列",
-        body: <ActivityPlansLive />,
-      },
-      {
-        id: "runs",
-        label: "Tool Runs",
-        body: (
-          <p className="activity-note">
-            Tool Runs 完整列表在<Link to="/runs">运行记录</Link>；此处后续接入运行中的 Run
-            实时状态。
-          </p>
-        ),
-      },
+      { id: "queue", label: t("activity.queue"), body: <ActivityPlansLive /> },
+      { id: "runs", label: t("activity.runs"), body: <ActivityRunsLive /> },
       {
         id: "logs",
-        label: "日志",
-        body: (
-          <p className="activity-note">
-            Run 日志流随运行详情批次接入，当前可在<Link to="/runs">运行记录</Link>查看单次 Run 与
-            Artifact。
-          </p>
-        ),
+        label: t("activity.logs"),
+        body: <ActivityRunDetails mode="logs" />,
       },
       {
         id: "output",
-        label: "输出",
-        body: (
-          <p className="activity-note">
-            输出面板占位：Artifact 预览在<Link to="/runs">运行记录</Link>页。
-          </p>
-        ),
+        label: t("activity.output"),
+        body: <ActivityRunDetails mode="output" />,
       },
-      {
-        id: "status",
-        label: "状态",
-        body: (
-          <p className="activity-note">
-            Runner 状态与节点心跳在<Link to="/runtime">运行时</Link>区。
-          </p>
-        ),
-      },
+      { id: "status", label: t("activity.status"), body: <ActivityRuntimeLive /> },
     ],
-    [],
+    [t],
   );
 
   const toggleTheme = () => {
@@ -373,183 +545,424 @@ export function Layout() {
     applyTheme(next);
     setTheme(next);
   };
-
-  const themeName = THEME_OPTIONS.find((option) => option.id === theme)?.name ?? theme;
+  const language = (i18n.resolvedLanguage ?? i18n.language) as AppLanguage;
+  const serviceStatus =
+    serviceOverview.loading || serviceRuntime.loading
+      ? "checking"
+      : serviceOverview.error?.status === 401 || serviceRuntime.error?.status === 401
+        ? "authRequired"
+        : serviceOverview.error !== null || serviceRuntime.error !== null
+          ? "unavailable"
+          : serviceRuntime.data?.available === false
+            ? "degraded"
+            : "healthy";
+  const layoutMode =
+    normalizedPath === "/"
+      ? "dashboard"
+      : normalizedPath.startsWith("/websec/")
+        ? "workbench"
+        : normalizedPath === "/workflows"
+          ? "canvas"
+          : normalizedPath === "/agents"
+            ? "editor"
+            : "content";
 
   return (
     <div className={`shell${immersive ? " is-immersive" : ""}`}>
       {drawer ? (
         <button
           type="button"
-          aria-label="关闭菜单"
+          aria-label={t("shell.closeMenu")}
           className="rail-backdrop"
           onClick={() => setDrawer(false)}
         />
       ) : null}
-      <aside className={`rail${drawer ? " is-open" : ""}`} aria-label="工作区图标轨">
+      <aside
+        className={`rail${drawer ? " is-open" : ""}${sidebarCollapsed ? " is-collapsed" : " is-expanded"}`}
+        aria-label={t("shell.globalNavigation")}
+      >
         <div className="rail-brand">
-          <Link to="/" aria-label="回到总览" title="总览">
-            <span className="rail-brand-mark">
-              <Radar className="h-5 w-5" aria-hidden="true" />
+          <Link to="/" aria-label={t("app.title")} title={t("app.title")}>
+            <span className="rail-brand-mark" aria-hidden="true">
+              R
             </span>
           </Link>
+          <div className="rail-brand-copy">
+            <span className="rail-brand-name">RIP</span>
+            <small className="rail-brand-subtitle">Research Intelligence</small>
+          </div>
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            aria-label={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+            title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
         </div>
-        <nav aria-label="工作区" className="rail-nav">
-          {WORKSPACES.map((workspace) => {
-            const Icon = ICONS[workspace.icon];
-            const active = activeWorkspaceId === workspace.id;
+        <nav aria-label={t("shell.globalNavigation")} className="rail-nav">
+          {NAV_GROUPS.map((group) => {
+            const workspaces = WORKSPACES_BY_ORDER.filter((workspace) => workspace.group === group);
+            if (workspaces.length === 0) return null;
             return (
-              <Link
-                key={workspace.id}
-                to={workspace.entry}
-                title={`${workspace.order} · ${workspace.label} · ${workspace.hint}`}
-                aria-label={workspace.label}
-                aria-current={active ? "page" : undefined}
-                className={`rail-icon${active ? " is-active" : ""}`}
-              >
-                <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                <span className="rail-label">{workspace.label}</span>
-              </Link>
+              <section className="rail-group" key={group} aria-label={t(`nav.groups.${group}`)}>
+                <h2 className="rail-group-label">{t(`nav.groups.${group}`)}</h2>
+                {workspaces.map((workspace) => {
+                  const Icon = ICONS[workspace.icon];
+                  const active = activeWorkspaceId === workspace.id;
+                  const label = t(`nav.workspaces.${workspace.id}`);
+                  const hint = t(`nav.hints.${workspace.id}`);
+                  return (
+                    <Link
+                      key={workspace.id}
+                      to={workspace.entry}
+                      title={`${workspace.order} · ${label} · ${hint}`}
+                      aria-label={label}
+                      aria-current={active ? "page" : undefined}
+                      className={`rail-icon${active ? " is-active" : ""}`}
+                      onClick={() => setDrawer(false)}
+                    >
+                      <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+                      <span className="rail-label">{label}</span>
+                    </Link>
+                  );
+                })}
+              </section>
             );
           })}
         </nav>
         <div className="rail-foot">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            title={`切换主题（当前：${themeName}）`}
-            aria-label={`切换主题（当前：${themeName}）`}
-            className="rail-icon"
-          >
-            {theme === "rip-dark" ? (
-              <Sun className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-            ) : (
-              <Moon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-            )}
-            <span className="rail-label">切换主题</span>
-          </button>
+          <div className="rail-profile" role="group" aria-label={t("shell.localWorkspace")}>
+            <span className="rail-profile-mark" aria-hidden="true">
+              L
+            </span>
+            <span className="rail-profile-copy">
+              <strong>{t("shell.localWorkspace")}</strong>
+              <small>{t("shell.localWorkspaceSubtitle")}</small>
+            </span>
+          </div>
         </div>
       </aside>
+
       <div className="shell-body">
-        {/* 顶部栏五要素：工作区切换 / 全局搜索（命令面板）/ 运行任务 / Runner 状态 / 通知。 */}
         <header className="topbar">
           <button
             type="button"
             className="menu-btn"
-            aria-label="打开菜单"
+            aria-label={t("shell.openMenu")}
             aria-expanded={drawer}
             onClick={() => setDrawer(true)}
           >
             <Menu className="h-4 w-4" aria-hidden="true" />
           </button>
-          <select
-            className="ws-switch"
-            aria-label="切换工作区"
-            value={activeWorkspaceId ?? ""}
-            onChange={(event) => {
-              const workspace = WORKSPACES_BY_ORDER.find((item) => item.id === event.target.value);
-              if (workspace) navigate(workspace.entry);
-            }}
-          >
-            <option value="" disabled hidden>
-              工作区
-            </option>
-            {WORKSPACES_BY_ORDER.map((workspace) => (
-              <option key={workspace.id} value={workspace.id}>
-                {workspace.order} · {workspace.label}
-              </option>
-            ))}
-          </select>
-          <h1 className="topbar-title">{title}</h1>
+          <div className="topbar-heading">
+            <nav className="breadcrumbs" aria-label={t("shell.breadcrumb")}>
+              <Link to="/">{t("nav.groups.workspace")}</Link>
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+              <span aria-current="page">{title}</span>
+            </nav>
+          </div>
           <div className="topbar-actions">
             <button
               type="button"
               className="topbar-item search-trigger"
               onClick={() => setSearchOpen(true)}
+              aria-label={`${t("shell.search")} ⌘K`}
+              title={t("shell.searchShortcut")}
             >
               <Search className="h-4 w-4" aria-hidden="true" />
-              <span className="topbar-label">搜索</span>
+              <span className="topbar-label">{t("shell.search")}</span>
               <kbd className="search-kbd">⌘K</kbd>
             </button>
-            <Link className="topbar-item" to="/runs" title="运行任务（Run 列表）">
+            <Link
+              to="/runs"
+              className="topbar-item"
+              aria-label={t("shell.tasks")}
+              title={t("shell.tasks")}
+            >
               <CirclePlay className="h-4 w-4" aria-hidden="true" />
-              <span className="topbar-label">运行任务</span>
+              <span className="topbar-label">{t("shell.tasks")}</span>
             </Link>
-            <Link className="topbar-item" to="/runtime" title="Runner 状态">
+            <Link
+              to="/runtime"
+              className="topbar-item"
+              aria-label={t("shell.runner")}
+              title={t(`shell.serviceStatus.${serviceStatus}`)}
+            >
               <ServerCog className="h-4 w-4" aria-hidden="true" />
-              <span className="topbar-label">Runner</span>
+              <span className="topbar-label">{t("shell.runner")}</span>
             </Link>
-            <div className="notif-wrap" ref={notifRef}>
-              <button
-                type="button"
-                className="topbar-item"
-                aria-label="通知"
-                aria-expanded={notifOpen}
-                onClick={() => setNotifOpen((open) => !open)}
-              >
-                <Bell className="h-4 w-4" aria-hidden="true" />
-                <span className="topbar-label">通知</span>
-              </button>
-              {notifOpen ? (
-                <div className="notif-pop" role="note" aria-label="通知列表">
-                  <p className="notif-empty">暂无通知</p>
-                  <p className="notif-note">通知中心随后续批次接入。</p>
-                </div>
-              ) : null}
+            <div className={`service-health is-${serviceStatus}`} role="status" aria-live="polite">
+              <span className="service-health-dot" aria-hidden="true" />
+              <span className="service-health-label">
+                {t(`shell.serviceStatus.${serviceStatus}`)}
+              </span>
             </div>
             <button
               type="button"
-              className="topbar-item"
-              aria-label="Inspector"
+              className="topbar-icon-button"
+              disabled
+              aria-label={t("shell.notifications")}
+              title={t("shell.notificationsUnavailable")}
+            >
+              <Bell className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <label className="language-control">
+              <Globe className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">{t("shell.language")}</span>
+              <select
+                className="language-switch"
+                aria-label={t("shell.language")}
+                value={language}
+                onChange={(event) => void setAppLanguage(event.target.value as AppLanguage)}
+              >
+                {SUPPORTED_LANGUAGES.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="topbar-icon-button"
+              onClick={toggleTheme}
+              aria-label={t("shell.switchTheme")}
+              title={t("shell.switchTheme")}
+            >
+              {theme === "rip-dark" ? (
+                <Moon className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Sun className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              className="topbar-icon-button"
+              aria-label={t("shell.inspector")}
               aria-expanded={inspectorOpen}
-              title={inspectorOpen ? "折叠 Inspector" : "展开 Inspector"}
+              title={inspectorOpen ? t("shell.closeInspector") : t("shell.openInspector")}
               onClick={() => setInspectorOpen((open) => !open)}
             >
               <PanelRight className="h-4 w-4" aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              className="topbar-item"
-              aria-label="Activity 面板"
-              aria-expanded={activityOpen}
-              title={activityOpen ? "折叠 Activity 面板" : "展开 Activity 面板"}
-              onClick={() => setActivityOpen((open) => !open)}
-            >
-              <PanelBottom className="h-4 w-4" aria-hidden="true" />
-            </button>
           </div>
         </header>
-        {/* 中央多标签工作区：固定 tab（十一工作区着陆页）+ 会话 tab（深链接/
-            详情对象，可关闭，按最近访问排序）。全宽贴顶栏，沉浸态不出现。 */}
+
+        {activeWorkspace && !immersive ? (
+          <nav
+            className={`workspace-nav${activeWorkspace.tabs.length === 1 ? " is-single" : ""}`}
+            aria-label={t("shell.workspaceNavigation")}
+          >
+            <div className="workspace-nav-context">
+              <span>{currentWorkspaceLabel}</span>
+              <small>{currentWorkspaceHint}</small>
+            </div>
+            <div className="workspace-nav-items">
+              {activeWorkspace.tabs.map((tab) => {
+                const active = currentWorkspaceTab?.to === tab.to;
+                const Icon = ICONS[tab.icon];
+                return (
+                  <Link
+                    key={tab.to}
+                    to={tab.to}
+                    title={t(`nav.tabHints.${activeWorkspace.id}.${tab.order}`)}
+                    aria-current={active ? "page" : undefined}
+                    className={`workspace-nav-item${active ? " is-active" : ""}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t(`nav.tabs.${activeWorkspace.id}.${tab.order}`)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        ) : null}
+
         {!immersive ? (
           <TabArea
             tabs={tabs}
             activeId={activeTabId}
             onSelect={(id) => navigate(id)}
             onClose={closeTab}
-            label="工作区标签页"
+            closeLabel={(label) => `${t("common.close")} ${label}`}
+            label={t("shell.sessionTabs")}
           />
         ) : null}
-        <div className="shell-workarea">
-          <main className="shell-center">
-            {/* 按路由 re-key：单页渲染错误不炸整个壳，导航离开即复位（参照实现教训）。 */}
-            <ErrorBoundary key={location.pathname} scope="route">
-              <Outlet />
-            </ErrorBoundary>
-          </main>
-          <InspectorPanel
-            open={inspectorOpen && !immersive}
-            sections={inspectorSections}
-            label="Inspector"
+
+        {activityOpen && !immersive ? (
+          <PersistentShellSplit
+            orientation="vertical"
+            storageKey="rip_shell_activity_height_v1"
+            firstSize={76}
+            firstMin={45}
+            secondMin={20}
+            separatorLabel={t("shell.resizeActivity")}
+            first={
+              <div className="shell-workarea">
+                {wideShell && inspectorOpen ? (
+                  <PersistentShellSplit
+                    orientation="horizontal"
+                    storageKey="rip_shell_inspector_width_v1"
+                    firstSize={72}
+                    firstMin={55}
+                    secondMin={22}
+                    separatorLabel={t("shell.resizeInspector")}
+                    first={
+                      <main className={"shell-center layout-" + layoutMode}>
+                        <ErrorBoundary key={location.pathname} scope="route">
+                          <Outlet />
+                        </ErrorBoundary>
+                      </main>
+                    }
+                    second={
+                      <InspectorPanel
+                        open
+                        sections={inspectorSections}
+                        label={t("shell.inspector")}
+                      />
+                    }
+                    className="inspector-split"
+                  />
+                ) : (
+                  <>
+                    <main className={"shell-center layout-" + layoutMode}>
+                      <ErrorBoundary key={location.pathname} scope="route">
+                        <Outlet />
+                      </ErrorBoundary>
+                    </main>
+                    {inspectorOpen && !wideShell ? (
+                      <button
+                        type="button"
+                        className="inspector-backdrop"
+                        aria-label={t("shell.closeInspector")}
+                        onClick={() => setInspectorOpen(false)}
+                      />
+                    ) : null}
+                    <InspectorPanel
+                      open={inspectorOpen}
+                      sections={inspectorSections}
+                      label={t("shell.inspector")}
+                    />
+                  </>
+                )}
+              </div>
+            }
+            second={
+              <div className="activity-dock-region">
+                <div
+                  className="activity-dock-bar"
+                  role="region"
+                  aria-label={t("shell.activityCollapsed")}
+                >
+                  <div className="activity-dock-context">
+                    <PanelBottom className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t("shell.activityCollapsed")}</span>
+                    <span className="activity-dock-hint">{t("shell.activityHint")}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="activity-dock-toggle"
+                    aria-label={t("shell.closeActivity")}
+                    aria-expanded="true"
+                    title={t("shell.closeActivity")}
+                    onClick={() => setActivityOpen(false)}
+                  >
+                    <span>{t("shell.closeActivity")}</span>
+                    <ChevronRight className="h-3.5 w-3.5 is-rotated" aria-hidden="true" />
+                  </button>
+                </div>
+                <ActivityPanel
+                  open
+                  tabs={activityTabs}
+                  activeId={activityTab}
+                  onSelect={setActivityTab}
+                  label={t("shell.activity")}
+                />
+              </div>
+            }
           />
-        </div>
-        <ActivityPanel
-          open={activityOpen && !immersive}
-          tabs={activityTabs}
-          activeId={activityTab}
-          onSelect={setActivityTab}
-          label="Activity 面板"
-        />
+        ) : (
+          <>
+            <div className="shell-workarea">
+              {wideShell && inspectorOpen && !immersive ? (
+                <PersistentShellSplit
+                  orientation="horizontal"
+                  storageKey="rip_shell_inspector_width_v1"
+                  firstSize={72}
+                  firstMin={55}
+                  secondMin={22}
+                  separatorLabel={t("shell.resizeInspector")}
+                  first={
+                    <main className={"shell-center layout-" + layoutMode}>
+                      <ErrorBoundary key={location.pathname} scope="route">
+                        <Outlet />
+                      </ErrorBoundary>
+                    </main>
+                  }
+                  second={
+                    <InspectorPanel
+                      open
+                      sections={inspectorSections}
+                      label={t("shell.inspector")}
+                    />
+                  }
+                  className="inspector-split"
+                />
+              ) : (
+                <>
+                  <main className={"shell-center layout-" + layoutMode}>
+                    <ErrorBoundary key={location.pathname} scope="route">
+                      <Outlet />
+                    </ErrorBoundary>
+                  </main>
+                  {inspectorOpen && !wideShell && !immersive ? (
+                    <button
+                      type="button"
+                      className="inspector-backdrop"
+                      aria-label={t("shell.closeInspector")}
+                      onClick={() => setInspectorOpen(false)}
+                    />
+                  ) : null}
+                  <InspectorPanel
+                    open={inspectorOpen && !immersive}
+                    sections={inspectorSections}
+                    label={t("shell.inspector")}
+                  />
+                </>
+              )}
+            </div>
+            {!immersive ? (
+              <div
+                className="activity-dock-bar"
+                role="region"
+                aria-label={t("shell.activityCollapsed")}
+              >
+                <div className="activity-dock-context">
+                  <PanelBottom className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{t("shell.activityCollapsed")}</span>
+                  <span className="activity-dock-hint">{t("shell.activityHint")}</span>
+                </div>
+                <button
+                  type="button"
+                  className="activity-dock-toggle"
+                  aria-label={t("shell.openActivity")}
+                  aria-expanded="false"
+                  title={t("shell.openActivity")}
+                  onClick={() => setActivityOpen(true)}
+                >
+                  <span>{t("shell.openActivity")}</span>
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
       {searchOpen ? <GlobalSearchPalette onClose={closeSearch} /> : null}
     </div>

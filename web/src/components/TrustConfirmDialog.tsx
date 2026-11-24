@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "./ui";
 import { type PluginConfirmFields, type TrustPolicyTier } from "../lib/api";
+import { translateUi } from "../i18n";
 
 /** P10-2 信任级分级确认对话框（PLUGIN-CONTRACT §6：信任级驱动安装确认
  *  提示强度；策略档由 plugin-registry::trust_policy 单一来源下发）：
@@ -52,10 +53,11 @@ export function TrustConfirmDialog({
     : {};
 
   return (
-    <Modal open={open} onClose={onClose} title={tier.confirmation_label}>
+    <Modal open={open} onClose={onClose} title={translateUi(tier.confirmation_label)}>
       <div className="space-y-3 text-sm" data-testid="trust-confirm-dialog">
         <p>
-          目标：<span className="font-mono">{pluginId || "(未知插件)"}</span>
+          {translateUi("目标：")}
+          <span className="font-mono">{pluginId || `(${translateUi("未知插件")})`}</span>
           <span className="ml-2 badge badge-sm badge-ghost">{tier.trust_level}</span>
         </p>
         {contextNote ? (
@@ -69,14 +71,14 @@ export function TrustConfirmDialog({
               checked={checkedProvenance}
               onChange={(event) => setCheckedProvenance(event.target.checked)}
             />
-            我已核对来源定位与许可信息（本地来源确认强度）
+            {translateUi("我已核对来源定位与许可信息（本地来源确认强度）")}
           </label>
         ) : null}
         {tier.requires_typed_id ? (
           <div className="text-xs">
             <label className="mb-1 block opacity-70">
-              远程来源风险提示：输入插件 id <span className="font-mono">{pluginId}</span>{" "}
-              以完成二次确认
+              {translateUi("远程来源风险提示：输入插件 id")}{" "}
+              <span className="font-mono">{pluginId}</span> {translateUi("以完成二次确认")}
             </label>
             <input
               type="text"
@@ -88,13 +90,13 @@ export function TrustConfirmDialog({
             />
             {typedId.length > 0 && typedId !== pluginId ? (
               <p className="mt-1 text-error" data-testid="confirm-id-mismatch">
-                输入与插件 id 不一致
+                {translateUi("输入与插件 id 不一致")}
               </p>
             ) : null}
           </div>
         ) : null}
         {!typedReady && typedId.length > 0 ? null : (
-          <p className="text-xs text-muted">{tier.confirmation_label}</p>
+          <p className="text-xs text-muted">{translateUi(tier.confirmation_label)}</p>
         )}
       </div>
       <div className="mt-4 flex justify-end gap-2">
@@ -105,7 +107,7 @@ export function TrustConfirmDialog({
           disabled={busy}
           data-testid="confirm-cancel"
         >
-          取消
+          {translateUi("取消")}
         </button>
         <button
           type="button"

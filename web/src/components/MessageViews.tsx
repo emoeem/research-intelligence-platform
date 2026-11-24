@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { useUiText } from "../i18n";
 
 /**
  * 消息详情六视图共享组件（WSW-3-ADR W3-D5：从 ResearchEvidencePage
@@ -92,6 +93,8 @@ export function MessageViews(props: {
   params?: HeaderPair[];
   /** Raw 体文本（展示投影；空串 = 无体）。 */
   rawBody: string;
+  /** Optional exact bytes from the on-demand base64 body endpoint. */
+  rawBytes?: Uint8Array;
   /** 体是否二进制（Raw/Pretty 视图给出提示而非乱码）。 */
   bodyIsBinary?: boolean;
   /** 体是否超预览帽（256KiB）——明示截断（W3-D5 大文本纪律）。 */
@@ -100,10 +103,13 @@ export function MessageViews(props: {
   initialView?: MessageViewKind;
   testIdPrefix?: string;
 }) {
+  const ui = useUiText();
+  const ids = useId();
   const {
     headers = [],
     params = [],
     rawBody,
+    rawBytes,
     bodyIsBinary = false,
     bodyTruncated = false,
     initialView = "raw",
@@ -111,6 +117,7 @@ export function MessageViews(props: {
   } = props;
   const [view, setView] = useState<MessageViewKind>(initialView);
   const [hexBlock, setHexBlock] = useState(0);
+  useEffect(() => setHexBlock(0), [rawBody, rawBytes]);
 
   const pretty = useMemo(() => {
     const text = rawBody.trim();
@@ -124,13 +131,39 @@ export function MessageViews(props: {
 
   return (
     <div data-testid={testIdPrefix}>
-      <div role="tablist" className="tabs" style={{ marginBottom: "0.5rem" }}>
+      <div
+        role="tablist"
+        aria-label={ui("消息视图")}
+        className="tabs"
+        style={{ marginBottom: "0.5rem" }}
+        onKeyDown={(event) => {
+          const current = VIEW_TABS.findIndex((tab) => tab.kind === view);
+          const next =
+            event.key === "ArrowRight"
+              ? (current + 1) % VIEW_TABS.length
+              : event.key === "ArrowLeft"
+                ? (current - 1 + VIEW_TABS.length) % VIEW_TABS.length
+                : event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? VIEW_TABS.length - 1
+                    : -1;
+          if (next >= 0) {
+            event.preventDefault();
+            setView(VIEW_TABS[next]!.kind);
+            document.getElementById(`${ids}-tab-${VIEW_TABS[next]!.kind}`)?.focus();
+          }
+        }}
+      >
         {VIEW_TABS.map((tab) => (
           <button
             key={tab.kind}
+            id={`${ids}-tab-${tab.kind}`}
             type="button"
             role="tab"
+            tabIndex={view === tab.kind ? 0 : -1}
             aria-selected={view === tab.kind}
+            aria-controls={`${ids}-panel`}
             className={`tab ${view === tab.kind ? "tab-active" : ""}`}
             data-testid={`${testIdPrefix}-tab-${tab.kind}`}
             onClick={() => setView(tab.kind)}
@@ -139,90 +172,107 @@ export function MessageViews(props: {
           </button>
         ))}
       </div>
-      {view === "raw" && (
-        <pre data-testid={`${testIdPrefix}-raw`} className="text-xs overflow-auto max-h-96">
-          {bodyIsBinary && !rawBody
-            ? "（二进制体：Raw 视图不渲染非 UTF-8 字节；切 Hex 视图）"
-            : rawBody || "（空体）"}
-          {bodyTruncated ? "\n…（超 256KiB 预览帽，截断明示）" : ""}
-        </pre>
-      )}
-      {view === "pretty" && (
-        <pre data-testid={`${testIdPrefix}-pretty`} className="text-xs overflow-auto max-h-96">
-          {pretty || "（非 JSON 体或空体——切 Raw/Hex）"}
-        </pre>
-      )}
-      {view === "headers" && (
-        <table data-testid={`${testIdPrefix}-headers`}>
-          <thead>
-            <tr>
-              <th>头名</th>
-              <th>值</th>
-            </tr>
-          </thead>
-          <tbody>
-            {headers.length === 0 && (
+      <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${view}`} tabIndex={0}>
+        {view === "raw" && (
+          <pre data-testid={`${testIdPrefix}-raw`} className="text-xs overflow-auto max-h-96">
+            {bodyIsBinary && !rawBody
+              ? ui("（二进制体：Raw 视图不渲染非 UTF-8 字节；切 Hex 视图）")
+              : rawBody || ui("（空体）")}
+            {bodyTruncated ? "\n…（超 256KiB 预览帽，截断明示）" : ""}
+          </pre>
+        )}
+        {view === "pretty" && (
+          <pre data-testid={`${testIdPrefix}-pretty`} className="text-xs overflow-auto max-h-96">
+            {pretty || ui("（非 JSON 体或空体——切 Raw/Hex）")}
+          </pre>
+        )}
+        {view === "headers" && (
+          <table data-testid={`${testIdPrefix}-headers`}>
+            <thead>
               <tr>
-                <td colSpan={2} className="muted">
-                  （无头）
-                </td>
+                <th>{ui("头名")}</th>
+                <th>{ui("值")}</th>
               </tr>
-            )}
-            {headers.map((h, i) => (
-              <tr key={`${h.name}-${i}`}>
-                <td>{h.name}</td>
-                <td className="break-all">{h.value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {view === "params" && (
-        <table data-testid={`${testIdPrefix}-params`}>
-          <thead>
-            <tr>
-              <th>参数</th>
-              <th>值</th>
-            </tr>
-          </thead>
-          <tbody>
-            {params.length === 0 && (
+            </thead>
+            <tbody>
+              {headers.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="muted">
+                    {ui("（无头）")}
+                  </td>
+                </tr>
+              )}
+              {headers.map((h, i) => (
+                <tr key={`${h.name}-${i}`}>
+                  <td>{h.name}</td>
+                  <td className="break-all">{h.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {view === "params" && (
+          <table data-testid={`${testIdPrefix}-params`}>
+            <thead>
               <tr>
-                <td colSpan={2} className="muted">
-                  （请求目标无 query 参数）
-                </td>
+                <th>{ui("参数")}</th>
+                <th>{ui("值")}</th>
               </tr>
-            )}
-            {params.map((p, i) => (
-              <tr key={`${p.name}-${i}`}>
-                <td>{p.name}</td>
-                <td className="break-all">{p.value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {view === "body" && (
-        <pre data-testid={`${testIdPrefix}-body`} className="text-xs overflow-auto max-h-96">
-          {bodyIsBinary
-            ? "（二进制体：Body 文本视图不渲染；切 Hex 视图）"
-            : rawBody || "（空体）"}
-        </pre>
-      )}
-      {view === "hex" && <HexView rawBody={rawBody} testId={testIdPrefix} block={hexBlock} onBlock={setHexBlock} />}
+            </thead>
+            <tbody>
+              {params.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="muted">
+                    {ui("（请求目标无 query 参数）")}
+                  </td>
+                </tr>
+              )}
+              {params.map((p, i) => (
+                <tr key={`${p.name}-${i}`}>
+                  <td>{p.name}</td>
+                  <td className="break-all">{p.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {view === "body" && (
+          <pre data-testid={`${testIdPrefix}-body`} className="text-xs overflow-auto max-h-96">
+            {bodyIsBinary
+              ? ui("（二进制体：Body 文本视图不渲染；切 Hex 视图）")
+              : rawBody || ui("（空体）")}
+          </pre>
+        )}
+        {view === "hex" && (
+          <HexView
+            rawBody={rawBody}
+            rawBytes={rawBytes}
+            testId={testIdPrefix}
+            block={hexBlock}
+            onBlock={setHexBlock}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
-function HexView(props: { rawBody: string; testId: string; block: number; onBlock: (n: number) => void }) {
-  const { rawBody, testId, block, onBlock } = props;
-  // Hex 数据源 = Raw 体文本的 UTF-8 字节（与传输字节的偏差 = capture 面本就
-  // 只 tee 文本投影的 lossy 展示——二进制体走 Body 端点 base64 原字节路径）。
-  const bytes = useMemo(() => new TextEncoder().encode(rawBody), [rawBody]);
+function HexView(props: {
+  rawBody: string;
+  rawBytes?: Uint8Array;
+  testId: string;
+  block: number;
+  onBlock: (n: number) => void;
+}) {
+  const ui = useUiText();
+  const { rawBody, rawBytes, testId, block, onBlock } = props;
+  // When the body endpoint supplied base64 bytes, render those exact bytes.
+  // Otherwise Hex is explicitly the UTF-8 encoding of the visible text projection.
+  const bytes = useMemo(() => rawBytes ?? new TextEncoder().encode(rawBody), [rawBody, rawBytes]);
   if (bytes.length === 0) {
     return (
       <pre data-testid={`${testId}-hex`} className="text-xs">
-        （无字节可展示）
+        {ui("（无字节可展示）")}
       </pre>
     );
   }
@@ -236,8 +286,13 @@ function HexView(props: { rawBody: string; testId: string; block: number; onBloc
       <pre className="text-xs overflow-auto max-h-96">{dump}</pre>
       {totalBlocks > 1 && (
         <div className="flex gap-2 items-center" style={{ marginTop: "0.5rem" }}>
-          <button type="button" className="btn btn-xs" disabled={block === 0} onClick={() => onBlock(block - 1)}>
-            上一块
+          <button
+            type="button"
+            className="btn btn-xs"
+            disabled={block === 0}
+            onClick={() => onBlock(block - 1)}
+          >
+            {ui("上一块")}
           </button>
           <span className="muted text-xs">
             块 {block + 1}/{totalBlocks}（字节 {start}–{end - 1}，共 {bytes.length}）
@@ -248,11 +303,10 @@ function HexView(props: { rawBody: string; testId: string; block: number; onBloc
             disabled={block >= totalBlocks - 1}
             onClick={() => onBlock(block + 1)}
           >
-            下一块
+            {ui("下一块")}
           </button>
         </div>
       )}
     </div>
   );
 }
-

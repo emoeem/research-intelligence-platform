@@ -1,36 +1,78 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-
-/** P5-5 Overview 页冒烟：KPI 渲染（/api/overview + /api/stats 真实形状桩）、
- *  卡片可点击跳列表页、Loading（Skeleton）/Error（ErrorPanel + 重试）/
- *  Empty（EmptyPanel）三态。 */
+import i18n from "../src/i18n";
 
 const OVERVIEW_STUB = {
-  knowledge: { total: 46, by_lifecycle: { VERIFIED: 37, CANDIDATE: 7, DISCOVERED: 2 } },
-  tasks: { total: 42 },
-  resources: { total: 81 },
+  knowledge: { total: 46, by_verified: { verified: 37, unverified: 9 } },
+  tasks: { total: 42, by_state: { ACTIVE: 6, NEEDS_REVIEW: 3, COMPLETED: 33 } },
   evidence: { total: 700 },
-  reviews: { total: 165 },
-  tools: { available: true, source: "main", total: 20 },
-  runs: { available: true, source: "aux", total: 3, by_status: { SUCCEEDED: 3 } },
-  runtime: { available: true, source: "aux", total: 0 },
+  runs: { available: true, total: 3691, by_status: { SUCCEEDED: 3661, FAILED: 30 } },
 };
 
 const STATS_STUB = {
   reviews: {
     total: 165,
     by_queue: {
-      d5: { total: 68, by_decision: {} },
-      license: { total: 79, by_decision: {} },
-      mapping: { total: 18, by_decision: {} },
+      d5: { total: 68, by_decision: { PENDING: 2, ACCEPTED: 66 } },
+      license: { total: 79, by_decision: { PENDING: 1, ACCEPTED: 78 } },
+      mapping: { total: 18, by_decision: { PENDING: 0, ACCEPTED: 18 } },
     },
   },
 };
 
-type FetchMode = "ok" | "pending" | "error";
+const RUNTIME_STUB = {
+  available: true,
+  total: 2,
+  items: [
+    {
+      node_id: "node-python-01",
+      kind: "python_worker",
+      health: "ok",
+      last_heartbeat_at: "2026-11-24T06:00:00Z",
+      heartbeat_age_seconds: 8,
+    },
+    {
+      node_id: "node-podman-01",
+      kind: "podman_host",
+      health: "degraded",
+      last_heartbeat_at: "2026-11-24T05:59:00Z",
+      heartbeat_age_seconds: 68,
+    },
+  ],
+};
 
+const RECENT_RUNS_STUB = {
+  available: true,
+  total: 2,
+  items: [
+    {
+      run_id: "run-latest-failed",
+      tool_id: "rip.http.inspect",
+      status: "FAILED",
+      error_category: "timeout",
+      duration_ms: 42,
+      created_at: "2026-11-24T06:00:00Z",
+    },
+    {
+      run_id: "run-previous-success",
+      tool_id: "rip.core.validate",
+      status: "SUCCEEDED",
+      duration_ms: 18,
+      created_at: "2026-11-24T05:50:00Z",
+    },
+  ],
+};
+
+type FetchMode = "ok" | "pending" | "error";
 let fetchMode: FetchMode = "ok";
+
+const RESPONSE_BY_PATH: Record<string, unknown> = {
+  "/api/overview": OVERVIEW_STUB,
+  "/api/stats": STATS_STUB,
+  "/api/runtime": RUNTIME_STUB,
+  "/api/runs": RECENT_RUNS_STUB,
+};
 
 function stubFetch(): void {
   vi.stubGlobal(
@@ -39,16 +81,15 @@ function stubFetch(): void {
       if (fetchMode === "pending") return new Promise(() => {});
       if (fetchMode === "error") {
         return Promise.resolve(
-          new Response(JSON.stringify({ error: { code: "internal", message: "内部错误" } }), {
+          new Response(JSON.stringify({ error: { code: "internal", message: "internal error" } }), {
             status: 500,
           }),
         );
       }
+
       const path = String(input).split("?")[0] ?? "";
-      const body =
-        path === "/api/stats" ? STATS_STUB : path === "/api/overview" ? OVERVIEW_STUB : {};
       return Promise.resolve(
-        new Response(JSON.stringify(body), {
+        new Response(JSON.stringify(RESPONSE_BY_PATH[path] ?? {}), {
           status: 200,
           headers: { "content-type": "application/json; charset=utf-8" },
         }),
@@ -57,106 +98,143 @@ function stubFetch(): void {
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  localStorage.clear();
+  await i18n.changeLanguage("en-US");
   fetchMode = "ok";
   stubFetch();
   window.history.pushState({}, "", "/");
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+  localStorage.clear();
+  await i18n.changeLanguage("zh-CN");
 });
 
-describe("Overview 页（P5-5）", () => {
-  it("渲染 KPI 卡：数值来自 /api/overview 与 /api/stats 桩", async () => {
+describe("Dashboard reference layout", () => {
+  it("renders four real-data KPI cards and links to the corresponding workspaces", async () => {
     render(<App />);
-    expect(await screen.findByText("46")).toBeTruthy(); // 知识条目
-    expect(screen.getByText("42")).toBeTruthy(); // 研究任务
-    expect(screen.getByText("700")).toBeTruthy(); // 证据
-    expect(screen.getByText("165")).toBeTruthy(); // 评审队列（stats.reviews.total）
-    // 工具 KPI 断言收窄到工具卡本身（可访问名含数值）。CI 环境下观察到
-    // 同值「20」节点双渲染（getByText 全局匹配撞多元素，见 CI #47 到 #49），
-    // 故用 getAllByRole 按可访问名收窄并容忍重复：断言意图是「工具 20 卡
-    // 在场」，不依赖全局唯一。
-    expect(screen.getAllByRole("link", { name: /^工具\s*20/ }).length).toBeGreaterThanOrEqual(1); // 工具
-    // P7-1 壳层里功能地图工作区卡编号（3=Research）与 KPI 数值同屏：
-    // 运行 KPI 断言收窄到运行卡本身（可访问名含数值）。
-    expect(screen.getByRole("link", { name: /^运行 3/ })).toBeTruthy(); // 运行
-    // 评审队列 note 显示三个队列计数
-    expect(screen.getByTitle("D5 68 · License 79 · Mapping 18")).toBeTruthy();
-    // Run 状态 note 显示 by_status
-    expect(screen.getByTitle("SUCCEEDED 3")).toBeTruthy();
+
+    expect(await screen.findByRole("link", { name: /Knowledge items/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Research tasks/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Tool runs/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Evidence records/ })).toBeTruthy();
+
+    expect(screen.getByText("46")).toBeTruthy();
+    expect(screen.getByText("42")).toBeTruthy();
+    expect(screen.getByText("3691")).toBeTruthy();
+    expect(screen.getByText("700")).toBeTruthy();
+
+    expect(screen.getByRole("link", { name: /Knowledge items/ }).getAttribute("href")).toBe(
+      "/knowledge",
+    );
+    expect(screen.getByRole("link", { name: /Research tasks/ }).getAttribute("href")).toBe(
+      "/research/tasks",
+    );
+    expect(screen.getByRole("link", { name: /Tool runs/ }).getAttribute("href")).toBe("/runs");
+    expect(screen.getByRole("link", { name: /Evidence records/ }).getAttribute("href")).toBe(
+      "/research/evidence",
+    );
   });
 
-  it("有列表页的卡可点击跳转：知识条目卡 → /knowledge", async () => {
+  it("shows only pending review counts in Needs attention", async () => {
     render(<App />);
-    await screen.findByText("46");
-    const card = screen.getByRole("link", { name: /知识条目/ });
-    fireEvent.click(card);
-    await waitFor(() => {
-      if (window.location.pathname !== "/knowledge") throw new Error("未跳转");
-    });
-    expect(screen.getByRole("heading", { name: "知识库" })).toBeTruthy();
+
+    expect(await screen.findByRole("heading", { name: "Needs attention" })).toBeTruthy();
+    expect(screen.getByText("3 pending")).toBeTruthy();
+    expect(screen.getByText("D5 duplicate pairs")).toBeTruthy();
+    expect(screen.getByText("License review")).toBeTruthy();
+    expect(screen.queryByText("Mapping review")).toBeNull();
+    expect(screen.getByText(/2 items pending/)).toBeTruthy();
+    expect(screen.getByText(/1 items pending/)).toBeTruthy();
   });
 
-  it("工具卡跳 /tools、运行卡跳 /runs", async () => {
+  it("shows runtime nodes and their actual health/heartbeat state", async () => {
     render(<App />);
-    await screen.findByText("46");
-    // P7-1 壳层新增 Inspector 关联链接与顶栏运行任务链接，链接名正则收窄到
-    // KPI 卡的可访问名（含数值），避免误命中壳层元素。
-    expect(screen.getByRole("link", { name: "工具 20" }).getAttribute("href")).toBe("/tools");
-    expect(screen.getByRole("link", { name: /^运行 3/ }).getAttribute("href")).toBe("/runs");
-    // 证据与评审队列无专属页面：静态卡
-    expect(screen.queryByRole("link", { name: /证据/ })).toBeNull();
-    expect(screen.queryByRole("link", { name: /评审队列/ })).toBeNull();
+
+    const runtime = await screen.findByRole("heading", { name: "Runtime health" });
+    expect(runtime).toBeTruthy();
+    expect(screen.getByText(/node-python-01/)).toBeTruthy();
+    expect(screen.getByText(/node-podman-01/)).toBeTruthy();
+    expect(screen.getByText("Python Worker")).toBeTruthy();
+    expect(screen.getByText("Podman Host")).toBeTruthy();
+    expect(screen.getByText("Healthy")).toBeTruthy();
+    expect(screen.getByText("Degraded")).toBeTruthy();
   });
 
-  it("Loading 态：fetch 挂起时渲染 SkeletonPanel", () => {
+  it("shows recent runs from the read-only runs API and links to the run details", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Recent activity" })).toBeTruthy();
+    const failed = await screen.findByRole("link", { name: /rip\.http\.inspect/ });
+    expect(failed.getAttribute("href")).toBe("/runs/run-latest-failed");
+    expect(screen.getByText(/timeout/)).toBeTruthy();
+    expect(screen.getByText("rip.core.validate")).toBeTruthy();
+  });
+
+  it("uses a single time-aware greeting rather than a duplicate page title", async () => {
+    render(<App />);
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(["Good morning", "Good afternoon", "Good evening"]).toContain(heading.textContent);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByText("Research workspace overview · Activity and governance at a glance"),
+    ).toBeTruthy();
+  });
+
+  it("Loading state keeps the Dashboard shell while API data is pending", () => {
     fetchMode = "pending";
     render(<App />);
     expect(document.querySelector(".skeleton")).toBeTruthy();
-    expect(screen.queryByText("知识条目")).toBeNull();
   });
 
-  it("Error 态：500 时渲染 ErrorPanel 且可重试", async () => {
+  it("Error state uses the retryable ErrorPanel and reloads the Dashboard data", async () => {
     fetchMode = "error";
     render(<App />);
-    expect(await screen.findByText("加载失败")).toBeTruthy();
-    const retry = screen.getByRole("button", { name: /重试/ });
-    expect(retry).toBeTruthy();
-    // 重试切回正常桩：数据落地
+    expect(await screen.findByText("Failed to load")).toBeTruthy();
+
+    const retry = screen.getByRole("button", { name: /Retry/ });
     fetchMode = "ok";
     fireEvent.click(retry);
-    expect(await screen.findByText("46")).toBeTruthy();
+
+    expect(await screen.findByText("3691")).toBeTruthy();
   });
 
-  it("Empty 态：数据面全零渲染 EmptyPanel", async () => {
+  it("Empty state keeps all dashboard panels and shows accurate empty messages", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const path = String(input).split("?")[0] ?? "";
-        const body =
-          path === "/api/stats"
-            ? { reviews: { total: 0 } }
-            : {
-                knowledge: { total: 0 },
-                tasks: { total: 0 },
-                resources: { total: 0 },
-                evidence: { total: 0 },
-                reviews: { total: 0 },
-                tools: { available: false, reason: "aux_db_not_configured" },
-                runs: { available: false, reason: "aux_db_not_configured" },
-              };
-        return new Response(JSON.stringify(body), { status: 200 });
+        const bodies: Record<string, unknown> = {
+          "/api/overview": {
+            knowledge: { total: 0, by_verified: {} },
+            tasks: { total: 0, by_state: {} },
+            evidence: { total: 0 },
+            runs: { available: true, total: 0, by_status: {} },
+          },
+          "/api/stats": { reviews: { total: 0, by_queue: {} } },
+          "/api/runtime": {
+            available: true,
+            total: 0,
+            items: [],
+            message: "No registered runtime nodes.",
+          },
+          "/api/runs": { available: true, total: 0, items: [] },
+        };
+        return new Response(JSON.stringify(bodies[path] ?? {}), {
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        });
       }),
     );
     render(<App />);
-    expect(
-      await screen.findByText("平台数据面暂为空：等待数据接入后这里会显示 KPI 与分布图。"),
-    ).toBeTruthy();
-    // 功能地图仍可见（静态导航辅助）
-    expect(screen.getByText("功能地图")).toBeTruthy();
+
+    expect(await screen.findByText("No pending review items.")).toBeTruthy();
+    expect(screen.getByText("No registered runtime nodes.")).toBeTruthy();
+    expect(screen.getByText("No recent activity yet.")).toBeTruthy();
+    expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(4);
   });
 });

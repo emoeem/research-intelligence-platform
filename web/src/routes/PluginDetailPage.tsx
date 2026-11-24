@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import {
@@ -37,8 +38,8 @@ function CompatTable({ compat }: { compat: NonNullable<PluginDetail["compatibili
     <table className="table table-xs" data-testid="compat-table">
       <thead>
         <tr>
-          <th>兼容项</th>
-          <th>声明</th>
+          <th>{translateUi("兼容项")}</th>
+          <th>{translateUi("声明")}</th>
         </tr>
       </thead>
       <tbody>
@@ -75,7 +76,7 @@ function DependencyGraph({ detail }: { detail: PluginDetail }) {
     (cap.requires ?? []).map((requirement) => ({ from: cap.capability_id, requirement })),
   );
   if (deps.length === 0 && requires.length === 0) {
-    return <p className="text-sm opacity-70">无声明依赖</p>;
+    return <p className="text-sm opacity-70">{translateUi("无声明依赖")}</p>;
   }
   return (
     <div className="space-y-2 text-sm" data-testid="dependency-graph">
@@ -170,9 +171,7 @@ export function PluginDetailPage() {
         retained?: string[];
       };
       setCleanupNote(
-        `回滚窗口清理完成：清理 ${(report.cleaned ?? []).length} 个旧版本，保留 ${
-          (report.retained ?? []).length
-        } 个历史版本`,
+        `${translateUi("回滚窗口清理完成：清理")} ${(report.cleaned ?? []).length} ${translateUi("个旧版本，保留")} ${(report.retained ?? []).length} ${translateUi("个历史版本")}`,
       );
       await detail.retry();
     } catch (error) {
@@ -188,8 +187,8 @@ export function PluginDetailPage() {
   if (!data?.plugin_id) {
     return (
       <div>
-        <PageHeader title="插件详情" />
-        <EmptyPanel text={`未找到插件：${pluginId}`} />
+        <PageHeader title={translateUi("插件详情")} />
+        <EmptyPanel text={`${translateUi("未找到插件：")}${pluginId}`} />
       </div>
     );
   }
@@ -211,7 +210,7 @@ export function PluginDetailPage() {
         title={
           <>
             <Link to="/plugins" className="mr-2 text-sm opacity-70 hover:opacity-100">
-              ← 插件中心
+              ← {translateUi("插件中心")}
             </Link>
             {data.name}
           </>
@@ -221,7 +220,9 @@ export function PluginDetailPage() {
             <span className={`badge ${stateBadge}`} data-testid="detail-state">
               {data.state}
             </span>
-            {data.update_pending ? <span className="badge badge-warning">可更新</span> : null}
+            {data.update_pending ? (
+              <span className="badge badge-warning">{translateUi("可更新")}</span>
+            ) : null}
             {canEnable ? (
               <button
                 className="btn btn-sm btn-primary"
@@ -229,7 +230,7 @@ export function PluginDetailPage() {
                 onClick={() => runAction("enable")}
                 data-testid="action-enable"
               >
-                启用
+                {translateUi("启用")}
               </button>
             ) : null}
             {canDisable ? (
@@ -239,7 +240,7 @@ export function PluginDetailPage() {
                 onClick={() => runAction("disable")}
                 data-testid="action-disable"
               >
-                禁用
+                {translateUi("禁用")}
               </button>
             ) : null}
             {data.state === "UNINSTALLED" || !data.is_active ? (
@@ -249,7 +250,7 @@ export function PluginDetailPage() {
                 onClick={() => setConfirmKind("install")}
                 data-testid="action-install"
               >
-                安装
+                {translateUi("安装")}
               </button>
             ) : null}
             {data.update_pending ? (
@@ -259,7 +260,7 @@ export function PluginDetailPage() {
                 onClick={() => setConfirmKind("upgrade")}
                 data-testid="action-upgrade"
               >
-                升级
+                {translateUi("升级")}
               </button>
             ) : null}
             {canUninstall ? (
@@ -269,7 +270,7 @@ export function PluginDetailPage() {
                 onClick={() => runAction("uninstall")}
                 data-testid="action-uninstall"
               >
-                卸载
+                {translateUi("卸载")}
               </button>
             ) : null}
             {canIngest && data.state !== "UNINSTALLED" ? (
@@ -279,7 +280,7 @@ export function PluginDetailPage() {
                 onClick={() => runAction("ingest")}
                 data-testid="action-ingest"
               >
-                摄取
+                {translateUi("摄取")}
               </button>
             ) : null}
             {data.is_active && data.state !== "UNINSTALLED" ? (
@@ -287,10 +288,10 @@ export function PluginDetailPage() {
                 className="btn btn-sm btn-ghost"
                 disabled={cleanupBusy || actionBusy}
                 onClick={runCleanupRollback}
-                title="P10-2 D6：回滚窗口清理（清理上一版本旧目录，active 版本不动）"
+                title={translateUi("P10-2 D6：回滚窗口清理（清理上一版本旧目录，active 版本不动）")}
                 data-testid="action-cleanup-rollback"
               >
-                清理旧版本
+                {translateUi("清理旧版本")}
               </button>
             ) : null}
           </div>
@@ -318,11 +319,13 @@ export function PluginDetailPage() {
         onClose={() => setConfirmKind(null)}
         tier={installTier}
         pluginId={pluginId}
-        confirmText="确认安装"
+        confirmText={translateUi("确认安装")}
         onConfirm={runConfirmedInstall}
         busy={actionBusy}
         contextNote={
-          data ? `本地来源安装：schemas/plugin-manifest/examples/${pluginId}.yaml` : undefined
+          data
+            ? `${translateUi("本地来源安装：")}schemas/plugin-manifest/examples/${pluginId}.yaml`
+            : undefined
         }
       />
       <TrustConfirmDialog
@@ -330,14 +333,14 @@ export function PluginDetailPage() {
         onClose={() => setConfirmKind(null)}
         tier={upgradeTier}
         pluginId={pluginId}
-        confirmText="确认升级"
+        confirmText={translateUi("确认升级")}
         onConfirm={runConfirmedUpgrade}
         busy={actionBusy}
-        contextNote={`升级确认强度按当前信任级 ${data.trust_level}（策略表单一来源 plugin-registry::trust_policy）`}
+        contextNote={`${translateUi("升级确认强度按当前信任级")} ${data.trust_level}（${translateUi("策略表单一来源")} plugin-registry::trust_policy）`}
       />
 
       <div className="mb-4 flex items-center gap-2 text-xs" data-testid="level-switch">
-        <span className="opacity-70">加载级别：</span>
+        <span className="opacity-70">{translateUi("加载级别：")}</span>
         {[1, 2, 3].map((candidate) => (
           <button
             key={candidate}
@@ -349,30 +352,30 @@ export function PluginDetailPage() {
         ))}
         <span className="text-muted">
           {level === 1
-            ? "目录级元数据"
+            ? translateUi("目录级元数据")
             : level === 2
-              ? "匹配级摘要与清单"
-              : "调用级完整 Manifest 与 docs"}
+              ? translateUi("匹配级摘要与清单")
+              : translateUi("调用级完整 Manifest 与 docs")}
         </span>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-control border border-edge bg-base-100 p-4">
-          <h2 className="mb-2 text-sm font-semibold">元数据</h2>
+          <h2 className="mb-2 text-sm font-semibold">{translateUi("元数据")}</h2>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="opacity-70">版本</dt>
+            <dt className="opacity-70">{translateUi("版本")}</dt>
             <dd className="font-mono">{data.version}</dd>
-            <dt className="opacity-70">许可证</dt>
+            <dt className="opacity-70">{translateUi("许可证")}</dt>
             <dd data-testid="detail-license">{data.license}</dd>
-            <dt className="opacity-70">信任级</dt>
+            <dt className="opacity-70">{translateUi("信任级")}</dt>
             <dd>{data.trust_level}</dd>
-            <dt className="opacity-70">来源</dt>
+            <dt className="opacity-70">{translateUi("来源")}</dt>
             <dd className="font-mono text-xs">
               {data.source_type}:{data.source_ref}
             </dd>
             {data.homepage ? (
               <>
-                <dt className="opacity-70">来源主页</dt>
+                <dt className="opacity-70">{translateUi("来源主页")}</dt>
                 <dd className="text-xs">
                   <a
                     href={data.homepage}
@@ -388,7 +391,7 @@ export function PluginDetailPage() {
             ) : null}
             {data.pinned?.value ? (
               <>
-                <dt className="opacity-70">快照 Commit</dt>
+                <dt className="opacity-70">{translateUi("快照 Commit")}</dt>
                 <dd className="font-mono text-xs" data-testid="detail-commit">
                   {data.pinned.kind}: {data.pinned.value}
                 </dd>
@@ -396,18 +399,20 @@ export function PluginDetailPage() {
             ) : null}
             <dt className="opacity-70">lock sha256</dt>
             <dd className="font-mono text-xs">{data.lock_sha256 ?? "-"}</dd>
-            <dt className="opacity-70">更新时间</dt>
+            <dt className="opacity-70">{translateUi("更新时间")}</dt>
             <dd>{data.updated_at ? formatDateTime(data.updated_at) : "-"}</dd>
             {data.source_uninstalled ? (
               <>
-                <dt className="opacity-70">来源状态</dt>
-                <dd>已卸载（已入主库知识保留带溯源）</dd>
+                <dt className="opacity-70">{translateUi("来源状态")}</dt>
+                <dd>{translateUi("已卸载（已入主库知识保留带溯源）")}</dd>
               </>
             ) : null}
           </dl>
           {level >= 2 && data.knowledge_provides?.content_kinds?.length ? (
             <div className="mt-3" data-testid="detail-knowledge-provides">
-              <h3 className="text-xs font-semibold text-muted">内容类型与许可策略</h3>
+              <h3 className="text-xs font-semibold text-muted">
+                {translateUi("内容类型与许可策略")}
+              </h3>
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {data.knowledge_provides.content_kinds.map((kind) => (
                   <span
@@ -430,7 +435,7 @@ export function PluginDetailPage() {
           ) : null}
           {level >= 2 && data.knowledge_stats ? (
             <div className="mt-3" data-testid="detail-knowledge-stats">
-              <h3 className="text-xs font-semibold text-muted">审核状态</h3>
+              <h3 className="text-xs font-semibold text-muted">{translateUi("审核状态")}</h3>
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {Object.entries(data.knowledge_stats.review ?? {}).map(([status, n]) => (
                   <span key={status} className="badge badge-sm badge-ghost">
@@ -439,7 +444,7 @@ export function PluginDetailPage() {
                 ))}
                 {data.knowledge_stats.last_seen_at ? (
                   <span className="text-[11px] text-muted">
-                    最近摄取 {formatDateTime(data.knowledge_stats.last_seen_at)}
+                    {translateUi("最近摄取")} {formatDateTime(data.knowledge_stats.last_seen_at)}
                   </span>
                 ) : null}
               </div>
@@ -453,20 +458,22 @@ export function PluginDetailPage() {
         </section>
 
         <section className="rounded-control border border-edge bg-base-100 p-4">
-          <h2 className="mb-2 text-sm font-semibold">兼容性</h2>
+          <h2 className="mb-2 text-sm font-semibold">{translateUi("兼容性")}</h2>
           {data.compatibility ? (
             <CompatTable compat={data.compatibility} />
           ) : (
-            <p className="text-sm opacity-70">未声明</p>
+            <p className="text-sm opacity-70">{translateUi("未声明")}</p>
           )}
         </section>
 
         <section className="rounded-control border border-edge bg-base-100 p-4">
           <h2 className="mb-2 text-sm font-semibold">
-            capability 清单（{(data.capabilities ?? []).length}）
+            {translateUi("capability 清单")}（{(data.capabilities ?? []).length}）
           </h2>
           {(data.capabilities ?? []).length === 0 ? (
-            <p className="text-sm opacity-70">L2 起展示（capability 行随版本落库）</p>
+            <p className="text-sm opacity-70">
+              {translateUi("L2 起展示（capability 行随版本落库）")}
+            </p>
           ) : (
             <ul className="space-y-2" data-testid="capability-list">
               {(data.capabilities ?? []).map((cap) => (
@@ -487,7 +494,7 @@ export function PluginDetailPage() {
         </section>
 
         <section className="rounded-control border border-edge bg-base-100 p-4">
-          <h2 className="mb-2 text-sm font-semibold">依赖图</h2>
+          <h2 className="mb-2 text-sm font-semibold">{translateUi("依赖图")}</h2>
           <DependencyGraph detail={data} />
         </section>
       </div>
@@ -497,11 +504,13 @@ export function PluginDetailPage() {
           <section className="mt-4 rounded-control border border-edge bg-base-100 p-4">
             <h2 className="mb-2 text-sm font-semibold">docs（L3）</h2>
             <pre className="max-h-72 overflow-auto whitespace-pre-wrap font-mono text-xs">
-              {data.docs?.body ?? "(无 docs 正文)"}
+              {data.docs?.body ?? translateUi("(无 docs 正文)")}
             </pre>
           </section>
           <section className="mt-4 rounded-control border border-edge bg-base-100 p-4">
-            <h2 className="mb-2 text-sm font-semibold">Manifest（L3 原始 JSON）</h2>
+            <h2 className="mb-2 text-sm font-semibold">
+              {translateUi("Manifest（L3 原始 JSON）")}
+            </h2>
             <pre className="max-h-96 overflow-auto font-mono text-xs" data-testid="manifest-json">
               {JSON.stringify(data.manifest, null, 2)}
             </pre>
@@ -510,9 +519,13 @@ export function PluginDetailPage() {
       ) : null}
 
       <section className="mt-4 rounded-control border border-edge bg-base-100 p-4">
-        <h2 className="mb-2 text-sm font-semibold">审计事件（plugin.*，最近 50）</h2>
+        <h2 className="mb-2 text-sm font-semibold">
+          {translateUi("审计事件（plugin.*，最近 50）")}
+        </h2>
         {(data.audit ?? []).length === 0 ? (
-          <p className="text-sm opacity-70">无审计事件（audit-engine 经 rp-plugin 子进程写入）</p>
+          <p className="text-sm opacity-70">
+            {translateUi("无审计事件（audit-engine 经 rp-plugin 子进程写入）")}
+          </p>
         ) : (
           <ul className="space-y-1 font-mono text-xs" data-testid="audit-trail">
             {(data.audit ?? []).map((event) => (

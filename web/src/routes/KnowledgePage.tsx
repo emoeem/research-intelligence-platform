@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import {
@@ -70,9 +71,9 @@ const LIFECYCLE_BADGE: Record<string, string> = {
 };
 
 function verifiedLabel(verified: number | null | undefined): string {
-  if (verified === 1) return "已验证";
-  if (verified === 0) return "未验证";
-  return "未标注";
+  if (verified === 1) return translateUi("已验证");
+  if (verified === 0) return translateUi("未验证");
+  return translateUi("未标注");
 }
 
 function truncate(text: string | null | undefined, max: number): string | null {
@@ -98,7 +99,7 @@ function DetailSidebar({
   selectedId: string | null;
 }) {
   if (!selectedId) {
-    return <EmptyPanel text="从左侧选择条目查看详情（来源、元数据与正文摘要）。" />;
+    return <EmptyPanel text={translateUi("从左侧选择条目查看详情（来源、元数据与正文摘要）。")} />;
   }
   if (detail.loading) {
     return (
@@ -113,7 +114,7 @@ function DetailSidebar({
     return <ErrorPanel error={detail.error} onRetry={detail.retry} />;
   }
   const item = detail.data?.item;
-  if (!item) return <EmptyPanel text="条目详情不存在。" />;
+  if (!item) return <EmptyPanel text={translateUi("条目详情不存在。")} />;
   const tags = Array.isArray(item.tags)
     ? (item.tags as unknown[]).filter((t) => typeof t === "string")
     : [];
@@ -128,7 +129,7 @@ function DetailSidebar({
           ) : null}
           <span className="badge badge-sm badge-outline">{verifiedLabel(item.verified)}</span>
           {item.record_kind === "negative" ? (
-            <span className="badge badge-sm badge-error">反知识</span>
+            <span className="badge badge-sm badge-error">{translateUi("反知识")}</span>
           ) : null}
         </div>
         <h2 className="mt-2 text-sm font-semibold leading-5">{item.title}</h2>
@@ -137,29 +138,32 @@ function DetailSidebar({
 
       {item.description ? (
         <section>
-          <h3 className="text-xs font-semibold text-muted">描述</h3>
+          <h3 className="text-xs font-semibold text-muted">{translateUi("描述")}</h3>
           <p className="mt-1 whitespace-pre-wrap text-xs leading-5">{item.description}</p>
         </section>
       ) : null}
 
       <section>
-        <h3 className="text-xs font-semibold text-muted">元数据</h3>
+        <h3 className="text-xs font-semibold text-muted">{translateUi("元数据")}</h3>
         <div className="mt-1 space-y-1">
-          <MetaRow label="组件" value={item.component} />
+          <MetaRow label={translateUi("组件")} value={item.component} />
           <MetaRow label="CVE" value={item.cve} />
-          <MetaRow label="等级" value={item.severity} />
-          <MetaRow label="语言" value={item.language} />
-          <MetaRow label="证据级" value={item.evidence_level} />
+          <MetaRow label={translateUi("等级")} value={item.severity} />
+          <MetaRow label={translateUi("语言")} value={item.language} />
+          <MetaRow label={translateUi("证据级")} value={item.evidence_level} />
           <MetaRow
-            label="命中"
+            label={translateUi("命中")}
             value={
               item.hit_count === null || item.hit_count === undefined
                 ? null
                 : String(item.hit_count)
             }
           />
-          <MetaRow label="更新" value={item.updated_at ? formatDateTime(item.updated_at) : null} />
-          <MetaRow label="验证注记" value={truncate(item.verified_note, 200)} />
+          <MetaRow
+            label={translateUi("更新")}
+            value={item.updated_at ? formatDateTime(item.updated_at) : null}
+          />
+          <MetaRow label={translateUi("验证注记")} value={truncate(item.verified_note, 200)} />
         </div>
         {tags.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1">
@@ -173,12 +177,12 @@ function DetailSidebar({
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold text-muted">来源</h3>
+        <h3 className="text-xs font-semibold text-muted">{translateUi("来源")}</h3>
         <div className="mt-1 space-y-1">
-          <MetaRow label="来源" value={item.source} />
+          <MetaRow label={translateUi("来源")} value={item.source} />
           {item.source_url ? (
             <div className="flex gap-2 text-xs">
-              <span className="w-20 shrink-0 text-muted">链接</span>
+              <span className="w-20 shrink-0 text-muted">{translateUi("链接")}</span>
               <a
                 href={item.source_url}
                 target="_blank"
@@ -193,7 +197,7 @@ function DetailSidebar({
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold text-muted">正文摘要</h3>
+        <h3 className="text-xs font-semibold text-muted">{translateUi("正文摘要")}</h3>
         {item.content ? (
           <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[11px] leading-4">
             {truncate(item.content, 1200)}
@@ -203,7 +207,9 @@ function DetailSidebar({
             {truncate(item.usage, 1200)}
           </pre>
         ) : (
-          <p className="mt-1 text-xs text-muted">该条目无正文内容（仅元数据记录）。</p>
+          <p className="mt-1 text-xs text-muted">
+            {translateUi("该条目无正文内容（仅元数据记录）。")}
+          </p>
         )}
       </section>
     </div>
@@ -252,15 +258,17 @@ function SourceEntriesView() {
   const total = list.data?.total ?? 0;
 
   return (
-    <section aria-label="知识来源条目">
+    <section aria-label={translateUi("知识来源条目")}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           className="select select-sm rounded-control border border-edge bg-base-100"
-          aria-label="按来源插件过滤"
+          aria-label={translateUi("按来源插件过滤")}
           value={pluginId}
           onChange={(e) => setPluginId(e.target.value)}
         >
-          <option value="">全部来源（{plugins.length} 个插件）</option>
+          <option value="">
+            {translateUi("全部来源（")} {plugins.length} {translateUi("个插件）")}
+          </option>
           {plugins.map((p) => (
             <option key={p.plugin_id} value={p.plugin_id}>
               {p.name}（{p.license}）
@@ -269,11 +277,11 @@ function SourceEntriesView() {
         </select>
         <select
           className="select select-sm rounded-control border border-edge bg-base-100"
-          aria-label="按审核状态过滤"
+          aria-label={translateUi("按审核状态过滤")}
           value={review}
           onChange={(e) => setReview(e.target.value)}
         >
-          <option value="">全部审核状态</option>
+          <option value="">{translateUi("全部审核状态")}</option>
           {Object.keys(REVIEW_BADGE).map((s) => (
             <option key={s} value={s}>
               {s}
@@ -283,13 +291,13 @@ function SourceEntriesView() {
         <input
           type="text"
           className="input input-sm w-52 rounded-control border border-edge bg-base-100"
-          placeholder="检索标题 / URL / 描述…"
-          aria-label="检索知识来源条目"
+          placeholder={translateUi("检索标题 / URL / 描述…")}
+          aria-label={translateUi("检索知识来源条目")}
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
         />
         <span className="text-xs text-muted" data-testid="source-total">
-          共 {total} 条（显示 {items.length}）
+          {translateUi("共")} {total} {translateUi("条（显示")} {items.length}）
         </span>
       </div>
       {list.loading ? (
@@ -298,10 +306,12 @@ function SourceEntriesView() {
         <ErrorPanel error={list.error} onRetry={list.retry} />
       ) : !list.data?.available ? (
         <EmptyPanel
-          text={list.data?.message ?? "知识来源数据面不可用（需 011 迁移的插件库副本）"}
+          text={
+            list.data?.message ?? translateUi("知识来源数据面不可用（需 011 迁移的插件库副本）")
+          }
         />
       ) : items.length === 0 ? (
-        <EmptyPanel text="没有匹配的知识来源条目，调整过滤条件后重试。" />
+        <EmptyPanel text={translateUi("没有匹配的知识来源条目，调整过滤条件后重试。")} />
       ) : (
         <ul className="space-y-2" data-testid="source-entry-list">
           {items.map((item) => (
@@ -337,7 +347,8 @@ function SourceEntriesView() {
                 </p>
                 {item.category_path.length > 0 ? (
                   <p className="mt-1 text-[11px] text-muted" data-testid="source-category">
-                    分类：{item.category_path.join(" / ")}
+                    {translateUi("分类：")}
+                    {item.category_path.join(" / ")}
                   </p>
                 ) : null}
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
@@ -351,7 +362,10 @@ function SourceEntriesView() {
                       {item.canonical_url}
                     </a>
                   ) : null}
-                  <span>更新 {item.last_seen_at ? formatDateTime(item.last_seen_at) : "-"}</span>
+                  <span>
+                    {translateUi("更新")}{" "}
+                    {item.last_seen_at ? formatDateTime(item.last_seen_at) : "-"}
+                  </span>
                 </div>
               </div>
             </li>
@@ -367,7 +381,7 @@ export function KnowledgePage() {
   return (
     <div>
       <PageHeader
-        title="知识库"
+        title={translateUi("知识库")}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1" data-testid="knowledge-view-switch">
@@ -376,14 +390,14 @@ export function KnowledgePage() {
                 className={`btn btn-xs ${view === "platform" ? "btn-primary" : "btn-ghost"}`}
                 onClick={() => setView("platform")}
               >
-                平台知识
+                {translateUi("平台知识")}
               </button>
               <button
                 type="button"
                 className={`btn btn-xs ${view === "sources" ? "btn-primary" : "btn-ghost"}`}
                 onClick={() => setView("sources")}
               >
-                知识来源
+                {translateUi("知识来源")}
               </button>
             </div>
           </div>
@@ -441,14 +455,14 @@ function PlatformKnowledgeView() {
         <input
           type="text"
           className="input input-sm w-56 rounded-control border border-edge bg-base-100"
-          placeholder="检索标题 / 组件 / CVE…"
-          aria-label="检索知识条目"
+          placeholder={translateUi("检索标题 / 组件 / CVE…")}
+          aria-label={translateUi("检索知识条目")}
           value={rawQuery}
           onChange={(event) => setRawQuery(event.target.value)}
         />
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <section aria-label="知识条目列表">
+        <section aria-label={translateUi("知识条目列表")}>
           {list.loading ? (
             <SkeletonPanel lines={6} />
           ) : list.error !== null ? (
@@ -457,13 +471,16 @@ function PlatformKnowledgeView() {
             <EmptyPanel
               text={
                 list.data?.message ??
-                (keyword ? `没有匹配「${keyword}」的知识条目。` : "暂无知识条目。")
+                (keyword
+                  ? `${translateUi("没有匹配")}「${keyword}」${translateUi("的知识条目。")}`
+                  : translateUi("暂无知识条目。"))
               }
             />
           ) : (
             <>
               <p className="mb-2 text-xs text-muted">
-                {keyword ? `检索「${keyword}」：` : ""}共 {total} 条（显示 {items.length}）
+                {keyword ? `${translateUi("检索")}「${keyword}」：` : ""}
+                {translateUi("共")} {total} {translateUi("条（显示")} {items.length}）
               </p>
               <ul className="space-y-2">
                 {items.map((item) => {
@@ -501,7 +518,7 @@ function PlatformKnowledgeView() {
                         <p className="mt-1.5 text-sm font-medium leading-5">{item.title}</p>
                         <p className="mt-1 text-[11px] text-muted">
                           {item.updated_at ? formatDateTime(item.updated_at) : "-"}
-                          {item.hit_count ? ` · 命中 ${item.hit_count}` : ""}
+                          {item.hit_count ? ` · ${translateUi("命中")} ${item.hit_count}` : ""}
                         </p>
                       </button>
                     </li>
@@ -511,7 +528,10 @@ function PlatformKnowledgeView() {
             </>
           )}
         </section>
-        <aside aria-label="条目详情" className="rounded-surface border border-edge bg-base-100 p-4">
+        <aside
+          aria-label={translateUi("条目详情")}
+          className="rounded-surface border border-edge bg-base-100 p-4"
+        >
           <DetailSidebar detail={detail} selectedId={selectedId} />
         </aside>
       </div>

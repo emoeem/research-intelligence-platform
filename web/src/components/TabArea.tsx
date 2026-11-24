@@ -33,11 +33,13 @@ interface TabAreaProps {
   onSelect: (id: string) => void;
   /** 关闭回调（会话 tab 关闭钮调用；固定 tab 永不调用）。 */
   onClose?: (id: string) => void;
+  /** 可由上层注入当前语言的关闭按钮文案。 */
+  closeLabel?: (label: string) => string;
   /** aria-label（如「工作区标签页」）。 */
   label: string;
 }
 
-export function TabArea({ tabs, activeId, onSelect, onClose, label }: TabAreaProps) {
+export function TabArea({ tabs, activeId, onSelect, onClose, closeLabel, label }: TabAreaProps) {
   if (tabs.length === 0) return null;
   return (
     <nav aria-label={label} className="tabarea">
@@ -65,8 +67,8 @@ export function TabArea({ tabs, activeId, onSelect, onClose, label }: TabAreaPro
                 <button
                   type="button"
                   className="tabarea-close"
-                  aria-label={`关闭标签 ${tab.label}`}
-                  title={`关闭标签 ${tab.label}`}
+                  aria-label={closeLabel ? closeLabel(tab.label) : `关闭标签 ${tab.label}`}
+                  title={closeLabel ? closeLabel(tab.label) : `关闭标签 ${tab.label}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     onClose(tab.id);

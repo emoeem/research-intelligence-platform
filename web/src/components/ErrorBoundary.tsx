@@ -4,6 +4,7 @@
  *  PROD 下隐藏 message 与 stack，避免把内部信息暴露给访客。 */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import i18n from "../i18n";
 
 interface Props {
   children: ReactNode;
@@ -60,10 +61,12 @@ export class ErrorBoundary extends Component<Props, State> {
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
             </div>
-            <h2 className="text-lg font-bold tracking-tight">页面出错了</h2>
+            <h2 className="text-lg font-bold tracking-tight">
+              {i18n.t("页面出错了", { ns: "ui", keySeparator: false })}
+            </h2>
             <p className="mt-1 text-sm text-muted">
               {import.meta.env.PROD
-                ? "出现了一个意外错误，请刷新页面重试。"
+                ? i18n.t("出现了一个意外错误，请刷新页面重试。", { ns: "ui", keySeparator: false })
                 : error.message || error.name || "未知错误"}
             </p>
             {!import.meta.env.PROD && error.stack ? (
@@ -73,10 +76,10 @@ export class ErrorBoundary extends Component<Props, State> {
             ) : null}
             <div className="mt-5 flex justify-center gap-2">
               <button type="button" className="btn" onClick={this.handleReset}>
-                重试
+                {i18n.t("重试", { ns: "ui", keySeparator: false })}
               </button>
               <button type="button" className="btn btn-primary" onClick={this.handleReload}>
-                刷新页面
+                {i18n.t("刷新页面", { ns: "ui", keySeparator: false })}
               </button>
             </div>
           </div>

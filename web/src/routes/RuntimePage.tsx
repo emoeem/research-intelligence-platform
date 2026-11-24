@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
 import { formatDateTime } from "../lib/format";
@@ -45,13 +46,13 @@ const HEALTH_BADGE: Record<string, string> = {
 };
 
 function heartbeatText(node: RuntimeNode): string {
-  if (!node.last_heartbeat_at) return "从未收到心跳";
+  if (!node.last_heartbeat_at) return translateUi("从未收到心跳");
   const at = formatDateTime(node.last_heartbeat_at);
   const age = node.heartbeat_age_seconds;
-  if (age === null || age === undefined) return `${at}（时龄未知）`;
-  if (age < 90) return `${at}（${Math.round(age)} 秒前）`;
-  if (age < 5400) return `${at}（${Math.round(age / 60)} 分钟前）`;
-  return `${at}（${Math.round(age / 3600)} 小时前）`;
+  if (age === null || age === undefined) return `${at}（${translateUi("时龄未知")}）`;
+  if (age < 90) return `${at}（${Math.round(age)} ${translateUi("秒前")}）`;
+  if (age < 5400) return `${at}（${Math.round(age / 60)} ${translateUi("分钟前")}）`;
+  return `${at}（${Math.round(age / 3600)} ${translateUi("小时前")}）`;
 }
 
 export function RuntimePage() {
@@ -61,12 +62,17 @@ export function RuntimePage() {
   return (
     <div>
       <PageHeader
-        title="运行时"
-        actions={<span className="badge badge-ghost">实时心跳待 Gateway 常驻编排（待验证）</span>}
+        title={translateUi("运行时")}
+        actions={
+          <span className="badge badge-ghost">
+            {translateUi("实时心跳待 Gateway 常驻编排（待验证）")}
+          </span>
+        }
       />
       <p className="mb-3 text-xs text-muted">
-        实时心跳依赖 Gateway 常驻编排（PHASE2-ACCEPTANCE §7 载明未落地，心跳为按需探测 + 600s
-        间隔守卫）， 本页展示登记节点与最近心跳快照。
+        {translateUi(
+          "实时心跳依赖 Gateway 常驻编排（PHASE2-ACCEPTANCE §7 载明未落地，心跳为按需探测 + 600s 间隔守卫），本页展示登记节点与最近心跳快照。",
+        )}
       </p>
       {list.loading ? (
         <SkeletonPanel lines={4} />
@@ -77,12 +83,17 @@ export function RuntimePage() {
           text={list.data.message ?? `数据面不可读（${list.data.reason ?? "unknown"}）。`}
         />
       ) : items.length === 0 ? (
-        <EmptyPanel text="暂无运行时节点：runtime_node 为空（Gateway 心跳尚未接入或节点未登记）。" />
+        <EmptyPanel
+          text={translateUi(
+            "暂无运行时节点：runtime_node 为空（Gateway 心跳尚未接入或节点未登记）。",
+          )}
+        />
       ) : (
         <>
           <p className="mb-2 text-xs text-muted">
-            共 {list.data?.total ?? 0} 个节点（数据源：
-            {list.data?.source === "aux" ? "RP_AUX_DB 开发库副本" : list.data?.source}）
+            {translateUi("共")} {list.data?.total ?? 0} {translateUi("个节点（数据源：")}
+            {list.data?.source === "aux" ? translateUi("RP_AUX_DB 开发库副本") : list.data?.source}
+            ）
           </p>
           <ul className="space-y-2">
             {items.map((node) => (
@@ -106,9 +117,11 @@ export function RuntimePage() {
                 </div>
                 <p className="mt-1.5 break-all text-sm font-medium">{node.node_id}</p>
                 <p className="mt-1 text-[11px] text-muted">
-                  {node.endpoint ? `endpoint: ${node.endpoint}` : "endpoint: 未上报"}
+                  {node.endpoint ? `endpoint: ${node.endpoint}` : translateUi("endpoint: 未上报")}
                 </p>
-                <p className="mt-1 text-[11px] text-muted">心跳: {heartbeatText(node)}</p>
+                <p className="mt-1 text-[11px] text-muted">
+                  {translateUi("心跳:")} {heartbeatText(node)}
+                </p>
               </li>
             ))}
           </ul>

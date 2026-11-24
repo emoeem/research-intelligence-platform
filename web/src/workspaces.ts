@@ -2,8 +2,7 @@
  * 工作区信息架构的唯一数据源（RIP 版，模型沿自参照实现 admin/src/workspaces.ts，
  * UI 复用盘点 §2.1：零 import 纯数据、图标字符串键、稳定编号、buildFeatureMap）。
  *
- * Layout 的图标轨 / 工作区切换器 / 中央多标签工作区的固定 tab 与总览页的功能
- * 地图都从这里取数，数据只维护一份。本模块保持零 import：图标以字符串键存储，
+ * Layout 的全局导航分组、工作区子导航与总览页功能地图都从这里取数，数据只维护一份。本模块保持零 import：图标以字符串键存储，
  * 由 Layout 侧映射成 lucide 组件；类型全部就地声明。
  *
  * RIP 十一工作区信息架构（SESSION-HANDOFF §11.2，计划 §10.3）：
@@ -75,8 +74,11 @@ export interface WorkspaceNavItem {
   hint: string;
 }
 
+export type WorkspaceGroup = "workspace" | "capabilities" | "operations" | "system";
+
 export interface Workspace {
   id: WorkspaceId;
+  group: WorkspaceGroup;
   /** 工作区序号（1 起）：图标轨 tooltip、tab 条编号与功能地图共用。 */
   order: number;
   label: string;
@@ -92,6 +94,7 @@ export interface Workspace {
 export const WORKSPACES: readonly Workspace[] = [
   {
     id: "dashboard",
+    group: "workspace",
     order: 1,
     label: "Dashboard",
     icon: "layoutDashboard",
@@ -109,23 +112,25 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "projects",
+    group: "workspace",
     order: 2,
     label: "Projects",
     icon: "folderKanban",
     entry: "/projects",
-    hint: "研究项目与任务树",
+    hint: "项目目录（等待独立项目 API）",
     tabs: [
       {
         order: 1,
         to: "/projects",
         label: "项目",
         icon: "folderKanban",
-        hint: "项目、任务树与研究时间线",
+        hint: "项目目录与详情（后端项目领域接口尚未提供）",
       },
     ],
   },
   {
     id: "research",
+    group: "workspace",
     order: 3,
     label: "Research",
     icon: "radar",
@@ -185,6 +190,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "knowledge",
+    group: "workspace",
     order: 4,
     label: "Knowledge",
     icon: "database",
@@ -203,6 +209,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "tools",
+    group: "capabilities",
     order: 5,
     label: "Tools",
     icon: "wrench",
@@ -214,6 +221,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "plugins",
+    group: "capabilities",
     order: 6,
     label: "Plugins",
     icon: "puzzle",
@@ -231,6 +239,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "agents",
+    group: "capabilities",
     order: 7,
     label: "Agents",
     icon: "bot",
@@ -248,6 +257,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "workflows",
+    group: "capabilities",
     order: 8,
     label: "Workflows",
     icon: "workflow",
@@ -265,6 +275,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "runs",
+    group: "operations",
     order: 9,
     label: "Runs",
     icon: "circlePlay",
@@ -282,6 +293,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "runtime",
+    group: "operations",
     order: 10,
     label: "Runtime",
     icon: "serverCog",
@@ -293,6 +305,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "settings",
+    group: "system",
     order: 11,
     label: "Settings",
     icon: "settings",
@@ -324,6 +337,7 @@ export const WORKSPACES: readonly Workspace[] = [
   },
   {
     id: "websec",
+    group: "operations",
     order: 12,
     label: "Web Security",
     icon: "shieldCheck",
@@ -343,6 +357,41 @@ export const WORKSPACES: readonly Workspace[] = [
         label: "Repeater",
         icon: "refreshCw",
         hint: "多 Tab 请求编辑重放（append-only 版本历史，W3-D4/D8.3）",
+      },
+      {
+        order: 3,
+        to: "/websec/passive",
+        label: "Passive Audit",
+        icon: "shieldCheck",
+        hint: "被动规则与命中审阅（只读）",
+      },
+      {
+        order: 4,
+        to: "/websec/websocket",
+        label: "WebSocket Frames",
+        icon: "globe",
+        hint: "WebSocket 帧与按需 Payload 审阅（只读）",
+      },
+      {
+        order: 5,
+        to: "/websec/fuzzer",
+        label: "Intruder / Fuzzer",
+        icon: "wrench",
+        hint: "Intruder-compatible Fuzzer jobs：Sniper、Cluster Bomb、Pitchfork；Rust 预算闸强制执行",
+      },
+      {
+        order: 6,
+        to: "/websec/decoder",
+        label: "Decoder",
+        icon: "refreshCw",
+        hint: "本机数据编码与解码转换",
+      },
+      {
+        order: 7,
+        to: "/websec/comparer",
+        label: "Comparer",
+        icon: "folderKanban",
+        hint: "文本、JSON、Header 与 Hex 比较",
       },
     ],
   },

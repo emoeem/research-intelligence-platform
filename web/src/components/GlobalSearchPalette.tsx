@@ -19,6 +19,7 @@ import {
 } from "../lib/global-search";
 import { WORKSPACES } from "../workspaces";
 import { trapFocusWithin } from "./focus-trap";
+import { useUiText } from "../i18n";
 
 interface ToolRow {
   tool_id: string;
@@ -65,6 +66,7 @@ const POPULAR_TERMS: ReadonlyArray<{ label: string; to: string; hint: string }> 
 
 export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const ui = useUiText();
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -76,14 +78,23 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
   const tasks = useApi<{ items?: TaskRow[] }>("/api/tasks?limit=200");
 
   const sources = useMemo<GlobalSearchGroupSource[]>(() => {
-    const groups: GlobalSearchGroupSource[] = [PAGE_GROUP];
+    const translatedPages: GlobalSearchGroupSource = {
+      ...PAGE_GROUP,
+      label: ui("页面"),
+      items: PAGE_GROUP.items.map((item) => ({
+        ...item,
+        title: item.title === "总览" ? ui("总览") : item.title,
+        text: item.text,
+      })),
+    };
+    const groups: GlobalSearchGroupSource[] = [translatedPages];
     const toolItems = (tools.data?.items ?? []).map((tool) => ({
       text: `${tool.name} ${tool.tool_id}`,
       title: tool.name,
       to: `/tools/${encodeURIComponent(tool.tool_id)}`,
       ...(tool.lifecycle ? { meta: tool.lifecycle } : {}),
     }));
-    if (toolItems.length > 0) groups.push({ group: "tools", label: "工具", items: toolItems });
+    if (toolItems.length > 0) groups.push({ group: "tools", label: ui("工具"), items: toolItems });
     const knowledgeItems = (knowledge.data?.items ?? []).map((item) => ({
       text: `${item.title} ${item.component ?? ""}`,
       title: item.title,
@@ -91,16 +102,16 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
       ...(item.component ? { meta: item.component } : {}),
     }));
     if (knowledgeItems.length > 0)
-      groups.push({ group: "knowledge", label: "知识", items: knowledgeItems });
+      groups.push({ group: "knowledge", label: ui("知识"), items: knowledgeItems });
     const taskItems = (tasks.data?.items ?? []).map((item) => ({
       text: `${item.title} ${item.task_id}`,
       title: item.title,
       to: `/projects?task_id=${encodeURIComponent(item.task_id)}`,
       ...(item.state ? { meta: item.state } : {}),
     }));
-    if (taskItems.length > 0) groups.push({ group: "tasks", label: "任务", items: taskItems });
+    if (taskItems.length > 0) groups.push({ group: "tasks", label: ui("任务"), items: taskItems });
     return groups;
-  }, [tools.data, knowledge.data, tasks.data]);
+  }, [tools.data, knowledge.data, tasks.data, ui]);
 
   const result = useMemo(() => searchGlobalSearch(sources, query), [sources, query]);
   // 键盘上下选择走扁平 hits；组渲染需要「命中在扁平序列里的位置」。
@@ -159,7 +170,7 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="全局搜索"
+        aria-label={ui("全局搜索")}
         className="search-panel"
         onKeyDown={(event) => {
           trapFocusWithin(panelRef.current, event.nativeEvent);
@@ -193,19 +204,24 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
             autoFocus
             type="text"
             className="search-input"
-            aria-label="搜索关键词"
-            placeholder="搜索页面、工具、知识条目、任务…"
+            aria-label={ui("搜索关键词")}
+            placeholder={ui("搜索页面、工具、知识条目、任务…")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <button type="button" className="search-esc" onClick={onClose} aria-label="关闭搜索">
+          <button
+            type="button"
+            className="search-esc"
+            onClick={onClose}
+            aria-label={ui("关闭搜索")}
+          >
             Esc
           </button>
         </div>
         <div className="search-body" ref={listRef}>
           {query.trim() === "" ? (
             <div className="search-popular">
-              <p className="search-popular-label">热门入口</p>
+              <p className="search-popular-label">{ui("热门入口")}</p>
               <div className="search-chips">
                 {POPULAR_TERMS.map((term) => (
                   <button
@@ -224,11 +240,13 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           ) : isLoading ? (
-            <div className="search-hint">正在载入可搜索的数据…</div>
+            <div className="search-hint">{ui("正在载入可搜索的数据…")}</div>
           ) : loadFailed ? (
-            <div className="search-hint">数据载入失败，请关闭后重试。</div>
+            <div className="search-hint">{ui("数据载入失败，请关闭后重试。")}</div>
           ) : result.groups.length === 0 ? (
-            <div className="search-hint">没有找到「{query.trim()}」相关内容</div>
+            <div className="search-hint">
+              {ui("没有找到相关内容")}「{query.trim()}」
+            </div>
           ) : (
             result.groups.map((group) => (
               <section key={group.group}>
@@ -254,7 +272,7 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
             ))
           )}
         </div>
-        <footer className="search-footnote">↑↓ 选择 · Enter 打开 · Esc 关闭</footer>
+        <footer className="search-footnote">{ui("↑↓ 选择 · Enter 打开 · Esc 关闭")}</footer>
       </div>
     </div>
   );

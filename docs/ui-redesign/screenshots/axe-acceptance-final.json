@@ -1,0 +1,140 @@
+{
+  "scans": 22,
+  "totalViolations": 0,
+  "seriousCritical": 0,
+  "results": [
+    {
+      "path": "/",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/history",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/history",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/fuzzer",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/fuzzer",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/passive",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/passive",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/websocket",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/websocket",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/decoder",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/decoder",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/comparer",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/websec/comparer",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/agents",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/agents",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/workflows",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/workflows",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/runs",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/runs",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/runtime",
+      "theme": "rip-dark",
+      "violationCount": 0,
+      "violations": []
+    },
+    {
+      "path": "/runtime",
+      "theme": "rip-light",
+      "violationCount": 0,
+      "violations": []
+    }
+  ],
+  "errors": []
+}

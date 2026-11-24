@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState } from "react";
 import { Link } from "react-router";
 import { useApi } from "../lib/hooks";
@@ -64,10 +65,10 @@ function McpCatalogCard() {
   if (status.loading) {
     return (
       <section
-        aria-label="MCP 目录同步状态"
+        aria-label={translateUi("MCP 目录同步状态")}
         className="mb-4 rounded-surface border border-edge bg-base-100 p-3"
       >
-        <h2 className="text-sm font-medium">MCP 目录同步状态</h2>
+        <h2 className="text-sm font-medium">{translateUi("MCP 目录同步状态")}</h2>
         <SkeletonPanel lines={1} />
       </section>
     );
@@ -75,13 +76,16 @@ function McpCatalogCard() {
   if (status.error !== null) {
     return (
       <section
-        aria-label="MCP 目录同步状态"
+        aria-label={translateUi("MCP 目录同步状态")}
         className="mb-4 rounded-surface border border-edge bg-base-100 p-3"
       >
-        <h2 className="text-sm font-medium">MCP 目录同步状态</h2>
+        <h2 className="text-sm font-medium">{translateUi("MCP 目录同步状态")}</h2>
         <p className="mt-1 text-xs text-muted">
-          MCP 目录状态读取失败（{status.error.message}）。MCP 工具目录本身可用 （tools/list
-          与本页共用同一 tool 表读面），仅状态卡不可用。
+          {translateUi("MCP 目录状态读取失败（")}
+          {status.error.message}
+          {translateUi(
+            "）。MCP 工具目录本身可用（tools/list 与本页共用同一 tool 表读面），仅状态卡不可用。",
+          )}
         </p>
       </section>
     );
@@ -91,12 +95,12 @@ function McpCatalogCard() {
   if (!data || data.available === false || !data.reconciliation) {
     return (
       <section
-        aria-label="MCP 目录同步状态"
+        aria-label={translateUi("MCP 目录同步状态")}
         className="mb-4 rounded-surface border border-edge bg-base-100 p-3"
       >
-        <h2 className="text-sm font-medium">MCP 目录同步状态</h2>
+        <h2 className="text-sm font-medium">{translateUi("MCP 目录同步状态")}</h2>
         <p className="mt-1 text-xs text-muted">
-          {data?.message ?? "MCP 目录状态面暂不可读（真实空态说明）。"}
+          {data?.message ?? translateUi("MCP 目录状态面暂不可读（真实空态说明）。")}
         </p>
       </section>
     );
@@ -104,19 +108,22 @@ function McpCatalogCard() {
   const recon = data.reconciliation;
   return (
     <section
-      aria-label="MCP 目录同步状态"
+      aria-label={translateUi("MCP 目录同步状态")}
       className="mb-4 rounded-surface border border-edge bg-base-100 p-3"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-medium">MCP 目录同步状态</h2>
+        <h2 className="text-sm font-medium">{translateUi("MCP 目录同步状态")}</h2>
         {recon.ok ? (
-          <span className="badge badge-sm badge-success">对账正常</span>
+          <span className="badge badge-sm badge-success">{translateUi("对账正常")}</span>
         ) : (
-          <span className="badge badge-sm badge-warning">对账漂移 {recon.drift.length} 条</span>
+          <span className="badge badge-sm badge-warning">
+            {translateUi("对账漂移")} {recon.drift.length} {translateUi("条")}
+          </span>
         )}
       </div>
       <p className="mt-1 text-xs text-muted">
-        目录条数 {data.catalog_count}（能力面 {data.capability_count} 条固定）· 最后对账{" "}
+        {translateUi("目录条数")} {data.catalog_count}（{translateUi("能力面")}{" "}
+        {data.capability_count} {translateUi("条固定")}）· {translateUi("最后对账")}{" "}
         {formatDateTime(recon.reconciled_at)}
       </p>
       <p className="mt-0.5 text-[11px] text-muted">{recon.scope}</p>
@@ -150,16 +157,16 @@ export function ToolCenterPage() {
   return (
     <div>
       <PageHeader
-        title="工具中心"
+        title={translateUi("工具中心")}
         actions={
           <div className="flex items-center gap-2">
             <select
-              aria-label="按生命周期过滤"
+              aria-label={translateUi("按生命周期过滤")}
               className="select select-sm rounded-control border border-edge bg-base-100"
               value={lifecycle}
               onChange={(event) => setLifecycle(event.target.value)}
             >
-              <option value="">全部生命周期</option>
+              <option value="">{translateUi("全部生命周期")}</option>
               {LIFECYCLE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -167,12 +174,12 @@ export function ToolCenterPage() {
               ))}
             </select>
             <select
-              aria-label="按治理状态过滤"
+              aria-label={translateUi("按治理状态过滤")}
               className="select select-sm rounded-control border border-edge bg-base-100"
               value={governance}
               onChange={(event) => setGovernance(event.target.value)}
             >
-              <option value="">全部治理状态</option>
+              <option value="">{translateUi("全部治理状态")}</option>
               {GOVERNANCE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -190,15 +197,18 @@ export function ToolCenterPage() {
       ) : items.length === 0 ? (
         <EmptyPanel
           text={
-            filtered ? "当前过滤条件下没有工具，调整生命周期或治理状态后重试。" : "暂无已登记工具。"
+            filtered
+              ? translateUi("当前过滤条件下没有工具，调整生命周期或治理状态后重试。")
+              : translateUi("暂无已登记工具。")
           }
         />
       ) : (
         <>
           <p className="mb-2 text-xs text-muted">
-            {filtered ? "过滤后：" : ""}共 {list.data?.total ?? 0} 个工具（显示 {items.length}
-            ，数据源：
-            {list.data?.source === "main" ? "主库注册面" : list.data?.source}）
+            {filtered ? `${translateUi("过滤后")}：` : ""}
+            {translateUi("共")} {list.data?.total ?? 0} {translateUi("个工具（显示")} {items.length}
+            ，{translateUi("数据源：")}
+            {list.data?.source === "main" ? translateUi("主库注册面") : list.data?.source}）
           </p>
           <ul className="space-y-2">
             {items.map((tool) => (

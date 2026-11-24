@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 import type { Edge, Node } from "@xyflow/react";
 import { useState } from "react";
 import { paletteEntry } from "../../lib/workflow-graph";
@@ -46,7 +47,9 @@ function JsonField({
         }}
       />
       {draft !== null && draft.trim() ? (
-        <span className="label-text-alt mt-1 text-error">JSON 解析失败：修正后再失焦提交</span>
+        <span className="label-text-alt mt-1 text-error">
+          {translateUi("JSON 解析失败：修正后再失焦提交")}
+        </span>
       ) : null}
     </label>
   );
@@ -67,7 +70,7 @@ function TextField({
     <label className="form-control">
       <span className="label-text pb-1 text-xs">
         {label}
-        {required ? <span className="ml-1 text-warning">必填</span> : null}
+        {required ? <span className="ml-1 text-warning">{translateUi("必填")}</span> : null}
       </span>
       <input
         type="text"
@@ -133,28 +136,30 @@ export function NodeInspector({
   const idError =
     idDraft !== null && idDraft !== selectedNode?.id
       ? !NODE_ID_PATTERN.test(idDraft)
-        ? "id 形状须为 ^[A-Za-z0-9][A-Za-z0-9_.-]*$（definition-v1）"
+        ? translateUi("id 形状须为 ^[A-Za-z0-9][A-Za-z0-9_.-]*$（definition-v1）")
         : allNodeIds.includes(idDraft)
-          ? "id 与现有节点重复"
+          ? translateUi("id 与现有节点重复")
           : null
       : null;
 
   return (
     <aside
       data-testid="workflows-inspector-section"
-      aria-label="节点参数与运行配置"
+      aria-label={translateUi("节点参数与运行配置")}
       className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto rounded-surface border border-edge bg-base-100 p-3"
     >
-      <h2 className="text-xs font-semibold text-base-content/70">节点参数 Schema 表单与运行配置</h2>
+      <h2 className="text-xs font-semibold text-base-content/70">
+        {translateUi("节点参数 Schema 表单与运行配置")}
+      </h2>
 
       {selectedNode && data ? (
         <div className="rounded-control border border-edge-soft p-2">
           <p className="text-[10px] text-muted">
-            选中节点 <span className="font-mono">{data.nodeType}</span>
+            {translateUi("选中节点")} <span className="font-mono">{data.nodeType}</span>
             {entry ? ` · ${entry.label}` : ""}
           </p>
           <label className="form-control mt-1.5">
-            <span className="label-text pb-1 text-xs">节点 id</span>
+            <span className="label-text pb-1 text-xs">{translateUi("节点 id")}</span>
             <input
               type="text"
               className="input input-bordered input-sm w-full font-mono text-xs"
@@ -185,7 +190,7 @@ export function NodeInspector({
               </div>
               <div className="mt-2">
                 <JsonField
-                  label="input（JSON，$/ 指 run state）"
+                  label={translateUi("input（JSON，$/ 指 run state）")}
                   value={params.input}
                   onChange={(value) => setParam("input", value)}
                 />
@@ -225,14 +230,14 @@ export function NodeInspector({
             <>
               <div className="mt-2">
                 <TextField
-                  label="prompt（审批说明）"
+                  label={translateUi("prompt（审批说明）")}
                   value={String(params.prompt ?? "")}
                   onChange={(value) => setParam("prompt", value)}
                 />
               </div>
               <div className="mt-2">
                 <TextField
-                  label="key（批准参数落键，缺省 approval）"
+                  label={translateUi("key（批准参数落键，缺省 approval）")}
                   value={String(params.key ?? "")}
                   onChange={(value) => setParam("key", value)}
                 />
@@ -242,14 +247,16 @@ export function NodeInspector({
           {data.nodeType === "condition" ? (
             <div className="mt-2">
               <JsonField
-                label="expression（JSON 条件载荷，P5-9a 模板为 JSON Schema 形状）"
+                label={translateUi("expression（JSON 条件载荷，P5-9a 模板为 JSON Schema 形状）")}
                 value={params.expression}
                 onChange={(value) => setParam("expression", value)}
               />
             </div>
           ) : null}
           {data.nodeType === "start" || data.nodeType === "end" || data.nodeType === "parallel" ? (
-            <p className="mt-2 text-[10px] text-muted">该类型无参数（DSL 词表口径）。</p>
+            <p className="mt-2 text-[10px] text-muted">
+              {translateUi("该类型无参数（DSL 词表口径）。")}
+            </p>
           ) : null}
 
           <button
@@ -258,12 +265,12 @@ export function NodeInspector({
             className="btn btn-error btn-outline btn-xs mt-3"
             onClick={() => onNodeRemove(selectedNode.id)}
           >
-            删除节点
+            {translateUi("删除节点")}
           </button>
         </div>
       ) : (
         <p className="text-[11px] text-muted">
-          点击或拖拽画布节点后在此编辑参数；未选中时保持空白（不伪造表单）。
+          {translateUi("点击或拖拽画布节点后在此编辑参数；未选中时保持空白（不伪造表单）。")}
         </p>
       )}
 
@@ -273,25 +280,25 @@ export function NodeInspector({
           data-testid="inspector-edge-form"
         >
           <p className="text-[10px] text-muted">
-            选中边{" "}
+            {translateUi("选中边")}{" "}
             <span className="font-mono">
               {String(selectedEdge.source)} → {String(selectedEdge.target)}
             </span>
           </p>
           <label className="form-control mt-1.5">
-            <span className="label-text pb-1 text-xs">词形 kind</span>
+            <span className="label-text pb-1 text-xs">{translateUi("词形 kind")}</span>
             <select
               className="select select-bordered select-sm text-xs"
               value={String((selectedEdge.data as { kind?: string } | undefined)?.kind ?? "seq")}
               onChange={(event) => onEdgePatch(selectedEdge.id, { kind: event.target.value })}
             >
-              <option value="seq">seq（顺序）</option>
-              <option value="branch">branch（分支）</option>
+              <option value="seq">{translateUi("seq（顺序）")}</option>
+              <option value="branch">{translateUi("branch（分支）")}</option>
             </select>
           </label>
           <div className="mt-2">
             <JsonField
-              label="when（branch 条件载荷，JSON）"
+              label={translateUi("when（branch 条件载荷，JSON）")}
               value={(selectedEdge.data as { when?: unknown } | undefined)?.when}
               onChange={(value) => onEdgePatch(selectedEdge.id, { when: value })}
             />
@@ -300,12 +307,12 @@ export function NodeInspector({
       ) : null}
 
       <div className="rounded-control border border-edge-soft p-2" data-testid="inspector-run-form">
-        <h3 className="text-xs font-semibold">运行配置（P8-3 run 受理面）</h3>
+        <h3 className="text-xs font-semibold">{translateUi("运行配置（P8-3 run 受理面）")}</h3>
         <div className="mt-2">
           <TextField label="workflow_id" value={runWorkflowId} onChange={onRunWorkflowIdChange} />
         </div>
         <label className="form-control mt-2">
-          <span className="label-text pb-1 text-xs">version（缺省最新版）</span>
+          <span className="label-text pb-1 text-xs">{translateUi("version（缺省最新版）")}</span>
           <input
             type="number"
             min={1}
@@ -335,7 +342,7 @@ export function NodeInspector({
           disabled={runBusy || !runWorkflowId.trim()}
           onClick={onRun}
         >
-          {runBusy ? "受理中…" : "运行"}
+          {runBusy ? translateUi("受理中…") : translateUi("运行")}
         </button>
         {runError ? (
           <p className="mt-1.5 break-all text-[10px] text-error" data-testid="run-error">

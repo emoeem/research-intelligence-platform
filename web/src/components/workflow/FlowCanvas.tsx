@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 import {
   Background,
   BackgroundVariant,
@@ -116,7 +117,7 @@ function CanvasInner({
   return (
     <div
       data-testid="workflows-canvas-section"
-      aria-label="工作流画布"
+      aria-label={translateUi("工作流画布")}
       className="relative h-full min-h-0 overflow-hidden rounded-surface border border-edge bg-base-200"
     >
       <ReactFlow
@@ -149,7 +150,7 @@ function CanvasInner({
       </ReactFlow>
       {selectedEdgeId && !readOnly ? (
         <span className="pointer-events-none absolute left-2 top-2 z-10 badge badge-ghost badge-sm">
-          已选中边（右栏可编辑词形与条件）
+          {translateUi("已选中边（右栏可编辑词形与条件")}
         </span>
       ) : null}
     </div>

@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 import { Link } from "react-router";
 import { formatDateTime } from "../../lib/format";
 import type { WorkflowRunDetail, WorkflowRunNodeRow, WorkflowRunRow } from "../../lib/api";
@@ -78,12 +79,14 @@ function NodeRow({
           disabled={busy}
           onClick={() => onRetry(node.node_id)}
         >
-          重试该节点
+          {translateUi("重试该节点")}
         </button>
       ) : null}
       {node.output !== null && node.output !== undefined ? (
         <details className="w-full">
-          <summary className="cursor-pointer text-[10px] text-muted">节点产物</summary>
+          <summary className="cursor-pointer text-[10px] text-muted">
+            {translateUi("节点产物")}
+          </summary>
           <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[10px] leading-4">
             {JSON.stringify(node.output, null, 2)}
           </pre>
@@ -135,21 +138,24 @@ export function RunPanel({
     <section
       data-testid="workflows-run-section"
       className="rounded-surface border border-edge bg-base-100 p-3"
-      aria-label="执行日志节点状态与产物"
+      aria-label={translateUi("执行日志节点状态与产物")}
     >
       <h2 className="text-xs font-semibold text-base-content/70">
-        执行日志、节点状态与产物
+        {translateUi("执行日志、节点状态与产物")}
         <span className="ml-2 text-[10px] font-normal text-muted">
-          WorkflowRun {runs.length} 条 · 节点行 017 · 控制行 018
+          WorkflowRun {runs.length} {translateUi("条")} · {translateUi("节点行")} 017 ·{" "}
+          {translateUi("控制行")} 018
         </span>
       </h2>
       <div className="mt-2 grid gap-3 lg:grid-cols-[minmax(260px,1fr)_2fr]">
         {/* run 列表 */}
         <div className="min-w-0">
           {runsLoading ? (
-            <p className="text-xs text-muted">加载中…</p>
+            <p className="text-xs text-muted">{translateUi("加载中…")}</p>
           ) : runs.length === 0 ? (
-            <p className="text-xs text-muted">暂无运行记录：在上方运行配置发起一次 run。</p>
+            <p className="text-xs text-muted">
+              {translateUi("暂无运行记录：在上方运行配置发起一次 run。")}
+            </p>
           ) : (
             <ul className="max-h-40 space-y-1 overflow-y-auto pr-1">
               {runs.map((item) => (
@@ -177,15 +183,20 @@ export function RunPanel({
         {/* 选中 run 详情 */}
         <div className="min-w-0 border-l border-edge-soft pl-3">
           {!selectedRunId ? (
-            <p className="text-xs text-muted">选择左侧一条 run 查看节点状态、控制行与产物。</p>
+            <p className="text-xs text-muted">
+              {translateUi("选择左侧一条 run 查看节点状态、控制行与产物。")}
+            </p>
           ) : detailLoading && !detail ? (
-            <p className="text-xs text-muted">加载详情…</p>
+            <p className="text-xs text-muted">{translateUi("加载详情…")}</p>
           ) : detail && detail.run ? (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <StateBadge state={detail.run.state} />
                 {detail.run.caller_id ? (
-                  <span className="badge badge-sm badge-ghost" data-testid="workflow-run-caller-badge">
+                  <span
+                    className="badge badge-sm badge-ghost"
+                    data-testid="workflow-run-caller-badge"
+                  >
                     {detail.run.caller_id}
                   </span>
                 ) : null}
@@ -215,7 +226,7 @@ export function RunPanel({
                     disabled={busyAction !== null || !active}
                     onClick={() => onAction("pause")}
                   >
-                    暂停
+                    {translateUi("暂停")}
                   </button>
                   <button
                     type="button"
@@ -224,7 +235,7 @@ export function RunPanel({
                     disabled={busyAction !== null || run?.state !== "paused"}
                     onClick={() => onAction("resume")}
                   >
-                    恢复
+                    {translateUi("恢复")}
                   </button>
                 </span>
               </div>
@@ -244,7 +255,7 @@ export function RunPanel({
                   data-testid="approval-request-view"
                 >
                   <p className="text-[10px] font-semibold text-base-content/70">
-                    人工介入请求（018）
+                    {translateUi("人工介入请求（018）")}
                   </p>
                   {typeof control.approval_request === "object" &&
                   control.approval_request !== null ? (
@@ -254,7 +265,7 @@ export function RunPanel({
                   ) : null}
                   <label className="form-control mt-1.5">
                     <span className="label-text pb-1 text-[10px]">
-                      批准参数 inject（按 human 节点 key 包键，缺省 approval）
+                      {translateUi("批准参数 inject（按 human 节点 key 包键，缺省 approval）")}
                     </span>
                     <textarea
                       className="textarea textarea-bordered font-mono text-[11px]"
@@ -290,12 +301,12 @@ export function RunPanel({
                   ))}
                 </ul>
               ) : (
-                <p className="text-[11px] text-muted">该 run 暂无节点状态行。</p>
+                <p className="text-[11px] text-muted">{translateUi("该 run 暂无节点状态行。")}</p>
               )}
               {run?.output !== null && run?.output !== undefined ? (
                 <details>
                   <summary className="cursor-pointer text-[10px] text-muted">
-                    run 产物 output
+                    {translateUi("run 产物 output")}
                   </summary>
                   <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[10px] leading-4">
                     {JSON.stringify(run?.output, null, 2)}
@@ -308,11 +319,11 @@ export function RunPanel({
                 </pre>
               ) : null}
               <button type="button" className="btn btn-ghost btn-xs" onClick={retry}>
-                刷新
+                {translateUi("刷新")}
               </button>
             </div>
           ) : (
-            <p className="text-xs text-muted">详情不可读（服务端守卫降级）。</p>
+            <p className="text-xs text-muted">{translateUi("详情不可读（服务端守卫降级）。")}</p>
           )}
         </div>
       </div>

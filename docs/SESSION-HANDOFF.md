@@ -159,3 +159,68 @@ docs/RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md（commit 68e0f51）为 P6-9/10/11 �
 ## 十五、跨项目交接入口（2026-11-12）
 
 新 ZCode 项目接手全部剩余工作的唯一入口：docs/HANDOVER-RIP2-CONTINUATION.md（含接手清单、剩余队列、贯穿纪律、运行时事实、完成后闭环、已知遗留）；活体工作流脚本快照在 docs/handoff/workflow-script-RIP2-2026-11-12.dwf.ts。原会话工作流 dwfrun-5f804a20 若仍在跑，新项目按该文档第二节三选一接手。
+
+
+
+## 十六、RIP Unified Workbench UI 重构交接（2026-11-24）
+
+本轮工作目录：`/media/emo/code/pensting/research-platform`。UI 计划总入口为 `docs/ui-redesign/README.md`。
+
+- M0 已收口：现场审计和复测结果见 `docs/ui-redesign/M0-CLOSEOUT.md`。当前工作树有大量既有未提交改动，禁止 reset/clean/stash/checkout/rebase/commit/push；42 张 Playwright 基线 PNG 曾由先前 snapshot-update 进程改写，71/71 自动化通过但人工视觉签收仍待 M7。
+- M1 设计规格冻结：Token、Typography、12 个独立工作区页面规格、四份 acceptance 文档与隔离 prototype 均已落盘。Figma 像素核对未完成，不得声称已更新 Figma。
+- M2 仍在实施：Topbar Runs/Runtime 快捷入口已补，Notifications 因无后端 API 保持禁用；Inspector 对象上下文、Inspector/Activity 可调整分栏、Activity 实时 Runs/Logs/Output 仍未完成。见 `docs/ui-redesign/M2-REPORT.md`。
+- 当前最近一次验证：20 个测试文件 / 135 tests 全通过；typecheck、format、build 通过；Playwright 71/71 通过；axe 覆盖项无 serious/critical；`git diff --check` 通过。
+- 下一步严格留在 M2：完成 Inspector 的真实对象上下文与相关实体、统一可调整面板（鼠标/键盘/持久化）、Activity 接入现有真实运行数据并补齐视觉/交互测试。M2 验收通过前不进入 M3。
+
+
+### M2 continued progress (2026-11-24)
+
+- Activity Tool Runs is now connected to `/api/runs?limit=12` (5s refresh); Activity Status is connected to `/api/runtime?limit=20` (10s refresh). Both use real backend responses, explicit error/empty states and route links.
+- Inspector enriches selected `/runs/:run_id` with real Run status/tool/duration/error/task fields. Other object types still need context resolution.
+- Added zh-CN/en-US/ja-JP translations and a shell integration test for live Run/Runtime Activity data.
+- Latest gates: typecheck + format pass; 20 test files / 136 tests pass; production build pass (2425 modules); Playwright visual gate 71/71 pass. A transient WSW test failure in one parallel run passed on isolated rerun and full-suite rerun.
+- Still M2 blockers: Logs/Output lack separate live backend streams; Inspector for non-Run objects incomplete; Inspector/Activity resizable keyboard-accessible persisted splitters not done; Notifications stay disabled; manual 5 viewport × 8 state review and human baseline sign-off remain pending. See `docs/ui-redesign/M2-REPORT.md`.
+
+
+### M2 最终收口（2026-11-24）
+
+- M2 前端实现完成。Inspector 已支持 Run、Tool、Plugin、Task、Knowledge 真实对象上下文；Activity 的 Tool Runs、Run 失败/生命周期事件与错误载荷、Run Artifact、Runtime 节点状态均接现有 API。
+- Inspector/Activity 使用 react-resizable-panels，支持鼠标拖动、键盘方向键、尺寸约束与 localStorage 持久化；1280px 以下 Inspector 采用抽屉，不挤压主工作区。
+- zh-CN/en-US/ja-JP 翻译齐全。新增 M2 Playwright 专项：5 视口（360/768/1024/1280/1600）+ 8 个 Activity 数据状态。
+- 最新全量门禁：20 files / 138 unit tests；typecheck、Prettier、build 通过；Playwright visual/axe 73/73 通过。M2 专项 5 视口/8 状态通过。
+- 后端边界：当前无 Notifications 查询/确认 API，按钮保持禁用；当前无 stdout/stderr 流式 API，Logs 显示真实 Run 生命周期/失败事件与 error_json，不伪装成终端流；Output 只展示 API 返回 Artifact。
+- 详细记录：docs/ui-redesign/M2-REPORT.md。下一阶段按 MASTER-PLAN 的 M3 进入，不回头重做 M2；M7 人工截图签收与 Figma 像素复核仍保留。
+
+
+## UI Redesign M3 最终收口（2026-11-24）
+
+- M3 CLOSED。详细报告：`docs/ui-redesign/M3-REPORT.md`；执行记录：`docs/ui-redesign/M3-EXECUTION-PLAN.md`。
+- 最终门禁：Vitest 21 files / 152 tests；typecheck PASS；Prettier PASS；production build PASS（2439 modules）；Playwright visual/axe 78/78 PASS；git diff --check PASS。
+- 10,000 行 Trace VirtualTable 浏览器验证通过，DOM 窗口少于 40 行。M3 专项 5 个 Playwright 场景全部通过（列宽鼠标/键盘、五视口、三语×双主题 axe、分栏折叠/响应式）。
+- 真实数据边界：Research Tasks 当前只对已加载数据做本地过滤/排序；WebSocket Frames 使用 API cursor；History Hex 优先原始 body bytes，缺失时只显示 UTF-8 文本投影；Run Logs 只展示后端真实生命周期/错误事件，不冒充 stdout/stderr 流。
+- 无 M3 阶段新增/升级生产依赖；工作树中 package.json/package-lock 的其他既有差异保持不动。
+- M7 人工截图签收与 Figma 像素复核仍未执行，按总计划后置。
+- 下一阶段允许进入 M4，仍需按 MASTER-PLAN 顺序执行；不要直接跳 M5。
+
+
+## M4–M8 自主推进最终记录（2026-11-24）
+
+- M4 UI CLOSED：Dashboard/Research/Knowledge/Tools/Plugins 使用既有 API；Projects 不再把 `/api/tasks` 冒充 Project，明确 `/api/projects` 缺失并链接 Research Tasks；Research Assets 诚实显示后端未提供 `/api/research/assets`。详细见 `docs/ui-redesign/M4-REPORT.md`。
+- M5 CLOSED：History、Repeater、Proxy/CA、Fuzzer、WebSocket、Decoder、Comparer、Passive Audit，保留 Rust FuzzSpec、Scope、Body 按需加载、脱敏和 TrustConfirm。
+- M6 CLOSED：Agent、Workflow、Runs、Trace、Runtime 与 Activity Dock 使用现有执行/API 契约。
+- M7 OPEN：全量 Playwright visual/axe 78/78 通过，Vitest 21 files / 149 tests，typecheck、Prettier、production build、git diff --check 通过；但全路由三语言/全部状态/五视口、42 张既有变更基线人工审阅、Figma 像素核对和性能人工记录尚未完成。不能宣称 M7 最终视觉签收。
+- M8 BLOCKED：未切换 7800 默认入口、未停用旧静态 UI。当前 rp_server 未提供 SPA fallback，缺真实 Bearer/Origin/CSRF parity 与回滚演练；按 MASTER-PLAN 需用户验收后才可切换。
+- Projects 视觉基线：经实际图像检查后仅更新 `projects-rip-dark-mobile.png` 和 `projects-rip-light-mobile.png`；Projects 桌面基线未改。全量 78 项复验通过。
+- 未执行 commit/push/reset/clean/stash/checkout/rebase；保留原有工作树更改。
+
+
+## RIP M4–M8 follow-up completion (2026-11-24)
+
+User decisions: Projects=independent; Research Assets=independent; M7=reference; M8=staged; Figma=existing. Four desktop dark-theme Figma screenshots were supplied and registered as the visual reference.
+
+- M4 CLOSED: migration 031, Rust Store/CLI, Projects and Research Assets REST APIs, workspace-scoped details/updates, Project↔Task/Asset relations, Asset Endpoint/append-only Observation/evidence-referenced Technology Profile, frontend management/details and zh-CN/en-US/ja-JP. The main platform.db remains user_version 30.
+- M5/M6 remain CLOSED as documented.
+- M7: Playwright 85/85, including 12 routes × 3 locales × 2 themes × 5 viewport widths responsive smoke (360/360); Vitest 22 files / 155 tests, typecheck/Prettier/build pass. Local production-build smoke covered 12 routes at desktop/mobile (24 navigations), 24/24 success, no API/console errors, warm-cache load median 24 ms / p95 28 ms. M7 remains OPEN for Figma pixel comparison, existing baseline human review and manual interaction sign-off.
+- M8: staged SPA is live at http://127.0.0.1:7801/ with an isolated DB clone and CSP/Origin/Bearer/SPA fallback/API 404 tests. The old 7800 service was not listening; default root remains unchanged and M8 is STAGED — NOT DEFAULT.
+- Gates: verification-engine 56 tests; selftest_projects_assets.sh PASS; selftest_phase9_rest.sh 33 PASS / 0 FAIL; selftest_spa_entry.py 5/5; web 155 tests; Playwright 85/85, including the 360-combination locale/theme/five-viewport route sweep.
+- No Git commit/push/reset/clean/stash/checkout/rebase was performed. Existing worktree changes were preserved.

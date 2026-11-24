@@ -10,6 +10,7 @@
  *  属验证结果域（P5-7 交付），与研究任务状态（本表）是两个维度，不混用。 */
 
 import type { DataColumn } from "../../components/data";
+import { translateUi } from "../../i18n";
 
 /** /api/tasks 行（research_task ETL 镜像，只读）。 */
 export interface ResearchTaskRow {
@@ -124,46 +125,48 @@ export interface StatusHistoryEntry {
 
 /** 任务表格列定义（Tasks 列表与 Overview 最近任务共用；行点击由 DataTable
  *  的 onRowActivate 承载，列配置不含导航语义）。 */
-export const TASK_COLUMNS: DataColumn<ResearchTaskRow>[] = [
-  {
-    id: "state",
-    label: "状态",
-    width: "w-44",
-    render: (row) => (
-      <span className={`badge badge-sm ${TASK_STATE_TONES[row.state ?? ""] ?? "badge-ghost"}`}>
-        {row.state ?? "-"}
-      </span>
-    ),
-  },
-  {
-    id: "task_type",
-    label: "类型",
-    width: "w-20",
-    render: (row) => <span className="badge badge-sm badge-outline">{row.task_type ?? "-"}</span>,
-  },
-  {
-    id: "title",
-    label: "任务",
-    render: (row) => (
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{row.title ?? "-"}</p>
-        {row.target ? <p className="truncate text-[11px] text-muted">{row.target}</p> : null}
-      </div>
-    ),
-  },
-  {
-    id: "updated_at",
-    label: "更新时间",
-    width: "w-40",
-    render: (row) => <span className="text-xs text-muted">{row.updated_at ?? "-"}</span>,
-  },
-  {
-    id: "task_id",
-    label: "任务 ID",
-    width: "w-56",
-    render: (row) => <span className="font-mono text-[11px] text-muted">{row.task_id}</span>,
-  },
-];
+export function getTaskColumns(): DataColumn<ResearchTaskRow>[] {
+  return [
+    {
+      id: "state",
+      label: translateUi("状态"),
+      width: "w-44",
+      render: (row) => (
+        <span className={`badge badge-sm ${TASK_STATE_TONES[row.state ?? ""] ?? "badge-ghost"}`}>
+          {row.state ?? "-"}
+        </span>
+      ),
+    },
+    {
+      id: "task_type",
+      label: translateUi("类型"),
+      width: "w-20",
+      render: (row) => <span className="badge badge-sm badge-outline">{row.task_type ?? "-"}</span>,
+    },
+    {
+      id: "title",
+      label: translateUi("任务"),
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{row.title ?? "-"}</p>
+          {row.target ? <p className="truncate text-[11px] text-muted">{row.target}</p> : null}
+        </div>
+      ),
+    },
+    {
+      id: "updated_at",
+      label: translateUi("更新时间"),
+      width: "w-40",
+      render: (row) => <span className="text-xs text-muted">{row.updated_at ?? "-"}</span>,
+    },
+    {
+      id: "task_id",
+      label: translateUi("任务 ID"),
+      width: "w-56",
+      render: (row) => <span className="font-mono text-[11px] text-muted">{row.task_id}</span>,
+    },
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // 验证计划面（P5-6）：/api/research/plans（rp-verify plan-list 子进程读面）
@@ -277,15 +280,17 @@ export const COVERAGE_DIMENSIONS = [
   "data_flows",
 ] as const;
 
-export const COVERAGE_DIMENSION_LABELS: Record<string, string> = {
-  assets: "资产",
-  api_endpoints: "API 与端点",
-  identity_permissions: "身份与权限",
-  input_points: "输入点",
-  business_flows: "业务流",
-  file_processing: "文件处理",
-  data_flows: "数据流",
-};
+export function getCoverageDimensionLabels(): Record<string, string> {
+  return {
+    assets: translateUi("资产"),
+    api_endpoints: translateUi("API 与端点"),
+    identity_permissions: translateUi("身份与权限"),
+    input_points: translateUi("输入点"),
+    business_flows: translateUi("业务流"),
+    file_processing: translateUi("文件处理"),
+    data_flows: translateUi("数据流"),
+  };
+}
 
 /** coverage-show 单维覆盖格（P5-8 coverage.rs CoverageCell 直通）。 */
 export interface CoverageCell {

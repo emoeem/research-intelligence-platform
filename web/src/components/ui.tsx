@@ -7,6 +7,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, Inbox, RotateCw, X } from "lucide-react";
 import { ApiError } from "../lib/api";
+import { translateUi } from "../i18n";
 import { trapFocusWithin } from "./focus-trap";
 
 export interface StatusBadgeProps {
@@ -41,17 +42,17 @@ export function SkeletonPanel({ lines = 4 }: { lines?: number }) {
 export function ErrorPanel({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
   const title =
     error.status === 401
-      ? "登录状态已过期"
+      ? translateUi("登录状态已过期")
       : error.status === 403
-        ? "403 无权访问"
+        ? translateUi("403 无权访问")
         : error.status === 404
-          ? "数据不存在"
-          : "加载失败";
+          ? translateUi("数据不存在")
+          : translateUi("加载失败");
   const hint =
     error.status === 401
-      ? "访问令牌缺失或已失效，请重新配置访问凭据。"
+      ? translateUi("访问令牌缺失或已失效，请重新配置访问凭据。")
       : error.message && error.message !== title
-        ? error.message
+        ? translateUi(error.message)
         : "";
   return (
     <section className="rounded-surface border border-edge bg-base-100">
@@ -65,7 +66,7 @@ export function ErrorPanel({ error, onRetry }: { error: ApiError; onRetry: () =>
         </div>
         <button type="button" className="btn btn-sm" onClick={onRetry}>
           <RotateCw className="h-4 w-4" aria-hidden="true" />
-          重试
+          {translateUi("重试")}
         </button>
       </div>
     </section>
@@ -165,7 +166,7 @@ export function Modal({
       <button
         type="button"
         className="absolute inset-0 cursor-default"
-        aria-label="关闭弹窗"
+        aria-label={translateUi("关闭弹窗")}
         onClick={onClose}
       />
       <div
@@ -187,7 +188,7 @@ export function Modal({
             type="button"
             className="btn btn-circle btn-ghost btn-sm"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={translateUi("关闭")}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>

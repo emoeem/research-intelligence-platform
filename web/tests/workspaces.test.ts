@@ -51,9 +51,27 @@ describe("workspaces 数据模型（P7-1 十一工作区 + WSW-3 websec 第十�
     expect(WORKSPACES_BY_ORDER).not.toBe(WORKSPACES);
   });
 
+  it("四组导航与参考工作台的信息架构一致", () => {
+    const groups = Object.fromEntries(
+      ["workspace", "capabilities", "operations", "system"].map((group) => [
+        group,
+        WORKSPACES_BY_ORDER.filter((workspace) => workspace.group === group).map(
+          (workspace) => workspace.id,
+        ),
+      ]),
+    );
+    expect(groups).toEqual({
+      workspace: ["dashboard", "projects", "research", "knowledge"],
+      capabilities: ["tools", "plugins", "agents", "workflows"],
+      operations: ["runs", "runtime", "websec"],
+      system: ["settings"],
+    });
+  });
+
   it("每个工作区的 entry 落在自身 tabs 内（图标轨点击后标签区仍然在场）", () => {
     for (const workspace of WORKSPACES) {
       expect(workspace.tabs.some((tab) => tab.to === workspace.entry)).toBe(true);
+      expect(["workspace", "capabilities", "operations", "system"]).toContain(workspace.group);
     }
   });
 
@@ -96,17 +114,17 @@ describe("workspaces 数据模型（P7-1 十一工作区 + WSW-3 websec 第十�
     }
   });
 
-  it("路由与工作区数据一一对应且无重复（十一工作区 + 总览 + RIP3 文档中心 + Research 子页 tab）", () => {
+  it("路由与工作区数据一一对应且无重复（十二工作区 + 总览 + RIP3 文档中心 + Research 子页 tab）", () => {
     const routes = ["/", ...WORKSPACES.flatMap((workspace) => workspace.tabs.map((tab) => tab.to))];
-    // Dashboard 的 entry 即「/」：列表含一次重复，去重后为 22 条路由
-    //（11 工作区主路由 + RIP3 P1-2 文档中心 tab 挂 Knowledge 第二 tab
+    // Dashboard 的 entry 即「/」：列表含一次重复，去重后为 27 条工作区路由
+    //（12 工作区主路由 + RIP3 P1-2 文档中心 tab 挂 Knowledge 第二 tab
     // + P5-1 Research 三子页 tab：tasks/assets/knowledge + P5-6 验证计划
     // 子页 plans + P5-9b 证据档 evidence 与覆盖矩阵 coverage 子页
     // + WSW-2 批次 Settings 两个子页 tab：settings/wsw-proxy 与
     //   settings/wsw-cert（W2-D8 代理状态页 + 证书状态页）
-    // + WSW-3 批次 websec 工作区两 tab：websec/history 与
-    //   websec/repeater（W3-D8 路由钉值 20→22 设计内扩展，如实记录））。
-    expect(new Set(routes).size).toBe(22);
+    // + WSW-3 起步两 tab（History/Repeater），后续 M5 扩展 Passive Audit、
+    //   WebSocket、Fuzzer、Decoder、Comparer 五个工作台视图。
+    expect(new Set(routes).size).toBe(27);
     for (const route of [
       "/",
       "/projects",
@@ -130,6 +148,11 @@ describe("workspaces 数据模型（P7-1 十一工作区 + WSW-3 websec 第十�
       "/settings/wsw-cert",
       "/websec/history",
       "/websec/repeater",
+      "/websec/passive",
+      "/websec/websocket",
+      "/websec/fuzzer",
+      "/websec/decoder",
+      "/websec/comparer",
     ]) {
       expect(routes).toContain(route);
     }
@@ -148,7 +171,7 @@ describe("workspaces 数据模型（P7-1 十一工作区 + WSW-3 websec 第十�
     for (const workspace of WORKSPACES) {
       // 工作区数据只描述导航（id/order/label/icon/entry/hint/tabs），不承载领域字段。
       const keys = Object.keys(workspace).sort();
-      expect(keys).toEqual(["entry", "hint", "icon", "id", "label", "order", "tabs"]);
+      expect(keys).toEqual(["entry", "group", "hint", "icon", "id", "label", "order", "tabs"]);
       for (const tab of workspace.tabs) {
         expect(Object.keys(tab).sort()).toEqual(["hint", "icon", "label", "order", "to"]);
       }

@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 /** 证据档页（P5-9b，Phase 5 §4.7 / §7 P5-7 完成标准）：/api/research/evidence
  *  真实列表（rp-verify evidence-list 子进程读面，计划域）+ 单条详情
  *  （evidence-get 子进程）+ Raw/Pretty 双视图 + SHA256/类型/采集时间 +
@@ -28,9 +29,7 @@ const PAYLOAD_PREVIEW_LIMIT = 8000;
 function renderPayload(row: ResearchEvidenceRow, pretty: boolean): string {
   if (typeof row.payload === "string") return row.payload;
   try {
-    return pretty
-      ? JSON.stringify(row.payload, null, 2)
-      : JSON.stringify(row.payload);
+    return pretty ? JSON.stringify(row.payload, null, 2) : JSON.stringify(row.payload);
   } catch {
     return String(row.payload ?? "");
   }
@@ -53,16 +52,15 @@ export function ResearchEvidencePage() {
   );
 
   const payloadText = selected ? renderPayload(selected, pretty) : "";
-  const payloadTruncated =
-    selected !== null && payloadText.length > PAYLOAD_PREVIEW_LIMIT;
+  const payloadTruncated = selected !== null && payloadText.length > PAYLOAD_PREVIEW_LIMIT;
   const payloadShown = payloadTruncated
-    ? `${payloadText.slice(0, PAYLOAD_PREVIEW_LIMIT)}\n…（截断：完整原文经 Raw 下载或 evidence-get 直读，本页不整段渲染）`
+    ? `${payloadText.slice(0, PAYLOAD_PREVIEW_LIMIT)}\n…${translateUi("截断：完整原文经 Raw 下载或 evidence-get 直读，本页不整段渲染")}`
     : payloadText;
 
   if (plans.loading) {
     return (
       <div>
-        <PageHeader title="证据档" />
+        <PageHeader title={translateUi("证据档")} />
         <SkeletonPanel lines={6} />
       </div>
     );
@@ -70,7 +68,7 @@ export function ResearchEvidencePage() {
   if (plans.error !== null) {
     return (
       <div>
-        <PageHeader title="证据档" />
+        <PageHeader title={translateUi("证据档")} />
         <ErrorPanel error={plans.error} onRetry={plans.retry} />
       </div>
     );
@@ -83,10 +81,10 @@ export function ResearchEvidencePage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={`证据档${enabled ? `（${evidence.length}）` : ""}`} />
+      <PageHeader title={`${translateUi("证据档")}${enabled ? `（${evidence.length}）` : ""}`} />
       <div className="flex flex-wrap items-center gap-3">
         <label className="form-control">
-          <span className="label-text pb-1 text-xs">按计划过滤</span>
+          <span className="label-text pb-1 text-xs">{translateUi("按计划过滤")}</span>
           <select
             data-testid="evidence-plan-select"
             className="select select-bordered select-sm w-72 max-w-full text-xs"
@@ -96,7 +94,7 @@ export function ResearchEvidencePage() {
               setSelectedId(null);
             }}
           >
-            <option value="">选择计划（evidence-list 计划域）</option>
+            <option value="">{translateUi("选择计划（evidence-list 计划域）")}</option>
             {planOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -105,18 +103,28 @@ export function ResearchEvidencePage() {
           </select>
         </label>
         <p className="text-[11px] text-muted">
-          原始快照（append-only，021 语义：知识更新不覆盖原始证据）；脱敏状态以采集侧为准，本页不二次改写。
+          {translateUi(
+            "原始快照（append-only，021 语义：知识更新不覆盖原始证据）；脱敏状态以采集侧为准，本页不二次改写。",
+          )}
         </p>
       </div>
 
       {!enabled ? (
-        <EmptyPanel text="选择一个验证计划后加载其证据档；证据在 execute-plan 逐项执行时采集（P5-7 面）。" />
+        <EmptyPanel
+          text={translateUi(
+            "选择一个验证计划后加载其证据档；证据在 execute-plan 逐项执行时采集（P5-7 面）。",
+          )}
+        />
       ) : list.loading ? (
         <SkeletonPanel lines={6} />
       ) : list.error !== null ? (
         <ErrorPanel error={list.error} onRetry={list.retry} />
       ) : evidence.length === 0 ? (
-        <EmptyPanel text="该计划暂无证据档；execute-plan 派发执行后逐项落档（evidence_collected 事件联动）。" />
+        <EmptyPanel
+          text={translateUi(
+            "该计划暂无证据档；execute-plan 派发执行后逐项落档（evidence_collected 事件联动）。",
+          )}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="space-y-2" data-testid="evidence-list-section">
@@ -152,7 +160,7 @@ export function ResearchEvidencePage() {
             data-testid="evidence-detail-section"
           >
             {selected === null ? (
-              <EmptyPanel text="左侧选择一条证据查看详情。" />
+              <EmptyPanel text={translateUi("左侧选择一条证据查看详情。")} />
             ) : (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -166,18 +174,15 @@ export function ResearchEvidencePage() {
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
                   <dt className="text-muted">SHA256</dt>
                   <dd className="break-all font-mono">{selected.content_hash}</dd>
-                  <dt className="text-muted">采集时间</dt>
+                  <dt className="text-muted">{translateUi("采集时间")}</dt>
                   <dd>{formatDateTime(selected.created_at)}</dd>
-                  <dt className="text-muted">来源计划</dt>
+                  <dt className="text-muted">{translateUi("来源计划")}</dt>
                   <dd>
-                    <Link
-                      className="link link-primary font-mono text-[11px]"
-                      to="/research/plans"
-                    >
+                    <Link className="link link-primary font-mono text-[11px]" to="/research/plans">
                       {selected.plan_id}
                     </Link>
                   </dd>
-                  <dt className="text-muted">来源计划项</dt>
+                  <dt className="text-muted">{translateUi("来源计划项")}</dt>
                   <dd className="font-mono">{selected.item_id}</dd>
                   <dt className="text-muted">tool_run</dt>
                   <dd>
@@ -189,20 +194,17 @@ export function ResearchEvidencePage() {
                         {selected.tool_run_id}
                       </Link>
                     ) : (
-                      <span className="text-muted">无（采集面未挂 run）</span>
+                      <span className="text-muted">{translateUi("无（采集面未挂 run）")}</span>
                     )}
                   </dd>
                   <dt className="text-muted">trace</dt>
                   <dd>
                     {selected.trace_id ? (
-                      <Link
-                        className="link link-primary font-mono text-[11px]"
-                        to="/traces"
-                      >
+                      <Link className="link link-primary font-mono text-[11px]" to="/traces">
                         {selected.trace_id}
                       </Link>
                     ) : (
-                      <span className="text-muted">无（015 前落库行为 NULL）</span>
+                      <span className="text-muted">{translateUi("无（015 前落库行为 NULL）")}</span>
                     )}
                   </dd>
                 </dl>
@@ -229,7 +231,9 @@ export function ResearchEvidencePage() {
                   {payloadShown}
                 </pre>
                 <p className="text-[10px] text-muted">
-                  原始 payload 快照直出（Raw = 紧凑序列化原文；Pretty = 格式化视图）；本页不做二次脱敏。
+                  {translateUi(
+                    "原始 payload 快照直出（Raw = 紧凑序列化原文；Pretty = 格式化视图）；本页不做二次脱敏。",
+                  )}
                 </p>
               </div>
             )}

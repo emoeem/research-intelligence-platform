@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useApi } from "../lib/hooks";
@@ -156,9 +157,9 @@ function AgentDetailPanel({
   return (
     <div className="mt-3 space-y-3">
       <div className="rounded-control border border-edge-soft p-3">
-        <h3 className="text-xs font-semibold">能力绑定对账（tool 注册面）</h3>
+        <h3 className="text-xs font-semibold">{translateUi("能力绑定对账（tool 注册面）")}</h3>
         {detail.tool_bindings.length === 0 ? (
-          <p className="mt-1 text-xs text-muted">本 agent 无能力绑定引用。</p>
+          <p className="mt-1 text-xs text-muted">{translateUi("本 agent 无能力绑定引用。")}</p>
         ) : (
           <ul className="mt-2 space-y-1">
             {detail.tool_bindings.map((binding) => (
@@ -170,9 +171,11 @@ function AgentDetailPanel({
                     已注册{binding.lifecycle ? ` · ${binding.lifecycle}` : ""}
                   </span>
                 ) : binding.registered === false ? (
-                  <span className="badge badge-sm badge-warning">未注册（tool 表无此 id）</span>
+                  <span className="badge badge-sm badge-warning">
+                    {translateUi("未注册（tool 表无此 id）")}
+                  </span>
                 ) : (
-                  <span className="badge badge-sm badge-ghost">注册面不可读</span>
+                  <span className="badge badge-sm badge-ghost">{translateUi("注册面不可读")}</span>
                 )}
               </li>
             ))}
@@ -181,9 +184,9 @@ function AgentDetailPanel({
       </div>
       <div className="rounded-control border border-edge-soft p-3">
         <h3 className="text-xs font-semibold">
-          运行摘要
+          {translateUi("运行摘要")}
           <span className="ml-2 font-normal text-muted">
-            共 {detail.runs_total} 条
+            {translateUi("共")} {detail.runs_total} {translateUi("条")}
             {detail.runs_by_state && Object.keys(detail.runs_by_state).length > 0
               ? ` · ${Object.entries(detail.runs_by_state)
                   .map(([k, v]) => `${k} ${v}`)
@@ -192,7 +195,7 @@ function AgentDetailPanel({
           </span>
         </h3>
         {detail.runs.length === 0 ? (
-          <p className="mt-1 text-xs text-muted">该 agent 暂无运行记录。</p>
+          <p className="mt-1 text-xs text-muted">{translateUi("该 agent 暂无运行记录。")}</p>
         ) : (
           <ul className="mt-2 space-y-1">
             {detail.runs.map((run) => (
@@ -228,7 +231,9 @@ function StepRow({ step }: { step: AgentRunStepRow }) {
   return (
     <li data-testid="agent-step-row" className="rounded-control border border-edge-soft p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="badge badge-sm badge-ghost">步骤 {step.seq}</span>
+        <span className="badge badge-sm badge-ghost">
+          {translateUi("步骤")} {step.seq}
+        </span>
         <StepStatusBadge status={step.status} />
         <span className="break-all text-xs font-medium">
           {step.tool_id}
@@ -260,7 +265,9 @@ function StepRow({ step }: { step: AgentRunStepRow }) {
       ) : null}
       {step.input !== null && step.input !== undefined ? (
         <details className="mt-1.5">
-          <summary className="cursor-pointer text-[11px] text-muted">计划入参快照</summary>
+          <summary className="cursor-pointer text-[11px] text-muted">
+            {translateUi("计划入参快照")}
+          </summary>
           <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-control bg-base-200 p-2 text-[11px] leading-4">
             {JSON.stringify(step.input, null, 2)}
           </pre>
@@ -321,7 +328,7 @@ export function AgentsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Agent Studio"
-        actions={<span className="badge badge-ghost">工作区 7</span>}
+        actions={<span className="badge badge-ghost">{translateUi("工作区 7")}</span>}
       />
 
       {/* 第一区：Agent 定义与能力绑定 */}
@@ -330,9 +337,10 @@ export function AgentsPage() {
         className="rounded-surface border border-edge bg-base-100 p-4"
       >
         <h2 className="text-sm font-semibold">
-          Agent 定义与能力绑定
+          {translateUi("Agent 定义与能力绑定")}
           <span className="ml-2 text-xs font-normal text-muted">
-            共 {defs.data?.total ?? 0} 条定义（{defs.data?.agents ?? 0} 个 agent）
+            {translateUi("共")} {defs.data?.total ?? 0} {translateUi("条定义（")}{" "}
+            {defs.data?.agents ?? 0} {translateUi("个 agent）")}
           </span>
         </h2>
         {defs.loading ? (
@@ -342,8 +350,15 @@ export function AgentsPage() {
         ) : defs.data?.available === false || (defs.data?.items ?? []).length === 0 ? (
           <EmptyPanel
             text={
-              defs.data?.message ??
+              defs.data?.message ===
               "暂无 Agent 定义：rp-agent def-add 登记面为空（006 迁移表未产生行）。"
+                ? translateUi(
+                    "暂无 Agent 定义：rp-agent def-add 登记面为空（006 迁移表未产生行）。",
+                  )
+                : (defs.data?.message ??
+                  translateUi(
+                    "暂无 Agent 定义：rp-agent def-add 登记面为空（006 迁移表未产生行）。",
+                  ))
             }
           />
         ) : (
@@ -374,7 +389,8 @@ export function AgentsPage() {
             {selectedAgent ? (
               <div className="mt-3 border-t border-edge-soft pt-3">
                 <p className="text-xs text-muted">
-                  当前 agent：<span className="break-all font-medium">{selectedAgent}</span>
+                  {translateUi("当前 agent：")}
+                  <span className="break-all font-medium">{selectedAgent}</span>
                   <button
                     type="button"
                     className="ml-2 underline underline-offset-2"
@@ -403,8 +419,10 @@ export function AgentsPage() {
         className="rounded-surface border border-edge bg-base-100 p-4"
       >
         <h2 className="text-sm font-semibold">
-          运行记录与步骤轨迹回放
-          <span className="ml-2 text-xs font-normal text-muted">共 {runs.data?.total ?? 0} 条</span>
+          {translateUi("运行记录与步骤轨迹回放")}
+          <span className="ml-2 text-xs font-normal text-muted">
+            {translateUi("共")} {runs.data?.total ?? 0} {translateUi("条")}
+          </span>
         </h2>
         {runs.loading ? (
           <SkeletonPanel lines={4} />
@@ -412,7 +430,12 @@ export function AgentsPage() {
           <ErrorPanel error={runs.error} onRetry={runs.retry} />
         ) : runs.data?.available === false || runItems.length === 0 ? (
           <EmptyPanel
-            text={runs.data?.message ?? "暂无 AgentRun：rp-agent run 端到端链未产生运行记录。"}
+            text={
+              runs.data?.message === "暂无 AgentRun：rp-agent run 端到端链未产生运行记录。"
+                ? translateUi("暂无 AgentRun：rp-agent run 端到端链未产生运行记录。")
+                : (runs.data?.message ??
+                  translateUi("暂无 AgentRun：rp-agent run 端到端链未产生运行记录。"))
+            }
           />
         ) : (
           <ul className="mt-2 space-y-2">
@@ -431,16 +454,21 @@ export function AgentsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <StateBadge state={run.state} />
                     {run.caller_id ? (
-                      <span className="badge badge-sm badge-ghost" data-testid="agent-run-caller-badge">
+                      <span
+                        className="badge badge-sm badge-ghost"
+                        data-testid="agent-run-caller-badge"
+                      >
                         {run.caller_id}
                       </span>
                     ) : null}
                     {run.steps_count !== undefined ? (
-                      <span className="text-[11px] text-muted">{run.steps_count} 步</span>
+                      <span className="text-[11px] text-muted">
+                        {run.steps_count} {translateUi("步")}
+                      </span>
                     ) : null}
                     {run.created_at ? (
                       <span className="text-[11px] text-muted">
-                        发起 {formatDateTime(run.created_at)}
+                        {translateUi("发起")} {formatDateTime(run.created_at)}
                       </span>
                     ) : null}
                   </div>
@@ -463,7 +491,8 @@ export function AgentsPage() {
         {selectedRun ? (
           <div className="mt-3 border-t border-edge-soft pt-3">
             <p className="text-xs text-muted">
-              当前 run：<span className="break-all font-medium">{selectedRun}</span>
+              {translateUi("当前 run：")}
+              <span className="break-all font-medium">{selectedRun}</span>
               <button
                 type="button"
                 className="ml-2 underline underline-offset-2"
@@ -479,7 +508,9 @@ export function AgentsPage() {
             ) : detail ? (
               <div className="mt-2 space-y-3">
                 <div className="rounded-control border border-edge-soft p-3">
-                  <h3 className="text-xs font-semibold">概要与关联（P7-5 六 ID 面）</h3>
+                  <h3 className="text-xs font-semibold">
+                    {translateUi("概要与关联（P7-5 六 ID 面）")}
+                  </h3>
                   <div className="mt-2 space-y-1">
                     <div className="flex gap-2 text-xs">
                       <span className="w-24 shrink-0 text-muted">agent</span>
@@ -511,7 +542,7 @@ export function AgentsPage() {
                       </div>
                     ) : null}
                     <div className="flex gap-2 text-xs">
-                      <span className="w-24 shrink-0 text-muted">时间</span>
+                      <span className="w-24 shrink-0 text-muted">{translateUi("时间")}</span>
                       <span className="min-w-0 flex-1 break-all">
                         {detail.run.created_at
                           ? `发起 ${formatDateTime(detail.run.created_at)}`
@@ -528,12 +559,14 @@ export function AgentsPage() {
                 </div>
                 <div className="rounded-control border border-edge-soft p-3">
                   <h3 className="text-xs font-semibold">
-                    步骤轨迹回放（agent_run_step，seq 升序）
+                    {translateUi("步骤轨迹回放（agent_run_step，seq 升序）")}
                     <span className="ml-2 font-normal text-muted">{detail.counts.steps} 步</span>
                   </h3>
                   {detail.steps.length === 0 ? (
                     <p className="mt-1 text-xs text-muted">
-                      该 run 无步骤轨迹（014 轨迹面为空：轨迹落库失败降级或历史 run）。
+                      {translateUi(
+                        "该 run 无步骤轨迹（014 轨迹面为空：轨迹落库失败降级或历史 run）。",
+                      )}
                     </p>
                   ) : (
                     <ol className="mt-2 space-y-2">
@@ -555,11 +588,15 @@ export function AgentsPage() {
         className="rounded-surface border border-edge bg-base-100 p-4"
       >
         <h2 className="text-sm font-semibold">
-          Task / Evidence / Research Memory 视图
-          <span className="ml-2 text-xs font-normal text-muted">013 三记忆表</span>
+          {translateUi("Task / Evidence / Research Memory 视图")}
+          <span className="ml-2 text-xs font-normal text-muted">{translateUi("013 三记忆表")}</span>
         </h2>
         {!selectedRun ? (
-          <EmptyPanel text="在上方第二区选择一条运行后，展示该 run 的三类 Memory 视图（run 内工作记忆 / 证据指针台账 / 可追溯研究成果）。" />
+          <EmptyPanel
+            text={translateUi(
+              "在上方第二区选择一条运行后，展示该 run 的三类 Memory 视图（run 内工作记忆 / 证据指针台账 / 可追溯研究成果）。",
+            )}
+          />
         ) : runDetail.loading ? (
           <SkeletonPanel lines={3} />
         ) : runDetail.error !== null ? (
@@ -567,11 +604,13 @@ export function AgentsPage() {
         ) : memories ? (
           <div className="mt-2 space-y-3">
             <MemoryBlock
-              title="Task Memory（agent_task_memory，run 内工作记忆）"
+              title={translateUi("Task Memory（agent_task_memory，run 内工作记忆）")}
               count={memories.task.length}
             >
               {memories.task.length === 0 ? (
-                <p className="mt-1 text-xs text-muted">该 run 无 Task Memory 行。</p>
+                <p className="mt-1 text-xs text-muted">
+                  {translateUi("该 run 无 Task Memory 行。")}
+                </p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {memories.task.map((row) => (
@@ -586,11 +625,13 @@ export function AgentsPage() {
               )}
             </MemoryBlock>
             <MemoryBlock
-              title="Evidence Memory（agent_evidence_memory，证据指针台账）"
+              title={translateUi("Evidence Memory（agent_evidence_memory，证据指针台账）")}
               count={memories.evidence.length}
             >
               {memories.evidence.length === 0 ? (
-                <p className="mt-1 text-xs text-muted">该 run 无 Evidence Memory 行。</p>
+                <p className="mt-1 text-xs text-muted">
+                  {translateUi("该 run 无 Evidence Memory 行。")}
+                </p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {memories.evidence.map((row) => (
@@ -610,11 +651,13 @@ export function AgentsPage() {
               )}
             </MemoryBlock>
             <MemoryBlock
-              title="Research Memory（agent_research_memory，可追溯研究成果）"
+              title={translateUi("Research Memory（agent_research_memory，可追溯研究成果）")}
               count={memories.research.length}
             >
               {memories.research.length === 0 ? (
-                <p className="mt-1 text-xs text-muted">该 run 无 Research Memory 行。</p>
+                <p className="mt-1 text-xs text-muted">
+                  {translateUi("该 run 无 Research Memory 行。")}
+                </p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {memories.research.map((row) => (

@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { Link } from "react-router";
 import { PageHeader } from "../components/ui";
 
@@ -45,7 +46,7 @@ export function WorkspacePlaceholder({
         </ul>
         {related.length > 0 ? (
           <div className="placeholder-related">
-            <span className="placeholder-related-label">当前可用入口：</span>
+            <span className="placeholder-related-label">{translateUi("当前可用入口：")}</span>
             {related.map((item) => (
               <Link key={item.to} to={item.to} className="placeholder-link">
                 {item.label}

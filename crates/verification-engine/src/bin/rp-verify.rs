@@ -35,9 +35,7 @@ use tool_engine::Engine;
 use tool_registry::Registry;
 use verification_engine::evaluator::{evaluate, normalized_doc, OutcomeView};
 use verification_engine::fingerprint::{dedup_fingerprint, dedup_fingerprint_v2};
-use verification_engine::provider::{
-    execute_nuclei, RtisPocProvider,
-};
+use verification_engine::provider::{execute_nuclei, RtisPocProvider};
 use verification_engine::store::{NewItem, PlanStore};
 
 fn main() {
@@ -51,6 +49,16 @@ fn usage_text() -> &'static str {
      \x20 plan-create --task <id> --title '<t>' [--workspace w] [--target '<s>'] [--budget '<json>']\n\
      \x20 plan-get --plan <id>\n\
      \x20 plan-list [--limit N]\n\
+     \x20 project-list [--workspace w] [--status s] [--q text] [--limit N]\n\
+     \x20 project-create --json \'<project-json>\' | project-get --project <id>\n\
+     \x20 project-update --project <id> --json \'<patch-json>\'\n\
+     \x20 project-link-task --project <id> --task <id> [--role research|validation|monitoring]\n\
+     \x20 project-link-asset --project <id> --asset <id> [--role in_scope|out_of_scope|watchlist]\n\
+     \x20 asset-list [--workspace w] [--type t] [--q text] [--limit N]\n\
+     \x20 asset-create --json \'<asset-json>\' | asset-get --asset <id>\n\
+     \x20 asset-endpoint-add --asset <id> --json \'<endpoint-json>\'\n\
+     \x20 asset-observation-add --asset <id> --json \'<observation-json>\'\n\
+     \x20 asset-technology-add --asset <id> --json \'<technology-json>\'\n\
      \x20 plan-status --plan <id> --status draft|ready|executing|paused|completed|cancelled\n\
      \x20 item-add --plan <id> --provider <id> --target '<ref>' --fingerprint <sha256>\n\
      \x20   [--poc-id N] [--knowledge <id>] [--applicability ...] [--reasons '<json>']\n\
@@ -170,6 +178,27 @@ fn open_store() -> Result<PlanStore, String> {
     Ok(PlanStore::new(pool))
 }
 
+fn open_project_asset_store(
+) -> Result<verification_engine::project_assets::ProjectAssetStore, String> {
+    let path = std::env::var("RP_DB_PATH").unwrap_or_default();
+    let db_path = if path.trim().is_empty() {
+        DbPath::Memory
+    } else {
+        DbPath::File(PathBuf::from(path))
+    };
+    let pool = Pool::open(PoolConfig {
+        path: db_path,
+        readonly: false,
+        max_connections: 1,
+        busy_timeout: Duration::from_secs(5),
+    })
+    .map_err(|e| e.to_string())?;
+    migrate(&pool, &repo_root().join("migrations")).map_err(|e| e.to_string())?;
+    Ok(verification_engine::project_assets::ProjectAssetStore::new(
+        pool,
+    ))
+}
+
 fn engine_with_nuclei() -> Engine {
     let pool = Pool::open(PoolConfig {
         path: DbPath::Memory,
@@ -201,7 +230,9 @@ fn repo_root() -> PathBuf {
 fn emit(value: &serde_json::Value) {
     println!(
         "{}",
-        serde_json::to_string(value).unwrap_or_else(|_| "{\"error\":{\"code\":\"serialize\",\"message\":\"serde_json\"}}".to_owned())
+        serde_json::to_string(value).unwrap_or_else(|_| {
+            "{\"error\":{\"code\":\"serialize\",\"message\":\"serde_json\"}}".to_owned()
+        })
     );
 }
 
@@ -242,6 +273,221 @@ fn run() -> i32 {
         Err(message) => return emit_error("db_open", &message),
     };
     match sub.as_str() {
+        "project-list" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let rows = domain.list_projects(
+                args.get("workspace").unwrap_or("default"),
+                args.get("status"),
+                args.get("q"),
+                args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(50),
+            );
+            match rows {
+                Ok(items) => {
+                    emit(&serde_json::json!({"items":items}));
+                    0
+                }
+                Err(e) => emit_error("project_list", &e.to_string()),
+            }
+        }
+        "project-create" | "project-update" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let input: serde_json::Value =
+                match args.get("json").and_then(|v| serde_json::from_str(v).ok()) {
+                    Some(v) => v,
+                    None => return emit_error("invalid_json", "--json must contain a JSON object"),
+                };
+            let result = if sub == "project-create" {
+                domain.create_project(&input)
+            } else {
+                match args.required("project") {
+                    Ok(id) => domain.update_project(
+                        &id,
+                        args.get("workspace").unwrap_or("default"),
+                        &input,
+                    ),
+                    Err(code) => return code,
+                }
+            };
+            match result {
+                Ok(row) => {
+                    emit(&serde_json::to_value(row).unwrap_or_default());
+                    0
+                }
+                Err(e) => emit_error("project_write", &e.to_string()),
+            }
+        }
+        "project-get" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let id = match args.required("project") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match domain.get_project_in_workspace(&id, args.get("workspace").unwrap_or("default")) {
+                Ok(Some(row)) => {
+                    let tasks = domain.project_tasks(&id).unwrap_or_default();
+                    let assets = domain.project_assets(&id).unwrap_or_default();
+                    emit(&serde_json::json!({"project":row,"tasks":tasks,"assets":assets}));
+                    0
+                }
+                Ok(None) => emit_error("not_found", &id),
+                Err(e) => emit_error("project_get", &e.to_string()),
+            }
+        }
+        "project-link-task" | "project-unlink-task" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let project = match args.required("project") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let task = match args.required("task") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let result = if sub == "project-link-task" {
+                domain.link_task(&project, &task, args.get("role").unwrap_or("research"))
+            } else {
+                domain.unlink_task(&project, &task)
+            };
+            match result {
+                Ok(()) => {
+                    emit(
+                        &serde_json::json!({"project_id":project,"task_id":task,"linked":sub=="project-link-task"}),
+                    );
+                    0
+                }
+                Err(e) => emit_error("project_task_link", &e.to_string()),
+            }
+        }
+        "project-link-asset" | "project-unlink-asset" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let project = match args.required("project") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let asset = match args.required("asset") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let result = if sub == "project-link-asset" {
+                domain.link_asset(&project, &asset, args.get("role").unwrap_or("in_scope"))
+            } else {
+                domain.unlink_asset(&project, &asset)
+            };
+            match result {
+                Ok(()) => {
+                    emit(
+                        &serde_json::json!({"project_id":project,"asset_id":asset,"linked":sub=="project-link-asset"}),
+                    );
+                    0
+                }
+                Err(e) => emit_error("project_asset_link", &e.to_string()),
+            }
+        }
+        "asset-list" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            match domain.list_assets(
+                args.get("workspace").unwrap_or("default"),
+                args.get("type"),
+                args.get("q"),
+                args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(50),
+            ) {
+                Ok(items) => {
+                    emit(&serde_json::json!({"items":items}));
+                    0
+                }
+                Err(e) => emit_error("asset_list", &e.to_string()),
+            }
+        }
+        "asset-create" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let input: serde_json::Value =
+                match args.get("json").and_then(|v| serde_json::from_str(v).ok()) {
+                    Some(v) => v,
+                    None => return emit_error("invalid_json", "--json must contain a JSON object"),
+                };
+            match domain.create_asset(&input) {
+                Ok(row) => {
+                    emit(&serde_json::to_value(row).unwrap_or_default());
+                    0
+                }
+                Err(e) => emit_error("asset_create", &e.to_string()),
+            }
+        }
+        "asset-get" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let id = match args.required("asset") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            match domain.get_asset_in_workspace(&id, args.get("workspace").unwrap_or("default")) {
+                Ok(Some(row)) => {
+                    let observations = domain.observations(&id).unwrap_or_default();
+                    let endpoints = domain.endpoints(&id).unwrap_or_default();
+                    let technologies = domain.technologies(&id).unwrap_or_default();
+                    emit(
+                        &serde_json::json!({"asset":row,"endpoints":endpoints,"observations":observations,"technologies":technologies}),
+                    );
+                    0
+                }
+                Ok(None) => emit_error("not_found", &id),
+                Err(e) => emit_error("asset_get", &e.to_string()),
+            }
+        }
+        "asset-endpoint-add" | "asset-observation-add" | "asset-technology-add" => {
+            let domain = match open_project_asset_store() {
+                Ok(v) => v,
+                Err(e) => return emit_error("db_open", &e),
+            };
+            let asset = match args.required("asset") {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+            let input: serde_json::Value =
+                match args.get("json").and_then(|v| serde_json::from_str(v).ok()) {
+                    Some(v) => v,
+                    None => return emit_error("invalid_json", "--json must contain a JSON object"),
+                };
+            let result = match sub.as_str() {
+                "asset-endpoint-add" => domain.add_endpoint(&asset, &input),
+                "asset-observation-add" => domain.add_observation(&asset, &input).and_then(|v| {
+                    serde_json::to_value(v).map_err(|e| {
+                        verification_engine::project_assets::DomainStoreError::Db(e.to_string())
+                    })
+                }),
+                _ => domain.add_technology(&asset, &input),
+            };
+            match result {
+                Ok(value) => {
+                    emit(&value);
+                    0
+                }
+                Err(e) => emit_error("asset_domain_write", &e.to_string()),
+            }
+        }
         "plan-create" => {
             let task = args.get("task").map(str::to_owned);
             let title = args.get("title").map(str::to_owned);
@@ -276,10 +522,7 @@ fn run() -> i32 {
             Err(code) => code,
         },
         "plan-list" => {
-            let limit: u32 = args
-                .get("limit")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(50);
+            let limit: u32 = args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(50);
             match store.list_plans(limit) {
                 Ok(rows) => {
                     emit(&serde_json::json!({ "items": rows, "limit": limit }));
@@ -335,8 +578,14 @@ fn run() -> i32 {
                     .to_owned(),
                 applicability_reasons: reasons,
                 risk_class: args.get("risk").unwrap_or("low_impact").to_owned(),
-                request_budget: args.get("requests").and_then(|v| v.parse().ok()).unwrap_or(10),
-                timeout_budget_s: args.get("timeout-s").and_then(|v| v.parse().ok()).unwrap_or(60),
+                request_budget: args
+                    .get("requests")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10),
+                timeout_budget_s: args
+                    .get("timeout-s")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(60),
                 execution_order: args.get("order").and_then(|v| v.parse().ok()).unwrap_or(0),
                 expected_observation: args.get("expected").map(str::to_owned),
                 dimension: args.get("dimension").unwrap_or("assets").to_owned(),
@@ -409,10 +658,9 @@ fn run() -> i32 {
                 Ok(v) => v,
                 Err(code) => return code,
             };
-            let ws_root = args
-                .get("ws-root")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| std::env::temp_dir().join(format!("rip-verify-ws-{}", std::process::id())));
+            let ws_root = args.get("ws-root").map(PathBuf::from).unwrap_or_else(|| {
+                std::env::temp_dir().join(format!("rip-verify-ws-{}", std::process::id()))
+            });
             let template_path = args.get("template").map(PathBuf::from);
             let network = match args.get("network").unwrap_or("egress") {
                 "none" => NetworkPlan::None,
@@ -428,10 +676,16 @@ fn run() -> i32 {
             if plan.status != "ready" {
                 return emit_error(
                     "plan_not_ready",
-                    &format!("plan {} status={} (execute requires ready)", plan_id, plan.status),
+                    &format!(
+                        "plan {} status={} (execute requires ready)",
+                        plan_id, plan.status
+                    ),
                 );
             }
-            store.set_plan_status(&plan_id, "executing").map_err(|e| emit_error("execute_plan", &e.to_string())).ok();
+            store
+                .set_plan_status(&plan_id, "executing")
+                .map_err(|e| emit_error("execute_plan", &e.to_string()))
+                .ok();
             let engine = engine_with_nuclei();
             let adapter = PodmanHostAdapter::new(PodmanHostConfig {
                 workspace_root: ws_root.clone(),
@@ -444,8 +698,7 @@ fn run() -> i32 {
             };
             // 幂等恢复（P5-6 完成标准：服务重启/暂停恢复后不重复派发）：
             // 只派发未判定项，已判定项原样跳过（结论不重算不覆盖）。
-            let (items, resumed_skipped) =
-                verification_engine::scheduler::pending_items(items);
+            let (items, resumed_skipped) = verification_engine::scheduler::pending_items(items);
             // 运行期执行侧预算复核（P5-4 G 遗留落地）：已放行项预算之和 +
             // 本项 ≤ 计划 cap 的第二道闸（planner 生成侧封顶之外的 §5.9 面）。
             let plan_cap = plan
@@ -506,7 +759,10 @@ fn run() -> i32 {
                     }
                 }
                 consumed += item.request_budget;
-                let run_id = format!("rn-verify-{}", item.item_id.trim_start_matches("vi-").replace('-', ""));
+                let run_id = format!(
+                    "rn-verify-{}",
+                    item.item_id.trim_start_matches("vi-").replace('-', "")
+                );
                 // Trace 六 ID 锚（P5-7）：一次 execute 动作一个 trace，贯通
                 // tool_run（submit_correlated）与 evidence 事件流（015 面语义）。
                 let trace_id = format!(
@@ -619,10 +875,12 @@ fn run() -> i32 {
                                 &checked_normalized_doc(&item.item_id, &normalized),
                             )
                             .ok();
-                        let evidence_provider_id =
-                            evidence_provider.as_ref().map(|(e, _)| e.evidence_id.clone());
-                        let evidence_normalized_id =
-                            evidence_normalized.as_ref().map(|(e, _)| e.evidence_id.clone());
+                        let evidence_provider_id = evidence_provider
+                            .as_ref()
+                            .map(|(e, _)| e.evidence_id.clone());
+                        let evidence_normalized_id = evidence_normalized
+                            .as_ref()
+                            .map(|(e, _)| e.evidence_id.clone());
                         store
                             .set_result(
                                 &item.item_id,
@@ -668,7 +926,10 @@ fn run() -> i32 {
                         // RTIS POC 引用面：记录使用关系（sanctioned CLI 写路径）+
                         // 结论 = 引用面登记（无探针 Provider 不冒结论）
                         let meta = if let Some(poc) = item.rtis_poc_id {
-                            let _ = rtis.record_use(poc, plan.target_summary.as_deref().unwrap_or("rip3-p5-execute"));
+                            let _ = rtis.record_use(
+                                poc,
+                                plan.target_summary.as_deref().unwrap_or("rip3-p5-execute"),
+                            );
                             serde_json::json!({"rtis_poc_id": poc, "use_recorded": true})
                         } else {
                             serde_json::json!({"rtis_poc_id": null})
@@ -839,14 +1100,11 @@ fn run() -> i32 {
                     &format!("item {item_id} has no rtis_poc_id reference (finding anchor lives in RTIS)"),
                 );
             };
-            let note = args
-                .get("note")
-                .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    item.result_reason
-                        .clone()
-                        .unwrap_or_else(|| "RIP3 verification confirmed".to_owned())
-                });
+            let note = args.get("note").map(str::to_owned).unwrap_or_else(|| {
+                item.result_reason
+                    .clone()
+                    .unwrap_or_else(|| "RIP3 verification confirmed".to_owned())
+            });
             let rtis = RtisPocProvider::from_repo_root(&repo_root());
             match rtis.record_verification(poc_id, &note) {
                 Ok(payload) => {
@@ -936,10 +1194,7 @@ fn run() -> i32 {
                 .and_then(|b| b.get("max_rounds"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(3);
-            let round = args
-                .get("round")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1);
+            let round = args.get("round").and_then(|v| v.parse().ok()).unwrap_or(1);
             match store.add_hypothesis(
                 &plan_id,
                 verification_engine::store::NewHypothesis {
@@ -1019,10 +1274,7 @@ fn run() -> i32 {
                 .get("profile")
                 .and_then(|p| serde_json::from_str(p).ok())
                 .unwrap_or_default();
-            let limit: usize = args
-                .get("limit")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(10);
+            let limit: usize = args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(10);
             let root = repo_root();
             let rtis = RtisPocChannel::from_repo_root(&root);
             let unified = UnifiedSearchChannel {
@@ -1072,10 +1324,19 @@ fn run() -> i32 {
                 .unwrap_or_default();
             let params_json = args.get("params").unwrap_or("{}").to_owned();
             let budget = PlanBudget {
-                max_requests: args.get("max-requests").and_then(|v| v.parse().ok()).unwrap_or(30),
-                timeout_s: args.get("timeout-s").and_then(|v| v.parse().ok()).unwrap_or(60),
+                max_requests: args
+                    .get("max-requests")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(30),
+                timeout_s: args
+                    .get("timeout-s")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(60),
                 concurrency: 1,
-                max_rounds: args.get("max-rounds").and_then(|v| v.parse().ok()).unwrap_or(3),
+                max_rounds: args
+                    .get("max-rounds")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(3),
             };
             let limit: usize = args.get("limit").and_then(|v| v.parse().ok()).unwrap_or(10);
             let root = repo_root();
@@ -1097,13 +1358,20 @@ fn run() -> i32 {
                 &query,
                 limit,
             );
-            let draft = draft_from_match(&matched, &budget, &store, |h| {
-                if h.channel == "rtis-poc" {
-                    format!("rtis-poc:{}", h.ref_id)
-                } else {
-                    format!("knowledge:{}", h.ref_id)
-                }
-            }, &params_json, "-");
+            let draft = draft_from_match(
+                &matched,
+                &budget,
+                &store,
+                |h| {
+                    if h.channel == "rtis-poc" {
+                        format!("rtis-poc:{}", h.ref_id)
+                    } else {
+                        format!("knowledge:{}", h.ref_id)
+                    }
+                },
+                &params_json,
+                "-",
+            );
             match persist_draft(&store, &draft, task.as_deref(), "default", title.as_deref()) {
                 Ok(plan_id) => {
                     emit(&serde_json::json!({

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>RIP 研究情报平台工作台</title>
+    <title>RIP Research Intelligence Platform</title>
     <!-- 内联 SVG favicon（雷达图形，主题色 currentColor 由浏览器默认填充）：
          消除每会话一条 favicon 404 console error（生产 rp_server 静态服务同样 404）。 -->
     <link
@@ -24,6 +24,12 @@
           if (stored) theme = legacy[stored] || (known.indexOf(stored) !== -1 ? stored : theme);
         } catch (error) {}
         document.documentElement.setAttribute("data-theme", theme);
+        var language = "zh-CN";
+        try {
+          var storedLanguage = localStorage.getItem("rip_language");
+          if (["zh-CN", "en-US", "ja-JP"].indexOf(storedLanguage) !== -1) language = storedLanguage;
+        } catch (error) {}
+        document.documentElement.lang = language;
       })();
     </script>
   </head>

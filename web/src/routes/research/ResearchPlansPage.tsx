@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 /** 验证计划列表与控制面（P5-6，Phase 5 §4.5.B/§5.9）：/api/research/plans
  *  真实列表（rp-verify plan-list 子进程读面）+ 计划状态过滤 + 五态结果计数
  *  展示 + 暂停/恢复/取消控制（POST /api/research/plans/<id>/<action> 经
@@ -79,9 +80,13 @@ export function ResearchPlansPage() {
       await queryClient.invalidateQueries({ queryKey: ["api", "/api/research/plans?limit=100"] });
     } catch (sendError) {
       if (sendError instanceof ApiError) {
-        setActionError(`${ACTION_LABELS[action]}失败（${plan.plan_id}）：${sendError.message}`);
+        setActionError(
+          `${translateUi(ACTION_LABELS[action])}${translateUi("失败")}（${plan.plan_id}）：${sendError.message}`,
+        );
       } else {
-        setActionError(`${ACTION_LABELS[action]}失败（${plan.plan_id}）：未知错误`);
+        setActionError(
+          `${translateUi(ACTION_LABELS[action])}${translateUi("失败")}（${plan.plan_id}）：${translateUi("未知错误")}`,
+        );
       }
     } finally {
       setBusyPlan(null);
@@ -91,7 +96,7 @@ export function ResearchPlansPage() {
   if (list.loading) {
     return (
       <div>
-        <PageHeader title="验证计划" />
+        <PageHeader title={translateUi("验证计划")} />
         <SkeletonPanel lines={6} />
       </div>
     );
@@ -99,7 +104,7 @@ export function ResearchPlansPage() {
   if (list.error !== null) {
     return (
       <div>
-        <PageHeader title="验证计划" />
+        <PageHeader title={translateUi("验证计划")} />
         <ErrorPanel error={list.error} onRetry={list.retry} />
       </div>
     );
@@ -107,20 +112,20 @@ export function ResearchPlansPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={`验证计划（${plans.length}）`} />
+      <PageHeader title={`${translateUi("验证计划")}（${plans.length}）`} />
       <div className="flex flex-wrap items-center gap-3">
         <FilterSearch
-          label="搜索"
+          label={translateUi("搜索")}
           value={textFilter}
           onChange={setTextFilter}
-          placeholder="按标题/ID/任务引用过滤"
+          placeholder={translateUi("按标题/ID/任务引用过滤")}
         />
         <FilterSelect
-          label="状态"
+          label={translateUi("状态")}
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
-            { value: "all", label: "全部状态" },
+            { value: "all", label: translateUi("全部状态") },
             ...PLAN_STATUSES.map((s) => ({ value: s, label: s })),
           ]}
         />
@@ -131,7 +136,11 @@ export function ResearchPlansPage() {
         ) : null}
       </div>
       {filtered.length === 0 ? (
-        <EmptyPanel text="没有匹配的验证计划；计划经 rp-verify plan-create / plan-build 创建（CLI 面）。" />
+        <EmptyPanel
+          text={translateUi(
+            "没有匹配的验证计划；计划经 rp-verify plan-create / plan-build 创建（CLI 面）。",
+          )}
+        />
       ) : (
         <div className="space-y-3">
           {filtered.map((plan) => {
@@ -166,13 +175,15 @@ export function ResearchPlansPage() {
                         disabled={busyPlan === plan.plan_id}
                         onClick={() => void runControl(plan, action)}
                       >
-                        {ACTION_LABELS[action]}
+                        {translateUi(ACTION_LABELS[action])}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted">
-                  <span>计划项 {plan.item_count}</span>
+                  <span>
+                    {translateUi("计划项")} {plan.item_count}
+                  </span>
                   <span className="flex flex-wrap items-center gap-1">
                     {RESULT_STATUSES.map((status) => {
                       const count = counts[status];
@@ -186,10 +197,12 @@ export function ResearchPlansPage() {
                       ) : null;
                     })}
                     {Object.values(counts).reduce((sum, n) => sum + n, 0) === 0 ? (
-                      <span>五态未判定</span>
+                      <span>{translateUi("五态未判定")}</span>
                     ) : null}
                   </span>
-                  <span>更新 {formatDateTime(plan.updated_at)}</span>
+                  <span>
+                    {translateUi("更新")} {formatDateTime(plan.updated_at)}
+                  </span>
                 </div>
               </div>
             );
@@ -197,8 +210,9 @@ export function ResearchPlansPage() {
         </div>
       )}
       <p className="text-[11px] text-muted">
-        派发与执行细节：rp-verify execute-plan（CLI 面）逐项 Provider 执行 + 五态归一化回写；
-        取消/暂停在执行进程的项间检查位真实生效，已完成计划项的结论与 Evidence 不受影响。
+        {translateUi(
+          "派发与执行细节：rp-verify execute-plan（CLI 面）逐项 Provider 执行 + 五态归一化回写；取消/暂停在执行进程的项间检查位真实生效，已完成计划项的结论与 Evidence 不受影响。",
+        )}
       </p>
     </div>
   );

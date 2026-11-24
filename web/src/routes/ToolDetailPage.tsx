@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useParams } from "react-router";
 import { useApi } from "../lib/hooks";
 import { ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
@@ -107,7 +108,7 @@ export function ToolDetailPage() {
   if (detail.loading) {
     return (
       <div>
-        <PageHeader title="工具详情" />
+        <PageHeader title={translateUi("工具详情")} />
         <SkeletonPanel lines={6} />
       </div>
     );
@@ -115,7 +116,7 @@ export function ToolDetailPage() {
   if (detail.error !== null) {
     return (
       <div>
-        <PageHeader title="工具详情" />
+        <PageHeader title={translateUi("工具详情")} />
         <ErrorPanel error={detail.error} onRetry={detail.retry} />
       </div>
     );
@@ -124,8 +125,8 @@ export function ToolDetailPage() {
   if (!tool) {
     return (
       <div>
-        <PageHeader title="工具详情" />
-        <p className="text-sm text-muted">条目不存在。</p>
+        <PageHeader title={translateUi("工具详情")} />
+        <p className="text-sm text-muted">{translateUi("条目不存在。")}</p>
       </div>
     );
   }
@@ -160,7 +161,7 @@ export function ToolDetailPage() {
 
       <div className="rounded-surface border border-edge bg-base-100 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold">概要</h2>
+          <h2 className="text-sm font-semibold">{translateUi("概要")}</h2>
           {/* 试运行占位：本阶段只读 API 无执行面，派发链依赖 Phase 1/3。 */}
           <div className="flex items-center gap-2">
             <button
@@ -168,7 +169,7 @@ export function ToolDetailPage() {
               className="btn btn-sm"
               disabled
               aria-disabled="true"
-              title="试运行暂不可用"
+              title={translateUi("试运行暂不可用")}
             >
               试运行
             </button>
@@ -192,11 +193,11 @@ export function ToolDetailPage() {
           <MetaRow label="source_system" value={tool.source_system} />
           <MetaRow label="source_pk" value={tool.source_pk} />
           <MetaRow
-            label="登记时间"
+            label={translateUi("登记时间")}
             value={tool.created_at ? formatDateTime(tool.created_at) : null}
           />
           <MetaRow
-            label="更新时间"
+            label={translateUi("更新时间")}
             value={tool.updated_at ? formatDateTime(tool.updated_at) : null}
           />
           <MetaRow
@@ -214,9 +215,9 @@ export function ToolDetailPage() {
       <SchemaBlock title="Output Schema" schema={detail.data?.output_schema ?? null} />
 
       <section className="rounded-surface border border-edge bg-base-100 p-4">
-        <h2 className="text-sm font-semibold">tool_version 历史</h2>
+        <h2 className="text-sm font-semibold">{translateUi("tool_version 历史")}</h2>
         {versions.length === 0 ? (
-          <p className="mt-2 text-xs text-muted">无版本记录。</p>
+          <p className="mt-2 text-xs text-muted">{translateUi("无版本记录。")}</p>
         ) : (
           <ul className="mt-2 space-y-2">
             {versions.map((version) => (

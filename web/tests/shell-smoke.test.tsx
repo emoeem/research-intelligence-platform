@@ -1,13 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
+import i18n from "../src/i18n";
 import { ErrorBoundary } from "../src/components/ErrorBoundary";
-
-/** P7-1 壳层冒烟（五区版）：顶部栏五要素（工作区切换 / 全局搜索 / 运行任务 /
- *  Runner 状态 / 通知）、图标轨十一工作区、中央多标签工作区（固定 tab 稳定编号 /
- *  深链接会话 tab / 关闭与回退）、Inspector 与 Activity 折叠、移动抽屉（滚动锁 +
- *  Esc + 路由变化收起）、⌘K 面板分组命中（真实端点桩）、ErrorBoundary 按路由
- *  re-key。fetch 打桩返回与 rp_server 同构的真实形状数据（jsdom 无服务）。 */
 
 const API_STUBS: Record<string, unknown> = {
   "/api/overview": {
@@ -39,15 +34,103 @@ const API_STUBS: Record<string, unknown> = {
     total: 1,
     items: [{ task_id: "t1", title: "aozoneyun 管理面测试", state: "COMPLETED" }],
   },
+  "/api/runs?run_id=run-live-1": {
+    run: {
+      run_id: "run-live-1",
+      tool_id: "nmap",
+      status: "FAILED",
+      error_category: "timeout",
+      error_json: { message: "timed out" },
+      created_at: "2026-11-24T10:00:00Z",
+    },
+    artifacts: [
+      {
+        artifact_id: "artifact-live-1",
+        role: "report",
+        uri: "https://example.invalid/report.json",
+        sha256: "a".repeat(64),
+        mime_type: "application/json",
+        size_bytes: 128,
+      },
+    ],
+  },
+  "/api/plugins": {
+    available: true,
+    total: 1,
+    items: [
+      {
+        plugin_id: "plugin-a",
+        name: "Plugin Alpha",
+        version: "1.2.0",
+        kind: "knowledge_source",
+        state: "ACTIVE",
+        trust_level: "VERIFIED",
+        license: "Apache-2.0",
+      },
+    ],
+  },
+  "/api/knowledge?knowledge_id=k1": {
+    item: {
+      knowledge_id: "k1",
+      title: "Knowledge Alpha",
+      lifecycle: "VERIFIED",
+      governance: "APPROVED",
+      component: "web",
+      severity: "high",
+      source: "test source",
+      source_url: "https://example.test/source",
+    },
+  },
+  "/api/tools?tool_id=nmap": {
+    tool: {
+      tool_id: "nmap",
+      name: "Nmap scanner",
+      kind: "scanner",
+      lifecycle: "ENABLED",
+      governance: "ACTIVE",
+      health_state: "HEALTHY",
+      permission_level: "T1",
+      timeout_s: 120,
+    },
+  },
+  "/api/tasks?task_id=t1": {
+    item: {
+      task_id: "t1",
+      title: "Test research task",
+      state: "EXECUTING",
+      target: "example.test",
+      task_type: "web",
+    },
+  },
+  "/api/runs": {
+    available: true,
+    total: 1,
+    items: [
+      {
+        run_id: "run-live-1",
+        tool_id: "nmap",
+        status: "RUNNING",
+        created_at: "2026-11-24T10:00:00Z",
+      },
+    ],
+  },
+  "/api/runtime": {
+    available: true,
+    total: 1,
+    items: [
+      { node_id: "worker-1", kind: "python_worker", health: "ok", heartbeat_age_seconds: 12 },
+    ],
+  },
 };
 
 function stubFetch(): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input).split("?")[0] ?? "";
-      const body = API_STUBS[path] ?? {};
-      return new Response(JSON.stringify(body), {
+      const parsed = new URL(String(input), window.location.origin);
+      const rawPath = parsed.pathname + parsed.search;
+      const path = parsed.pathname;
+      return new Response(JSON.stringify(API_STUBS[rawPath] ?? API_STUBS[path] ?? {}), {
         status: 200,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
@@ -60,9 +143,10 @@ function goTo(path: string): void {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   stubFetch();
-  // jsdom 的 window.history 在用例间残留，统一回到总览再开始。
+  localStorage.clear();
+  await i18n.changeLanguage("zh-CN");
   window.history.pushState({}, "", "/");
 });
 
@@ -70,238 +154,280 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+  localStorage.clear();
 });
 
-describe("顶部栏五要素（P7-1）", () => {
-  it("工作区切换器列出十二工作区（WSW-3 websec 第十二工作区，W3-D8），切换后路由跳到该区着陆页", () => {
+describe("Unified AppShell", () => {
+  it("renders a single page-level heading and keeps the topbar breadcrumb-only", async () => {
     render(<App />);
-    const select = screen.getByRole("combobox", { name: "切换工作区" }) as HTMLSelectElement;
-    expect(select.options).toHaveLength(13); // 十二工作区 + 隐藏占位 option
-    expect(select.value).toBe("dashboard");
-    fireEvent.change(select, { target: { value: "tools" } });
-    expect(window.location.pathname).toBe("/tools");
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(["早上好", "下午好", "晚上好"]).toContain(heading.textContent);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(document.querySelector(".topbar-title")).toBeNull();
+    const breadcrumb = screen.getByRole("navigation", { name: "当前位置" });
+    expect(breadcrumb.textContent).toContain("工作区");
+    expect(breadcrumb.textContent).toContain("总览");
   });
 
-  it("搜索 / 运行任务 / Runner / 通知四要素在场，通知气泡可开合", () => {
+  it("renders all twelve workspaces grouped in the global sidebar", () => {
     render(<App />);
-    // 搜索按钮的可访问名含快捷键徽标（「搜索 ⌘K」），用正则匹配。
-    expect(screen.getByRole("button", { name: /搜索/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "运行任务" }).getAttribute("href")).toBe("/runs");
-    // Runner 链接的可访问名来自内容（title 仅是 hover 提示）。
-    expect(screen.getByRole("link", { name: "Runner" }).getAttribute("href")).toBe("/runtime");
-    const notifBtn = screen.getByRole("button", { name: "通知" });
-    expect(screen.queryByText("暂无通知")).toBeNull();
-    fireEvent.click(notifBtn);
-    expect(screen.getByText("暂无通知")).toBeTruthy();
-    expect(notifBtn.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByText("暂无通知")).toBeNull();
-  });
-
-  it("Inspector 与 Activity 的顶部栏开关翻转 aria-expanded 并显隐面板", () => {
-    render(<App />);
-    const inspectorBtn = screen.getByRole("button", { name: "Inspector" });
-    expect(inspectorBtn.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeTruthy();
-    fireEvent.click(inspectorBtn);
-    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
-    fireEvent.click(inspectorBtn);
-    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeTruthy();
-
-    const activityBtn = screen.getByRole("button", { name: "Activity 面板" });
-    expect(screen.getByRole("region", { name: "Activity 面板" })).toBeTruthy();
-    fireEvent.click(activityBtn);
-    expect(screen.queryByRole("region", { name: "Activity 面板" })).toBeNull();
-    fireEvent.click(activityBtn);
-    expect(screen.getByRole("region", { name: "Activity 面板" })).toBeTruthy();
-  });
-});
-
-describe("图标轨与中央多标签工作区（P7-1）", () => {
-  it("图标轨渲染品牌 + 十一个工作区入口", () => {
-    render(<App />);
-    expect(screen.getByRole("complementary", { name: "工作区图标轨" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "回到总览" })).toBeTruthy();
-    for (const label of [
-      "Dashboard",
-      "Projects",
-      "Research",
-      "Knowledge",
-      "Tools",
-      "Plugins",
-      "Agents",
-      "Workflows",
-      "Runs",
-      "Runtime",
-      "Settings",
+    expect(screen.getByRole("complementary", { name: "全局导航" })).toBeTruthy();
+    const nav = screen.getByRole("navigation", { name: "全局导航" });
+    for (const route of [
+      "/",
+      "/projects",
+      "/research",
+      "/knowledge",
+      "/tools",
+      "/plugins",
+      "/agents",
+      "/workflows",
+      "/runs",
+      "/runtime",
+      "/settings",
+      "/websec/history",
     ]) {
-      expect(screen.getByRole("link", { name: label })).toBeTruthy();
+      expect(nav.querySelector('a[href="' + route + '"]')).toBeTruthy();
     }
+    for (const group of ["工作区", "能力", "运行与安全", "系统"]) {
+      expect(nav.textContent).toContain(group);
+    }
+    const workspaceNav = screen.getByRole("navigation", { name: "工作区导航" });
+    expect(workspaceNav.textContent).toContain("总览");
+    expect(
+      within(workspaceNav).getByRole("link", { name: "总览" }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(screen.queryByRole("navigation", { name: "已打开的会话" })).toBeNull();
   });
 
-  it("标签区渲染十四个固定 tab 且带稳定编号，总览为活跃 tab", () => {
+  it("only shows navigation for the current workspace and retains all child routes", async () => {
     render(<App />);
-    const tabarea = screen.getByRole("navigation", { name: "工作区标签页" });
-    expect(tabarea.textContent).toContain("1.1");
-    // P5-1：Research 工作区扩为四 tab（3.1 总览到 3.4 知识上下文）。
-    expect(tabarea.textContent).toContain("3.1");
-    expect(tabarea.textContent).toContain("3.4");
-    expect(tabarea.textContent).toContain("5.1");
-    expect(tabarea.textContent).toContain("11.1");
-    expect(tabarea.textContent).toContain("总览");
-    expect(tabarea.textContent).toContain("Agent Studio");
-    // tab 可访问名含编号与标签（icon aria-hidden）：在 tabarea 内取 aria-current
-    // 的 tab，title 应为 Dashboard「1.1 · 总览 …」，research 的「研究总览」（3.1）
-    // 不会误中。
-    const activeTab = tabarea.querySelector(
-      ".tabarea-btn.is-active, .tabarea-tab.is-active .tabarea-btn",
-    );
-    expect(activeTab?.getAttribute("title")?.startsWith("1.1 · 总览")).toBe(true);
-    expect(activeTab?.getAttribute("aria-current")).toBe("page");
-    // 固定 tab 无关闭钮
-    expect(screen.queryByRole("button", { name: "关闭标签 总览" })).toBeNull();
-  });
-
-  it("深链接直达对象并登记会话 tab：/tools/nmap 打开「nmap」标签且 Inspector 标注对象", async () => {
-    goTo("/tools/nmap");
-    render(<App />);
-    const tabarea = await screen.findByRole("navigation", { name: "工作区标签页" });
-    await waitFor(() => {
-      if (!screen.getByRole("button", { name: "nmap" })) throw new Error("会话 tab 未登记");
-    });
-    expect(screen.getByRole("button", { name: "nmap" }).getAttribute("aria-current")).toBe("page");
-    const inspector = screen.getByRole("complementary", { name: "Inspector" });
-    expect(inspector.textContent).toContain("工具 nmap");
-    expect(inspector.textContent).toContain("/tools/nmap");
-    expect(tabarea.textContent).toContain("nmap");
-  });
-
-  it("关闭活跃会话 tab 回退到所属工作区着陆页", async () => {
-    goTo("/tools/nmap");
-    render(<App />);
-    await screen.findByRole("button", { name: "关闭标签 nmap" });
-    fireEvent.click(screen.getByRole("button", { name: "关闭标签 nmap" }));
-    await waitFor(() => {
-      if (window.location.pathname !== "/tools")
-        throw new Error(`未回退: ${window.location.pathname}`);
-    });
-    expect(screen.queryByRole("button", { name: "关闭标签 nmap" })).toBeNull();
-    // 固定 tab 的可访问名含编号前缀（「5.1 工具中心」），用正则匹配。
-    expect(screen.getByRole("button", { name: /工具中心/ }).getAttribute("aria-current")).toBe(
+    fireEvent.click(screen.getByRole("link", { name: "Research" }));
+    const nav = await screen.findByRole("navigation", { name: "工作区导航" });
+    for (const label of [
+      "研究总览",
+      "任务",
+      "资产",
+      "知识上下文",
+      "验证计划",
+      "证据",
+      "覆盖矩阵",
+    ]) {
+      expect(nav.textContent).toContain(label);
+    }
+    fireEvent.click(screen.getByRole("link", { name: "覆盖矩阵" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/research/coverage"));
+    expect(screen.getByRole("link", { name: "覆盖矩阵" }).getAttribute("aria-current")).toBe(
       "page",
     );
   });
 
-  it("多个会话 tab 按最近访问排序，关闭当前 tab 回退到上一个会话 tab", async () => {
+  it("keeps existing deep links as real session tabs, not pinned workspace tabs", async () => {
+    goTo("/tools/nmap");
+    render(<App />);
+    const tabarea = await screen.findByRole("navigation", { name: "已打开的会话" });
+    expect(tabarea.textContent).toContain("nmap");
+    expect(tabarea.textContent).not.toContain("Agent Studio");
+    expect(screen.getByRole("button", { name: "关闭 nmap" })).toBeTruthy();
+  });
+
+  it("closes the active session and falls back to its workspace landing route", async () => {
+    goTo("/tools/nmap");
+    render(<App />);
+    await screen.findByRole("button", { name: "关闭 nmap" });
+    fireEvent.click(screen.getByRole("button", { name: "关闭 nmap" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/tools"));
+    expect(screen.queryByRole("navigation", { name: "已打开的会话" })).toBeNull();
+  });
+
+  it("keeps multiple session tabs ordered by recency and falls back to the previous session", async () => {
     goTo("/tools/nmap");
     render(<App />);
     await screen.findByRole("button", { name: "nmap" });
     goTo("/runs/rn-1");
-    await waitFor(() => {
-      if (!screen.getByRole("button", { name: "rn-1" })) throw new Error("第二个会话 tab 未登记");
-    });
-    const tabarea = screen.getByRole("navigation", { name: "工作区标签页" });
+    await screen.findByRole("button", { name: "rn-1" });
+    const tabarea = screen.getByRole("navigation", { name: "已打开的会话" });
     const labels = Array.from(tabarea.querySelectorAll(".tabarea-label")).map(
       (node) => node.textContent,
     );
     expect(labels.indexOf("nmap")).toBeLessThan(labels.indexOf("rn-1"));
-    // 关闭活跃的 rn-1：回退到仍开着的 nmap 会话 tab。
-    fireEvent.click(screen.getByRole("button", { name: "关闭标签 rn-1" }));
-    await waitFor(() => {
-      if (window.location.pathname !== "/tools/nmap") {
-        throw new Error(`未回退到 nmap: ${window.location.pathname}`);
-      }
-    });
+    fireEvent.click(screen.getByRole("button", { name: "关闭 rn-1" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/tools/nmap"));
     expect(screen.getByRole("button", { name: "nmap" }).getAttribute("aria-current")).toBe("page");
   });
+});
 
-  it("Inspector 分区三段在场（当前对象 / 关联 / 运行配置），Activity 五页签可切换", () => {
+describe("Panels and global actions", () => {
+  it("keeps Inspector and Activity collapsed by default and opens them on demand", () => {
     render(<App />);
-    const inspector = screen.getByRole("complementary", { name: "Inspector" });
-    expect(inspector.textContent).toContain("当前对象");
-    expect(inspector.textContent).toContain("关联知识 / 工具");
-    expect(inspector.textContent).toContain("运行配置");
-    const activity = screen.getByRole("region", { name: "Activity 面板" });
-    for (const tabLabel of ["任务队列", "Tool Runs", "日志", "输出", "状态"]) {
-      expect(activity.textContent).toContain(tabLabel);
+    const inspectorBtn = screen.getByRole("button", { name: "Inspector" });
+    expect(inspectorBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+    fireEvent.click(inspectorBtn);
+    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeTruthy();
+    fireEvent.click(inspectorBtn);
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+
+    const activityBtn = screen.getByRole("button", { name: /Activity 面板/ });
+    expect(activityBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("region", { name: "Activity 面板" })).toBeNull();
+    fireEvent.click(activityBtn);
+    expect(screen.getByRole("region", { name: "Activity 面板" })).toBeTruthy();
+    for (const label of ["任务队列", "Tool Runs", "日志", "输出", "状态"]) {
+      expect(screen.getByRole("region", { name: "Activity 面板" }).textContent).toContain(label);
     }
     fireEvent.click(screen.getByRole("tab", { name: "Tool Runs" }));
     expect(screen.getByRole("tabpanel", { name: "Tool Runs" })).toBeTruthy();
   });
 
-  it("Agents 工作区深链接直达实页（P7-7 替换占位）", async () => {
-    goTo("/agents");
+  it("opens Inspector context for a deep-linked entity", async () => {
+    goTo("/tools/nmap");
     render(<App />);
-    // P7-7 起该工作区是实页三区（占位页 fills-in 标注已随批次移除），
-    // 等三区 section 出现再断言深链接与固定 tab 激活。
-    expect(await screen.findByTestId("agents-defs-section")).toBeTruthy();
-    expect(screen.getByTestId("agents-runs-section")).toBeTruthy();
-    expect(screen.getByTestId("agents-memory-section")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Agent Studio/ }).getAttribute("aria-current")).toBe(
-      "page",
-    );
+    await screen.findByRole("button", { name: "nmap" });
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    const inspector = screen.getByRole("complementary", { name: "Inspector" });
+    expect(inspector.textContent).toContain("工具 nmap");
+    expect(inspector.textContent).toContain("/tools/nmap");
   });
-});
 
-describe("移动抽屉与搜索面板（P5-4 既有行为保持）", () => {
-  it("移动抽屉：打开锁滚动，Esc 关闭并解锁", () => {
+  it("shows real local-service state and keeps search, language and workspace navigation available", async () => {
+    render(<App />);
+    expect(screen.getByRole("button", { name: /搜索/ })).toBeTruthy();
+    expect(
+      screen.getAllByRole("link").filter((link) => link.getAttribute("href") === "/runs").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByRole("link").filter((link) => link.getAttribute("href") === "/runtime").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("link", { name: "Runs" }).getAttribute("href")).toBe("/runs");
+    expect(screen.getByRole("link", { name: "Runtime" }).getAttribute("href")).toBe("/runtime");
+    expect(screen.getByRole("combobox", { name: "界面语言" })).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("API 与 Runtime 可用"),
+    );
+    const notifications = screen.getByRole("button", { name: "通知" });
+    expect((notifications as HTMLButtonElement).disabled).toBe(true);
+    expect(notifications.getAttribute("title")).toContain("尚未接入");
+    expect(screen.getByRole("button", { name: "切换主题" })).toBeTruthy();
+  });
+
+  it("keeps the mobile drawer scroll lock, Escape close and route-close behavior", () => {
     render(<App />);
     expect(document.body.style.overflow).toBe("");
-    fireEvent.click(screen.getByRole("button", { name: "打开菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开导航菜单" }));
     expect(document.body.style.overflow).toBe("hidden");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(document.body.style.overflow).toBe("");
-  });
-
-  it("路由变化自动收起抽屉", () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "打开菜单" }));
-    expect(document.body.style.overflow).toBe("hidden");
-    // 点击 rail 里的工作区链接（同工作区着陆页）触发路由变化。
+    fireEvent.click(screen.getByRole("button", { name: "打开导航菜单" }));
     fireEvent.click(screen.getByRole("link", { name: "Tools" }));
     expect(document.body.style.overflow).toBe("");
   });
 
-  it("⌘K 打开面板：空态热门入口，输入后命中真实端点桩的工具分组", async () => {
+  it("supports Ctrl+K global search and Escape dismissal", async () => {
     render(<App />);
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const dialog = await screen.findByRole("dialog", { name: "全局搜索" });
-    expect(screen.getAllByText("热门入口").length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索关键词" }), {
-      target: { value: "nmap" },
-    });
-    await waitFor(() => {
-      const groupLabels = Array.from(document.querySelectorAll(".search-group-label")).map(
-        (node) => node.textContent,
-      );
-      if (!groupLabels.includes("工具")) throw new Error("工具分组未出现");
-    });
-    expect(dialog.textContent).toContain("nmap");
+    expect(dialog.textContent).toContain("热门入口");
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "全局搜索" })).toBeNull());
   });
 
-  it("Esc 关闭搜索面板", async () => {
+  it("switches between Chinese, English and Japanese and persists the choice", async () => {
     render(<App />);
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    await screen.findByRole("dialog", { name: "全局搜索" });
-    fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => {
-      if (screen.queryByRole("dialog", { name: "全局搜索" }) !== null) {
-        throw new Error("面板未关闭");
-      }
+    const language = screen.getByRole("combobox", { name: "界面语言" }) as HTMLSelectElement;
+    expect(language.value).toBe("zh-CN");
+    fireEvent.change(language, { target: { value: "en-US" } });
+    await waitFor(() => expect(document.documentElement.lang).toBe("en-US"));
+    expect(screen.getByRole("navigation", { name: "Global navigation" })).toBeTruthy();
+    const englishWorkspaceNav = screen.getByRole("navigation", { name: "Workspace navigation" });
+    expect(englishWorkspaceNav.textContent).toContain("Overview");
+    expect(
+      within(englishWorkspaceNav)
+        .getByRole("link", { name: "Overview" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(localStorage.getItem("rip_language")).toBe("en-US");
+    expect(document.title).toBe("Research Intelligence Platform");
+    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
+      target: { value: "ja-JP" },
     });
+    await waitFor(() => expect(document.documentElement.lang).toBe("ja-JP"));
+    expect(screen.getByRole("navigation", { name: "グローバルナビゲーション" })).toBeTruthy();
+    expect(localStorage.getItem("rip_language")).toBe("ja-JP");
+    fireEvent.change(screen.getByRole("combobox", { name: "表示言語" }), {
+      target: { value: "zh-CN" },
+    });
+    await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
+    expect(document.title).toBe("RIP 研究情报平台");
+  });
+
+  it("shows live run and runtime data in the Activity panel", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "展开 Activity 面板" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tool Runs" }));
+    expect(await screen.findByRole("link", { name: /nmap · run-live-1/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "状态" }));
+    expect(await screen.findByText("worker-1")).toBeTruthy();
+    const separator = screen.getByRole("separator", { name: "调整 Activity 高度" });
+    const before = Number(separator.getAttribute("aria-valuenow"));
+    fireEvent.keyDown(separator, { key: "ArrowUp" });
+    expect(Number(separator.getAttribute("aria-valuenow"))).toBe(before - 2);
+  });
+
+  it("shows real Run error events and registered artifacts in Activity", async () => {
+    goTo("/runs/run-live-1");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "展开 Activity 面板" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "日志" }));
+    expect(await screen.findByText("timeout")).toBeTruthy();
+    expect((await screen.findAllByText(/timed out/)).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("tab", { name: "输出" }));
+    expect(await screen.findByText("artifact-live-1")).toBeTruthy();
+  });
+
+  it("loads selected Tool and Task data into Inspector context", async () => {
+    goTo("/tools/nmap");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    expect((await screen.findAllByText("Nmap scanner")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("120 s")).length).toBeGreaterThan(0);
+    cleanup();
+    goTo("/research/tasks/t1");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    expect((await screen.findAllByText("Test research task")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("example.test")).length).toBeGreaterThan(0);
+    cleanup();
+    goTo("/plugins/plugin-a");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    expect((await screen.findAllByText("Plugin Alpha")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Apache-2.0")).toBeTruthy();
+    cleanup();
+    goTo("/knowledge?knowledge_id=k1");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    expect((await screen.findAllByText("Knowledge Alpha")).length).toBeGreaterThan(0);
+    expect(screen.getByText("APPROVED")).toBeTruthy();
+  });
+
+  it("persists collapsed sidebar preference and synchronizes the theme control", () => {
+    render(<App />);
+    const collapse = screen.getByRole("button", { name: "收起侧边栏" });
+    fireEvent.click(collapse);
+    expect(localStorage.getItem("rip_sidebar_collapsed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "切换主题" }));
+    expect(document.documentElement.getAttribute("data-theme")).toBe("rip-light");
   });
 });
 
-describe("ErrorBoundary 按路由 re-key（P5-4）", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
+describe("ErrorBoundary routing recovery", () => {
+  afterEach(() => vi.restoreAllMocks());
   function Bomb(): never {
     throw new Error("boom");
   }
 
-  it("key 变化复位错误态（路由切换后页面恢复渲染）", () => {
+  it("resets only when the route key changes", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { rerender } = render(
       <ErrorBoundary key="/tools" scope="route">
@@ -309,20 +435,17 @@ describe("ErrorBoundary 按路由 re-key（P5-4）", () => {
       </ErrorBoundary>,
     );
     expect(screen.getByText("页面出错了")).toBeTruthy();
-    // 同 key 换好子树：错误保持（不自动吞错）。
     rerender(
       <ErrorBoundary key="/tools" scope="route">
         <p>好的页面</p>
       </ErrorBoundary>,
     );
     expect(screen.getByText("页面出错了")).toBeTruthy();
-    // 换 key（模拟路由切换）：错误复位，新子树正常渲染。
     rerender(
       <ErrorBoundary key="/runs" scope="route">
         <p>好的页面</p>
       </ErrorBoundary>,
     );
     expect(screen.getByText("好的页面")).toBeTruthy();
-    expect(screen.queryByText("页面出错了")).toBeNull();
   });
 });

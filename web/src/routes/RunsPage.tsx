@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useApi } from "../lib/hooks";
@@ -91,17 +92,17 @@ export function RunsPage() {
   return (
     <div>
       <PageHeader
-        title="运行记录"
+        title={translateUi("运行记录")}
         actions={
           <>
             <select
-              aria-label="按 caller 过滤"
+              aria-label={translateUi("按 caller 过滤")}
               data-testid="caller-filter"
               className="select select-sm rounded-control border border-edge bg-base-100"
               value={caller}
               onChange={(event) => setCaller(event.target.value)}
             >
-              <option value="">全部 caller</option>
+              <option value="">{translateUi("全部 caller")}</option>
               {callerOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -109,12 +110,12 @@ export function RunsPage() {
               ))}
             </select>
             <select
-              aria-label="按状态过滤"
+              aria-label={translateUi("按状态过滤")}
               className="select select-sm rounded-control border border-edge bg-base-100"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
             >
-              <option value="">全部状态</option>
+              <option value="">{translateUi("全部状态")}</option>
               {RUN_STATUS.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -135,7 +136,7 @@ export function RunsPage() {
           }
         />
       ) : items.length === 0 ? (
-        <EmptyPanel text="暂无 Run：工具派发链（Phase 1/3）未产生运行记录。" />
+        <EmptyPanel text={translateUi("暂无 Run：工具派发链（Phase 1/3）未产生运行记录。")} />
       ) : (
         <>
           <p className="mb-2 text-xs text-muted">

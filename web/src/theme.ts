@@ -43,4 +43,7 @@ export function applyTheme(theme: ThemeId): void {
   } catch {
     /* storage 不可用（隐私模式等）：属性已设置，不持久化即可 */
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent<ThemeId>("rip-theme-change", { detail: concrete }));
+  }
 }

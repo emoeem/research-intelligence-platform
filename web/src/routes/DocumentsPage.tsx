@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
@@ -62,15 +63,17 @@ function RevisionsPanel({ detail }: { detail: DocumentDetail }) {
       className="rounded-surface border border-edge bg-base-100 p-5"
       data-testid="doc-revisions"
     >
-      <h3 className="mb-3 text-sm font-semibold">版本历史：{detail.document_id}</h3>
+      <h3 className="mb-3 text-sm font-semibold">
+        {translateUi("版本历史：")} {detail.document_id}
+      </h3>
       <table className="table table-sm">
         <thead>
           <tr>
-            <th>版本</th>
-            <th>状态</th>
+            <th>{translateUi("版本")}</th>
+            <th>{translateUi("状态")}</th>
             <th>content_hash</th>
-            <th>解析器</th>
-            <th>创建时间</th>
+            <th>{translateUi("解析器")}</th>
+            <th>{translateUi("创建时间")}</th>
           </tr>
         </thead>
         <tbody>
@@ -87,7 +90,7 @@ function RevisionsPanel({ detail }: { detail: DocumentDetail }) {
               <td className="font-mono text-[10px] max-w-40 truncate" title={r.content_hash}>
                 {r.content_hash.slice(0, 16)}…
               </td>
-              <td className="text-xs">{r.parser_version ?? "未解析"}</td>
+              <td className="text-xs">{r.parser_version ?? translateUi("未解析")}</td>
               <td className="text-xs">{formatDateTime(r.created_at)}</td>
             </tr>
           ))}
@@ -127,7 +130,7 @@ export function DocumentsPage() {
     setUploadError(null);
     setUploadResult(null);
     if (!file) {
-      setUploadError("请选择文件");
+      setUploadError(translateUi("请选择文件"));
       return;
     }
     setUploading(true);
@@ -184,13 +187,13 @@ export function DocumentsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="文档中心" />
+      <PageHeader title={translateUi("文档中心")} />
 
       <form className="panel" data-testid="doc-upload-form" onSubmit={onSubmit}>
-        <h3 className="panel-title">导入文档</h3>
+        <h3 className="panel-title">{translateUi("导入文档")}</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <label className="form-control">
-            <span className="label-text">文件</span>
+            <span className="label-text">{translateUi("文件")}</span>
             <input
               type="file"
               className="file-input file-input-bordered file-input-sm w-full"
@@ -199,30 +202,30 @@ export function DocumentsPage() {
             />
           </label>
           <label className="form-control">
-            <span className="label-text">标题</span>
+            <span className="label-text">{translateUi("标题")}</span>
             <input
               className="input input-bordered input-sm"
               data-testid="doc-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="文档标题"
+              placeholder={translateUi("文档标题")}
             />
           </label>
           <label className="form-control">
-            <span className="label-text">可见性</span>
+            <span className="label-text">{translateUi("可见性")}</span>
             <select
               className="select select-bordered select-sm"
               data-testid="doc-visibility"
               value={visibility}
               onChange={(e) => setVisibility(e.target.value)}
             >
-              <option value="private">私有</option>
-              <option value="shared">共享</option>
-              <option value="public">公开</option>
+              <option value="private">{translateUi("私有")}</option>
+              <option value="shared">{translateUi("共享")}</option>
+              <option value="public">{translateUi("公开")}</option>
             </select>
           </label>
           <label className="form-control">
-            <span className="label-text">工作区</span>
+            <span className="label-text">{translateUi("工作区")}</span>
             <input
               className="input input-bordered input-sm"
               data-testid="doc-workspace"
@@ -232,7 +235,7 @@ export function DocumentsPage() {
             />
           </label>
           <label className="form-control md:col-span-2">
-            <span className="label-text">来源 URL（可空）</span>
+            <span className="label-text">{translateUi("来源 URL（可空）")}</span>
             <input
               className="input input-bordered input-sm"
               data-testid="doc-source-url"
@@ -248,7 +251,7 @@ export function DocumentsPage() {
               data-testid="doc-upload-submit"
               disabled={uploading}
             >
-              {uploading ? "导入中…" : "导入"}
+              {uploading ? translateUi("导入中…") : translateUi("导入")}
             </button>
           </div>
         </div>
@@ -267,22 +270,24 @@ export function DocumentsPage() {
       {error && <ErrorPanel error={error} onRetry={refresh} />}
       {loading && <SkeletonPanel lines={4} />}
       {!loading && !error && items.length === 0 && (
-        <EmptyPanel text="暂无文档（上传后经 rp-doc 落 PostgreSQL 情报核）" />
+        <EmptyPanel text={translateUi("暂无文档（上传后经 rp-doc 落 PostgreSQL 情报核）")} />
       )}
       {!loading && !error && items.length > 0 && (
         <section className="rounded-surface border border-edge bg-base-100 p-5 overflow-x-auto">
-          <h3 className="mb-3 text-sm font-semibold">文档列表（workspace: {workspace}）</h3>
+          <h3 className="mb-3 text-sm font-semibold">
+            {translateUi("文档列表（workspace: ")} {workspace}）
+          </h3>
           <table className="table table-sm">
             <thead>
               <tr>
                 <th>ID</th>
-                <th>标题</th>
-                <th>类型</th>
-                <th>大小</th>
-                <th>可见性</th>
-                <th>来源数</th>
-                <th>版本数</th>
-                <th>入库时间</th>
+                <th>{translateUi("标题")}</th>
+                <th>{translateUi("类型")}</th>
+                <th>{translateUi("大小")}</th>
+                <th>{translateUi("可见性")}</th>
+                <th>{translateUi("来源数")}</th>
+                <th>{translateUi("版本数")}</th>
+                <th>{translateUi("入库时间")}</th>
               </tr>
             </thead>
             <tbody>

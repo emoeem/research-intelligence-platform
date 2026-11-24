@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState } from "react";
 import { Link } from "react-router";
 import { useApi } from "../lib/hooks";
@@ -63,7 +64,8 @@ function KnowledgeStatsBadges({ plugin }: { plugin: PluginRow }) {
   const approved = stats.review?.APPROVED ?? 0;
   return (
     <span className="badge badge-sm badge-outline" data-testid="knowledge-stats">
-      来源 {total} 条{approved > 0 ? ` · APPROVED ${approved}` : ""}
+      {translateUi("来源")} {total} {translateUi("条")}
+      {approved > 0 ? ` · APPROVED ${approved}` : ""}
     </span>
   );
 }
@@ -97,7 +99,7 @@ function PluginCard({ plugin }: { plugin: PluginRow }) {
         {plugin.pinned?.value ? (
           <span
             className="badge badge-sm badge-ghost font-mono"
-            title={`快照 ${plugin.pinned.kind}: ${plugin.pinned.value}`}
+            title={`${translateUi("快照")} ${plugin.pinned.kind}: ${plugin.pinned.value}`}
             data-testid="plugin-commit"
           >
             {plugin.pinned.value.slice(0, 7)}
@@ -106,11 +108,11 @@ function PluginCard({ plugin }: { plugin: PluginRow }) {
         <KnowledgeStatsBadges plugin={plugin} />
         {plugin.update_pending ? (
           <span className="badge badge-sm badge-warning" data-testid="update-pending">
-            可更新
+            {translateUi("可更新")}
           </span>
         ) : null}
         {plugin.source_uninstalled ? (
-          <span className="badge badge-sm badge-ghost">来源已卸载</span>
+          <span className="badge badge-sm badge-ghost">{translateUi("来源已卸载")}</span>
         ) : null}
         <span className="opacity-70">{plugin.capabilities_count ?? 0} capabilities</span>
         {plugin.updated_at ? (
@@ -184,7 +186,9 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
     setInstallBusy(true);
     try {
       const res = await pluginInstall(manifestPath.trim(), trust, fields);
-      setInstallOk(`${res.result.command ?? "install"} 已受理：${preview.id}@${preview.version}`);
+      setInstallOk(
+        `${res.result.command ?? "install"} ${translateUi("已受理")}：${preview.id}@${preview.version}`,
+      );
       setDialogOpen(false);
       setPreview(null);
     } catch (error) {
@@ -199,7 +203,9 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
       className="mb-6 rounded-control border border-edge bg-base-100 p-4"
       data-testid="install-panel"
     >
-      <h2 className="mb-2 text-sm font-semibold">安装插件（Manifest 预检 + 分级确认）</h2>
+      <h2 className="mb-2 text-sm font-semibold">
+        {translateUi("安装插件（Manifest 预检 + 分级确认）")}
+      </h2>
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
@@ -214,7 +220,7 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
           value={trust}
           onChange={(event) => setTrust(event.target.value as (typeof TRUST_OPTIONS)[number])}
           data-testid="install-trust-select"
-          aria-label="信任级"
+          aria-label={translateUi("信任级")}
         >
           {TRUST_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -229,7 +235,7 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
           disabled={inspectBusy || manifestPath.trim().length === 0}
           data-testid="install-inspect"
         >
-          预检 Manifest
+          {translateUi("预检 Manifest")}
         </button>
         <button
           type="button"
@@ -238,12 +244,14 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
           disabled={!preview || installBusy}
           data-testid="install-open-confirm"
         >
-          安装
+          {translateUi("安装")}
         </button>
       </div>
       <p className="mt-2 text-xs text-muted" data-testid="install-tier-hint">
-        信任级 {trust}：{tier.confirmation_label}
-        {tier.auto_update_prompt ? "；D10 允许自动更新提示" : "；D10 需手动检查更新"}
+        {translateUi("信任级")} {trust}：{translateUi(tier.confirmation_label)}
+        {tier.auto_update_prompt
+          ? `；${translateUi("D10 允许自动更新提示")}`
+          : `；${translateUi("D10 需手动检查更新")}`}
       </p>
       {preview ? (
         <div
@@ -256,11 +264,11 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
             <span className="badge badge-sm badge-ghost">{preview.kind}</span>
             <span className="badge badge-sm badge-info">{preview.license}</span>
             <span className="badge badge-sm badge-ghost">
-              来源默认信任级 {preview.source_default_trust}
+              {translateUi("来源默认信任级")} {preview.source_default_trust}
             </span>
           </div>
           <p className="mt-1 opacity-70">
-            建议确认强度：{preview.confirmation_label}
+            {translateUi("建议确认强度：")} {translateUi(preview.confirmation_label)}
             {trust !== preview.source_default_trust
               ? `（当前选择 ${trust}，与来源默认不一致，以选择为准）`
               : ""}
@@ -287,7 +295,7 @@ function InstallPanel({ policy }: { policy: TrustPolicy | null }) {
         onClose={() => setDialogOpen(false)}
         tier={tier}
         pluginId={preview?.id ?? ""}
-        confirmText="确认安装"
+        confirmText={translateUi("确认安装")}
         onConfirm={doInstall}
         busy={installBusy}
         contextNote={
@@ -310,8 +318,8 @@ export function PluginsPage() {
   if (!data?.available) {
     return (
       <div>
-        <PageHeader title="插件中心" />
-        <EmptyPanel text={data?.message ?? "插件数据面不可用"} />
+        <PageHeader title={translateUi("插件中心")} />
+        <EmptyPanel text={data?.message ?? translateUi("插件数据面不可用")} />
       </div>
     );
   }
@@ -326,16 +334,34 @@ export function PluginsPage() {
 
   return (
     <div>
-      <PageHeader title={`插件中心（共 ${data.total} 个插件条目）`} />
+      <PageHeader
+        title={`${translateUi("插件中心（共")} ${data.total} ${translateUi("个插件条目）")}`}
+      />
       <InstallPanel policy={policy.data ?? null} />
       {items.length === 0 ? (
-        <EmptyPanel text="尚无插件：经 rp-plugin install 安装后在此展示" />
+        <EmptyPanel text={translateUi("尚无插件：经 rp-plugin install 安装后在此展示")} />
       ) : (
         <>
-          <CategorySection title="已安装" plugins={active} testId="plugins-installed" />
-          <CategorySection title="可更新" plugins={updatable} testId="plugins-updatable" />
-          <CategorySection title="已禁用" plugins={disabled} testId="plugins-disabled" />
-          <CategorySection title="其他（含已卸载）" plugins={others} testId="plugins-others" />
+          <CategorySection
+            title={translateUi("已安装")}
+            plugins={active}
+            testId="plugins-installed"
+          />
+          <CategorySection
+            title={translateUi("可更新")}
+            plugins={updatable}
+            testId="plugins-updatable"
+          />
+          <CategorySection
+            title={translateUi("已禁用")}
+            plugins={disabled}
+            testId="plugins-disabled"
+          />
+          <CategorySection
+            title={translateUi("其他（含已卸载）")}
+            plugins={others}
+            testId="plugins-others"
+          />
         </>
       )}
     </div>

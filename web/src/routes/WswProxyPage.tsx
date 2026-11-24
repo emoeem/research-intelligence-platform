@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiSend, ApiError } from "../lib/api";
@@ -78,11 +79,12 @@ export function WswProxyPage() {
     setBusy(true);
     setMessage(null);
     try {
-      const result = await apiSend<{ started?: boolean; stopped?: boolean; pid?: number; note?: string }>(
-        "POST",
-        `/api/wsw/${action}`,
-        { confirm: true },
-      );
+      const result = await apiSend<{
+        started?: boolean;
+        stopped?: boolean;
+        pid?: number;
+        note?: string;
+      }>("POST", `/api/wsw/${action}`, { confirm: true });
       setMessage(
         action === "listener/start"
           ? `listener 已受理启动（pid ${result.pid ?? "?"}）；状态见上方六态徽标`
@@ -99,7 +101,7 @@ export function WswProxyPage() {
   return (
     <main className="page" data-testid="wsw-proxy-page">
       <PageHeader
-        title="WSW 代理状态"
+        title={translateUi("WSW 代理状态")}
         actions={
           <>
             <button
@@ -110,11 +112,11 @@ export function WswProxyPage() {
               onClick={() =>
                 runAction(
                   "listener/start",
-                  "启动 WSW 代理（只听 127.0.0.1，scope 闸后端强制）？",
+                  translateUi("启动 WSW 代理（只听 127.0.0.1，scope 闸后端强制）？"),
                 )
               }
             >
-              启动代理
+              {translateUi("启动代理")}
             </button>
             <button
               type="button"
@@ -122,28 +124,30 @@ export function WswProxyPage() {
               disabled={busy || state !== "running"}
               data-testid="wsw-listener-stop"
               onClick={() =>
-                runAction("listener/stop", "停止代理并收口拦截队列（全部 EXPIRED）？")
+                runAction("listener/stop", translateUi("停止代理并收口拦截队列（全部 EXPIRED）？"))
               }
             >
-              停止代理
+              {translateUi("停止代理")}
             </button>
           </>
         }
       />
       <p className="muted">
-        MITM 代理只绑定 loopback（127.0.0.1/::1）；Scope 闸只在 Rust 后端强制，
-        超范围请求 403 且拒绝记录可见。拦截队列三动作 Forward/Drop/Modified-Forward，
-        TTL/队满/停机全部 EXPIRED 终态。
+        {translateUi(
+          "MITM 代理只绑定 loopback（127.0.0.1/::1）；Scope 闸只在 Rust 后端强制，超范围请求 403 且拒绝记录可见。拦截队列三动作 Forward/Drop/Modified-Forward，TTL/队满/停机全部 EXPIRED 终态。",
+        )}
       </p>
-      {message && <p className="badge-info" data-testid="wsw-action-message">{message}</p>}
-      {status.error && (
-        <ErrorPanel error={status.error} onRetry={status.retry} />
+      {message && (
+        <p className="badge-info" data-testid="wsw-action-message">
+          {message}
+        </p>
       )}
-      {status.loading && !status.data && <p className="muted">加载中…</p>}
+      {status.error && <ErrorPanel error={status.error} onRetry={status.retry} />}
+      {status.loading && !status.data && <p className="muted">{translateUi("加载中…")}</p>}
       {status.data && (
         <section className="panel" data-testid="wsw-proxy-summary">
           <h2>
-            六态 <StatusBadge status={state} tones={STATE_TONES} />
+            {translateUi("六态")} <StatusBadge status={state} tones={STATE_TONES} />
           </h2>
           <dl className="kv">
             <dt>listener</dt>
@@ -151,24 +155,28 @@ export function WswProxyPage() {
             <dt>bind</dt>
             <dd>{data.bind ?? "-"}</dd>
             <dt>intercept</dt>
-            <dd>{data.intercept_enabled ? "开启（命中请求入队）" : "关闭（默认）"}</dd>
-            <dt>累计请求 / 响应</dt>
+            <dd>
+              {data.intercept_enabled
+                ? translateUi("开启（命中请求入队）")
+                : translateUi("关闭（默认）")}
+            </dd>
+            <dt>{translateUi("累计请求 / 响应")}</dt>
             <dd>
               {data.requests_total ?? 0} / {data.responses_total ?? 0}
             </dd>
-            <dt>scope 拒绝（可见记录）</dt>
+            <dt>{translateUi("scope 拒绝（可见记录）")}</dt>
             <dd data-testid="wsw-scope-blocked">{data.scope_blocked_total ?? 0}</dd>
-            <dt>out-of-scope 放行（passive_forward）</dt>
+            <dt>{translateUi("out-of-scope 放行（passive_forward）")}</dt>
             <dd>{data.out_of_scope_passive_total ?? 0}</dd>
-            <dt>CAS 捕获登记</dt>
+            <dt>{translateUi("CAS 捕获登记")}</dt>
             <dd>{data.captures_total ?? 0}</dd>
-            <dt>队列 pending</dt>
+            <dt>{translateUi("队列 pending")}</dt>
             <dd>{data.queue_pending ?? 0}</dd>
-            <dt>启动时刻</dt>
+            <dt>{translateUi("启动时刻")}</dt>
             <dd>{data.started_at ?? "-"}</dd>
             {data.note && (
               <>
-                <dt>说明</dt>
+                <dt>{translateUi("说明")}</dt>
                 <dd>{data.note}</dd>
               </>
             )}
@@ -177,7 +185,7 @@ export function WswProxyPage() {
       )}
       {data.error_counts && Object.keys(data.error_counts).length > 0 && (
         <section className="panel">
-          <h2>错误五态计数</h2>
+          <h2>{translateUi("错误五态计数")}</h2>
           <ul>
             {Object.entries(data.error_counts).map(([cls, count]) => (
               <li key={cls}>
@@ -188,22 +196,22 @@ export function WswProxyPage() {
         </section>
       )}
       <section className="panel" data-testid="wsw-queue-summary">
-        <h2>拦截队列摘要（只读，最近 50 行）</h2>
+        <h2>{translateUi("拦截队列摘要（只读，最近 50 行）")}</h2>
         {queue.error && <ErrorPanel error={queue.error} onRetry={queue.retry} />}
         {queue.data && (queue.data.rows?.length ?? 0) === 0 && (
-          <p className="muted">{queue.data.note ?? "队列为空"}</p>
+          <p className="muted">{queue.data.note ?? translateUi("队列为空")}</p>
         )}
         {(queue.data?.rows?.length ?? 0) > 0 && (
           <table>
             <thead>
               <tr>
                 <th>intercept_id</th>
-                <th>方向</th>
-                <th>五态</th>
+                <th>{translateUi("方向")}</th>
+                <th>{translateUi("五态")}</th>
                 <th>host</th>
                 <th>method</th>
                 <th>path</th>
-                <th>入队</th>
+                <th>{translateUi("入队")}</th>
                 <th>reason</th>
               </tr>
             </thead>
@@ -225,7 +233,7 @@ export function WswProxyPage() {
         )}
         {queue.data?.counts && Object.keys(queue.data.counts).length > 0 && (
           <p className="muted">
-            计数：
+            {translateUi("计数：")}
             {Object.entries(queue.data.counts)
               .map(([k, v]) => `${k}=${v}`)
               .join("，")}

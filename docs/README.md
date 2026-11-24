@@ -5,7 +5,7 @@
 | 项       | 值                   |
 | -------- | -------------------- |
 | 状态     | 生效中               |
-| 日期     | 2026-11-23           |
+| 日期     | 2026-11-24           |
 
 ## 日常看
 
@@ -58,6 +58,7 @@
 | 上下文分层       | [phase0/CONTEXT-BROKER-DESIGN.md](phase0/CONTEXT-BROKER-DESIGN.md)     |
 | 安全知识源接入计划 | [RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md](RIP-SECURITY-KNOWLEDGE-SOURCES-PLAN.md) |
 | Burp / Yakit 风格 Web 安全工作台扩展 | [rip3/WEB-SECURITY-WORKBENCH-PLAN.md](rip3/WEB-SECURITY-WORKBENCH-PLAN.md)（Proxy / MITM、HTTP History、Repeater、Web Fuzzer、WebSocket、插件与 Rust-First 规划） |
+| RIP Unified Workbench UI 重构（M0-M8 计划、Dashboard 视觉参考、三语界面、阶段验收） | [ui-redesign/MASTER-PLAN.md](ui-redesign/MASTER-PLAN.md)，[Dashboard 视觉参考](ui-redesign/REFERENCE-001-DASHBOARD.md)，[多语言规范](ui-redesign/I18N-IMPLEMENTATION.md)，[原型验收](ui-redesign/M1-PROTOTYPE-ACCEPTANCE.md) |
 | WSW-1 HTTP Message Foundation 批次收口 | [rip3/wsw/WSW-1-BATCH-REPORT.md](rip3/wsw/WSW-1-BATCH-REPORT.md)（Rust 消息模型、HTTP 解析/序列化、CAS、023 迁移与 conformance fixtures） |
 | WSW-4 Web Fuzzer / Intruder 批次收口 | [rip3/wsw/WSW-4-BATCH-REPORT.md](rip3/wsw/WSW-4-BATCH-REPORT.md)（Rust 引擎：Payload 位置/mutator/processor/Job 调度/响应差异/预算控制，028 迁移与 028 真实靶机 selftest；UI 不入批） |
 | WSW-5+6 WebSocket Workbench + Decoder/Comparer/Passive Audit 批次收口 | [rip3/wsw/WSW-5-6-BATCH-REPORT.md](rip3/wsw/WSW-5-6-BATCH-REPORT.md)（WS 帧捕获/存储/重放 030 两表 + rp-wsw ws/decode/compare 子命令 + rp_server 七端点 + 真实 WS 会话 selftest 42 断言；UI 不入批，Gzip/Deflate/Brotli 裁剪登记） |
@@ -106,3 +107,18 @@
 | MA-3 批次验收报告（协作协议与知识供体面：SQLite 029 task_claim 五态 CAS 队列（单语句 UPDATE…WHERE state='claimable' [AND 依赖 EXISTS] RETURNING——WAL 单写者原子等价 BEGIN IMMEDIATE，D2 裁决）+ ma_message 邮箱两列分记（delivered/read 拉模型持久重投 + sweep 清单面 = MA-4 SSE 输入源）+ 递归 CTE 环检测 + transfer attempt 链 + workflow_run.caller_id 写面接线与节点 params caller_id 绑定（双层解析 params>run级>None，agent-engine 零 diff 复用 MA-2 预算全链）+ rp-collab CLI 十一子命令 + MCP 七枚协作派发工具（rip.run_subtask spawn rp-agent wait / get_subtask_status / claim_task 双语义 / complete_claim / send_message / fetch_messages / contribute_knowledge spawn rp-kc；sha2 转正 caller 解析 fail-closed）+ REST POST /api/subtasks 署名面（legacy 403）+ PG V0007 knowledge 供体两列一索引 + rp-kc donor-submit 写入即候选收据；三硬验收实测：双 caller 节点 agent_run 分账 + budget denied 帽拒词形、MCP 派发往返 226/402ms agent_run.caller_id 落列、N=6 真进程/线程 CAS 恰一胜 + N=6 并发供体 188ms 全 CANDIDATE + SAME_CONTENT N-1 边 + 双闸；selftest_ma3.sh 57/57 + 既有回归五绿 + phase6 既有 1 红单列 + workspace 177 套件 1260 passed 唯一环境红 di2_media×4 登记；坏消息五项单列） | [rip3/MA-3-BATCH-REPORT.md](rip3/MA-3-BATCH-REPORT.md) |
 | MA-4 批次验收报告（事件推送与跨 AI 端到端验收——MA 轨收官批：rp_server `GET /api/events` SSE 推送面（stdlib close-delimited D1 / 既有表只读 tail 三形态 cursor D2——audit_event append-only + updated_at 窗口元组去重 + workflow_run 活跃态快照 diff / 进程内订阅注册表 + 单 tail 轮询 daemon 扇出 D3 / 心跳・连接帽 503 sse_capacity・Last-Event-ID 重放 / 四 env 常量 + 头注文档；零 SQL 写全经 connect_ro）+ caller 读面 additive（/api/runs caller_id 027 库水位投影 + 三端点 ?caller= 等值过滤）+ web caller 维度四文件（RunsPage 徽标列与过滤下拉 / AgentsPage / RunDetailPage / RunPanel + api.ts + runs-smoke additive 126/126）+ 截图入库 6 帧（web/qa/runs/ mock 4 + RP_P6_E2E=1 真实后端 2）+ selftest_ma4.sh 八节（四形态端到端 + SSE 实时性专节 + N=4 双口径压测 + V-9 SKIP 守卫预挂 + 生产库指纹；76 PASS/0 FAIL/0 SKIP）；实测：形态① CLI 654→196ms 比 0.3（PARALLEL_PLAN 由 ma2_parallel_budget e2e 承载声明）/ 形态② 4215→1191ms 比 0.283≤0.7 四 caller 全 SUCCEEDED + legacy 403 + 审计四态 / 形态③ claim·message 全程 SSE 可见 sent→delivered→read 与库直查一致 / 形态④ N=4 供体 161ms 全 CANDIDATE + SAME_CONTENT≥N-1 + 双闸 + approve 正例 / SSE 单事件 0.406s p95≤2s 零丢失 12/12 心跳 2.003s N=4 同序 same=True 重放回看窗 + 帽 503 + 断连清理 + 401 / /api/runs?caller= p95 10.2ms；**MA-3 移交缺陷修正单列：subtask_dispatch spawn 二进制 WORKFLOW_BIN→AGENT_BIN（对齐其文档契约，REST 派发 agent run 首次真实可运行）**；Cargo.lock 399 恒定 + crates/** 零 diff + 030/V0008 不立项 + A15 十六硬钉 29 零随更 + 既有回归七套零改动（phase6 既有 1 红 48/1 口径不变命中数 3 不增不减）+ workspace 唯一环境红 di2_media×4 基线同败；§八 MA 轨收官记账七项全达标 + R1-R9 对照 + Plugin Center 观察池登记） | [rip3/MA-4-BATCH-REPORT.md](rip3/MA-4-BATCH-REPORT.md) |
 
+
+
+## UI 重构（Unified Workbench）
+
+| 主题 | 文档 |
+|---|---|
+| UI 重构总计划、M0-M8 阶段门禁 | [ui-redesign/MASTER-PLAN.md](ui-redesign/MASTER-PLAN.md) |
+| M0 基线审计、测试结果与 Figma 现状 | [ui-redesign/M0-BASELINE.md](ui-redesign/M0-BASELINE.md) |
+| 依赖审计与成熟 UI 库候选 | [ui-redesign/M0-DEPENDENCY-AUDIT.md](ui-redesign/M0-DEPENDENCY-AUDIT.md) |
+| 当前工作区与路由 | [ui-redesign/M0-CURRENT-ROUTES.md](ui-redesign/M0-CURRENT-ROUTES.md) |
+| 当前 UI 问题和优先级 | [ui-redesign/M0-UI-PROBLEMS.md](ui-redesign/M0-UI-PROBLEMS.md) |
+| 设计系统和页面规格 | [ui-redesign/design/](ui-redesign/design/) 与 [ui-redesign/screens/SCREEN-SPECS.md](ui-redesign/screens/SCREEN-SPECS.md) |
+| 统一入口与成熟依赖 ADR | [ui-redesign/decisions/](ui-redesign/decisions/) |
+| 本地浏览器设计原型（样例数据，非生产） | [ui-redesign/prototype/](ui-redesign/prototype/) |
+| M1 原型验收、截图证据和 Figma 未完成项 | [ui-redesign/M1-PROTOTYPE-ACCEPTANCE.md](ui-redesign/M1-PROTOTYPE-ACCEPTANCE.md) |

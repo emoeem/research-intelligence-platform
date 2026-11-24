@@ -1,6 +1,7 @@
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
+import i18n from "../src/i18n";
 
 /** P7-7 冒烟：Agent Studio 实页三区（/agents）：
  *  1. Agent 定义与能力绑定（定义列表 + ?id= 详情能力绑定对账与运行摘要）；
@@ -185,7 +186,8 @@ function stubFetchByPath(respond: (pathname: string, search: string) => unknown)
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("zh-CN");
   stubFetchByPath((pathname, search) => {
     if (pathname === "/api/agents") {
       return search.includes("id=") ? AGENTS_DETAIL_STUB : AGENTS_LIST_STUB;
@@ -197,10 +199,11 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+  await i18n.changeLanguage("zh-CN");
 });
 
 describe("Agent Studio 实页三区（P7-7）", () => {

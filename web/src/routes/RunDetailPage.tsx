@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { Link, useParams } from "react-router";
 import { useApi } from "../lib/hooks";
 import { ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
@@ -155,15 +156,15 @@ export function RunDetailPage() {
   if (!runId) {
     return (
       <div>
-        <PageHeader title="Run 详情" />
-        <p className="text-sm text-muted">缺少 run_id。</p>
+        <PageHeader title={translateUi("Run 详情")} />
+        <p className="text-sm text-muted">{translateUi("缺少 run_id。")}</p>
       </div>
     );
   }
   if (detail.loading) {
     return (
       <div>
-        <PageHeader title="Run 详情" />
+        <PageHeader title={translateUi("Run 详情")} />
         <SkeletonPanel lines={6} />
       </div>
     );
@@ -171,7 +172,7 @@ export function RunDetailPage() {
   if (detail.error !== null) {
     return (
       <div>
-        <PageHeader title="Run 详情" />
+        <PageHeader title={translateUi("Run 详情")} />
         <ErrorPanel error={detail.error} onRetry={detail.retry} />
       </div>
     );
@@ -180,8 +181,8 @@ export function RunDetailPage() {
   if (!run) {
     return (
       <div>
-        <PageHeader title="Run 详情" />
-        <p className="text-sm text-muted">条目不存在。</p>
+        <PageHeader title={translateUi("Run 详情")} />
+        <p className="text-sm text-muted">{translateUi("条目不存在。")}</p>
       </div>
     );
   }
@@ -208,7 +209,7 @@ export function RunDetailPage() {
       />
 
       <div className="rounded-surface border border-edge bg-base-100 p-4">
-        <h2 className="text-sm font-semibold">概要</h2>
+        <h2 className="text-sm font-semibold">{translateUi("概要")}</h2>
         <div className="mt-3 space-y-1">
           <MetaRow
             label="tool"
@@ -260,15 +261,27 @@ export function RunDetailPage() {
                 : `${run.duration_ms} ms`
             }
           />
-          <MetaRow label="发起" value={run.created_at ? formatDateTime(run.created_at) : null} />
-          <MetaRow label="开始" value={run.started_at ? formatDateTime(run.started_at) : null} />
-          <MetaRow label="完成" value={run.finished_at ? formatDateTime(run.finished_at) : null} />
-          <MetaRow label="更新" value={run.updated_at ? formatDateTime(run.updated_at) : null} />
+          <MetaRow
+            label={translateUi("发起")}
+            value={run.created_at ? formatDateTime(run.created_at) : null}
+          />
+          <MetaRow
+            label={translateUi("开始")}
+            value={run.started_at ? formatDateTime(run.started_at) : null}
+          />
+          <MetaRow
+            label={translateUi("完成")}
+            value={run.finished_at ? formatDateTime(run.finished_at) : null}
+          />
+          <MetaRow
+            label={translateUi("更新")}
+            value={run.updated_at ? formatDateTime(run.updated_at) : null}
+          />
         </div>
       </div>
 
       <section className="rounded-surface border border-edge bg-base-100 p-4">
-        <h2 className="text-sm font-semibold">Artifact 列表</h2>
+        <h2 className="text-sm font-semibold">{translateUi("Artifact 列表")}</h2>
         {artifactsNote ? <p className="mt-2 text-xs text-muted">{artifactsNote}</p> : null}
         {artifacts.length === 0 ? (
           <p className="mt-2 text-xs text-muted">

@@ -1,0 +1,332 @@
+{
+  "screenshots": [
+    "final-dashboard-desktop.png",
+    "final-history-desktop.png",
+    "final-fuzzer-desktop.png",
+    "final-passive-desktop.png",
+    "final-websocket-desktop.png",
+    "final-decoder-desktop.png",
+    "final-comparer-desktop.png",
+    "final-agents-desktop.png",
+    "final-workflows-desktop.png",
+    "final-runs-desktop.png",
+    "final-runtime-desktop.png",
+    "final-dashboard-light-desktop.png",
+    "final-history-light-desktop.png",
+    "final-dashboard-mobile.png",
+    "final-history-mobile.png",
+    "final-fuzzer-mobile.png",
+    "final-fuzzer-english.png",
+    "final-fuzzer-japanese.png"
+  ],
+  "pages": {
+    "/": {
+      "h1": [
+        "下午好"
+      ],
+      "workspaceTabCount": 0,
+      "workspaceTabs": [],
+      "metrics": {
+        "viewportWidth": 390,
+        "documentWidth": 390,
+        "bodyWidth": 390,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/websec/history": {
+      "h1": [
+        "HTTP 历史"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 390,
+        "documentWidth": 390,
+        "bodyWidth": 390,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/websec/fuzzer": {
+      "h1": [
+        "Fuzzer 任务"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 390,
+        "documentWidth": 390,
+        "bodyWidth": 390,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/websec/passive": {
+      "h1": [
+        "被动审计"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/websec/websocket": {
+      "h1": [
+        "WebSocket 帧"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/websec/decoder": {
+      "h1": [
+        "解码器"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/websec/comparer": {
+      "h1": [
+        "比较器"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/agents": {
+      "h1": [
+        "Agent Studio"
+      ],
+      "workspaceTabCount": 0,
+      "workspaceTabs": [],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/workflows": {
+      "h1": [
+        "Workflow Studio"
+      ],
+      "workspaceTabCount": 0,
+      "workspaceTabs": [],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/runs": {
+      "h1": [
+        "运行记录"
+      ],
+      "workspaceTabCount": 0,
+      "workspaceTabs": [],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/runtime": {
+      "h1": [
+        "运行时"
+      ],
+      "workspaceTabCount": 0,
+      "workspaceTabs": [],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-dark"
+      }
+    },
+    "/-rip-light": {
+      "h1": [
+        "下午好"
+      ],
+      "workspaceTabCount": 0,
+      "workspaceTabs": [],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-light"
+      }
+    },
+    "/websec/history-rip-light": {
+      "h1": [
+        "HTTP 历史"
+      ],
+      "workspaceTabCount": 7,
+      "workspaceTabs": [
+        "HTTP 历史",
+        "Repeater",
+        "被动审计",
+        "WebSocket 帧",
+        "Fuzzer 任务",
+        "解码器",
+        "比较器"
+      ],
+      "metrics": {
+        "viewportWidth": 1792,
+        "documentWidth": 1792,
+        "bodyWidth": 1792,
+        "horizontalOverflow": 0,
+        "lang": "zh-CN",
+        "theme": "rip-light"
+      }
+    }
+  },
+  "languages": {
+    "en": {
+      "stats": {
+        "viewportWidth": 1440,
+        "documentWidth": 1440,
+        "bodyWidth": 1440,
+        "horizontalOverflow": 0,
+        "lang": "en-US",
+        "theme": "rip-dark"
+      },
+      "title": [
+        "Fuzzer jobs"
+      ],
+      "createTitle": "Create Fuzzer job",
+      "fallbackChinese": 0
+    },
+    "ja": {
+      "stats": {
+        "viewportWidth": 1440,
+        "documentWidth": 1440,
+        "bodyWidth": 1440,
+        "horizontalOverflow": 0,
+        "lang": "ja-JP",
+        "theme": "rip-dark"
+      },
+      "title": [
+        "Fuzzer ジョブ"
+      ],
+      "createTitle": "Fuzzer ジョブを作成",
+      "fallbackChinese": 0
+    }
+  },
+  "errors": [],
+  "apiRequests": [
+    "/api/overview",
+    "/api/stats",
+    "/api/runtime?limit=5",
+    "/api/runs?limit=5",
+    "/api/wsw/history?limit=200",
+    "/api/wsw/fuzz/jobs?limit=100",
+    "/api/wsw/passive/rules",
+    "/api/wsw/passive/hits?limit=100",
+    "/api/wsw/ws/frames?limit=100",
+    "/api/agents?limit=50",
+    "/api/agent-runs?limit=50",
+    "/api/workflows?limit=100",
+    "/api/workflow-runs?limit=50",
+    "/api/runs?limit=50",
+    "/api/runtime?limit=200"
+  ],
+  "summary": {
+    "desktopRoutes": 11,
+    "desktopMaxOverflow": 0,
+    "mobileMaxOverflow": 0,
+    "screenshots": 18,
+    "errors": 0
+  }
+}

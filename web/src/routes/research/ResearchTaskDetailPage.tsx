@@ -1,3 +1,4 @@
+import { translateUi } from "../../i18n";
 /** Research Task 详情（P5-1，Phase 5 §4.5.C 首版）：/api/tasks 单条 + 关联
  *  运行（/api/runs 客户端按 task_id 过滤）+ status_history 时间线（RTIS 源
  *  JSON 数组保真展示）。
@@ -35,7 +36,7 @@ export function ResearchTaskDetailPage() {
   if (detail.loading) {
     return (
       <div>
-        <PageHeader title="任务详情" />
+        <PageHeader title={translateUi("任务详情")} />
         <SkeletonPanel lines={6} />
       </div>
     );
@@ -43,7 +44,7 @@ export function ResearchTaskDetailPage() {
   if (detail.error !== null) {
     return (
       <div>
-        <PageHeader title="任务详情" />
+        <PageHeader title={translateUi("任务详情")} />
         <ErrorPanel error={detail.error} onRetry={detail.retry} />
       </div>
     );
@@ -53,10 +54,10 @@ export function ResearchTaskDetailPage() {
   if (!task) {
     return (
       <div>
-        <PageHeader title="任务详情" />
+        <PageHeader title={translateUi("任务详情")} />
         <EmptyPanel
-          text={`任务不存在：${taskId || "(空 ID)"}`}
-          actionLabel="返回任务列表"
+          text={`${translateUi("任务不存在：")}${taskId || "(空 ID)"}`}
+          actionLabel={translateUi("返回任务列表")}
           onAction={() => {
             window.location.assign("/research/tasks");
           }}
@@ -74,7 +75,7 @@ export function ResearchTaskDetailPage() {
   return (
     <div>
       <PageHeader
-        title={task.title ?? "任务详情"}
+        title={task.title ?? translateUi("任务详情")}
         actions={
           <>
             <span
@@ -86,47 +87,52 @@ export function ResearchTaskDetailPage() {
               <span className="badge badge-sm badge-outline">{task.task_type}</span>
             ) : null}
             <Link to="/research/tasks" className="btn btn-ghost btn-sm">
-              返回列表
+              {translateUi("返回列表")}
             </Link>
           </>
         }
       />
 
-      <section className="rounded-surface border border-edge bg-base-100 p-4" aria-label="任务属性">
+      <section
+        className="rounded-surface border border-edge bg-base-100 p-4"
+        aria-label={translateUi("任务属性")}
+      >
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm md:grid-cols-2">
           <div>
-            <dt className="text-xs text-muted">任务 ID</dt>
+            <dt className="text-xs text-muted">{translateUi("任务 ID")}</dt>
             <dd className="font-mono text-xs break-all">{task.task_id}</dd>
           </div>
           <div>
-            <dt className="text-xs text-muted">目标</dt>
+            <dt className="text-xs text-muted">{translateUi("目标")}</dt>
             <dd className="break-all">{task.target ?? "-"}</dd>
           </div>
           <div>
-            <dt className="text-xs text-muted">来源系统</dt>
+            <dt className="text-xs text-muted">{translateUi("来源系统")}</dt>
             <dd>
               {task.source_system ?? "-"}
               {task.source_file ? `（${task.source_file}）` : ""}
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-muted">创建 / 更新</dt>
+            <dt className="text-xs text-muted">{translateUi("创建 / 更新")}</dt>
             <dd>
               {task.created_at ? formatDateTime(task.created_at) : "-"} /{" "}
               {task.updated_at ? formatDateTime(task.updated_at) : "-"}
             </dd>
           </div>
           <div className="md:col-span-2">
-            <dt className="text-xs text-muted">目标（objective）</dt>
+            <dt className="text-xs text-muted">{translateUi("目标（objective）")}</dt>
             <dd className="whitespace-pre-wrap break-words">{task.objective ?? "-"}</dd>
           </div>
         </dl>
       </section>
 
-      <section className="mt-5" aria-label="状态时间线">
-        <h2 className="mb-2 text-base font-semibold">状态时间线（status_history 保真）</h2>
+      <section className="mt-5" aria-label={translateUi("状态时间线")}>
+        <h2 className="mb-2 text-base font-semibold">
+          {translateUi("状态时间线（status_history 保真）")}
+        </h2>
         {history.length === 0 ? (
-          <EmptyPanel text="无状态历史（源数据 status_history 为空或不可解析）。" />
+          <EmptyPanel text={translateUi("无状态历史（源数据 status_history 为空或不可解析）。")} />
         ) : (
           <ol className="space-y-1.5">
             {history.map((entry, index) => (
@@ -147,17 +153,22 @@ export function ResearchTaskDetailPage() {
         )}
       </section>
 
-      <section className="mt-5" aria-label="关联运行">
+      <section className="mt-5" aria-label={translateUi("关联运行")}>
         <h2 className="mb-2 text-base font-semibold">
-          关联运行（{relatedRuns.length}）
+          {translateUi("关联运行")}（{relatedRuns.length}）
           <span className="ml-2 text-xs font-normal text-muted">
-            task_id 精确匹配 /api/runs（载入 200 条口径）
+            {translateUi("task_id 精确匹配 /api/runs（载入 200 条口径）")}
           </span>
         </h2>
         {runs.error !== null ? (
-          <p className="text-xs text-error">运行面不可读：{runs.error.message}</p>
+          <p className="text-xs text-error">
+            {translateUi("运行面不可读：")}
+            {runs.error.message}
+          </p>
         ) : relatedRuns.length === 0 ? (
-          <EmptyPanel text="该任务暂无关联 ToolRun（运行域记录随 P5-6 执行调度批次出现）。" />
+          <EmptyPanel
+            text={translateUi("该任务暂无关联 ToolRun（运行域记录随 P5-6 执行调度批次出现）。")}
+          />
         ) : (
           <ul className="space-y-2">
             {relatedRuns.map((run) => (

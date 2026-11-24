@@ -105,6 +105,21 @@ const WswHistoryPage = lazy(() =>
 const WswRepeaterPage = lazy(() =>
   import("./routes/WswRepeaterPage").then((m) => ({ default: m.WswRepeaterPage })),
 );
+const PassiveAuditPage = lazy(() =>
+  import("./routes/PassiveAuditPage").then((m) => ({ default: m.PassiveAuditPage })),
+);
+const WebSocketFramesPage = lazy(() =>
+  import("./routes/WebSocketFramesPage").then((m) => ({ default: m.WebSocketFramesPage })),
+);
+const FuzzerJobsPage = lazy(() =>
+  import("./routes/FuzzerJobsPage").then((m) => ({ default: m.FuzzerJobsPage })),
+);
+const DecoderPage = lazy(() =>
+  import("./routes/DecoderPage").then((m) => ({ default: m.DecoderPage })),
+);
+const ComparerPage = lazy(() =>
+  import("./routes/ComparerPage").then((m) => ({ default: m.ComparerPage })),
+);
 
 function lazyElement(node: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
@@ -169,6 +184,11 @@ export function App() {
             {/* WSW-3 websec 工作区（W3-D8）：History + Repeater 两页。 */}
             <Route path="websec/history" element={lazyElement(<WswHistoryPage />)} />
             <Route path="websec/repeater" element={lazyElement(<WswRepeaterPage />)} />
+            <Route path="websec/passive" element={lazyElement(<PassiveAuditPage />)} />
+            <Route path="websec/websocket" element={lazyElement(<WebSocketFramesPage />)} />
+            <Route path="websec/fuzzer" element={lazyElement(<FuzzerJobsPage />)} />
+            <Route path="websec/decoder" element={lazyElement(<DecoderPage />)} />
+            <Route path="websec/comparer" element={lazyElement(<ComparerPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

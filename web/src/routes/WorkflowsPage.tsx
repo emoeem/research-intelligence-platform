@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import {
   addEdge,
   useEdgesState,
@@ -322,7 +323,7 @@ export function WorkflowsPage() {
   // ---- 保存（P8-4 put：画布图转 definition JSON，版本存储侧递增） ----
   const onSave = useCallback(async () => {
     if (!workflowId.trim()) {
-      setSaveIssues(["workflow_id 为空：在版本区键入 workflow_id 后保存"]);
+      setSaveIssues([translateUi("workflow_id 为空：在版本区键入 workflow_id 后保存")]);
       return;
     }
     const graph = flowToGraph(nodes, edges);
@@ -374,7 +375,7 @@ export function WorkflowsPage() {
       try {
         input = JSON.parse(trimmed) as Record<string, unknown>;
       } catch {
-        setRunError("input 不是合法 JSON object：修正后再运行");
+        setRunError(translateUi("input 不是合法 JSON object：修正后再运行"));
         return;
       }
     }
@@ -443,10 +444,12 @@ export function WorkflowsPage() {
         title="Workflow Studio"
         actions={
           <>
-            <span className="badge badge-ghost">工作区 8</span>
+            <span className="badge badge-ghost">{translateUi("工作区 8")}</span>
             {readOnly ? (
               <span className="badge badge-warning badge-sm" data-testid="readonly-banner">
-                {narrow ? "移动端只读查看：编辑请切换宽屏" : "历史回看只读"}
+                {narrow
+                  ? translateUi("移动端只读查看：编辑请切换宽屏")
+                  : translateUi("历史回看只读")}
               </span>
             ) : null}
           </>
@@ -564,7 +567,7 @@ export function WorkflowsPage() {
           ) : null}
           {selectedRunId && runDetail.data ? (
             <p className="text-[10px] text-muted">
-              当前 run 状态：
+              {translateUi("当前 run 状态：")}
               <StateBadge state={runDetail.data.run?.state} />
             </p>
           ) : null}

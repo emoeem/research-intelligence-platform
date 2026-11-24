@@ -1,3 +1,4 @@
+import { translateUi } from "../i18n";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiSend, ApiError } from "../lib/api";
@@ -66,7 +67,9 @@ export function WswCertPage() {
   async function regenerate() {
     if (
       !window.confirm(
-        "重新生成根 CA？已信任旧 CA 的客户端（浏览器/curl）将全部失信，需要重新手动导入。",
+        translateUi(
+          "重新生成根 CA？已信任旧 CA 的客户端（浏览器/curl）将全部失信，需要重新手动导入。",
+        ),
       )
     ) {
       return;
@@ -80,7 +83,7 @@ export function WswCertPage() {
       setRegenOutput(result.output ?? "CA 已重新生成");
       setExported(null);
       void queryClient.invalidateQueries();
-      setMessage("CA 已重新生成（旧信任全部失效，需重新手动导入）。");
+      setMessage(translateUi("CA 已重新生成（旧信任全部失效，需重新手动导入）。"));
     } catch (error) {
       setMessage(actionError("重生成", error));
     } finally {
@@ -93,7 +96,7 @@ export function WswCertPage() {
   return (
     <main className="page" data-testid="wsw-cert-page">
       <PageHeader
-        title="WSW 证书状态"
+        title={translateUi("WSW 证书状态")}
         actions={
           <>
             <button
@@ -103,7 +106,7 @@ export function WswCertPage() {
               data-testid="wsw-ca-export"
               onClick={() => void exportPem()}
             >
-              导出 PEM
+              {translateUi("导出 PEM")}
             </button>
             <button
               type="button"
@@ -112,48 +115,54 @@ export function WswCertPage() {
               data-testid="wsw-ca-regenerate"
               onClick={() => void regenerate()}
             >
-              重新生成 CA
+              {translateUi("重新生成 CA")}
             </button>
           </>
         }
       />
       <p className="muted">
-        根 CA 私钥 0600 落 rip-data/wsw-ca/（不入 Git、不入日志、不进普通
-        Artifact）。导出与重生成均为显式用户动作；本工作台不静默安装根证书、
-        不修改系统代理设置。
+        {translateUi(
+          "根 CA 私钥 0600 落 rip-data/wsw-ca/（不入 Git、不入日志、不进普通 Artifact）。导出与重生成均为显式用户动作；本工作台不静默安装根证书、不修改系统代理设置。",
+        )}
       </p>
-      {message && <p className="badge-info" data-testid="wsw-cert-message">{message}</p>}
+      {message && (
+        <p className="badge-info" data-testid="wsw-cert-message">
+          {message}
+        </p>
+      )}
       {status.error && <ErrorPanel error={status.error} onRetry={status.retry} />}
-      {status.loading && !status.data && <p className="muted">加载中…</p>}
+      {status.loading && !status.data && <p className="muted">{translateUi("加载中…")}</p>}
       {status.data && !status.data.exists && (
         <p className="muted" data-testid="wsw-ca-missing">
-          CA 未生成：首次启动代理时自动生成（或手动执行 regenerate）。
+          {translateUi("CA 未生成：首次启动代理时自动生成（或手动执行 regenerate）。")}
         </p>
       )}
       {status.data?.exists && (
         <section className="panel" data-testid="wsw-ca-summary">
-          <h2>根 CA</h2>
+          <h2>{translateUi("根 CA")}</h2>
           <dl className="kv">
             <dt>CN</dt>
             <dd>{data.cn ?? "-"}</dd>
-            <dt>指纹（SHA-256，证书 DER）</dt>
+            <dt>{translateUi("指纹（SHA-256，证书 DER）")}</dt>
             <dd data-testid="wsw-ca-fingerprint">
               <code>{data.fingerprint ?? "-"}</code>
             </dd>
-            <dt>有效期</dt>
+            <dt>{translateUi("有效期")}</dt>
             <dd>
               {data.not_before ?? "-"} ~ {data.not_after ?? "-"}
             </dd>
-            <dt>私钥权限</dt>
+            <dt>{translateUi("私钥权限")}</dt>
             <dd>{data.key_mode ?? "-"}（应为 0o600）</dd>
-            <dt>存储位</dt>
+            <dt>{translateUi("存储位")}</dt>
             <dd>{data.ca_dir ?? "-"}</dd>
           </dl>
         </section>
       )}
       {exported?.pem && (
         <section className="panel">
-          <h2>导出的 CA PEM（已写 {exported.path}）</h2>
+          <h2>
+            {translateUi("导出的 CA PEM（已写")} {exported.path}）
+          </h2>
           <pre className="code" data-testid="wsw-ca-pem">
             {exported.pem}
           </pre>
@@ -161,29 +170,35 @@ export function WswCertPage() {
       )}
       {regenOutput && (
         <section className="panel">
-          <h2>重生成输出</h2>
+          <h2>{translateUi("重生成输出")}</h2>
           <pre className="code">{regenOutput}</pre>
         </section>
       )}
       <section className="panel">
-        <h2>浏览器信任安装说明（手动，各平台）</h2>
+        <h2>{translateUi("浏览器信任安装说明（手动，各平台）")}</h2>
         <ol>
-          <li>导出 PEM（上方按钮，文件写 rip-data/wsw-state/exported-ca.pem）。</li>
           <li>
-            Linux（Chromium/Firefox）：设置 → 隐私与安全 → 证书 → 查看证书 →
-            证书颁发机构 → 导入导出的 ca.cert.pem，勾选「信任此 CA 标识网站」。
+            {translateUi("导出 PEM（上方按钮，文件写 rip-data/wsw-state/exported-ca.pem）。")}
           </li>
           <li>
-            macOS：钥匙串访问 → 系统 → 导入 ca.cert.pem → 双击 → 信任 →
-            「始终信任」（需要管理员确认）。
+            {translateUi(
+              "Linux（Chromium/Firefox）：设置 → 隐私与安全 → 证书 → 查看证书 → 证书颁发机构 → 导入导出的 ca.cert.pem，勾选「信任此 CA 标识网站」。",
+            )}
           </li>
           <li>
-            Windows：certmgr.msc → 受信任的根证书颁发机构 → 证书 → 导入
-            ca.cert.pem。
+            {translateUi(
+              "macOS：钥匙串访问 → 系统 → 导入 ca.cert.pem → 双击 → 信任 →「始终信任」（需要管理员确认）。",
+            )}
           </li>
           <li>
-            命令行：curl 使用 --cacert 指向导出的 PEM 即可，无需安装；
-            openssl s_client 用 -CAfile 同理。
+            {translateUi(
+              "Windows：certmgr.msc → 受信任的根证书颁发机构 → 证书 → 导入 ca.cert.pem。",
+            )}
+          </li>
+          <li>
+            {translateUi(
+              "命令行：curl 使用 --cacert 指向导出的 PEM 即可，无需安装；openssl s_client 用 -CAfile 同理。",
+            )}
           </li>
         </ol>
         <p className="muted">{data.trust_install}</p>

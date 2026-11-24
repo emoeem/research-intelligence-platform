@@ -116,7 +116,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(APP_DIR, "static")
+STATIC_DIR = os.path.realpath(os.environ.get("RP_STATIC_DIR") or os.path.join(APP_DIR, "static"))
+SPA_FALLBACK = os.environ.get("RP_SPA_FALLBACK", "0").strip() == "1"
 REPO_ROOT = os.path.dirname(os.path.dirname(APP_DIR))
 DEFAULT_DB = os.path.join(REPO_ROOT, "migrations", "platform.db")
 DEFAULT_TOKEN_FILE = os.path.join(REPO_ROOT, ".rp-workbench-token")
@@ -1131,6 +1132,121 @@ def handle_runs(conn: sqlite3.Connection, params: dict) -> dict:
     if run_id:
         run = query_one(conn, f"SELECT * FROM {src}.tool_run WHERE run_id = ?", (run_id,))
         if run is None:
+            # A workflow run is itself a persisted run record. The /api/runs
+            # compatibility endpoint accepts its run_id as well as tool_run ids.
+            for workflow_src in attached_schemas(conn):
+                if not table_exists(conn, workflow_src, "workflow_run"):
+                    continue
+                workflow_row = query_one(
+                    conn,
+                    f"SELECT * FROM {workflow_src}.workflow_run WHERE run_id=?",
+                    (run_id,),
+                )
+                if workflow_row is None:
+                    continue
+                workflow_row = dict(workflow_row)
+                workflow_nodes = []
+                if table_exists(conn, workflow_src, "workflow_run_node"):
+                    workflow_nodes = query_all(
+                        conn,
+                        f"SELECT * FROM {workflow_src}.workflow_run_node WHERE run_id=? ORDER BY node_id",
+                        (run_id,),
+                    )
+                for node_row in workflow_nodes:
+                    for field in ("output_json", "error_json"):
+                        if field in node_row:
+                            node_row[field.replace("_json", "")] = parse_json_or_none(node_row[field])
+                result_run = {
+                    "run_id": run_id,
+                    "status": workflow_row.get("state"),
+                    "state": workflow_row.get("state"),
+                    "trace_id": workflow_row.get("trace_id") or run_id,
+                    "task_id": workflow_row.get("task_id"),
+                    "workflow_id": workflow_row.get("workflow_id"),
+                    "workflow_version": workflow_row.get("workflow_version"),
+                    "started_at": workflow_row.get("started_at"),
+                    "finished_at": workflow_row.get("finished_at"),
+                    "input": parse_json_or_none(workflow_row.get("input_json")),
+                    "error": parse_json_or_none(workflow_row.get("error_json")),
+                    "nodes": workflow_nodes,
+                    "source": "workflow_run",
+                }
+                correlation = {
+                    "trace_id": result_run["trace_id"],
+                    "task_id": result_run["task_id"],
+                    "agent_run_id": workflow_row.get("agent_run_id"),
+                    "tool_run_id": workflow_row.get("tool_run_id"),
+                    "artifact_ids": [],
+                    "evidence_ids": [],
+                }
+                return {
+                    "available": True,
+                    "source": f"{workflow_src}.workflow_run",
+                    "run": result_run,
+                    "artifacts": [],
+                    "evidence": [],
+                    "correlation": correlation,
+                    "trace_id": result_run["trace_id"],
+                    "correlation_id": run_id,
+                    "source_note": "WorkflowRun is the persisted source for this run identifier.",
+                }
+            # Workflow tool nodes are also authoritative run records. Older workflow
+            # execution paths can persist workflow_run_node.tool_run_id before the
+            # tool engine has a corresponding tool_run row. Project the persisted
+            # node (never fabricate stdout/stderr) so /api/runs remains traceable.
+            for node_src in attached_schemas(conn):
+                if not table_exists(conn, node_src, "workflow_run_node") or not table_exists(conn, node_src, "workflow_run"):
+                    continue
+                node = query_one(
+                    conn,
+                    f"SELECT * FROM {node_src}.workflow_run_node "
+                    f"WHERE {_wf_col(conn,node_src,'workflow_run_node','tool_run_id')}=? LIMIT 1",
+                    (run_id,),
+                )
+                if node is None:
+                    continue
+                node = dict(node)
+                parent = query_one(
+                    conn,
+                    f"SELECT * FROM {node_src}.workflow_run WHERE run_id=?",
+                    (node.get("run_id"),),
+                ) or {}
+                result_run = {
+                    "run_id": run_id,
+                    "status": node.get("state"),
+                    "state": node.get("state"),
+                    "trace_id": parent.get("trace_id") or parent.get("run_id"),
+                    "task_id": parent.get("task_id"),
+                    "workflow_run_id": node.get("run_id"),
+                    "workflow_id": parent.get("workflow_id"),
+                    "node_id": node.get("node_id"),
+                    "node_kind": node.get("node_kind"),
+                    "attempt": node.get("attempt"),
+                    "started_at": node.get("started_at"),
+                    "finished_at": node.get("finished_at"),
+                    "output": parse_json_or_none(node.get("output_json")),
+                    "error": parse_json_or_none(node.get("error_json")),
+                    "source": "workflow_run_node",
+                }
+                correlation = {
+                    "trace_id": parent.get("trace_id") or parent.get("run_id"),
+                    "task_id": parent.get("task_id"),
+                    "agent_run_id": node.get("agent_run_id"),
+                    "tool_run_id": run_id,
+                    "artifact_ids": [],
+                    "evidence_ids": [],
+                }
+                return {
+                    "available": True,
+                    "source": f"{node_src}.workflow_run_node",
+                    "run": result_run,
+                    "artifacts": [],
+                    "evidence": [],
+                    "correlation": correlation,
+                    "trace_id": node.get("trace_id"),
+                    "correlation_id": run_id,
+                    "source_note": "WorkflowRunNode is the persisted source for this tool execution; no tool_run row was found.",
+                }
             raise ApiError(404, "no_run", f"Run 不存在：{run_id}")
         for column in ("input_refs_json", "permission_ctx", "budget_json", "error_json",
                        "usage_json", "environment_json", "replay_json"):
@@ -3208,6 +3324,60 @@ def _rp_verify_json(extra_args: list, timeout_s: int = 60) -> dict:
         raise ApiError(502, inner.get("code", "verify_cmd_failed"),
                        inner.get("message", f"rp-verify 退出码 {proc.returncode}"))
     return payload
+
+
+def _domain_limit(params: dict, default: int = 50) -> int:
+    raw = (params.get("limit") or [str(default)])[0]
+    try:
+        return max(1, min(int(raw), 100))
+    except ValueError:
+        raise ApiError(400, "bad_limit", f"limit 非法：{raw!r}")
+
+
+def handle_projects(_conn, params) -> dict:  # noqa: ARG001
+    workspace = (params.get("workspace_id") or ["default"])[0]
+    args = ["project-list", "--workspace", workspace, "--limit", str(_domain_limit(params))]
+    for key, flag in (("status", "--status"), ("q", "--q")):
+        value = (params.get(key) or [""])[0].strip()
+        if value:
+            args.extend([flag, value])
+    payload = _rp_verify_json(args)
+    return {"items": payload.get("items") or [], "total": len(payload.get("items") or []),
+            "workspace_id": workspace, "available": True, "source": "verification-engine"}
+
+
+def handle_project_detail(project_id: str, workspace: str = "default") -> dict:
+    if not project_id.startswith("prj-") or "/" in project_id:
+        raise ApiError(400, "bad_project_id", f"非法 project_id：{project_id!r}")
+    try:
+        return _rp_verify_json(["project-get", "--project", project_id, "--workspace", workspace])
+    except ApiError as exc:
+        if exc.code == "not_found":
+            raise ApiError(404, "not_found", f"Project 不存在于工作区 {workspace}: {project_id}") from exc
+        raise
+
+
+def handle_research_assets(_conn, params) -> dict:  # noqa: ARG001
+    workspace = (params.get("workspace_id") or ["default"])[0]
+    args = ["asset-list", "--workspace", workspace, "--limit", str(_domain_limit(params))]
+    for key, flag in (("type", "--type"), ("q", "--q")):
+        value = (params.get(key) or [""])[0].strip()
+        if value:
+            args.extend([flag, value])
+    payload = _rp_verify_json(args)
+    return {"items": payload.get("items") or [], "total": len(payload.get("items") or []),
+            "workspace_id": workspace, "available": True, "source": "verification-engine"}
+
+
+def handle_research_asset_detail(asset_id: str, workspace: str = "default") -> dict:
+    if not asset_id.startswith("ast-") or "/" in asset_id:
+        raise ApiError(400, "bad_asset_id", f"非法 asset_id：{asset_id!r}")
+    try:
+        return _rp_verify_json(["asset-get", "--asset", asset_id, "--workspace", workspace])
+    except ApiError as exc:
+        if exc.code == "not_found":
+            raise ApiError(404, "not_found", f"Research Asset 不存在于工作区 {workspace}: {asset_id}") from exc
+        raise
 
 
 def handle_research_plans(_conn, params) -> dict:  # noqa: ARG001
@@ -5747,6 +5917,8 @@ API_ROUTES = {
     "/api/workflows": handle_workflows,
     "/api/workflow-runs": handle_workflow_runs,
     "/api/documents": handle_documents,
+    "/api/projects": handle_projects,
+    "/api/research/assets": handle_research_assets,
     "/api/research/plans": handle_research_plans,
     "/api/research/evidence": handle_research_evidence,
     "/api/research/coverage": handle_research_coverage,
@@ -5784,6 +5956,11 @@ class RpHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         for name, value in (extra_headers or {}).items():
             self.send_header(name, value)
         for name, value in trace_response_headers(payload).items():
@@ -5798,6 +5975,11 @@ class RpHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         if exc.status == 401:
             self.send_header("WWW-Authenticate", "Bearer")
         if exc.status == 429:
@@ -5805,6 +5987,33 @@ class RpHandler(BaseHTTPRequestHandler):
         self._audit_note(exc.status, rate_limited=(exc.code == "rate_limited"))
         self.end_headers()
         self.wfile.write(body)
+
+    def require_same_origin(self) -> None:
+        """Browser write CSRF guard: reject cross-site Fetch Metadata and mismatched Origin.
+
+        Non-browser CLI clients may omit Origin; if supplied, it must match the
+        request Host and use HTTP(S). This server emits no permissive CORS headers.
+        """
+        fetch_site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if fetch_site == "cross-site":
+            raise ApiError(403, "cross_site_write_blocked", "跨站写请求已拒绝")
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return
+        parsed_origin = urlparse(origin)
+        host = (self.headers.get("Host") or "").strip()
+        if (
+            parsed_origin.scheme not in ("http", "https")
+            or not parsed_origin.netloc
+            or parsed_origin.username
+            or parsed_origin.password
+            or parsed_origin.netloc.lower() != host.lower()
+            or parsed_origin.path not in ("", "/")
+            or parsed_origin.params
+            or parsed_origin.query
+            or parsed_origin.fragment
+        ):
+            raise ApiError(403, "origin_mismatch", "Origin 与当前请求来源不一致")
 
     def require_auth(self) -> None:
         """Bearer Token 校验：constant-time 比较，失败统一 401 + 节流。
@@ -5853,6 +6062,24 @@ class RpHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", CONTENT_TYPES.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'sha256-bCGf+2x3SGtiR7jTFx4Abmpdv2F5IX83N1F+KitZMUo='; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob: https:; font-src 'self' data:; "
+            "connect-src 'self' ws: wss:; media-src 'self' data: blob:; "
+            "worker-src 'self' blob:; object-src 'none'; base-uri 'self'; "
+            "form-action 'self'; frame-ancestors 'none'",
+        )
+        if os.path.basename(path) == "index.html":
+            self.send_header("Cache-Control", "no-store")
+        elif f"{os.sep}assets{os.sep}" in path:
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "public, max-age=3600")
         self.end_headers()
         self.wfile.write(body)
 
@@ -5922,6 +6149,20 @@ class RpHandler(BaseHTTPRequestHandler):
                     if document_id and "/" not in document_id:
                         self.send_json(handle_document_detail(document_id))
                         return
+                if parsed.path.startswith("/api/projects/"):
+                    project_id = unquote(parsed.path[len("/api/projects/"):]).strip("/")
+                    if project_id and "/" not in project_id:
+                        project_params = parse_qs(parsed.query)
+                        workspace = (project_params.get("workspace_id") or ["default"])[0]
+                        self.send_json(handle_project_detail(project_id, workspace))
+                        return
+                if parsed.path.startswith("/api/research/assets/"):
+                    asset_id = unquote(parsed.path[len("/api/research/assets/"):]).strip("/")
+                    if asset_id and "/" not in asset_id:
+                        asset_params = parse_qs(parsed.query)
+                        workspace = (asset_params.get("workspace_id") or ["default"])[0]
+                        self.send_json(handle_research_asset_detail(asset_id, workspace))
+                        return
                 # RIP3 P5-2 验证编排动态路径：计划详情（plan+items+events 聚合）
                 # 与计划项详情（五态与依据面）。
                 if parsed.path.startswith("/api/research/plans/"):
@@ -5973,6 +6214,15 @@ class RpHandler(BaseHTTPRequestHandler):
                         return
                 raise ApiError(404, "no_route", f"未知 API：{parsed.path}")
             file_path = self.resolve_static(parsed.path)
+            if (
+                file_path is None
+                and SPA_FALLBACK
+                and "text/html" in (self.headers.get("Accept") or "")
+                and "." not in parsed.path.rstrip("/").rsplit("/", 1)[-1]
+            ):
+                # SPA deep-link fallback only for HTML navigation. Missing JS/CSS,
+                # arbitrary assets, and all /api/* paths remain real 404 responses.
+                file_path = self.resolve_static("/index.html")
             if file_path is None:
                 raise ApiError(404, "not_found", f"路径不存在或越界：{parsed.path}")
             self.send_static_file(file_path)
@@ -6085,6 +6335,20 @@ class RpHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         t0 = time.monotonic()
         try:
+            self.require_same_origin()
+            project_match = re.fullmatch(r"/api/projects/([^/]+)", parsed.path)
+            if project_match:
+                check_rate_limit()
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write", "Projects 写端点要求启用鉴权")
+                body = self._read_json_body()
+                project_params = parse_qs(parsed.query)
+                workspace = (project_params.get("workspace_id") or ["default"])[0]
+                payload = _rp_verify_json(["project-update", "--project", unquote(project_match.group(1)),
+                                           "--workspace", workspace, "--json", json.dumps(body, ensure_ascii=False)])
+                self.send_json(payload)
+                return
             if parsed.path.startswith("/api/wsw/history/"):
                 check_rate_limit()
                 self.require_auth()
@@ -6126,6 +6390,7 @@ class RpHandler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/wsw/repeater/tabs/([^/]+)/request", parsed.path)
             if match:
                 check_rate_limit()
+                self.require_same_origin()
                 self.require_auth()
                 if not AUTH_ENABLED:
                     raise ApiError(403, "auth_required_for_write",
@@ -6162,6 +6427,7 @@ class RpHandler(BaseHTTPRequestHandler):
         t0 = time.monotonic()
         try:
             check_rate_limit()
+            self.require_same_origin()
             # RIP3 WSW-2 写面：CA 导出/重生成（confirm）+ listener start/stop。
             if parsed.path.startswith("/api/wsw/"):
                 self.require_auth()
@@ -6181,6 +6447,63 @@ class RpHandler(BaseHTTPRequestHandler):
                                    "文档导入写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
                 body = self._read_json_body(DOC_IMPORT_MAX_BYTES * 2)
                 self.send_json(documents_import_post(body))
+                return
+            if parsed.path == "/api/projects":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write", "Projects 写端点要求启用鉴权")
+                body = self._read_json_body()
+                payload = _rp_verify_json(["project-create", "--json", json.dumps(body, ensure_ascii=False)])
+                self.send_json(payload, status=201)
+                return
+            if parsed.path == "/api/research/assets":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write", "Research Assets 写端点要求启用鉴权")
+                body = self._read_json_body()
+                payload = _rp_verify_json(["asset-create", "--json", json.dumps(body, ensure_ascii=False)])
+                self.send_json(payload, status=201)
+                return
+            asset_write_match = re.fullmatch(r"/api/research/assets/([^/]+)/(endpoints|observations|technology)", parsed.path)
+            if asset_write_match:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write", "Research Asset 写端点要求启用鉴权")
+                asset_id, resource = unquote(asset_write_match.group(1)), asset_write_match.group(2)
+                command = {"endpoints":"asset-endpoint-add", "observations":"asset-observation-add",
+                           "technology":"asset-technology-add"}[resource]
+                body = self._read_json_body()
+                payload = _rp_verify_json([command, "--asset", asset_id, "--json",
+                                           json.dumps(body, ensure_ascii=False)])
+                self.send_json(payload, status=201)
+                return
+            project_asset_match = re.fullmatch(r"/api/projects/([^/]+)/assets", parsed.path)
+            if project_asset_match:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write", "Project asset relation 写端点要求启用鉴权")
+                body = self._read_json_body()
+                asset_id = str(body.get("asset_id") or "").strip()
+                role = str(body.get("role") or "in_scope")
+                if not asset_id:
+                    raise ApiError(400, "missing_asset_id", "asset_id 为必填字段")
+                payload = _rp_verify_json(["project-link-asset", "--project", unquote(project_asset_match.group(1)),
+                                           "--asset", asset_id, "--role", role])
+                self.send_json(payload, status=201)
+                return
+            project_task_match = re.fullmatch(r"/api/projects/([^/]+)/tasks", parsed.path)
+            if project_task_match:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write", "Project task relation 写端点要求启用鉴权")
+                body = self._read_json_body()
+                task_id = str(body.get("task_id") or "").strip()
+                role = str(body.get("role") or "research")
+                if not task_id:
+                    raise ApiError(400, "missing_task_id", "task_id 为必填字段")
+                payload = _rp_verify_json(["project-link-task", "--project", unquote(project_task_match.group(1)),
+                                           "--task", task_id, "--role", role])
+                self.send_json(payload, status=201)
                 return
             # P8-4 workflow 定义保存（画布图转 definition JSON 走版本递增）。
             if parsed.path == "/api/workflows":

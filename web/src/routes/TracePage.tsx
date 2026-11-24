@@ -1,6 +1,9 @@
+import { translateUi } from "../i18n";
 import { Link, useSearchParams } from "react-router";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
+import { VirtualTable } from "../components/data/VirtualTable";
+import type { DataColumn } from "../components/data";
 
 /** Trace 关联链（P7-5）：/api/traces?id=<任一关联 ID> 统一只读查询（与
  *  rp-agent trace 子命令、agent-engine trace::trace_query 同一拓扑）。
@@ -125,19 +128,27 @@ function TraceSection({
           空段（015 之前落库行 trace_id 为 NULL，不参与关联，如实呈现）。
         </p>
       ) : (
-        <ul className="mt-2 space-y-1.5">
-          {rows.map((row, i) => (
-            <li key={i} className="rounded-control border border-edge-soft p-2 text-xs">
-              <IdLink id={cell(row, idKey) || `#${i + 1}`} />
-              <span className="ml-2 text-muted">
-                {columns
-                  .filter((c) => cell(row, c))
-                  .map((c) => `${c}=${cell(row, c)}`)
-                  .join(" · ")}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <VirtualTable<TraceRow>
+          label={title}
+          rows={rows}
+          rowKey={(row) => cell(row, idKey) || JSON.stringify(row)}
+          height={Math.min(420, Math.max(120, rows.length * 34))}
+          rowHeight={34}
+          columns={[
+            {
+              id: "record_id",
+              label: idKey,
+              width: "minmax(12rem, 1.4fr)",
+              render: (row) => <IdLink id={cell(row, idKey)} />,
+            },
+            ...columns.map((column): DataColumn<TraceRow> => ({
+              id: column,
+              label: column,
+              width: "minmax(8rem, 1fr)",
+              render: (row) => <span className="text-muted">{cell(row, column)}</span>,
+            })),
+          ]}
+        />
       )}
     </section>
   );
@@ -152,9 +163,13 @@ export function TracePage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Trace 关联链" />
+      <PageHeader title={translateUi("Trace 关联链")} />
       {!queryId ? (
-        <EmptyPanel text="需 ?id=<关联 ID>：六 ID（trace_id / task_id / agent_run_id / tool_run_id / artifact_id / evidence_id）任一即可。" />
+        <EmptyPanel
+          text={translateUi(
+            "需 ?id=<关联 ID>：六 ID（trace_id / task_id / agent_run_id / tool_run_id / artifact_id / evidence_id）任一即可。",
+          )}
+        />
       ) : chain.loading ? (
         <SkeletonPanel lines={6} />
       ) : chain.error !== null ? (
@@ -169,9 +184,9 @@ export function TracePage() {
         <>
           <div className="rounded-surface border border-edge bg-base-100 p-4">
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-muted">查询入参</span>
+              <span className="text-muted">{translateUi("查询入参")}</span>
               <span className="break-all font-medium">{chain.data?.query_id}</span>
-              <span className="text-muted">命中面</span>
+              <span className="text-muted">{translateUi("命中面")}</span>
               <span className="badge badge-sm badge-info">{chain.data?.matched_via}</span>
             </div>
             <p className="mt-2 break-all text-xs text-muted">
