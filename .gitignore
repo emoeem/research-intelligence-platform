@@ -10,6 +10,7 @@ workers/.cache/
 migrations/platform.db
 migrations/platform-fullbatch.db
 .rp-workbench-token
+.rp-mcp-token
 migrations/platform.db-*
 migrations/platform-search.db
 migrations/platform-governance.db
