@@ -200,7 +200,7 @@ impl ProjectAssetStore {
         match result {
             Ok(_) => self
                 .get_project(&id)?
-                .ok_or_else(|| DomainStoreError::NotFound(id)),
+                .ok_or(DomainStoreError::NotFound(id)),
             Err(e) if e.to_string().contains("UNIQUE") => Err(DomainStoreError::Conflict(
                 "project slug already exists in workspace".into(),
             )),
@@ -402,7 +402,7 @@ impl ProjectAssetStore {
         match inserted {
             Ok(()) => self
                 .get_asset(&id)?
-                .ok_or_else(|| DomainStoreError::NotFound(id)),
+                .ok_or(DomainStoreError::NotFound(id)),
             Err(e) if e.to_string().contains("UNIQUE") => Err(DomainStoreError::Conflict(
                 "asset already exists in workspace".into(),
             )),

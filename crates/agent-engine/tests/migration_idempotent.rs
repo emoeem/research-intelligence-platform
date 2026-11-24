@@ -66,10 +66,10 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     // 022 为 RIP3 P5-8 覆盖矩阵与自适应研究，023 为 WSW-1 wsw_body_blob CAS 表，
     // 024 为 WSW-2 wsw_intercept 拦截队列三表，025 为 WSW-3 wsw_exchange
     // 四表（exchange/tab/version/send），026 为 MA-1 caller/api_key 两表，
-    // 027 为 MA-2 caller 归属四列 + caller_budget 配置表，028 为 WSW-4 fuzz 两表。
+    // 027 为 MA-2 caller 归属四列 + caller_budget 配置表，028 为 WSW-4 fuzz 两表，031 为 Projects/Research Assets。
     assert_eq!(
         applied_first,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
         "all migrations must apply once"
     );
 
@@ -84,7 +84,7 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     let user_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(user_version, 30);
+    assert_eq!(user_version, 31);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }

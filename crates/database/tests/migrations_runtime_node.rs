@@ -69,25 +69,25 @@ fn p2_4a_migrate_twice_no_diff_on_memory() {
     assert_eq!(
         versions,
         vec![
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
         ],
-        "discover must see all current migrations 001..028 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget and WSW-4 028 fuzz 两表) (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 019 = P9-3 REST 对外访问审计, 020 = RIP3 P5-2 研究编排域, 021 = RIP3 P5-7 验证证据档, 022 = RIP3 P5-8 覆盖矩阵与自适应研究, 023 = WSW-1 wsw_body_blob CAS)"
+        "discover must see all current migrations 001..031 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget and WSW-4 028 fuzz 两表) (007 = P2-4a 按合入顺序先到先得，005/006 已占用；008 = P4-1 Context Broker 三表, 009 = P6-2 Plugin 数据面, 010 = P6-5 Knowledge 摄取数据面, 011 = SK-1 通用知识来源数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 019 = P9-3 REST 对外访问审计, 020 = RIP3 P5-2 研究编排域, 021 = RIP3 P5-7 验证证据档, 022 = RIP3 P5-8 覆盖矩阵与自适应研究, 023 = WSW-1 wsw_body_blob CAS)"
     );
 
     let pool = open_memory_pool();
 
-    // 第一次：全链 001..030 落地，链尾 030_wsw_ws_frame（007/008 落于链中段）。
+    // 第一次：全链 001..031 落地，链尾 031_research_projects_assets（030_wsw_ws_frame 在前）（007/008 落于链中段）。
     let first = migrate(&pool, &dir).unwrap();
     let last = first.last().expect("at least one migration applied");
     assert_eq!(
         (last.version, last.name.as_str()),
-        (30, "_wsw_ws_frame"),
-        "first run must land 030 last"
+        (31, "_research_projects_assets"),
+        "first run must land 031 last"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
-    assert_eq!(uv1, 30, "user_version must be 30 after first run");
+    assert_eq!(uv1, 31, "user_version must be 31 after first run");
 
     // 第二次：执行器按 user_version 全跳过，零变更。
     let second = migrate(&pool, &dir).unwrap();

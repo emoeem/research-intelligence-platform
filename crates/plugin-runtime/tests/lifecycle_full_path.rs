@@ -601,13 +601,13 @@ fn migration_009_idempotent_on_file_copy() {
         "009 file self-pins user_version = 9 (own pragma)"
     );
     let reapply = database::migrate(&pool, &migrations_dir()).unwrap();
-    // 链尾当前为 WSW-5/6 030_wsw_ws_frame；009 自钉回 9 后 migrate
-    // 需重放 010..030 二十一枚（015/018/027 的 ALTER ADD COLUMN 列已存在由执行器
+    // 链尾当前为 031_research_projects_assets；009 自钉回 9 后 migrate
+    // 需重放 010..031 二十二枚（015/018/027 的 ALTER ADD COLUMN 列已存在由执行器
     // 守卫跳过，重放不炸 duplicate column）。
     assert_eq!(
         reapply.len(),
-        21,
-        "migrate re-applies 010..030 after 009 self-pin reset"
+        22,
+        "migrate re-applies 010..031 after 009 self-pin reset"
     );
     let snap4 = snapshot(&pool);
     assert_eq!(snap4.0, snap2.0, "chain tail restored");
