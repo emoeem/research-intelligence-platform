@@ -103,7 +103,7 @@ echo "== 6. 跨轨零 diff 反证（wsw/verification/agent-engine/web/workers/rt
 CROSS_TRACK="$(git status --porcelain -- crates/wsw-runtime/ crates/verification-engine/ crates/agent-engine/ web/ workers/ integrations/rtis/ migrations/ .github/ 2>/dev/null | wc -l)"
 ck "跨轨 git status 行数" "0" "$CROSS_TRACK"
 ck "migrations/*.sql 计数" "30" "$(ls migrations/*.sql | wc -l)"
-ck "migrations_pg/*.sql 计数（6b V0008 入链）" "8" "$(ls migrations_pg/*.sql | wc -l)"
+ck "migrations_pg/*.sql 计数（6b V0008 + Phase 7 V0009/V0010 入链）" "10" "$(ls migrations_pg/*.sql | wc -l)"
 
 echo "== 7. 工作树落点核对（§2.1 清单 + 判据 14）"
 echo "  -- git status --porcelain 落点："

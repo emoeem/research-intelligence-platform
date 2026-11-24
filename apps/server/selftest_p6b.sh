@@ -144,7 +144,7 @@ echo "== 9. 跨轨零 diff 反证（wsw/verification/agent-engine/web/workers/rt
 CROSS_TRACK="$(git status --porcelain -- crates/wsw-runtime/ crates/verification-engine/ crates/agent-engine/ web/ workers/ integrations/rtis/ migrations/ .github/ 2>/dev/null | wc -l)"
 ck "跨轨 git status 行数" "0" "$CROSS_TRACK"
 ck "migrations/*.sql 计数（036 不立项恒定）" "30" "$(ls migrations/*.sql | wc -l)"
-ck "migrations_pg/*.sql 计数（V0001-V0008）" "8" "$(ls migrations_pg/*.sql | wc -l)"
+ck "migrations_pg/*.sql 计数（V0001-V0010，Phase 7 批 V0009/V0010 入链）" "10" "$(ls migrations_pg/*.sql | wc -l)"
 ck "V0008 迁移在位" "1" "$(ls migrations_pg/V0008__reports.sql 2>/dev/null | wc -l)"
 ck "report_repo 三写读面签名（store/load/list）" "3" \
   "$(grep -cE 'pub fn (store_report|load_report|list_reports_by_task)' crates/intel-db/src/report_repo.rs)"
