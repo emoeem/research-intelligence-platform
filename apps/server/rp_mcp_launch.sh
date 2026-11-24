@@ -17,6 +17,8 @@ export RP_RUN_DB="${REPO}/rip-data/tool-runs.db"
 export RP_MIGRATIONS_DIR="${REPO}/migrations"
 export RP_MANIFEST_DIRS="${REPO}/manifests/tools,${REPO}/containerfiles/rip-tool-webresearch,${REPO}/containerfiles/rip-tool-coreutils"
 export RP_ARTIFACTS_DIR="${REPO}/rip-data/artifacts"
+# 输入暂存根（native_rust document dispatch；Router 预写区，禁宿主绝对路径）。
+export RP_DOC_INPUT_ROOT="${REPO}/rip-data/documents"
 
 # 知识面（rp-kc donor-submit 经此 DSN；refinery V0001-V0010 自动入链）。
 export RP_PG_DSN="postgres://postgres:pgselftest@127.0.0.1:5432/postgres"
