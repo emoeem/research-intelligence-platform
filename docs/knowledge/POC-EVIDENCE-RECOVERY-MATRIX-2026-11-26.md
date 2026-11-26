@@ -10,11 +10,11 @@
 | 缺失证据项目 | 94 |
 | 具有本地 source_path 且路径存在 | 33/33 |
 | 具有 Evidence Ref | 25/33 |
-| Evidence Ref 总数 | 51 |
+| 证据缺口记录中的 Evidence Ref 数 | 51 |
 | Evidence Ref 实际路径可解析 | 51/51 |
 | 具有可解析 source_commit | 30/33 |
 
-当前 33 条证据缺口记录中，33 条本地来源路径存在；ID 16 的源文件已按同目录唯一脚本恢复（历史数据库路径 basename 为 poc.sh，当前文件名为 poc-actuator.sh），但这只恢复 source traceability，不补足 raw response 或 impact boundary。25 条至少有一个 Evidence Ref，8 条没有 Evidence Ref。现有 51 个 Evidence Ref 的路径全部可解析。上述 51 个引用包含脚本、说明和历史报告等不同类型，不能等同于 51 份原始请求/响应或独立复现证据。
+当前 33 条证据缺口记录中，33 条本地来源路径存在；ID 16 的源文件已按同目录唯一脚本恢复（历史数据库路径 basename 为 poc.sh，当前文件名为 poc-actuator.sh），但这只恢复 source traceability，不补足 raw response 或 impact boundary。25 条至少有一个 Evidence Ref，8 条没有 Evidence Ref。该 33 条记录合计 51 个 Evidence Ref，路径全部可解析；全量 49 条 Overlay 合计 70 个 Evidence Ref。上述引用包含脚本、说明和历史报告等不同类型，不能等同于原始请求/响应或独立复现证据。
 
 没有找到可安全确认为这些缺口对应的额外权威运行产物，因此没有自动填入猜测性 Evidence Ref，也没有提升 K 级或 Lifecycle。
 
@@ -99,3 +99,4 @@
 - ID 4、12、18、20、29、72、900047 当前 Overlay 的 source_commit 都是 022a71718740a7fad74ca194a10e9cc9269501c4，该提交是 2026-11-09 的 RTIS 目录迁移提交，不是对应测试的执行 commit。
 - 对 ID 12 与 ID 20，已对原始 RTIS DB 的 verified_note 做精确路径存在性检查，并核对 k_event 元数据；没有发现候选 runs 目录的引用或对应运行事件。
 - 因此没有把 ../runs/jxnu/pan 或 ../runs/aozoneyun-admin/pwd-oracle 添加为 Evidence Ref；8 条无 Evidence Ref 记录数不变。K 级与 Lifecycle 均保持不变；仅 ID 16 因源脚本恢复而移除 source_artifact 一项，raw_request_response 与 impact_boundary 仍缺失。
+- 随后对整个 ../runs 做了文件名/目录名级别的扩展清点（不读取响应正文、脚本正文或会话材料）。除上述两个名称相近但无法关联的目录外，未发现能与 ID 4、18、29、72、900047 的目标身份、端点或测试批次唯一匹配的候选产物；诸如 Swagger、Actuator 等通用文件名因无法绑定到对应目标而排除。
