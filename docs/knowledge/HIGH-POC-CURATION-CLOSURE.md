@@ -90,16 +90,16 @@
 
 ## 全量 Overlay 治理与搜索闭环补强（2026-11-27）
 
-已将 Overlay 治理覆盖从原 High 专项队列扩展到全部 49 条记录：四个治理轴（来源完整性、核验结论、去重状态、独立知识状态）完整率 49/49；33 条存在明确证据缺口，共 95 个缺失证据项，均有 `review_gate`。8 条工具/方法参考标记为 `not_applicable`，避免混淆目标漏洞验证。K 级与 Lifecycle 分布不变。
+已将 Overlay 治理覆盖从原 High 专项队列扩展到全部 49 条记录：四个治理轴（来源完整性、核验结论、去重状态、独立知识状态）完整率 49/49；33 条存在明确证据缺口，共 94 个缺失证据项，均有 `review_gate`。8 条工具/方法参考标记为 `not_applicable`，避免混淆目标漏洞验证。K 级与 Lifecycle 分布不变。
 
-来源覆盖：41/49 有本地来源路径，38/49 有可解析 Git Commit，9/49 记录上游来源 URL。8 条缺少本地路径（7 条上游工具引用 + ID 16 历史源文件缺失）；11 条缺少 Commit（8 条无本地路径 + ID 900061–900063 文件无 Git 历史）。没有虚构来源。
+来源覆盖：42/49 有本地来源路径，39/49 有可解析 Git Commit，9/49 记录上游来源 URL。7 条缺少本地路径，均为上游工具/方法引用；10 条缺少 Commit（7 条无本地路径 + ID 900061–900063 文件无 Git 历史）。ID 16 的源脚本已恢复，迁移提交只用于来源追溯，不是测试执行 Commit。没有虚构来源。
 
 关系治理：25 条关系端点全部解析，新增 2 个显式外部案例组节点；去重状态为 44 条独立、5 条关联族，独立知识判定为 45 条独立、4 条族成员。Overlay 校验器现检查 source_path 边界与存在性、Git Commit 解析、Evidence Ref（含工作区外的 `../runs` 路径）、治理枚举、missing_evidence→review_gate 约束以及关系端点解析。
 
-搜索索引 schema 升级为 v6，新增上游来源 URL、来源完整性、核验结论、去重状态、独立知识状态、缺失证据、Evidence Ref、审核门槛与外部案例关系字段；新增对应筛选器。Knowledge Web 工作台默认展示待补证队列，并新增 Overlay 汇总 API。真实 HTTP 回归覆盖 22 条缺少来源完整性候选、33 条总体证据缺口、上游 URL、外部案例组、`not_applicable` 和 Bearer 鉴权。
+搜索索引 schema 升级为 v6，新增上游来源 URL、来源完整性、核验结论、去重状态、独立知识状态、缺失证据、Evidence Ref、审核门槛与外部案例关系字段；新增对应筛选器。Knowledge Web 工作台默认展示待补证队列，并新增 Overlay 汇总 API。真实 HTTP 回归覆盖 21 条缺少来源完整性候选、33 条总体证据缺口、上游 URL、外部案例组、`not_applicable` 和 Bearer 鉴权。
 
 验证结果：`validate_overlay.py` 通过；`cargo test -p search-engine --offline` 22 单测 + 2 集成测试通过；`selftest_poc_search.sh` 全部通过；Web typecheck 和专项测试通过。源数据库和 Overlay 在 HTTP E2E 测试前后 SHA-256 不变，索引只写入临时目录。详细实现见 `POC-WEB-SEARCH-INTEGRATION-2026-11-26.md` 的 2026-11-27 更新段。
 
 ## 证据路径恢复核对（2026-11-26）
 
-新增逐条矩阵：[`POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md`](POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md)。33 条证据缺口中 32 条本地 source_path 存在，25 条具有 Evidence Ref，51/51 个现有引用路径可解析；8 条没有 Evidence Ref，ID 16 的历史来源文件未定位。没有将脚本/说明误判为原始请求响应或独立复现，也没有提升任何 K 级。
+新增逐条矩阵：[`POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md`](POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md)。33 条证据缺口中 33 条本地 source_path 存在；ID 16 的源脚本已从同目录唯一的 poc-actuator.sh 恢复，但仍缺 raw_request_response 与 impact_boundary。25 条具有 Evidence Ref，51/51 个现有引用路径可解析；8 条没有 Evidence Ref。没有将脚本/说明误判为原始请求响应或独立复现，也没有提升任何 K 级。
