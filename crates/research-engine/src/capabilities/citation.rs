@@ -6,9 +6,7 @@
 //! 改变内容，只改变标记形状；Phase 8 接真实引文面（含回链可解析校验）。
 
 use crate::capabilities::CapabilityExec;
-use crate::contract::{
-    digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor,
-};
+use crate::contract::{digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor};
 use domain::ids::{ArtifactId, EvidenceId};
 use serde::{Deserialize, Serialize};
 
@@ -148,10 +146,7 @@ impl CapabilityExec for CitationCapability {
                 CitationStyle::Inline => format!("({})", index + 1),
             };
             citations.push(Citation {
-                citation_id: format!(
-                    "cite-{}",
-                    digest16(&["cite", &input.synthesis_id, &marker])
-                ),
+                citation_id: format!("cite-{}", digest16(&["cite", &input.synthesis_id, &marker])),
                 marker,
                 evidence_id: evidence.as_ref().map(|e| e.to_string()),
                 artifact_id: artifact.as_ref().map(|a| a.to_string()),

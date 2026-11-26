@@ -222,21 +222,26 @@ fn b5_rtis_and_eri_readonly_dispatch_end_to_end() {
     }
 }
 
-/// 红线（TOOL-INVENTORY:161）：integrations/rtis/ 零修改。
-/// git status --porcelain -- integrations/rtis/ 必须零输出
-///（审计 JSONL 已用固定 env RTIS_ERI_ADAPTER_AUDIT=off 关闭，
-/// knowledge.db 等运行时数据本就在 gitignore 内）。
+/// 红线（TOOL-INVENTORY:161）：RTIS 生产入口与运行时代码零修改。
+/// RIP 自有 integrations/rtis/curation/ Overlay 是只读投影，不属于 RTIS 生产资产，
+/// 因而明确从保护路径中排除；其余 integrations/rtis/ 内容仍必须保持干净。
 #[test]
 fn b5_rtis_kit_directory_untouched() {
     let output = Command::new("git")
-        .args(["status", "--porcelain", "--", "integrations/rtis/"])
+        .args([
+            "status",
+            "--porcelain",
+            "--",
+            "integrations/rtis/",
+            ":(exclude)integrations/rtis/curation/",
+        ])
         .current_dir(repo_root())
         .output()
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         stdout.trim().is_empty(),
-        "integrations/rtis/ must stay untouched, got: {stdout:?}"
+        "RTIS production assets outside the RIP-owned curation overlay must stay untouched, got: {stdout:?}"
     );
     // 受保护入口文件在位（防测试空转）。
     for p in [

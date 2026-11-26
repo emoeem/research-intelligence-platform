@@ -326,7 +326,7 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
         .unwrap();
 
     // update_check：叠加 UPDATE_PENDING 标记，状态不变（§5.1）。
-    assert!(rt.update_check("knowledge.rtis-redteam", "0.2.0").unwrap());
+    assert!(rt.update_check("knowledge.rtis-redteam", "0.4.0").unwrap());
     let row = rt
         .store()
         .get_active("knowledge.rtis-redteam")
@@ -335,7 +335,7 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
     assert!(row.update_pending);
     assert_eq!(row.state, domain::plugin::PluginState::Registered);
     // 无新版（相同版本）清除标记。
-    assert!(!rt.update_check("knowledge.rtis-redteam", "0.1.0").unwrap());
+    assert!(!rt.update_check("knowledge.rtis-redteam", "0.2.0").unwrap());
     let row = rt
         .store()
         .get_active("knowledge.rtis-redteam")
@@ -343,12 +343,12 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
         .unwrap();
     assert!(!row.update_pending);
 
-    // upgrade 0.2.0：新包目录并存，指针切换，旧版本保留（回滚窗口）。
+    // upgrade 0.3.0：新包目录并存，指针切换，旧版本保留（回滚窗口）。
     let mut manifest_v2 = manifest_v1.clone();
     manifest_v2
         .as_object_mut()
         .unwrap()
-        .insert("version".into(), Value::from("0.2.0"));
+        .insert("version".into(), Value::from("0.3.0"));
     let pkg_v2 = build_package(&data_root, "v2", &["capabilities/knowledge_source.yaml"]);
     let outcome = rt
         .upgrade(
@@ -359,20 +359,20 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
             PluginTrust::Local,
         )
         .unwrap();
-    assert_eq!(outcome.from_version, "0.1.0");
-    assert_eq!(outcome.to_version, "0.2.0");
+    assert_eq!(outcome.from_version, "0.2.0");
+    assert_eq!(outcome.to_version, "0.3.0");
     assert!(outcome.old_dir_retained);
     let active = rt
         .store()
         .get_active("knowledge.rtis-redteam")
         .unwrap()
         .unwrap();
-    assert_eq!(active.version, "0.2.0");
+    assert_eq!(active.version, "0.3.0");
     assert!(active.is_active);
     assert_eq!(active.state, domain::plugin::PluginState::Registered);
     let old = rt
         .store()
-        .get("knowledge.rtis-redteam", "0.1.0")
+        .get("knowledge.rtis-redteam", "0.2.0")
         .unwrap()
         .unwrap();
     assert!(
@@ -381,7 +381,7 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
     );
     assert!(
         rt.store()
-            .capabilities("knowledge.rtis-redteam", "0.2.0")
+            .capabilities("knowledge.rtis-redteam", "0.3.0")
             .unwrap()
             .len()
             == 2
@@ -391,12 +391,12 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
         "old dir retained on disk"
     );
 
-    // upgrade 失败自动回滚：v0.3.0 包体校验和被破坏（预写清单后篡改内容）。
+    // upgrade 失败自动回滚：v0.4.0 包体校验和被破坏（预写清单后篡改内容）。
     let mut manifest_v3 = manifest_v1.clone();
     manifest_v3
         .as_object_mut()
         .unwrap()
-        .insert("version".into(), Value::from("0.3.0"));
+        .insert("version".into(), Value::from("0.4.0"));
     let pkg_v3 = build_package(&data_root, "v3", &["capabilities/knowledge_source.yaml"]);
     plugin_registry::write_checksums(&pkg_v3).unwrap();
     fs::write(
@@ -414,16 +414,16 @@ fn upgrade_switch_pointer_and_rollback_on_failure() {
         )
         .unwrap_err();
     assert_eq!(err.code, "checksum_verification_failed");
-    // 指针不切换：active 仍 0.2.0；新版本行不存在（事务回滚）。
+    // 指针不切换：active 仍 0.3.0；新版本行不存在（事务回滚）。
     let active = rt
         .store()
         .get_active("knowledge.rtis-redteam")
         .unwrap()
         .unwrap();
-    assert_eq!(active.version, "0.2.0");
+    assert_eq!(active.version, "0.3.0");
     assert!(rt
         .store()
-        .get("knowledge.rtis-redteam", "0.3.0")
+        .get("knowledge.rtis-redteam", "0.4.0")
         .unwrap()
         .is_none());
 
@@ -469,7 +469,7 @@ fn five_ops_emit_audit_and_core_tables_untouched() {
     manifest_v2
         .as_object_mut()
         .unwrap()
-        .insert("version".into(), Value::from("0.2.0"));
+        .insert("version".into(), Value::from("0.4.0"));
     let pkg_v2 = build_package(&data_root, "opv2", &["capabilities/knowledge_source.yaml"]);
     rt.upgrade(
         "user:test",
@@ -601,13 +601,13 @@ fn migration_009_idempotent_on_file_copy() {
         "009 file self-pins user_version = 9 (own pragma)"
     );
     let reapply = database::migrate(&pool, &migrations_dir()).unwrap();
-    // 链尾当前为 031_research_projects_assets；009 自钉回 9 后 migrate
-    // 需重放 010..031 二十二枚（015/018/027 的 ALTER ADD COLUMN 列已存在由执行器
+    // 链尾当前为 032_research_projects_assets；009 自钉回 9 后 migrate
+    // 需重放 010..032 二十三枚（015/018/027 的 ALTER ADD COLUMN 列已存在由执行器
     // 守卫跳过，重放不炸 duplicate column）。
     assert_eq!(
         reapply.len(),
-        22,
-        "migrate re-applies 010..031 after 009 self-pin reset"
+        23,
+        "migrate re-applies 010..032 after 009 self-pin reset"
     );
     let snap4 = snapshot(&pool);
     assert_eq!(snap4.0, snap2.0, "chain tail restored");
@@ -633,7 +633,7 @@ fn invalid_disposition_via_quality_engine() {
     rt.store()
         .set_state(
             "knowledge.rtis-redteam",
-            "0.1.0",
+            "0.2.0",
             domain::plugin::PluginState::Invalid,
         )
         .unwrap();

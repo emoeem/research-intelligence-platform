@@ -167,3 +167,17 @@ Web（web/src）：PluginsPage 卡片增许可证徽章、快照 Commit 徽章�
 | sk2-03-knowledge-sources-view.png | 知识库页「知识来源」视图：共 262 条，APPROVED/目录条目/CC0-1.0/仅目录元数据/短 Commit 徽章与分类行 |
 | sk2-04-knowledge-sources-tongui-filter.png | tongui 过滤：75 条，UNLICENSED + 仅元数据与哈希 + 45a12a7，分类「渗透测试全套（74 篇，13 章）」，blob URL 可点 |
 
+
+
+## 九、2026-11-25 解析器收口复核（当前有效计数）
+
+本节是对 2026-11-12 历史批次的后续口径补充，不改写当日实测记录。当前工作树中的 `knowledge_parse.rs` 已加入语义链接过滤：图片/徽章链接不再作为知识目录条目；因此旧报告把图片徽章计入的条数不再代表当前解析器输出。
+
+| 来源 | 历史批次计数 | 当前解析器计数 | 差异解释 |
+| --- | ---: | ---: | --- |
+| awesome-hacking | 85 | **84** | 81 分类表行 + 仓库自链/Twitter/Facebook 3 条；图片徽章 1 条不入库 |
+| secskills | 102 | **101** | 目录表 102 行，规范化后重复 URL 合并为 101；mseep 图片徽章不入库 |
+| tongui | 75 | **75** | 派生目录不变 |
+| 合计 | 262 | **260** | 只移除两个非语义徽章链接，不删除任何真实目录资源 |
+
+验证：`sk2_source_ingest` 与 `sk3_source_sync` 断言已按当前 parser 语义更新；APPROVED + 插件可见双闸的索引总量为 260，禁用 SecSkills 后为 159。历史 RELEASE 文档仍保留原始日期的 85/102/75 记录，避免将后续行为回写成历史事实。

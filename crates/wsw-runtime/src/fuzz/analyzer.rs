@@ -60,11 +60,7 @@ pub struct MatchHit {
 }
 
 /// 关键字/正则命中（body 文本面 lossy；PLAN :258）。
-pub fn match_hits(
-    body: &[u8],
-    keywords: &[String],
-    regexes: &[regex::Regex],
-) -> Vec<MatchHit> {
+pub fn match_hits(body: &[u8], keywords: &[String], regexes: &[regex::Regex]) -> Vec<MatchHit> {
     let text = String::from_utf8_lossy(body);
     let mut hits = Vec::new();
     for kw in keywords {
@@ -73,13 +69,21 @@ pub fn match_hits(
         }
         let count = text.matches(kw.as_str()).count();
         if count > 0 {
-            hits.push(MatchHit { kind: "keyword", pattern: kw.clone(), count });
+            hits.push(MatchHit {
+                kind: "keyword",
+                pattern: kw.clone(),
+                count,
+            });
         }
     }
     for re in regexes {
         let count = re.find_iter(&text).count();
         if count > 0 {
-            hits.push(MatchHit { kind: "regex", pattern: re.as_str().to_string(), count });
+            hits.push(MatchHit {
+                kind: "regex",
+                pattern: re.as_str().to_string(),
+                count,
+            });
         }
     }
     hits
@@ -107,11 +111,23 @@ mod tests {
     fn send_error_classification_matrix() {
         let cases: Vec<(SendError, &str, &str)> = vec![
             (SendError::Timeout("t".into()), "TIMEOUT", "timed_out"),
-            (SendError::Connect("c".into()), "NETWORK_ERROR", "connect_failed"),
+            (
+                SendError::Connect("c".into()),
+                "NETWORK_ERROR",
+                "connect_failed",
+            ),
             (SendError::Tls("t".into()), "NETWORK_ERROR", "tls_failed"),
             (SendError::Read("r".into()), "NETWORK_ERROR", "read_failed"),
-            (SendError::Serialize("s".into()), "NETWORK_ERROR", "serialize_failed"),
-            (SendError::Scope("scope_blocked".into()), "NETWORK_ERROR", "scope_blocked"),
+            (
+                SendError::Serialize("s".into()),
+                "NETWORK_ERROR",
+                "serialize_failed",
+            ),
+            (
+                SendError::Scope("scope_blocked".into()),
+                "NETWORK_ERROR",
+                "scope_blocked",
+            ),
             (SendError::CapExceeded(8), "NETWORK_ERROR", "cap_exceeded"),
             (SendError::Cancelled, "NETWORK_ERROR", "cancelled"),
         ];
@@ -134,8 +150,22 @@ mod tests {
         let re = regex::Regex::new(r"error-\d+").unwrap();
         let hits = match_hits(b"ok error-1 x error-22 none", &["x".to_string()], &[re]);
         assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0], MatchHit { kind: "keyword", pattern: "x".into(), count: 1 });
-        assert_eq!(hits[1], MatchHit { kind: "regex", pattern: r"error-\d+".into(), count: 2 });
+        assert_eq!(
+            hits[0],
+            MatchHit {
+                kind: "keyword",
+                pattern: "x".into(),
+                count: 1
+            }
+        );
+        assert_eq!(
+            hits[1],
+            MatchHit {
+                kind: "regex",
+                pattern: r"error-\d+".into(),
+                count: 2
+            }
+        );
         let none = match_hits(b"nothing here", &["zzz".to_string()], &[]);
         assert!(none.is_empty());
     }

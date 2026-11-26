@@ -36,8 +36,8 @@ use agent_engine::store::AgentStore;
 use agent_engine::tool_link::{PythonWorkerDriver, ToolLink};
 use agent_engine::LoopConfig;
 use context_broker::{
-    ArtifactSource, Broker, BrokerCache, IntentConfig, ManifestStore, PluginSource, RegistrySource,
-    RulepackSource,
+    ArtifactSource, Broker, BrokerCache, CuratedKnowledgeSource, IntentConfig, ManifestStore,
+    PluginSource, RegistrySource, RtisSource, RulepackSource,
 };
 use database::{DbPath, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
@@ -250,15 +250,77 @@ fn build_broker_link(flags: &Flags, pool: &Pool) -> BrokerLink {
         });
     let registry_source = RegistrySource::new(tool_registry::Registry::open(pool.clone()), index)
         .with_cache(cache.clone(), "policy-1");
-    // SK-1..3（011/012 迁移）：库内插件逐个挂 plugin:<id> 知识源（L2 摘要
-    // + L3 expand；禁用/未审插件候选空集合法，准入闸逐查询重读）。
+    // SK-1..3（011/012 迁移）：插件知识源来自独立 RIP_PLUGIN_DB，
+    // 不能从 Agent 运行库（dev-p7.db）读取；只读挂载，写面仍归 rp-plugin。
     let mut sources: Vec<Box<dyn context_broker::ContextSource>> = vec![
         Box::new(rulepack),
         Box::new(registry_source),
         Box::new(ArtifactSource::new(pool.clone())),
     ];
-    for plugin_source in PluginSource::mount_all(pool) {
-        sources.push(Box::new(plugin_source));
+    let plugin_db = std::env::var_os("RIP_PLUGIN_DB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("migrations/dev-p6.db"));
+    if plugin_db.is_file() {
+        match Pool::open(PoolConfig {
+            path: DbPath::File(plugin_db.clone()),
+            readonly: true,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(5),
+        }) {
+            Ok(plugin_pool) => {
+                for plugin_source in PluginSource::mount_all(&plugin_pool) {
+                    sources.push(Box::new(plugin_source));
+                }
+            }
+            Err(error) => eprintln!(
+                "[rp-agent] plugin source unavailable ({}): {error}",
+                plugin_db.display()
+            ),
+        }
+    } else {
+        eprintln!(
+            "[rp-agent] plugin source DB missing: {}",
+            plugin_db.display()
+        );
+    }
+    // RIP 自有知识表单独从 platform.db 只读挂载；不能把 Agent 运行库
+    // （dev-p7.db）误当成知识主库。只暴露 VERIFIED + ACTIVE 条目。
+    let knowledge_db = std::env::var_os("RIP_KNOWLEDGE_DB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("migrations/platform.db"));
+    if knowledge_db.is_file() {
+        match Pool::open(PoolConfig {
+            path: DbPath::File(knowledge_db.clone()),
+            readonly: true,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(5),
+        }) {
+            Ok(knowledge_pool) => {
+                sources.push(Box::new(CuratedKnowledgeSource::new(knowledge_pool)))
+            }
+            Err(error) => eprintln!(
+                "[rp-agent] curated knowledge unavailable ({}): {error}",
+                knowledge_db.display()
+            ),
+        }
+    } else {
+        eprintln!(
+            "[rp-agent] curated knowledge DB missing: {}",
+            knowledge_db.display()
+        );
+    }
+    // RTIS 通过只读 Python Adapter 查询 integrations/rtis/knowledge.db；
+    // 不把 15k ingest archive 伪装成 SearchIndex 文档，也不执行 POC 内容。
+    let rtis_dir = std::env::var_os("RIP_RTIS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("integrations/rtis"));
+    if rtis_dir.join("rt.py").is_file() {
+        sources.push(Box::new(RtisSource::new(rtis_dir)));
+    } else {
+        eprintln!(
+            "[rp-agent] RTIS read-only source not mounted: {}",
+            rtis_dir.display()
+        );
     }
     let broker = Broker::new(
         sources,
@@ -595,7 +657,9 @@ fn run() -> i32 {
         "trace" => {
             let query_id = args.iter().skip(1).find(|a| !a.starts_with("--")).cloned();
             let Some(query_id) = query_id else {
-                eprintln!("trace requires <id>（六 ID 之一：trace_id/task_id/agent_run_id/tool_run_id/artifact_id/evidence_id）");
+                eprintln!(
+                    "trace requires <id>（六 ID 之一：trace_id/task_id/agent_run_id/tool_run_id/artifact_id/evidence_id）"
+                );
                 return usage();
             };
             let pool = open_pool(&flags.db, &flags.migrations_dir);

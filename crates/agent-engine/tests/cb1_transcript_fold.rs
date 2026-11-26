@@ -204,9 +204,11 @@ impl Planner for FoldingSeqPlanner {
     fn plan(&self, ctx: &PlanContext<'_>) -> Decision {
         if let Some(rec) = &self.recorder {
             let canonical = serde_json::to_string(ctx.history).unwrap_or_default();
-            rec.lock()
-                .expect("visible obs mutex")
-                .push((ctx.round, ctx.history.len(), context_broker::est_tokens(&canonical)));
+            rec.lock().expect("visible obs mutex").push((
+                ctx.round,
+                ctx.history.len(),
+                context_broker::est_tokens(&canonical),
+            ));
         }
         if self.counter.fetch_add(1, Ordering::SeqCst) >= self.rounds {
             return Decision::Finish {
@@ -265,7 +267,12 @@ fn fold_on() -> FoldConfig {
 }
 
 /// 在 pool 上装配 AgentLoop（折叠落库面挂接与否按参数）。
-fn build_loop(pool: &Pool, driver: CountingDriver, control: RunControlConfig, max_tool_calls: usize) -> AgentLoop {
+fn build_loop(
+    pool: &Pool,
+    driver: CountingDriver,
+    control: RunControlConfig,
+    max_tool_calls: usize,
+) -> AgentLoop {
     AgentLoop::new(
         AgentStore::open(pool.clone(), Registry::open(pool.clone())),
         build_broker_link(pool),
@@ -292,8 +299,9 @@ fn cb1_e2e_long_run_folds_planner_view_shrinks_authority_untouched() {
     let driver = CountingDriver::succeed();
     let recorder: VisibleObs = Arc::new(Mutex::new(Vec::new()));
     // 每轮 2 步 × 3 轮 = 6 步：折入段 ≥2 步时合成行 1:N 替代才收缩可见长度。
-    let planner =
-        FoldingSeqPlanner::plan(3).with_steps_per_round(2).with_recorder(Arc::clone(&recorder));
+    let planner = FoldingSeqPlanner::plan(3)
+        .with_steps_per_round(2)
+        .with_recorder(Arc::clone(&recorder));
     let loop_ = build_loop(
         &pool,
         driver.clone(),
@@ -336,7 +344,11 @@ fn cb1_e2e_long_run_folds_planner_view_shrinks_authority_untouched() {
             )
         })
         .unwrap();
-    assert_eq!(fold_rows as usize, report.fold_events.len(), "折叠行逐事件落 013 记忆面");
+    assert_eq!(
+        fold_rows as usize,
+        report.fold_events.len(),
+        "折叠行逐事件落 013 记忆面"
+    );
 
     // 规划器可见面收缩：折叠生效后的轮界，可见 history 长度 < 已执行全量步数。
     let obs = recorder.lock().unwrap().clone();
@@ -482,10 +494,7 @@ fn cb1_e2e_resume_recompute_digest_matches_fresh_and_drift_warns() {
     }
     // resume 段继续折叠（恢复后新轮界照常触发）。
     assert!(
-        resumed_report
-            .fold_events
-            .iter()
-            .any(|e| e.rounds[0] >= 2),
+        resumed_report.fold_events.iter().any(|e| e.rounds[0] >= 2),
         "resume 段新轮界继续折叠"
     );
     // resume 后权威面全量续接：已执行步不重跑（驱动计数 4 = 6 - 2 已折前段外步）。
@@ -529,7 +538,11 @@ fn cb1_e2e_fold_rows_queryable_and_compress_keeps_summary_wordform() {
         .iter()
         .filter(|r| r.entry.summary().starts_with(FOLD_SUMMARY_PREFIX))
         .collect();
-    assert_eq!(fold_rows.len(), report.fold_events.len(), "list_by_run 读到全部折叠行");
+    assert_eq!(
+        fold_rows.len(),
+        report.fold_events.len(),
+        "list_by_run 读到全部折叠行"
+    );
     for row in &fold_rows {
         assert_eq!(row.entry.lifecycle().as_str(), "ACTIVE");
         assert!(row.entry.round() <= 2, "折叠行 round = 覆盖末轮");
@@ -553,7 +566,10 @@ fn cb1_e2e_fold_rows_queryable_and_compress_keeps_summary_wordform() {
             row.entry.summary().starts_with(FOLD_SUMMARY_PREFIX),
             "compress_run 后折叠行 summary 词形留存"
         );
-        assert!(row.entry.content_json().trim().is_empty(), "压缩置空细节载荷");
+        assert!(
+            row.entry.content_json().trim().is_empty(),
+            "压缩置空细节载荷"
+        );
     }
 }
 
@@ -582,10 +598,7 @@ fn cb1_e2e_two_level_trigger_negatives_and_guardrails_unchanged() {
     let mut req = make_request(Box::new(FoldingSeqPlanner::plan(5)));
     let report = loop_.run(&mut req).expect("run negative threshold");
     assert_eq!(report.state, "SUCCEEDED");
-    assert!(
-        report.fold_events.is_empty(),
-        "阈值未到不折叠（负例一）"
-    );
+    assert!(report.fold_events.is_empty(), "阈值未到不折叠（负例一）");
 
     // 负例二：阈值到而轮距未到（间隔 100）不折叠（防抖负例）。
     let driver = CountingDriver::succeed();
@@ -605,10 +618,7 @@ fn cb1_e2e_two_level_trigger_negatives_and_guardrails_unchanged() {
     );
     let mut req = make_request(Box::new(FoldingSeqPlanner::plan(5)));
     let report = loop_.run(&mut req).expect("run negative interval");
-    assert!(
-        report.fold_events.is_empty(),
-        "轮距未到不折叠（防抖负例）"
-    );
+    assert!(report.fold_events.is_empty(), "轮距未到不折叠（防抖负例）");
 
     // 负例三：热窗覆盖全转录（hot ≥ 全部轮次）不折叠。
     let driver = CountingDriver::succeed();

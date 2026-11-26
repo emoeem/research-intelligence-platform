@@ -9,9 +9,13 @@ use research_engine::capabilities::discovery::{DiscoveryCapability, DiscoveryInp
 use research_engine::capabilities::evaluator::{
     EvaluatorCapability, EvaluatorCheck, EvaluatorInput, SubjectKind, SubjectRef,
 };
-use research_engine::capabilities::extraction::{ExtractionCapability, EvidenceKind, ExtractionInput};
+use research_engine::capabilities::extraction::{
+    EvidenceKind, ExtractionCapability, ExtractionInput,
+};
 use research_engine::capabilities::planner::{PlannerCapability, PlannerInput};
-use research_engine::capabilities::synthesis::{SynthesisCapability, SynthesisInput, SynthesisItem};
+use research_engine::capabilities::synthesis::{
+    SynthesisCapability, SynthesisInput, SynthesisItem,
+};
 use research_engine::capabilities::verification::{
     Claim, VerificationCapability, VerificationInput, VerificationPolicy,
 };
@@ -396,7 +400,10 @@ fn extraction_hashes_deterministically_and_attaches_artifacts() {
     )
     .expect("valid input must succeed");
     assert_eq!(output.extracted_count, 2);
-    assert_eq!(output.extractions[0].artifact_id.as_deref(), Some("art-alpha-001"));
+    assert_eq!(
+        output.extractions[0].artifact_id.as_deref(),
+        Some("art-alpha-001")
+    );
     assert_eq!(output.extractions[1].artifact_id, None);
     for extraction in &output.extractions {
         assert_eq!(extraction.content_hash.len(), 64);
@@ -531,7 +538,10 @@ fn synthesis_expands_items_in_order() {
         "无 note 落固定占位文案"
     );
     assert_eq!(output.sections[1].anchored_evidence_ids, vec!["ev-2"]);
-    assert_eq!(output.synthesis_id, format!("syn-{}", digest16(&["syn", "顺序样本"])));
+    assert_eq!(
+        output.synthesis_id,
+        format!("syn-{}", digest16(&["syn", "顺序样本"]))
+    );
     assert_eq!(
         anchors
             .iter()
@@ -697,11 +707,20 @@ fn invalid_input_yields_schema_valid_failed_envelope() {
     let cases: [(CapabilityId, Value); 7] = [
         (CapabilityId::Planner, json!({})),                    // 缺 goal
         (CapabilityId::SourceDiscovery, json!({"query": 42})), // query 类型错
-        (CapabilityId::EvidenceExtraction, json!({"evidence_refs": [], "extract_as": "log"})), // 空 refs
+        (
+            CapabilityId::EvidenceExtraction,
+            json!({"evidence_refs": [], "extract_as": "log"}),
+        ), // 空 refs
         (CapabilityId::Verification, json!({"claims": []})),   // 空 claims
         (CapabilityId::Synthesis, json!({"topic": "t", "items": []})), // 空 items
-        (CapabilityId::Citation, json!({"synthesis_id": "s", "anchors": []})), // 空 anchors
-        (CapabilityId::Evaluator, json!({"subject": {"kind": "plan", "id": "p"}, "checks": []})), // 空 checks
+        (
+            CapabilityId::Citation,
+            json!({"synthesis_id": "s", "anchors": []}),
+        ), // 空 anchors
+        (
+            CapabilityId::Evaluator,
+            json!({"subject": {"kind": "plan", "id": "p"}, "checks": []}),
+        ), // 空 checks
     ];
     for (capability, input) in cases {
         let request = sample_request(capability, &input);
@@ -813,9 +832,9 @@ fn capability_wordlist_is_complete() {
         assert!(
             id.split('.').all(|segment| {
                 !segment.is_empty()
-                    && segment
-                        .chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+                    && segment.chars().all(|c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-'
+                    })
             }),
             "{id} must match tool_id charset convention"
         );

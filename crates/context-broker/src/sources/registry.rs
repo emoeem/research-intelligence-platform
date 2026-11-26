@@ -213,7 +213,9 @@ fn compose_brief(
     } else {
         format!("｜限制: {limitation}")
     };
-    format!("{tool_id} v{version}｜{summary}｜输入必填: {required_text}｜输出: {output_text}{limitation_text}")
+    format!(
+        "{tool_id} v{version}｜{summary}｜输入必填: {required_text}｜输出: {output_text}{limitation_text}"
+    )
 }
 
 /// tier2 brief 生成器（纯函数；设计稿 §8：约 120 tokens 软上限，生成时

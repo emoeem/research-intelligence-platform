@@ -307,13 +307,13 @@ impl BrokerCache {
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok((None, Some(CacheMissReason::EntryMissing)))
+                return Ok((None, Some(CacheMissReason::EntryMissing)));
             }
             Err(e) => {
                 return Err(ContextBrokerError::Source {
                     source: "broker-cache".to_string(),
                     reason: format!("read {}: {e}", path.display()),
-                })
+                });
             }
         };
         let entry: CacheEntry = match serde_json::from_str(&text) {

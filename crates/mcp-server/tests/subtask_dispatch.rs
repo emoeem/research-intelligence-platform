@@ -75,12 +75,16 @@ fn setup_db(tag: &str) -> std::path::PathBuf {
     // Manifest 登记 + ENABLED + 测试 Agent 定义（ma2 harness 同款一次性载具）。
     let manifest: Value = serde_json::from_str(
         &std::fs::read_to_string(
-            repo_root().join("manifests/tools").join(format!("{TOOL_ID}.json")),
+            repo_root()
+                .join("manifests/tools")
+                .join(format!("{TOOL_ID}.json")),
         )
         .unwrap(),
     )
     .unwrap();
-    tool_registry::Registry::open(pool.clone()).register(&manifest).unwrap();
+    tool_registry::Registry::open(pool.clone())
+        .register(&manifest)
+        .unwrap();
     pool.with_conn(|c| {
         c.execute(
             "UPDATE tool SET lifecycle = 'ENABLED' WHERE tool_id = ?1",
@@ -95,9 +99,12 @@ fn setup_db(tag: &str) -> std::path::PathBuf {
         vec![domain::CapabilityRef::try_new(TOOL_ID, None).unwrap()],
     )
     .unwrap();
-    agent_engine::store::AgentStore::open(pool.clone(), tool_registry::Registry::open(pool.clone()))
-        .register_definition(&definition, "MA-3 MCP 派发测试 Agent")
-        .unwrap();
+    agent_engine::store::AgentStore::open(
+        pool.clone(),
+        tool_registry::Registry::open(pool.clone()),
+    )
+    .register_definition(&definition, "MA-3 MCP 派发测试 Agent")
+    .unwrap();
     drop(pool);
     let _ = token_len_guard(&token);
     db
@@ -160,6 +167,11 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
             ("RP_DB_PATH", db_str.as_str()),
             ("RP_RUN_DB", db_str.as_str()),
             ("RP_PLUGIN_DB", "none"),
+            // This test validates MCP -> rp-agent dispatch and caller attribution, not
+            // the independent RTIS/curated-KB context sources. Keep those optional sources
+            // unmounted so local runtime data cannot inflate the 8k context budget.
+            ("RIP_KNOWLEDGE_DB", "/tmp/rip-ma3-test-no-knowledge.db"),
+            ("RIP_RTIS_DIR", "/tmp/rip-ma3-test-no-rtis"),
             ("RP_AGENT_BIN", agent_bin.to_string_lossy().as_ref()),
             ("RP_SUBTASK_TIMEOUT_S", "120"),
         ],
@@ -180,7 +192,10 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
     ] {
         assert!(names.iter().any(|n| n == tool), "目录缺 {tool}: {names:?}");
     }
-    assert!(names.iter().any(|n| n == "rip.run_tool"), "既有 rip.run_tool 仍在");
+    assert!(
+        names.iter().any(|n| n == "rip.run_tool"),
+        "既有 rip.run_tool 仍在"
+    );
 
     // rip.run_subtask 往返（真实 rp-agent python_worker 闭环）。
     let t0 = std::time::Instant::now();
@@ -189,18 +204,23 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
         json!({
             "agent_id": AGENT_ID,
             "goal": "MA-3 MCP 派发往返：检索 ma3-binding 关键词并给结论",
-        })
+        }),
     );
     let elapsed = t0.elapsed();
-    let payload: Value = serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap())
-        .expect("structured payload");
+    let payload: Value =
+        serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap())
+            .expect("structured payload");
     assert_eq!(payload["ok"], json!(true), "run_subtask ok: {payload}");
     let report = &payload["report"];
     assert_eq!(report["state"], json!("SUCCEEDED"), "子任务终态: {report}");
     assert!(report["run_id"].as_str().unwrap().starts_with("arn-"));
     assert_eq!(payload["caller"], json!(CALLER));
     let agent_run_id = report["run_id"].as_str().unwrap().to_string();
-    eprintln!("[ma3-e2e] run_subtask elapsed_ms={} run_id={}", elapsed.as_millis(), agent_run_id);
+    eprintln!(
+        "[ma3-e2e] run_subtask elapsed_ms={} run_id={}",
+        elapsed.as_millis(),
+        agent_run_id
+    );
 
     // agent_run.caller_id 落列（库直查；硬验收②归属面）。
     let pool = database::Pool::open(database::PoolConfig::readonly_file(&db)).unwrap();
@@ -215,7 +235,11 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
         })
         .unwrap()
         .flatten();
-    assert_eq!(caller_id.as_deref(), Some(CALLER), "agent_run.caller_id = 外部 caller");
+    assert_eq!(
+        caller_id.as_deref(),
+        Some(CALLER),
+        "agent_run.caller_id = 外部 caller"
+    );
     // trace 链：MCP 通道自锚定（trace_id = run_id）。
     let trace_id: Option<String> = pool
         .with_conn(|c| {
@@ -232,10 +256,7 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
     drop(pool);
 
     // rip.get_subtask_status 一致回读。
-    let result = proc_.call(
-        "rip.get_subtask_status",
-        json!({"run_id": agent_run_id})
-    );
+    let result = proc_.call("rip.get_subtask_status", json!({"run_id": agent_run_id}));
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(payload["state"], json!("SUCCEEDED"));
@@ -249,7 +270,7 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
             "kind": "agent_subtask",
             "title": "MCP 派发 claim 载具",
             "payload": json!({"target": "example.com"}).to_string(),
-        })
+        }),
     );
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
@@ -260,10 +281,7 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
     assert!(claim["claim_id"].as_str().unwrap().starts_with("tcl-"));
     let claim_id = claim["claim_id"].as_str().unwrap().to_string();
 
-    let result = proc_.call(
-        "rip.claim_task",
-        json!({"claim_id": claim_id})
-    );
+    let result = proc_.call("rip.claim_task", json!({"claim_id": claim_id}));
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(payload["action"], json!("claimed"));
@@ -276,7 +294,7 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
         json!({
             "claim_id": claim_id,
             "result_json": json!({"done": true}).to_string(),
-        })
+        }),
     );
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
@@ -289,26 +307,28 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
         json!({
             "to_caller": CALLER,
             "payload": json!({"hello": "ma3"}).to_string(),
-        })
+        }),
     );
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(payload["ok"], json!(true));
-    let message_id = payload["message"]["message_id"].as_str().unwrap().to_string();
+    let message_id = payload["message"]["message_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(message_id.starts_with("mam-"));
 
-    let result = proc_.call(
-        "rip.fetch_messages",
-        json!({})
-    );
+    let result = proc_.call("rip.fetch_messages", json!({}));
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(payload["ok"], json!(true));
     let items = payload["items"].as_array().unwrap();
     assert!(
-        items.iter().any(|m| m["message_id"].as_str() == Some(message_id.as_str())
-            && m["delivered_at"].is_string()
-            && m["read_at"].is_null()),
+        items
+            .iter()
+            .any(|m| m["message_id"].as_str() == Some(message_id.as_str())
+                && m["delivered_at"].is_string()
+                && m["read_at"].is_null()),
         "邮箱分记（delivered 落 / read NULL）: {items:?}"
     );
 
@@ -320,14 +340,15 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
             "type": "vuln_signature",
             "title": "e2e 载具卡",
             "content": "MA-3 MCP contribute e2e content",
-        })
+        }),
     );
     let payload: Value =
         serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     // RP_PG_DSN 未配置 → rp-kc 落缺省 DSN（本机 PG 未接 = pg_unavailable）或
     // 进程在位正常收据；两者皆为结构化面（不伪造）。断言「必有结构化信封」。
     assert!(
-        payload["ok"].is_boolean() || payload.get("error").is_some()
+        payload["ok"].is_boolean()
+            || payload.get("error").is_some()
             || result["result"]["isError"] == json!(true),
         "结构化信封在位: {payload}"
     );
@@ -361,7 +382,7 @@ fn unknown_token_rejects_dispatch_but_keeps_catalog() {
         json!({
             "agent_id": AGENT_ID,
             "goal": "非法 token 派发必须被拒",
-        })
+        }),
     );
     eprintln!("[ma3-e2e] bad-token run_subtask raw: {result}");
     assert_eq!(result["result"]["isError"], json!(true));
@@ -378,18 +399,33 @@ fn unknown_token_rejects_dispatch_but_keeps_catalog() {
 
     // rip.claim_task / rip.send_message 同面拒绝。
     for (name, args) in [
-        ("rip.claim_task", json!({"kind": "review", "title": "x", "payload": "{}"})),
-        ("rip.send_message", json!({"to_caller": CALLER, "payload": "{}"})),
+        (
+            "rip.claim_task",
+            json!({"kind": "review", "title": "x", "payload": "{}"}),
+        ),
+        (
+            "rip.send_message",
+            json!({"to_caller": CALLER, "payload": "{}"}),
+        ),
         ("rip.fetch_messages", json!({})),
-        ("rip.contribute_knowledge", json!({"type": "vuln_signature", "title": "t", "content": "c"})),
+        (
+            "rip.contribute_knowledge",
+            json!({"type": "vuln_signature", "title": "t", "content": "c"}),
+        ),
     ] {
         let result = proc_.call(name, args.clone());
-        assert_eq!(result["result"]["isError"], json!(true), "{name} must reject");
-        let payload: Value = serde_json::from_str(
-            result["result"]["content"][0]["text"].as_str().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(payload["error"]["category"], json!("POLICY_DENIED"), "{name}: {payload}");
+        assert_eq!(
+            result["result"]["isError"],
+            json!(true),
+            "{name} must reject"
+        );
+        let payload: Value =
+            serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            payload["error"]["category"],
+            json!("POLICY_DENIED"),
+            "{name}: {payload}"
+        );
     }
     proc_.wait_exit();
 }

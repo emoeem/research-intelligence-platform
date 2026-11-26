@@ -315,7 +315,10 @@ fn detail_kinds(events: &[(String, Option<String>)], action: &str) -> Vec<Value>
     events
         .iter()
         .filter(|(a, _)| a == action)
-        .filter_map(|(_, d)| d.as_ref().and_then(|d| serde_json::from_str::<Value>(d).ok()))
+        .filter_map(|(_, d)| {
+            d.as_ref()
+                .and_then(|d| serde_json::from_str::<Value>(d).ok())
+        })
         .collect()
 }
 
@@ -352,7 +355,11 @@ fn hard_acceptance_parallel_speedup_n3_peak_ge2_under_serial_x070() {
     let serial_ms = serial_started.elapsed().as_millis() as u64;
     assert_eq!(serial_report.state, "SUCCEEDED");
     assert_eq!(serial_report.steps.len(), 3, "串行基线三步全执行");
-    assert_eq!(driver_serial.peak(), 1, "serial execution must never exceed 1 in flight");
+    assert_eq!(
+        driver_serial.peak(),
+        1,
+        "serial execution must never exceed 1 in flight"
+    );
     // 串行基线留痕：并行关（缺 budget 行）→ 既有 warning。
     assert!(
         serial_report
@@ -444,8 +451,7 @@ fn hard_acceptance_parallel_speedup_n3_peak_ge2_under_serial_x070() {
 fn hard_acceptance_rate_cap_hard_stop_budget_caller_rate() {
     let pool = migrated_pool();
     register_fixture(&pool);
-    let (loop_, _driver) =
-        build_loop_on(&pool, true, &[("caller-rate", 3, 0, 60_000, 2, 0)], 0);
+    let (loop_, _driver) = build_loop_on(&pool, true, &[("caller-rate", 3, 0, 60_000, 2, 0)], 0);
     // 首轮 2 步（帽内执行），次轮再规划 1 步即被窗口计数硬停。
     let mut req = make_request(
         Some("caller-rate"),
@@ -454,7 +460,9 @@ fn hard_acceptance_rate_cap_hard_stop_budget_caller_rate() {
     let report = loop_.run(&mut req).unwrap();
     eprintln!("MA-2 判据3-速率 finish: {}", report.finish_reason);
     assert!(
-        report.finish_reason.contains("guardrail: caller rate budget"),
+        report
+            .finish_reason
+            .contains("guardrail: caller rate budget"),
         "finish_reason: {}",
         report.finish_reason
     );
@@ -475,8 +483,7 @@ fn hard_acceptance_rate_cap_hard_stop_budget_caller_rate() {
 fn hard_acceptance_total_budget_hard_stop_budget_caller_total() {
     let pool = migrated_pool();
     register_fixture(&pool);
-    let (loop_, _driver) =
-        build_loop_on(&pool, true, &[("caller-total", 3, 0, 60_000, 0, 2)], 0);
+    let (loop_, _driver) = build_loop_on(&pool, true, &[("caller-total", 3, 0, 60_000, 0, 2)], 0);
     let mut req = make_request(
         Some("caller-total"),
         Box::new(SeqPlanPlanner::keywords_per_round(2, 2).with_second_round(1)),
@@ -490,7 +497,11 @@ fn hard_acceptance_total_budget_hard_stop_budget_caller_total() {
         "finish_reason: {}",
         report.finish_reason
     );
-    assert_eq!(report.steps.len(), 2, "帽到位即停：2 步执行后新规划步不执行");
+    assert_eq!(
+        report.steps.len(),
+        2,
+        "帽到位即停：2 步执行后新规划步不执行"
+    );
     let events = audit_events(&pool, &report.run_id);
     let guardrails = detail_kinds(&events, "agent.run.guardrail");
     assert!(
@@ -529,10 +540,7 @@ fn hard_acceptance_admission_cap_budget_denied_no_row() {
     );
     let err = loop_b.run(&mut req_b).unwrap_err();
     eprintln!("MA-2 判据3-受理 rejection: {err}");
-    assert!(
-        err.to_string().contains("budget denied"),
-        "err: {err}"
-    );
+    assert!(err.to_string().contains("budget denied"), "err: {err}");
     // run 不落行：在飞仍只有 run A 一个；B 未产生任何 agent_run/tool_run 行。
     assert_eq!(active_runs(&pool, "caller-adm"), 1);
     let agent_run_rows: i64 = pool
@@ -649,8 +657,7 @@ fn hard_acceptance_dual_caller_isolation_admission_latency() {
 fn parallel_cap_queues_tasks_without_rejection_and_audits_budget_caller_parallel() {
     let pool = migrated_pool();
     register_fixture(&pool);
-    let (loop_, _driver) =
-        build_loop_on(&pool, true, &[("caller-queue", 2, 0, 60_000, 0, 0)], 0);
+    let (loop_, _driver) = build_loop_on(&pool, true, &[("caller-queue", 2, 0, 60_000, 0, 0)], 0);
     let mut req = make_request(
         Some("caller-queue"),
         Box::new(SeqPlanPlanner::keywords_per_round(1, 3)),
@@ -670,7 +677,10 @@ fn parallel_cap_queues_tasks_without_rejection_and_audits_budget_caller_parallel
         "audit payload carries real task count: {parallel_audit}"
     );
     assert_eq!(parallel_audit.get("cap").and_then(Value::as_i64), Some(2));
-    assert_eq!(parallel_audit.get("queued").and_then(Value::as_i64), Some(1));
+    assert_eq!(
+        parallel_audit.get("queued").and_then(Value::as_i64),
+        Some(1)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -785,7 +795,11 @@ fn parallel_flag_without_caller_face_stays_serial() {
         "legacy caller_id=None must stay serial with the existing warning: {:?}",
         report.warnings
     );
-    assert_eq!(driver.peak(), 1, "legacy path must never run steps concurrently");
+    assert_eq!(
+        driver.peak(),
+        1,
+        "legacy path must never run steps concurrently"
+    );
     // 无 caller：tool_run.caller_id 全 NULL（零回归）。
     let null_callers: i64 = pool
         .with_conn(|c| {

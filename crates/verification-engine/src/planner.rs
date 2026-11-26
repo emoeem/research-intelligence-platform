@@ -81,7 +81,10 @@ pub enum CacheDecision {
     /// 无同指纹历史，需执行。
     Fresh,
     /// 同指纹已执行且五态终局——跳过执行并引用历史项（证据来源即历史项）。
-    CacheHit { prior_item_id: String, prior_result: String },
+    CacheHit {
+        prior_item_id: String,
+        prior_result: String,
+    },
 }
 
 /// 一条已裁剪的执行项（NewItem + 预览语义字段）。
@@ -153,9 +156,11 @@ pub fn draft_from_match(
     candidates.sort_by(|a, b| {
         let risk_a = risk_rank(infer_risk_class(a.channel, a.severity.as_deref()));
         let risk_b = risk_rank(infer_risk_class(b.channel, b.severity.as_deref()));
-        risk_a
-            .cmp(&risk_b)
-            .then(b.channel_score.partial_cmp(&a.channel_score).unwrap_or(std::cmp::Ordering::Equal))
+        risk_a.cmp(&risk_b).then(
+            b.channel_score
+                .partial_cmp(&a.channel_score)
+                .unwrap_or(std::cmp::Ordering::Equal),
+        )
     });
 
     let mut remaining = budget.max_requests;
@@ -202,7 +207,10 @@ pub fn draft_from_match(
             "cache_hit (no request consumed)".to_owned()
         } else {
             remaining -= request_budget;
-            format!("fresh: {request_budget} of plan cap {}", budget.max_requests)
+            format!(
+                "fresh: {request_budget} of plan cap {}",
+                budget.max_requests
+            )
         };
         planned.push(PlannedItem {
             item: NewItem {
@@ -269,11 +277,17 @@ pub fn persist_draft(
     for planned in &draft.planned {
         let mut item = planned.item.clone();
         // 缓存命中标注进原因面（可解释纪律：UI 显示跳过原因与历史来源）。
-        if let CacheDecision::CacheHit { prior_item_id, prior_result } = &planned.cache_decision {
-            item.applicability_reasons
-                .push(format!("cache_hit: prior {prior_item_id} result={prior_result}"));
+        if let CacheDecision::CacheHit {
+            prior_item_id,
+            prior_result,
+        } = &planned.cache_decision
+        {
+            item.applicability_reasons.push(format!(
+                "cache_hit: prior {prior_item_id} result={prior_result}"
+            ));
         }
-        item.applicability_reasons.push(planned.budget_source.clone());
+        item.applicability_reasons
+            .push(planned.budget_source.clone());
         store.add_item(&plan.plan_id, item)?;
     }
     Ok(plan.plan_id)
@@ -295,7 +309,11 @@ mod tests {
             busy_timeout: Duration::from_secs(5),
         })
         .unwrap();
-        migrate(&pool, &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations")).unwrap();
+        migrate(
+            &pool,
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations"),
+        )
+        .unwrap();
         PlanStore::new(pool)
     }
 
@@ -333,23 +351,45 @@ mod tests {
         }
     }
 
-
     fn budget(max: i64) -> PlanBudget {
-        PlanBudget { max_requests: max, timeout_s: 60, concurrency: 1, max_rounds: 3 }
+        PlanBudget {
+            max_requests: max,
+            timeout_s: 60,
+            concurrency: 1,
+            max_rounds: 3,
+        }
     }
 
     #[test]
     fn budget_cap_enforced_in_planning_backend() {
         let store = store();
         let result = match_result(vec![hit("1", 3.0), hit("2", 2.0), hit("3", 1.0)], vec![]);
-        let draft = draft_from_match(&result, &budget(15), &store, |h| format!("rtis-poc:{}", h.ref_id), "{}", "-");
+        let draft = draft_from_match(
+            &result,
+            &budget(15),
+            &store,
+            |h| format!("rtis-poc:{}", h.ref_id),
+            "{}",
+            "-",
+        );
         // cap 15 / 每项 10 → 两项 fresh + 第三项预算耗尽 skipped（不是静默丢弃）
-        let fresh = draft.planned.iter().filter(|p| matches!(p.cache_decision, CacheDecision::Fresh)).count();
+        let fresh = draft
+            .planned
+            .iter()
+            .filter(|p| matches!(p.cache_decision, CacheDecision::Fresh))
+            .count();
         assert_eq!(fresh, 2);
         // 每项 min(10, remaining)：cap 15 → 10 + 5 = 15（Σ ≤ cap，后端封顶生效）
         assert_eq!(draft.total_request_budget, 15);
-        assert!(draft.total_request_budget <= draft.budget_cap, "Σ fresh item budget must respect cap");
-        let budget_skips = draft.skipped.iter().filter(|s| s.skip_reasons[0].starts_with("budget_exhausted")).count();
+        assert!(
+            draft.total_request_budget <= draft.budget_cap,
+            "Σ fresh item budget must respect cap"
+        );
+        let budget_skips = draft
+            .skipped
+            .iter()
+            .filter(|s| s.skip_reasons[0].starts_with("budget_exhausted"))
+            .count();
         assert_eq!(budget_skips, 1);
     }
 
@@ -357,16 +397,45 @@ mod tests {
     fn cache_hit_on_same_fingerprint_and_no_request_consumed() {
         let store = store();
         let result = match_result(vec![hit("900008", 3.0)], vec![]);
-        let first = draft_from_match(&result, &budget(30), &store, |h| format!("rtis-poc:{}", h.ref_id), "{}", "-");
+        let first = draft_from_match(
+            &result,
+            &budget(30),
+            &store,
+            |h| format!("rtis-poc:{}", h.ref_id),
+            "{}",
+            "-",
+        );
         let plan_id = persist_draft(&store, &first, None, "default", Some("first")).unwrap();
         // 给首跑项一个终局五态（模拟已执行）
         let items = store.list_items(&plan_id).unwrap();
-        store.set_result(&items[0].item_id, "NOT_REPRODUCED", Some("本轮未复现"), None, None, None).unwrap();
+        store
+            .set_result(
+                &items[0].item_id,
+                "NOT_REPRODUCED",
+                Some("本轮未复现"),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
 
         // 同条件重放 → cache_hit（同指纹 + 终局态），不占预算
-        let second = draft_from_match(&result, &budget(30), &store, |h| format!("rtis-poc:{}", h.ref_id), "{}", "-");
-        assert!(matches!(second.planned[0].cache_decision, CacheDecision::CacheHit { .. }));
-        assert_eq!(second.total_request_budget, 0, "cache hit must not consume request budget");
+        let second = draft_from_match(
+            &result,
+            &budget(30),
+            &store,
+            |h| format!("rtis-poc:{}", h.ref_id),
+            "{}",
+            "-",
+        );
+        assert!(matches!(
+            second.planned[0].cache_decision,
+            CacheDecision::CacheHit { .. }
+        ));
+        assert_eq!(
+            second.total_request_budget, 0,
+            "cache hit must not consume request budget"
+        );
         assert!(second.planned[0].budget_source.contains("cache_hit"));
     }
 
@@ -374,17 +443,53 @@ mod tests {
     fn poc_version_change_invalidates_cache() {
         let store = store();
         let result = match_result(vec![hit("900008", 3.0)], vec![]);
-        let first = draft_from_match(&result, &budget(30), &store, |h| format!("rtis-poc:{}", h.ref_id), "{}", "-");
+        let first = draft_from_match(
+            &result,
+            &budget(30),
+            &store,
+            |h| format!("rtis-poc:{}", h.ref_id),
+            "{}",
+            "-",
+        );
         let plan_id = persist_draft(&store, &first, None, "default", None).unwrap();
         let items = store.list_items(&plan_id).unwrap();
-        store.set_result(&items[0].item_id, "CONFIRMED", Some("差分回显命中"), None, None, None).unwrap();
+        store
+            .set_result(
+                &items[0].item_id,
+                "CONFIRMED",
+                Some("差分回显命中"),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
 
         // POC 引用版本变化 → 指纹变化 → fresh（缓存正确失效）
-        let second = draft_from_match(&result, &budget(30), &store, |h| format!("rtis-poc:{}@v2", h.ref_id), "{}", "-");
-        assert!(matches!(second.planned[0].cache_decision, CacheDecision::Fresh), "poc version change must invalidate cache");
+        let second = draft_from_match(
+            &result,
+            &budget(30),
+            &store,
+            |h| format!("rtis-poc:{}@v2", h.ref_id),
+            "{}",
+            "-",
+        );
+        assert!(
+            matches!(second.planned[0].cache_decision, CacheDecision::Fresh),
+            "poc version change must invalidate cache"
+        );
         // 目标画像变化同理（params 段）
-        let third = draft_from_match(&result, &budget(30), &store, |h| format!("rtis-poc:{}", h.ref_id), "{\"deep\":true}", "-");
-        assert!(matches!(third.planned[0].cache_decision, CacheDecision::Fresh));
+        let third = draft_from_match(
+            &result,
+            &budget(30),
+            &store,
+            |h| format!("rtis-poc:{}", h.ref_id),
+            "{\"deep\":true}",
+            "-",
+        );
+        assert!(matches!(
+            third.planned[0].cache_decision,
+            CacheDecision::Fresh
+        ));
     }
 
     #[test]
@@ -402,7 +507,10 @@ mod tests {
         let draft = draft_from_match(&result, &budget(30), &store, |_| String::new(), "{}", "-");
         assert!(draft.planned.is_empty());
         assert_eq!(draft.skipped.len(), 1);
-        assert_eq!(draft.skipped[0].skip_reasons[0], "no component anchor (cannot verify applicability)");
+        assert_eq!(
+            draft.skipped[0].skip_reasons[0],
+            "no component anchor (cannot verify applicability)"
+        );
     }
 
     #[test]
@@ -413,13 +521,26 @@ mod tests {
         let mut b = hit("b", 2.0);
         b.channel_score = 2.0;
         let result = match_result(vec![a, b], vec![]);
-        let draft = draft_from_match(&result, &budget(30), &store, |h| format!("rtis-poc:{}", h.ref_id), "{}", "-");
+        let draft = draft_from_match(
+            &result,
+            &budget(30),
+            &store,
+            |h| format!("rtis-poc:{}", h.ref_id),
+            "{}",
+            "-",
+        );
         // 同风险级：渠道分高者先
         assert!(draft.planned[0].item.dedup_fingerprint != draft.planned[1].item.dedup_fingerprint);
         assert_eq!(draft.planned[0].item.execution_order, 0);
         assert_eq!(draft.planned[1].item.execution_order, 1);
         // 同风险级按渠道分降序：score 2.0 的 b 排首位（expected_observation = 标题）
-        assert_eq!(draft.planned[0].item.expected_observation.as_deref(), Some("poc b"));
-        assert_eq!(draft.planned[1].item.expected_observation.as_deref(), Some("poc a"));
+        assert_eq!(
+            draft.planned[0].item.expected_observation.as_deref(),
+            Some("poc b")
+        );
+        assert_eq!(
+            draft.planned[1].item.expected_observation.as_deref(),
+            Some("poc a")
+        );
     }
 }

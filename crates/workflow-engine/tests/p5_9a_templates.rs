@@ -86,7 +86,8 @@ fn assert_tool_face(doc: &DefinitionV1, expected_tool_ids: &[&str]) {
         }
         let keys: Vec<&String> = params.keys().collect();
         assert!(
-            keys.iter().all(|k| k.as_str() == "tool_id" || k.as_str() == "input"),
+            keys.iter()
+                .all(|k| k.as_str() == "tool_id" || k.as_str() == "input"),
             "tool 节点 {} 参数键越表（P8-4 表单与 DSL 口径）：{:?}",
             node.id,
             keys
@@ -269,7 +270,9 @@ fn templates_instantiate_into_store_non_exec_face() {
     let pentest = load(PENTEST_PATH);
     let src = load(SRC_PATH);
 
-    let put_pentest = store.put(&pentest, "p5-9a-templates-test").expect("put pentest");
+    let put_pentest = store
+        .put(&pentest, "p5-9a-templates-test")
+        .expect("put pentest");
     assert_eq!(put_pentest.workflow_id, "wf-pentest-research-v1");
     assert_eq!(put_pentest.version, 1);
     assert_eq!(put_pentest.node_count, 18);
@@ -294,7 +297,9 @@ fn templates_instantiate_into_store_non_exec_face() {
         .put(&v2, "p5-9a-templates-test")
         .expect("put pentest v2");
     assert_eq!(put_v2.version, 2, "版本面：每版追加");
-    let got_v2 = store.get("wf-pentest-research-v1", None).expect("get latest");
+    let got_v2 = store
+        .get("wf-pentest-research-v1", None)
+        .expect("get latest");
     assert_eq!(got_v2.definition.version(), 2);
 
     let rows = store.list().expect("list");

@@ -1720,8 +1720,8 @@ fn run_browser_capture(a: Args) -> Result<(), Box<dyn std::error::Error>> {
         input["selector"] = serde_json::json!(sel);
     }
     if let Some(clip_text) = &a.clip_json {
-        let clip: serde_json::Value = serde_json::from_str(clip_text)
-            .map_err(|e| format!("--clip-json 解析失败: {e}"))?;
+        let clip: serde_json::Value =
+            serde_json::from_str(clip_text).map_err(|e| format!("--clip-json 解析失败: {e}"))?;
         input["clip"] = clip;
     }
     if let Some(settle) = a.settle_ms {

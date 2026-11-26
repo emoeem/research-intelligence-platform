@@ -36,11 +36,7 @@ const MIGRATIONS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrati
 
 /// 临时文件库 + WAL + 4 连接（真多连接竞争面；测试结束清理）。
 fn wal_pool(tag: &str) -> (PathBuf, Pool) {
-    let dir = std::env::temp_dir().join(format!(
-        "rip-ma3-collab-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("rip-ma3-collab-{}-{}", tag, std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("collab.db");
     let pool = Pool::open(PoolConfig {
@@ -188,11 +184,16 @@ fn transfer_attempt_chain_and_claimer_only_writes() {
     store.claim(&row.claim_id, "caller-b").unwrap();
     // 他人 complete/fail/transfer 全拒（NotClaimer；0 行零副作用）。
     for op_err in [
-        store.complete(&row.claim_id, "caller-a", r#"{}"#).unwrap_err(),
+        store
+            .complete(&row.claim_id, "caller-a", r#"{}"#)
+            .unwrap_err(),
         store.fail(&row.claim_id, "caller-a", r#"{}"#).unwrap_err(),
         store.transfer(&row.claim_id, "caller-a").unwrap_err(),
     ] {
-        assert!(matches!(op_err, CollabError::NotClaimer(_)), "got {op_err:?}");
+        assert!(
+            matches!(op_err, CollabError::NotClaimer(_)),
+            "got {op_err:?}"
+        );
     }
     let unchanged = store.show(&row.claim_id).unwrap();
     assert_eq!(unchanged.state, ClaimState::Claimed, "他人写 0 行零副作用");
@@ -309,7 +310,9 @@ fn mailbox_delivery_read_sweep_full_sequence() {
     let fetched = store.fetch("caller-b", 100).unwrap();
     assert_eq!(fetched.len(), 2);
     assert!(
-        fetched.iter().all(|m| m.delivered_at.is_some() && m.read_at.is_none()),
+        fetched
+            .iter()
+            .all(|m| m.delivered_at.is_some() && m.read_at.is_none()),
         "首拉落 delivered_at 不动 read_at"
     );
     // sweep 归零（已投递）。
@@ -357,7 +360,10 @@ fn mailbox_delivery_read_sweep_full_sequence() {
             run_id: None,
         })
         .unwrap_err();
-    assert!(matches!(err, CollabError::InvalidInput(_)), "吊销 caller 拒收: {err:?}");
+    assert!(
+        matches!(err, CollabError::InvalidInput(_)),
+        "吊销 caller 拒收: {err:?}"
+    );
 }
 
 /// ready_list 与 claim-list CLI 读面同源（依赖门过滤 + created_at 升序）。
@@ -382,7 +388,10 @@ fn ready_list_orders_and_filters() {
     gated.depends_on_claim_id = Some(a.claim_id.clone());
     let gated = store.create(&gated).unwrap();
     let ready = store.ready_list(10).unwrap();
-    let ids: Vec<&str> = ready.iter().map(|r: &ClaimRow| r.claim_id.as_str()).collect();
+    let ids: Vec<&str> = ready
+        .iter()
+        .map(|r: &ClaimRow| r.claim_id.as_str())
+        .collect();
     assert_eq!(ids, vec![a.claim_id.as_str()], "依赖门过滤 + 升序");
     assert!(ready[0].kind == ClaimKind::Review, "kind 词形透传");
     let _ = gated;

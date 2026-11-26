@@ -110,8 +110,7 @@ fn knowledge_candidate(source_id: &str, item_id: &str, title: &str, summary: &st
 
 fn build_broker(pool: &Pool, source_id: &str, items: Vec<Candidate>) -> Broker {
     let rulepack = RulepackSource::from_dir(&repo_root().join("rulepacks/rip-rules")).unwrap();
-    let intent_config =
-        IntentConfig::from_dir(&repo_root().join("rulepacks/rip-rules")).unwrap();
+    let intent_config = IntentConfig::from_dir(&repo_root().join("rulepacks/rip-rules")).unwrap();
     let sources: Vec<Box<dyn ContextSource>> = vec![
         Box::new(rulepack),
         Box::new(StaticSource::new(source_id, items)),
@@ -161,9 +160,24 @@ fn cb1_same_input_assembles_identical_selection_and_prefix() {
     let pool = open_memory_pool();
     let source_id = format!("static-a-{}", std::process::id());
     let items = vec![
-        knowledge_candidate(&source_id, "kb:rel-1", "kingdee HTTP 接口检索", "金蝶 HTTP 相关"),
-        knowledge_candidate(&source_id, "kb:unrelated-1", "无关词条甲", "与查询无匹配信号"),
-        knowledge_candidate(&source_id, "kb:unrelated-2", "无关词条乙", "与查询无匹配信号"),
+        knowledge_candidate(
+            &source_id,
+            "kb:rel-1",
+            "kingdee HTTP 接口检索",
+            "金蝶 HTTP 相关",
+        ),
+        knowledge_candidate(
+            &source_id,
+            "kb:unrelated-1",
+            "无关词条甲",
+            "与查询无匹配信号",
+        ),
+        knowledge_candidate(
+            &source_id,
+            "kb:unrelated-2",
+            "无关词条乙",
+            "与查询无匹配信号",
+        ),
     ];
     let broker = build_broker(&pool, &source_id, items);
 
@@ -175,8 +189,16 @@ fn cb1_same_input_assembles_identical_selection_and_prefix() {
         .expect("assemble 2");
 
     assert_eq!(
-        broker.manifest(&ctx1.manifest_id).unwrap().manifest.selection_hash,
-        broker.manifest(&ctx2.manifest_id).unwrap().manifest.selection_hash,
+        broker
+            .manifest(&ctx1.manifest_id)
+            .unwrap()
+            .manifest
+            .selection_hash,
+        broker
+            .manifest(&ctx2.manifest_id)
+            .unwrap()
+            .manifest
+            .selection_hash,
         "同输入两次装配 selection_hash 相等"
     );
 
@@ -247,8 +269,18 @@ fn cb1_minimal_diff_reassembly_keeps_l0_l1_prefix_intact() {
     let pool = open_memory_pool();
     let source_id = format!("static-b-{}", std::process::id());
     let base = vec![
-        knowledge_candidate(&source_id, "kb:rel-1", "kingdee HTTP 接口检索", "金蝶 HTTP 相关"),
-        knowledge_candidate(&source_id, "kb:unrelated-1", "无关词条甲", "与查询无匹配信号"),
+        knowledge_candidate(
+            &source_id,
+            "kb:rel-1",
+            "kingdee HTTP 接口检索",
+            "金蝶 HTTP 相关",
+        ),
+        knowledge_candidate(
+            &source_id,
+            "kb:unrelated-1",
+            "无关词条甲",
+            "与查询无匹配信号",
+        ),
     ];
     let mut extended = base.clone();
     let mut added = knowledge_candidate(&source_id, "doc:added-1", "无关词条丙", "增量知识桶候选");
@@ -292,8 +324,16 @@ fn cb1_minimal_diff_reassembly_keeps_l0_l1_prefix_intact() {
         serde_json::to_string(&ctx2.layers.l1).unwrap(),
         "L1 前缀逐字节不变（catalog:digest 与 counts）"
     );
-    let l1_item_1 = view1.items.iter().find(|i| i.item_id == "catalog:digest").unwrap();
-    let l1_item_2 = view2.items.iter().find(|i| i.item_id == "catalog:digest").unwrap();
+    let l1_item_1 = view1
+        .items
+        .iter()
+        .find(|i| i.item_id == "catalog:digest")
+        .unwrap();
+    let l1_item_2 = view2
+        .items
+        .iter()
+        .find(|i| i.item_id == "catalog:digest")
+        .unwrap();
     assert_eq!(
         serde_json::to_string(&item_fingerprint(l1_item_1)).unwrap(),
         serde_json::to_string(&item_fingerprint(l1_item_2)).unwrap(),
@@ -384,8 +424,16 @@ fn cb1_same_task_run_chain_adjacent_assembles_same_selection_hash() {
         .assemble(&assemble_request("t-cb1-chain", "arn-cb1-chain"))
         .expect("assemble resumed segment");
     assert_eq!(
-        broker.manifest(&fresh.manifest_id).unwrap().manifest.selection_hash,
-        broker.manifest(&resumed.manifest_id).unwrap().manifest.selection_hash,
+        broker
+            .manifest(&fresh.manifest_id)
+            .unwrap()
+            .manifest
+            .selection_hash,
+        broker
+            .manifest(&resumed.manifest_id)
+            .unwrap()
+            .manifest
+            .selection_hash,
         "同 task_id 同 run 相邻装配 selection_hash 相等"
     );
 
@@ -394,8 +442,16 @@ fn cb1_same_task_run_chain_adjacent_assembles_same_selection_hash() {
         .assemble(&assemble_request("t-cb1-chain", "arn-cb1-retry"))
         .expect("assemble retry chain");
     assert_eq!(
-        broker.manifest(&fresh.manifest_id).unwrap().manifest.selection_hash,
-        broker.manifest(&retried.manifest_id).unwrap().manifest.selection_hash,
+        broker
+            .manifest(&fresh.manifest_id)
+            .unwrap()
+            .manifest
+            .selection_hash,
+        broker
+            .manifest(&retried.manifest_id)
+            .unwrap()
+            .manifest
+            .selection_hash,
         "retry 链同定义重放相邻装配 selection_hash 相等"
     );
 }

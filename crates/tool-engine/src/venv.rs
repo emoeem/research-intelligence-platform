@@ -1085,11 +1085,7 @@ mod tests {
         // 强制子进程存活 >1ns → Ok(None) 必进 → Timeout 确定触发。
         let wrapper = root.join("bin").join("python");
         std::fs::remove_file(&wrapper).unwrap();
-        std::fs::write(
-            &wrapper,
-            "#!/bin/sh\nsleep 0.2\nexec \"$@\"\n",
-        )
-        .unwrap();
+        std::fs::write(&wrapper, "#!/bin/sh\nsleep 0.2\nexec \"$@\"\n").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

@@ -7,7 +7,7 @@
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 /// 常时测试令牌（三态令牌用例自行覆盖缺省 / 空值态）。
 pub const TOKEN: &str = "test-token-e2e";
@@ -66,7 +66,10 @@ impl McpProc {
     /// 承载（P3-2/P4-1 CI 负载 flake 二连实录后加固，本地静场 7/7 全过）。
     pub fn send_raw(&mut self, line: &str) {
         let stdin = self.stdin.as_mut().expect("stdin closed");
-        if writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_err() {
+        if writeln!(stdin, "{line}")
+            .and_then(|_| stdin.flush())
+            .is_err()
+        {
             // 破裂即返回（函数体末尾，无后续步骤）。
         }
     }

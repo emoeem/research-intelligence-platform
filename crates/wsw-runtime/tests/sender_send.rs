@@ -22,7 +22,7 @@ use wsw_message::serialize::{OutboundFraming, OutboundRequest};
 use wsw_message::types::{HeaderRecord, HttpVersion};
 use wsw_runtime::persist::{PersistStore, SendPatch, SendRow};
 use wsw_runtime::scope::ScopeRules;
-use wsw_runtime::sender::{SendPolicy, SendError};
+use wsw_runtime::sender::{SendError, SendPolicy};
 
 /// 靶场请求字节收集器（逐字节回读断言锚点）。
 type ReceivedBytes = Arc<std::sync::Mutex<Vec<Vec<u8>>>>;
@@ -127,7 +127,11 @@ async fn spawn_target(behavior: Behavior) -> (u16, ReceivedBytes, tokio::task::J
 fn local_port_of(request: &[u8]) -> u16 {
     let head = String::from_utf8_lossy(request);
     head.lines()
-        .find_map(|l| l.strip_prefix("Host: ").and_then(|v| v.rsplit_once(':')).and_then(|(_, p)| p.parse().ok()))
+        .find_map(|l| {
+            l.strip_prefix("Host: ")
+                .and_then(|v| v.rsplit_once(':'))
+                .and_then(|(_, p)| p.parse().ok())
+        })
         .unwrap_or(0)
 }
 
@@ -158,8 +162,12 @@ fn rules_for(port: u16) -> ScopeRules {
 
 fn mem_store() -> PersistStore {
     let s = PersistStore::open_memory().expect("open memory");
-    s.run_migrations(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations").as_path())
-        .expect("migrate full chain");
+    s.run_migrations(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../migrations")
+            .as_path(),
+    )
+    .expect("migrate full chain");
     s
 }
 
@@ -176,7 +184,13 @@ fn send_row(store: &PersistStore, send_id: &str, session_id: &str) {
         })
         .unwrap();
     store
-        .advance_send(send_id, &SendPatch { state: "sending", ..Default::default() })
+        .advance_send(
+            send_id,
+            &SendPatch {
+                state: "sending",
+                ..Default::default()
+            },
+        )
         .unwrap();
 }
 
@@ -200,11 +214,13 @@ async fn send_roundtrip_and_outbound_byte_equality() {
     let serialized = wsw_message::serialize::serialize_request(&req).unwrap();
     let sent_bytes = received.lock().unwrap()[0].clone();
     assert_eq!(
-        sent_bytes, serialized.as_bytes().to_vec(),
+        sent_bytes,
+        serialized.as_bytes().to_vec(),
         "靶场收到的字节 = serialize_request 产物（编辑头序保持，hyper 写路径否决的正面证据）"
     );
     assert_eq!(
-        outcome.outbound_bytes, serialized.as_bytes().to_vec(),
+        outcome.outbound_bytes,
+        serialized.as_bytes().to_vec(),
         "引擎返回 outbound = serialize 产物"
     );
     // 落库：outbound CAS 逐字节回读 + exchange(source=repeater) 行 + send 行 succeeded。
@@ -228,8 +244,15 @@ async fn send_roundtrip_and_outbound_byte_equality() {
     ));
     std::fs::create_dir_all(&artifacts).unwrap();
     let exchange_id = wsw_runtime::sender::persist_send_result(
-        &store, &artifacts, "wsw-snd-rt-0001", session_id, "wsw-lis-test", "wsw-rpt-test-0001", 1,
-        &req, &outcome,
+        &store,
+        &artifacts,
+        "wsw-snd-rt-0001",
+        session_id,
+        "wsw-lis-test",
+        "wsw-rpt-test-0001",
+        1,
+        &req,
+        &outcome,
     )
     .unwrap();
     // send 行终态 succeeded + outbound sha 列。
@@ -351,7 +374,11 @@ async fn redirect_out_of_scope_location_rejected() {
 /// 靶场收到的第 n 个请求的 origin-form 请求行（最终请求 path 断言锚点）。
 fn request_line(received: &ReceivedBytes, n: usize) -> String {
     let buf = received.lock().unwrap()[n].clone();
-    String::from_utf8_lossy(&buf).lines().next().unwrap_or_default().to_string()
+    String::from_utf8_lossy(&buf)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
 
 #[tokio::test]
@@ -587,7 +614,10 @@ async fn total_timeout_yields_timed_out() {
     let err = wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx)
         .await
         .unwrap_err();
-    assert!(matches!(err, SendError::Timeout(_)), "total 超时 → Timeout（timed_out 面）");
+    assert!(
+        matches!(err, SendError::Timeout(_)),
+        "total 超时 → Timeout（timed_out 面）"
+    );
 }
 
 #[tokio::test]
@@ -604,9 +634,7 @@ async fn cancel_watch_yields_cancelled() {
     let handle = tokio::spawn({
         let rules = rules.clone();
         let rx = rx.clone();
-        async move {
-            wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx).await
-        }
+        async move { wsw_runtime::sender::send_request(&rules, &req, &policy, &[], &rx).await }
     });
     // 发送已启动（建连挂读）→ 取消面置位。
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

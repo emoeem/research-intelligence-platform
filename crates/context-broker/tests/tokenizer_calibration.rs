@@ -31,7 +31,11 @@ fn adapter_switches_est_tokens_to_real_counting() {
     assert!(tokenizer_available(), "adapter 应在位");
     for text in SAMPLES {
         let real = context_broker::tokenizer_count(text).expect("adapter 在场计数必有");
-        assert_eq!(est_tokens(text), real, "est_tokens 必须等于真实计数（切换一致性）");
+        assert_eq!(
+            est_tokens(text),
+            real,
+            "est_tokens 必须等于真实计数（切换一致性）"
+        );
     }
 }
 
@@ -70,8 +74,14 @@ fn long_text_count_not_truncated_by_model_cap() {
     // 1000 个互异英文词 ≈ >1000 token（远超常见 512 输入帽）。
     let text: String = (0..1000).map(|i| format!("word{i} ")).collect();
     let count = context_broker::tokenizer_count(&text).expect("adapter 在场计数必有");
-    assert!(count > 512, "长文本计数被模型输入帽截断：count={count}（no_truncation 未生效）");
+    assert!(
+        count > 512,
+        "长文本计数被模型输入帽截断：count={count}（no_truncation 未生效）"
+    );
     // 公式对照（1000 ASCII 词 ≈ 5000+ 字符 / 4 ≈ 1250 token 上量级一致）。
     let formula = est_tokens_formula(&text);
-    assert!(count > 900, "计数与语料规模不符：count={count} formula={formula}");
+    assert!(
+        count > 900,
+        "计数与语料规模不符：count={count} formula={formula}"
+    );
 }

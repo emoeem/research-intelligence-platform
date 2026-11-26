@@ -84,8 +84,9 @@ fn run() -> i32 {
     };
     match sub.as_str() {
         "claim-create" | "claim-list" | "claim-claim" | "claim-complete" | "claim-fail"
-        | "claim-transfer" | "claim-show" | "msg-send" | "msg-fetch" | "msg-read"
-        | "msg-sweep" => cmd_dispatch(&sub, &args[1..]),
+        | "claim-transfer" | "claim-show" | "msg-send" | "msg-fetch" | "msg-read" | "msg-sweep" => {
+            cmd_dispatch(&sub, &args[1..])
+        }
         _ => usage(),
     }
 }
@@ -107,7 +108,10 @@ fn guard_db_path(db: &Path) {
 }
 
 /// 旗标解析（--key value 对；未知旗标拒绝 = fail-closed）。
-fn parse_flags(args: &[String], allowed: &[&str]) -> Result<std::collections::HashMap<String, String>, String> {
+fn parse_flags(
+    args: &[String],
+    allowed: &[&str],
+) -> Result<std::collections::HashMap<String, String>, String> {
     let mut flags = std::collections::HashMap::new();
     let mut iter = args.iter();
     while let Some(flag) = iter.next() {
@@ -125,7 +129,10 @@ fn parse_flags(args: &[String], allowed: &[&str]) -> Result<std::collections::Ha
     Ok(flags)
 }
 
-fn require<'a>(flags: &'a std::collections::HashMap<String, String>, name: &str) -> Result<&'a str, String> {
+fn require<'a>(
+    flags: &'a std::collections::HashMap<String, String>,
+    name: &str,
+) -> Result<&'a str, String> {
     flags
         .get(name)
         .map(String::as_str)
@@ -134,10 +141,16 @@ fn require<'a>(flags: &'a std::collections::HashMap<String, String>, name: &str)
 }
 
 fn opt<'a>(flags: &'a std::collections::HashMap<String, String>, name: &str) -> Option<&'a str> {
-    flags.get(name).map(String::as_str).filter(|v| !v.trim().is_empty())
+    flags
+        .get(name)
+        .map(String::as_str)
+        .filter(|v| !v.trim().is_empty())
 }
 
-fn opt_usize(flags: &std::collections::HashMap<String, String>, name: &str) -> Result<Option<usize>, String> {
+fn opt_usize(
+    flags: &std::collections::HashMap<String, String>,
+    name: &str,
+) -> Result<Option<usize>, String> {
     match opt(flags, name) {
         None => Ok(None),
         Some(raw) => raw
@@ -238,7 +251,14 @@ fn message_row_json(row: &workflow_engine::collab::MessageRow) -> serde_json::Va
 fn cmd_dispatch(sub: &str, args: &[String]) -> i32 {
     let allowed: &[&str] = match sub {
         "claim-create" => &[
-            "db", "caller-id", "kind", "title", "payload", "run-id", "node-id", "agent-id",
+            "db",
+            "caller-id",
+            "kind",
+            "title",
+            "payload",
+            "run-id",
+            "node-id",
+            "agent-id",
             "depends-on",
         ],
         "claim-list" | "msg-sweep" => &["db", "limit"],
@@ -309,10 +329,11 @@ fn cmd_dispatch(sub: &str, args: &[String]) -> i32 {
             }
         }
         "claim-claim" => {
-            let (caller, claim_id) = match (require(&flags, "caller-id"), require(&flags, "claim-id")) {
-                (Ok(a), Ok(b)) => (a.to_string(), b.to_string()),
-                (Err(e), _) | (_, Err(e)) => return usage_error(sub, &e),
-            };
+            let (caller, claim_id) =
+                match (require(&flags, "caller-id"), require(&flags, "claim-id")) {
+                    (Ok(a), Ok(b)) => (a.to_string(), b.to_string()),
+                    (Err(e), _) | (_, Err(e)) => return usage_error(sub, &e),
+                };
             match ClaimStore::new(pool).claim(&claim_id, &caller) {
                 Ok(row) => print_result(claim_row_json(&row)),
                 Err(e) => fail(e),
@@ -347,10 +368,11 @@ fn cmd_dispatch(sub: &str, args: &[String]) -> i32 {
             }
         }
         "claim-transfer" => {
-            let (caller, claim_id) = match (require(&flags, "caller-id"), require(&flags, "claim-id")) {
-                (Ok(a), Ok(b)) => (a.to_string(), b.to_string()),
-                (Err(e), _) | (_, Err(e)) => return usage_error(sub, &e),
-            };
+            let (caller, claim_id) =
+                match (require(&flags, "caller-id"), require(&flags, "claim-id")) {
+                    (Ok(a), Ok(b)) => (a.to_string(), b.to_string()),
+                    (Err(e), _) | (_, Err(e)) => return usage_error(sub, &e),
+                };
             match ClaimStore::new(pool).transfer(&claim_id, &caller) {
                 Ok(row) => print_result(serde_json::json!({
                     "new_claim": claim_row_json(&row),
@@ -406,10 +428,11 @@ fn cmd_dispatch(sub: &str, args: &[String]) -> i32 {
             }
         }
         "msg-read" => {
-            let (caller, message_id) = match (require(&flags, "caller-id"), require(&flags, "message-id")) {
-                (Ok(a), Ok(b)) => (a.to_string(), b.to_string()),
-                (Err(e), _) | (_, Err(e)) => return usage_error(sub, &e),
-            };
+            let (caller, message_id) =
+                match (require(&flags, "caller-id"), require(&flags, "message-id")) {
+                    (Ok(a), Ok(b)) => (a.to_string(), b.to_string()),
+                    (Err(e), _) | (_, Err(e)) => return usage_error(sub, &e),
+                };
             match MessageStore::new(pool).read(&message_id, &caller) {
                 Ok(row) => print_result(message_row_json(&row)),
                 Err(e) => fail(e),

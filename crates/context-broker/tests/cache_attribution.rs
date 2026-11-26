@@ -13,8 +13,8 @@ use context_broker::{
     BrokerCache, CacheAttributionStats, CacheValidation, TtlClassExpired, TTL_RTIS, TTL_SCHEMA,
 };
 use std::path::PathBuf;
-use std::time::SystemTime;
 use std::time::Duration;
+use std::time::SystemTime;
 
 fn temp_cache(tag: &str) -> (BrokerCache, PathBuf) {
     let dir = std::env::temp_dir().join(format!("rip-cb1-attrib-{}-{tag}", std::process::id()));
@@ -78,11 +78,7 @@ fn cb1_miss_reason_entry_missing() {
         },
         "其余桶零计数"
     );
-    assert_eq!(
-        cache.stats().unwrap().entries,
-        0,
-        "无负缓存条目产生"
-    );
+    assert_eq!(cache.stats().unwrap().entries, 0, "无负缓存条目产生");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -332,7 +328,12 @@ fn cb1_attribution_report_static_directory_scan() {
     assert_eq!(report.entries, 3);
     assert_eq!(report.policy_mismatch, 0);
     let hit = cache
-        .get(&key_a, &validation("1.0.0", "bb".repeat(32).as_str(), fp), "policy-1", TTL_SCHEMA)
+        .get(
+            &key_a,
+            &validation("1.0.0", "bb".repeat(32).as_str(), fp),
+            "policy-1",
+            TTL_SCHEMA,
+        )
         .unwrap();
     assert_eq!(hit.as_deref(), Some("payload"));
 
@@ -340,7 +341,9 @@ fn cb1_attribution_report_static_directory_scan() {
     // 600s 与 TTL_KNOWLEDGE 3600s，< TTL_SCHEMA 86400s），条目 B 回溯 30 天
     // （四类全过期）。类间嵌套口径 = 同一过期条目计入所有更短 TTL 类。
     assert!(TTL_RTIS <= Duration::from_secs(600));
-    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
     let backdate = |key: &str, secs: u64| {
         let f = std::fs::OpenOptions::new()
             .write(true)

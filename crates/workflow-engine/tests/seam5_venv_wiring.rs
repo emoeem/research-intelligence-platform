@@ -213,7 +213,10 @@ fn seam5_venv_probe_rejected_and_no_venv_unchanged() {
         .unwrap_or_else(|e| panic!("run 输出 JSON：{e}；stdout={out} stderr={err}"));
     assert_eq!(rc, 1, "venv run 失败退出码：{outcome}");
     assert_eq!(outcome["result"], "RUN-OUTCOME");
-    assert_eq!(outcome["state"], "failed", "venv 探测拒绝 → run failed（state.rs:47 终态词表小写）");
+    assert_eq!(
+        outcome["state"], "failed",
+        "venv 探测拒绝 → run failed（state.rs:47 终态词表小写）"
+    );
     let nodes = outcome["nodes"].as_array().expect("nodes");
     let tool_node = nodes
         .iter()
@@ -275,7 +278,10 @@ fn seam5_venv_probe_rejected_and_no_venv_unchanged() {
     let outcome: serde_json::Value = serde_json::from_str(out.trim())
         .unwrap_or_else(|e| panic!("run 输出 JSON：{e}；stdout={out} stderr={err}"));
     assert_eq!(rc, 0, "novenv run 成功：{outcome} {err}");
-    assert_eq!(outcome["state"], "succeeded", "裸名 python3 直派行为零变化（state.rs:47 小写）");
+    assert_eq!(
+        outcome["state"], "succeeded",
+        "裸名 python3 直派行为零变化（state.rs:47 小写）"
+    );
     let nodes = outcome["nodes"].as_array().expect("nodes");
     let tool_node = nodes
         .iter()

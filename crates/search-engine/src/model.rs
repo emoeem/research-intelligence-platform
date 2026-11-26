@@ -40,6 +40,34 @@ pub struct SearchFilters {
     pub maintenance_status: Option<String>,
     /// 资源类型（github_repo / url 等）。
     pub resource_type: Option<String>,
+    /// Nuclei 严重程度（critical/high/medium/low/info）。
+    pub nuclei_severity: Option<String>,
+    /// Nuclei 协议类型（http/dns/tcp 等）。
+    pub nuclei_protocol: Option<String>,
+    /// 精确 CVE 标识。
+    pub cve_id: Option<String>,
+    /// 精确 CWE 标识（Nuclei）。
+    pub cwe_id: Option<String>,
+    /// 自有 POC 审核证据等级（K0-K4）。
+    pub evidence_level: Option<String>,
+    /// 自有 POC 生命周期（Candidate/Researched/...），与证据等级独立。
+    pub knowledge_lifecycle: Option<String>,
+    /// 自有 POC 严重程度。
+    pub poc_severity: Option<String>,
+    /// 自有 POC 分类。
+    pub poc_category: Option<String>,
+    /// 自有 POC 精确 CVE。
+    pub poc_cve_id: Option<String>,
+    /// POC 来源完整性（complete/partial/missing）。
+    pub poc_source_integrity: Option<String>,
+    /// POC 证据核验结论，不等同于 evidence_level。
+    pub poc_verification_result: Option<String>,
+    /// POC 去重状态（independent/related/duplicate_candidate 等）。
+    pub poc_dedup_status: Option<String>,
+    /// POC 独立知识状态。
+    pub poc_independent_knowledge_status: Option<String>,
+    /// POC 尚缺证据项标识。
+    pub poc_missing_evidence: Option<bool>,
 }
 
 /// 检索权重快照（混合排序三轴，见 weights.rs）。
@@ -74,10 +102,52 @@ pub struct SearchHit {
     pub license_status: Option<String>,
     /// 维护状态（缺证归一 UNKNOWN）。
     pub maintenance_status: Option<String>,
-    /// topics（catalog github_metadata.topics 补齐）。
+    /// topics（catalog 与 Nuclei tags/classification 补齐）。
     pub topics: Vec<String>,
+    /// Nuclei 严重程度。
+    pub nuclei_severity: Option<String>,
+    /// Nuclei 协议列表。
+    pub nuclei_protocols: Vec<String>,
+    /// CVE 标识列表。
+    pub nuclei_cve_ids: Vec<String>,
+    /// CWE 标识列表。
+    pub nuclei_cwe_ids: Vec<String>,
     /// 来源清单章节（platform resource_source 的 alias/name：source_section 去重集）。
     pub source_sections: Vec<String>,
+    /// 自有 POC 审核证据等级（K0-K4）。
+    pub evidence_level: Option<String>,
+    /// 自有 POC 生命周期（与平台 resource.lifecycle 分开）。
+    pub knowledge_lifecycle: Option<String>,
+    /// 自有 POC 分类。
+    pub poc_category: Option<String>,
+    /// 自有 POC 严重程度。
+    pub poc_severity: Option<String>,
+    /// 自有 POC CVE。
+    pub poc_cve_id: Option<String>,
+    /// Overlay 中记录的原始来源路径。
+    pub source_path: Option<String>,
+    /// Overlay 中记录的来源 Git Commit。
+    pub source_commit: Option<String>,
+    /// Overlay 关系映射到的其他 POC ID（含关系类型）。
+    pub related_poc_ids: Vec<String>,
+    /// Overlay 关联到的外部案例组或知识实体（不混入 POC ID）。
+    pub related_entities: Vec<String>,
+    /// Overlay 中登记的上游来源 URL（仅链接，不抓取目标内容）。
+    pub poc_source_urls: Vec<String>,
+    /// Overlay 的来源完整性、核验结论和去重状态。
+    pub poc_source_integrity: Option<String>,
+    /// POC 的历史证据核验结论。
+    pub poc_verification_result: Option<String>,
+    /// POC 的去重状态。
+    pub poc_dedup_status: Option<String>,
+    /// POC 是否构成独立知识。
+    pub poc_independent_knowledge_status: Option<String>,
+    /// 缺失证据项标识（不包含证据正文）。
+    pub poc_missing_evidence: Vec<String>,
+    /// 证据文件路径/引用标识（不包含文件内容）。
+    pub poc_evidence_refs: Vec<String>,
+    /// 下一步审核门槛说明。
+    pub poc_review_gate: Option<String>,
     /// 混合总分（0..1，4 位小数；缺证轴归一后输出）。
     pub score: f64,
     /// 归一化 bm25 分（0..1；浏览模式无关键词时为 None）。
@@ -142,6 +212,50 @@ pub struct IndexDoc {
     pub source_sections: Vec<String>,
     /// 来源仓库（resource_source.source_repository 去重）。
     pub source_repositories: Vec<String>,
+    /// Nuclei 严重程度。
+    pub nuclei_severity: Option<String>,
+    /// Nuclei 协议列表。
+    pub nuclei_protocols: Vec<String>,
+    /// CVE 标识列表。
+    pub nuclei_cve_ids: Vec<String>,
+    /// CWE 标识列表。
+    pub nuclei_cwe_ids: Vec<String>,
+    /// Nuclei 原始 tags。
+    pub nuclei_tags: Vec<String>,
+    /// 自有 POC 审核证据等级。
+    pub evidence_level: Option<String>,
+    /// 自有 POC 生命周期。
+    pub knowledge_lifecycle: Option<String>,
+    /// 自有 POC 分类。
+    pub poc_category: Option<String>,
+    /// 自有 POC 严重程度。
+    pub poc_severity: Option<String>,
+    /// 自有 POC CVE。
+    pub poc_cve_id: Option<String>,
+    /// POC 原始来源路径。
+    pub source_path: Option<String>,
+    /// POC 来源 Commit。
+    pub source_commit: Option<String>,
+    /// 关联 POC ID 与关系类型。
+    pub related_poc_ids: Vec<String>,
+    /// External case/knowledge entity references linked by the Overlay.
+    pub related_entities: Vec<String>,
+    /// Upstream source URLs declared by the curation Overlay.
+    pub poc_source_urls: Vec<String>,
+    /// Overlay source integrity; never inferred from the legacy verified flag.
+    pub poc_source_integrity: Option<String>,
+    /// Historical evidence verification result.
+    pub poc_verification_result: Option<String>,
+    /// Duplicate/relationship curation status.
+    pub poc_dedup_status: Option<String>,
+    /// Whether this record represents independent knowledge.
+    pub poc_independent_knowledge_status: Option<String>,
+    /// Missing evidence identifiers, without evidence bodies.
+    pub poc_missing_evidence: Vec<String>,
+    /// Evidence paths/identifiers, without evidence bodies.
+    pub poc_evidence_refs: Vec<String>,
+    /// Human-readable next review gate.
+    pub poc_review_gate: Option<String>,
 }
 
 /// 索引构建报告。

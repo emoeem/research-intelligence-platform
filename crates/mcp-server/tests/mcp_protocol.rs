@@ -21,7 +21,7 @@ mod common;
 use std::path::PathBuf;
 
 use database::rusqlite::Connection;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use common::McpProc;
 
@@ -88,10 +88,50 @@ fn insert_tool(
 fn make_main_db(path: &std::path::Path) {
     let conn = Connection::open(path).unwrap();
     create_tool_table(&conn);
-    insert_tool(&conn, "aaa", "aaa", "cli", "REGISTERED", "ACTIVE", "2026-01-02T00:00:00Z", None, None);
-    insert_tool(&conn, "BBB", "BBB", "cli", "REGISTERED", "ACTIVE", "2026-01-02T00:00:00Z", None, None);
-    insert_tool(&conn, "zzz", "zzz", "cli", "VALIDATED", "QUARANTINED", "2026-01-01T00:00:00Z", None, None);
-    insert_tool(&conn, "dup-tool", "dup-tool", "cli", "ENABLED", "ACTIVE", "2026-01-03T00:00:00Z", None, None);
+    insert_tool(
+        &conn,
+        "aaa",
+        "aaa",
+        "cli",
+        "REGISTERED",
+        "ACTIVE",
+        "2026-01-02T00:00:00Z",
+        None,
+        None,
+    );
+    insert_tool(
+        &conn,
+        "BBB",
+        "BBB",
+        "cli",
+        "REGISTERED",
+        "ACTIVE",
+        "2026-01-02T00:00:00Z",
+        None,
+        None,
+    );
+    insert_tool(
+        &conn,
+        "zzz",
+        "zzz",
+        "cli",
+        "VALIDATED",
+        "QUARANTINED",
+        "2026-01-01T00:00:00Z",
+        None,
+        None,
+    );
+    insert_tool(
+        &conn,
+        "dup-tool",
+        "dup-tool",
+        "cli",
+        "ENABLED",
+        "ACTIVE",
+        "2026-01-03T00:00:00Z",
+        None,
+        None,
+    );
     conn.close().unwrap();
 }
 
@@ -100,7 +140,17 @@ fn make_main_db(path: &std::path::Path) {
 fn make_aux_db(path: &std::path::Path) {
     let conn = Connection::open(path).unwrap();
     create_tool_table(&conn);
-    insert_tool(&conn, "dup-tool", "dup-tool", "cli", "DISABLED", "ACTIVE", "2026-01-05T00:00:00Z", None, None);
+    insert_tool(
+        &conn,
+        "dup-tool",
+        "dup-tool",
+        "cli",
+        "DISABLED",
+        "ACTIVE",
+        "2026-01-05T00:00:00Z",
+        None,
+        None,
+    );
     insert_tool(
         &conn,
         "rip.kb.rtis",
@@ -130,8 +180,12 @@ fn fixture(tag: &str) -> (PathBuf, PathBuf, McpProc) {
 
 /// 解析 tools/call result 的 content[0].text 载荷。
 fn payload_of(reply: &Value) -> Value {
-    serde_json::from_str(reply["result"]["content"][0]["text"].as_str().expect("text"))
-        .expect("payload json")
+    serde_json::from_str(
+        reply["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text"),
+    )
+    .expect("payload json")
 }
 
 /// 注册面预期顺序（handle_tools 口径）：主库段 updated_at DESC,
@@ -185,7 +239,10 @@ fn token_boundary_three_states() {
     let reply = proc.handshake("2024-11-05");
     assert!(reply.get("result").is_some(), "正确令牌握手成功: {reply}");
     let reply = proc.request("tools/list", json!({"cursor": ""}));
-    assert!(reply.get("result").is_some(), "正确令牌 tools/list 可用: {reply}");
+    assert!(
+        reply.get("result").is_some(),
+        "正确令牌 tools/list 可用: {reply}"
+    );
     proc.wait_exit();
 }
 
@@ -203,7 +260,10 @@ fn initialize_negotiates_protocol_versions() {
         json!({"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}),
     );
     let result = &reply["result"];
-    assert_eq!(result["protocolVersion"], "2024-11-05", "支持列表内版本协商回显: {reply}");
+    assert_eq!(
+        result["protocolVersion"], "2024-11-05",
+        "支持列表内版本协商回显: {reply}"
+    );
     assert_eq!(result["capabilities"]["tools"]["listChanged"], false);
     assert_eq!(result["capabilities"]["resources"]["subscribe"], false);
     assert_eq!(result["capabilities"]["prompts"]["listChanged"], false);
@@ -223,7 +283,10 @@ fn initialize_negotiates_protocol_versions() {
         instructions.contains("tools/list") && instructions.contains("rip.get_tool_schema"),
         "一行导航点名交互面"
     );
-    assert!(instructions.chars().count() < 200, "instructions 保持一行导航");
+    assert!(
+        instructions.chars().count() < 200,
+        "instructions 保持一行导航"
+    );
 
     // 客户端请求 rmcp 支持的最新握手版本（2025-11-25）：协商回显。
     let reply = proc.request(
@@ -291,7 +354,10 @@ fn tools_list_entries_are_standard_tool_objects() {
         .map(|(n, _)| n.to_string())
         .collect();
     expected.extend(expected_registry_ids().iter().map(|s| format!("rip.{s}")));
-    assert_eq!(names, expected, "分页游标遍历不重不漏（能力面前段 + 注册面段）");
+    assert_eq!(
+        names, expected,
+        "分页游标遍历不重不漏（能力面前段 + 注册面段）"
+    );
 
     // 能力面 description（一行导航）+ 注册面零 description（Token 纪律，
     // 完整元数据经 rip.get_tool_schema）。
@@ -304,7 +370,8 @@ fn tools_list_entries_are_standard_tool_objects() {
         assert_eq!(
             tool.get("description").is_some(),
             is_capability,
-            "能力面有 description，注册面无（{}）", tool["name"]
+            "能力面有 description，注册面无（{}）",
+            tool["name"]
         );
     }
     // aux 行的真实 Schema 列直读进 tools/list（与 tool 表 input_schema 同源）。
@@ -332,14 +399,22 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
     // 18 总条数 <= 页大小 20 → 首页 18 行无下一页。
     let reply = proc.request("tools/list", json!({}));
     let tools = reply["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 18, "夹具 18 条全量（13 能力面 + 5 注册面）: {}", tools.len());
+    assert_eq!(
+        tools.len(),
+        18,
+        "夹具 18 条全量（13 能力面 + 5 注册面）: {}",
+        tools.len()
+    );
     assert!(
         reply["result"].get("nextCursor").is_none(),
         "全量一页内无 nextCursor"
     );
     // 非法游标 -32602。
     let reply = proc.request("tools/list", json!({"cursor": "v1-bad"}));
-    assert_eq!(reply["error"]["code"], -32602, "非法游标必须 -32602: {reply}");
+    assert_eq!(
+        reply["error"]["code"], -32602,
+        "非法游标必须 -32602: {reply}"
+    );
     // 多页遍历：临时库再造 30 行（> 页大小 20）验证真分页。
     drop(proc);
     let main = common::tmp_db("many");
@@ -347,7 +422,17 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
         let conn = Connection::open(&main).unwrap();
         create_tool_table(&conn);
         for i in 0..30 {
-            insert_tool(&conn, &format!("t{i:02}"), &format!("t{i:02}"), "cli", "REGISTERED", "ACTIVE", "2026-01-02T00:00:00Z", None, None);
+            insert_tool(
+                &conn,
+                &format!("t{i:02}"),
+                &format!("t{i:02}"),
+                "cli",
+                "REGISTERED",
+                "ACTIVE",
+                "2026-01-02T00:00:00Z",
+                None,
+                None,
+            );
         }
         conn.close().unwrap();
     }
@@ -365,17 +450,28 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
         for tool in result["tools"].as_array().unwrap() {
             seen.push(tool["name"].as_str().unwrap().to_string());
             // 分页控量不省必需 Schema（每页每条都带 inputSchema）。
-            assert!(tool["inputSchema"].is_object(), "分页不省 inputSchema: {tool}");
+            assert!(
+                tool["inputSchema"].is_object(),
+                "分页不省 inputSchema: {tool}"
+            );
         }
         match result.get("nextCursor") {
             Some(Value::String(c)) => {
                 cursor = Some(c.clone());
-                assert_eq!(result["tools"].as_array().unwrap().len(), 20, "服务端固定页大小 20");
+                assert_eq!(
+                    result["tools"].as_array().unwrap().len(),
+                    20,
+                    "服务端固定页大小 20"
+                );
             }
             _ => break,
         }
     }
-    assert_eq!(seen.len(), 43, "30 注册面 + 13 能力面全量遍历（MA-3 七枚协作派发工具 additive）");
+    assert_eq!(
+        seen.len(),
+        43,
+        "30 注册面 + 13 能力面全量遍历（MA-3 七枚协作派发工具 additive）"
+    );
     let mut uniq = seen.clone();
     uniq.sort();
     uniq.dedup();
@@ -394,7 +490,11 @@ fn registry_tier_is_same_source_with_handle_tools_semantics() {
     let catalog = Catalog::open(&main, Some(&aux)).unwrap();
     let rows = catalog.list_registry(&Default::default()).unwrap();
     let ids: Vec<&str> = rows.iter().map(|r| r.tool_id.as_str()).collect();
-    assert_eq!(ids, expected_registry_ids(), "排序 = updated_at DESC, name COLLATE NOCASE ASC；aux 只补主库没有的行");
+    assert_eq!(
+        ids,
+        expected_registry_ids(),
+        "排序 = updated_at DESC, name COLLATE NOCASE ASC；aux 只补主库没有的行"
+    );
     // 与库直查 SQL 逐条一致（同源）。
     let conn =
         Connection::open_with_flags(&main, database::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -406,7 +506,11 @@ fn registry_tier_is_same_source_with_handle_tools_semantics() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(&ids[..4], &db_ids[..], "主库段与 handle_tools 同款 SQL 排序逐条一致");
+    assert_eq!(
+        &ids[..4],
+        &db_ids[..],
+        "主库段与 handle_tools 同款 SQL 排序逐条一致"
+    );
 }
 
 #[test]
@@ -437,10 +541,17 @@ fn list_tools_call_envelope_is_handle_tools_shape() {
         .iter()
         .map(|r| r["tool_id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, expected_registry_ids(), "注册面全量顺序 = handle_tools 口径");
+    assert_eq!(
+        ids,
+        expected_registry_ids(),
+        "注册面全量顺序 = handle_tools 口径"
+    );
     // 词表外 lifecycle = -32602（BadFilter）。
     let reply = proc.call("rip.list_tools", json!({"lifecycle": "NOPE"}));
-    assert_eq!(reply["error"]["code"], -32602, "词表外过滤必须 -32602: {reply}");
+    assert_eq!(
+        reply["error"]["code"], -32602,
+        "词表外过滤必须 -32602: {reply}"
+    );
     // limit 越界 = -32602。
     let reply = proc.call("rip.list_tools", json!({"limit": 201}));
     assert_eq!(reply["error"]["code"], -32602);
@@ -461,7 +572,10 @@ fn get_tool_schema_serves_registry_and_capability_on_demand() {
     let payload = payload_of(&reply);
     assert_eq!(payload["source"], "aux");
     assert_eq!(payload["input_schema"]["required"][0], "q");
-    assert_eq!(payload["output_schema"]["properties"]["ok"]["type"], "boolean");
+    assert_eq!(
+        payload["output_schema"]["properties"]["ok"]["type"],
+        "boolean"
+    );
     // 无 Schema 的主库行 = 双 null（真实列值，不造假）。
     let reply = proc.call("rip.get_tool_schema", json!({"tool_id": "aaa"}));
     let payload = payload_of(&reply);
@@ -472,7 +586,10 @@ fn get_tool_schema_serves_registry_and_capability_on_demand() {
     let reply = proc.call("rip.get_tool_schema", json!({"tool_id": "rip.run_tool"}));
     let payload = payload_of(&reply);
     assert_eq!(payload["source"], "capability");
-    assert_eq!(payload["input_schema"]["required"], json!(["tool_id", "input"]));
+    assert_eq!(
+        payload["input_schema"]["required"],
+        json!(["tool_id", "input"])
+    );
     // 工具不存在 = -32602。
     let reply = proc.call("rip.get_tool_schema", json!({"tool_id": "nope"}));
     assert_eq!(reply["error"]["code"], -32602);
@@ -492,19 +609,34 @@ fn unwired_tools_return_structured_is_error() {
     proc.handshake("2024-11-05");
     // 尚未接线的能力面（search_knowledge）：结构化 isError，不伪造成功。
     let reply = proc.call("rip.search_knowledge", json!({}));
-    assert_eq!(reply["result"]["isError"], true, "search_knowledge 未接线必须 isError=true");
+    assert_eq!(
+        reply["result"]["isError"], true,
+        "search_knowledge 未接线必须 isError=true"
+    );
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("\"wired_in\""), "search_knowledge 指明接线归属: {text}");
+    assert!(
+        text.contains("\"wired_in\""),
+        "search_knowledge 指明接线归属: {text}"
+    );
     // run face 未配置（RP_RUN_DB=none）：如实返回未配置说明。
     for (name, arguments) in [
-        ("rip.run_tool", json!({"tool_id": "rip.doc.parse", "input": {"text": "x"}})),
+        (
+            "rip.run_tool",
+            json!({"tool_id": "rip.doc.parse", "input": {"text": "x"}}),
+        ),
         ("rip.get_run_status", json!({"run_id": "rn-x"})),
         ("rip.cancel_run", json!({"run_id": "rn-x"})),
     ] {
         let reply = proc.call(name, arguments);
-        assert_eq!(reply["result"]["isError"], true, "{name} 未配置执行面必须 isError=true");
+        assert_eq!(
+            reply["result"]["isError"], true,
+            "{name} 未配置执行面必须 isError=true"
+        );
         assert!(
-            reply["result"]["content"][0]["text"].as_str().unwrap().contains("run face"),
+            reply["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("run face"),
             "{name} 说明 run face 未配置"
         );
     }
@@ -517,12 +649,18 @@ fn unwired_tools_return_structured_is_error() {
     let reply = proc.call("rip.aaa", json!({}));
     assert_eq!(reply["result"]["isError"], true);
     let text = reply["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("rip.run_tool"), "注册面直呼指明执行通道: {text}");
+    assert!(
+        text.contains("rip.run_tool"),
+        "注册面直呼指明执行通道: {text}"
+    );
     // 目录外工具 = -32602 unknown tool。
     let reply = proc.call("rip.nope", json!({}));
     assert_eq!(reply["error"]["code"], -32602);
     let msg = reply["error"]["message"].as_str().unwrap();
-    assert!(msg.contains("unknown tool"), "未知工具报 unknown tool: {msg}");
+    assert!(
+        msg.contains("unknown tool"),
+        "未知工具报 unknown tool: {msg}"
+    );
     proc.wait_exit();
 }
 
@@ -563,7 +701,11 @@ fn method_dispatch_follows_subset_surface() {
         .collect();
     assert_eq!(
         prompts,
-        vec!["rip.tool_run_playbook", "rip.run_audit_review", "rip.knowledge_brief"]
+        vec![
+            "rip.tool_run_playbook",
+            "rip.run_audit_review",
+            "rip.knowledge_brief"
+        ]
     );
     let reply = proc.request(
         "prompts/get",
@@ -600,12 +742,16 @@ fn method_dispatch_follows_subset_surface() {
 fn catalog_unavailable_reports_real_empty_state() {
     let empty = common::tmp_db("empty");
     let conn = Connection::open(&empty).unwrap();
-    conn.execute_batch("CREATE TABLE marker (id INTEGER);").unwrap();
+    conn.execute_batch("CREATE TABLE marker (id INTEGER);")
+        .unwrap();
     conn.close().unwrap();
     let mut proc = McpProc::spawn(&[("RP_DB_PATH", empty.to_string_lossy().as_ref())]);
     proc.handshake("2024-11-05");
     let reply = proc.request("tools/list", json!({}));
-    assert_eq!(reply["error"]["code"], -32603, "数据面不可读 = -32603: {reply}");
+    assert_eq!(
+        reply["error"]["code"], -32603,
+        "数据面不可读 = -32603: {reply}"
+    );
     assert_eq!(
         reply["error"]["data"]["reason"], "aux_db_not_configured",
         "真实空态 reason 词表"
@@ -623,6 +769,10 @@ fn stdout_lines_are_pure_protocol_messages_with_token() {
     let _ = proc.request("tools/list", json!({}));
     let _ = proc.call("rip.get_tool_schema", json!({"tool_id": "aaa"}));
     let _ = proc.request("ping", json!({}));
-    assert_eq!(proc.sideband.len(), 0, "无带外残余行（stdout 全部为配对响应）");
+    assert_eq!(
+        proc.sideband.len(),
+        0,
+        "无带外残余行（stdout 全部为配对响应）"
+    );
     proc.wait_exit();
 }

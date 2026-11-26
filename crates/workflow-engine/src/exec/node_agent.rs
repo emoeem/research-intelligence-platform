@@ -252,7 +252,9 @@ mod tests {
     fn missing_driver_is_fail_closed() {
         let outcome = execute(None, &base_request(), Some("{}"), &json!({}));
         match outcome {
-            AgentNodeOutcome::Failed(failure) => assert_eq!(failure.code, "node_driver_unavailable"),
+            AgentNodeOutcome::Failed(failure) => {
+                assert_eq!(failure.code, "node_driver_unavailable")
+            }
             other => panic!("expected Failed, got {other:?}"),
         }
     }

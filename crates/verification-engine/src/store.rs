@@ -14,8 +14,8 @@
 use crate::contract::{
     id_prefix_matches, validate_event_doc, validate_item_doc, validate_plan_doc, SCHEMA_VERSION,
 };
-use database::Pool;
 use database::rusqlite::OptionalExtension;
+use database::Pool;
 use domain::time::now_iso;
 use domain::verification::{ErrorCategory, PlanStatus, ResultStatus};
 use serde::Serialize;
@@ -248,11 +248,7 @@ impl ResultGuard {
                         parsed_category.as_str()
                     )));
                 }
-                Ok((
-                    parsed.as_str().to_owned(),
-                    reason.map(str::to_owned),
-                    None,
-                ))
+                Ok((parsed.as_str().to_owned(), reason.map(str::to_owned), None))
             }
             ResultStatus::NotTested | ResultStatus::Inconclusive => Ok((
                 parsed.as_str().to_owned(),
@@ -364,8 +360,8 @@ impl PlanStore {
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         if let Some(record) = &row {
-            let doc = serde_json::to_value(record)
-                .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+            let doc =
+                serde_json::to_value(record).map_err(|e| PlanStoreError::Db(e.to_string()))?;
             validate_plan_doc(&doc)
                 .map_err(|errs| PlanStoreError::GuardRejected(errs.join("; ")))?;
         }
@@ -414,8 +410,8 @@ impl PlanStore {
 
     /// 计划状态推进（终态不可迁出；事件留痕）。
     pub fn set_plan_status(&self, plan_id: &str, status: &str) -> Result<(), PlanStoreError> {
-        let parsed = PlanStatus::parse(status)
-            .map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
+        let parsed =
+            PlanStatus::parse(status).map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
         let current = self
             .get_plan(plan_id)?
             .ok_or_else(|| PlanStoreError::NotFound(plan_id.to_owned()))?;
@@ -435,7 +431,7 @@ impl PlanStore {
                     "UPDATE research_plan SET status = ?2, updated_at = ?3 WHERE plan_id = ?1",
                     database::rusqlite::params![plan_id, parsed.as_str(), now],
                 )
-                })
+            })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         if changed == 0 {
             return Err(PlanStoreError::NotFound(plan_id.to_owned()));
@@ -453,8 +449,9 @@ impl PlanStore {
 
     /// 计划项新增（applicability 词表与指纹形状守卫 + 事件留痕）。
     pub fn add_item(&self, plan_id: &str, item: NewItem) -> Result<PlanItemRecord, PlanStoreError> {
-        let applicability = domain::verification::ApplicabilityStatus::parse(&item.applicability_status)
-            .map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
+        let applicability =
+            domain::verification::ApplicabilityStatus::parse(&item.applicability_status)
+                .map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
         let risk = domain::verification::RiskClass::parse(&item.risk_class)
             .map_err(|e| PlanStoreError::GuardRejected(e.to_string()))?;
         if item.dedup_fingerprint.len() != 64
@@ -467,8 +464,10 @@ impl PlanStore {
                 "dedup_fingerprint must be 64 lowercase hex chars".to_owned(),
             ));
         }
-        if matches!(applicability, domain::verification::ApplicabilityStatus::Excluded)
-            && item.applicability_reasons.is_empty()
+        if matches!(
+            applicability,
+            domain::verification::ApplicabilityStatus::Excluded
+        ) && item.applicability_reasons.is_empty()
         {
             return Err(PlanStoreError::GuardRejected(
                 "excluded item requires at least one applicability reason".to_owned(),
@@ -480,8 +479,8 @@ impl PlanStore {
             .ok_or_else(|| PlanStoreError::NotFound(plan_id.to_owned()))?;
         let item_id = make_id("vi");
         let now = now_iso();
-        let reasons_json =
-            serde_json::to_string(&item.applicability_reasons).map_err(|e| PlanStoreError::Db(e.to_string()))?;
+        let reasons_json = serde_json::to_string(&item.applicability_reasons)
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         self.pool
             .with_conn(|c| {
                 c.execute(
@@ -587,8 +586,8 @@ impl PlanStore {
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         if let Some(record) = &row {
-            let doc = serde_json::to_value(record)
-                .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+            let doc =
+                serde_json::to_value(record).map_err(|e| PlanStoreError::Db(e.to_string()))?;
             validate_item_doc(&doc)
                 .map_err(|errs| PlanStoreError::GuardRejected(errs.join("; ")))?;
         }
@@ -600,13 +599,11 @@ impl PlanStore {
         let ids: Vec<String> = self
             .pool
             .with_conn(|c| {
-                let mut stmt = c
-                    .prepare(
-                        "SELECT item_id FROM research_plan_item WHERE plan_id = ?1
+                let mut stmt = c.prepare(
+                    "SELECT item_id FROM research_plan_item WHERE plan_id = ?1
                          ORDER BY execution_order ASC, item_id ASC",
-                    )?;
-                let rows = stmt
-                    .query_map([plan_id], |row| row.get::<_, String>(0))?;
+                )?;
+                let rows = stmt.query_map([plan_id], |row| row.get::<_, String>(0))?;
                 rows.collect::<Result<Vec<_>, _>>()
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
@@ -652,7 +649,7 @@ impl PlanStore {
                         now
                     ],
                 )
-                })
+            })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         if changed == 0 {
             return Err(PlanStoreError::NotFound(item_id.to_owned()));
@@ -712,12 +709,8 @@ impl PlanStore {
             created_at: now_iso(),
         };
         let doc = serde_json::to_value(&event).map_err(|e| PlanStoreError::Db(e.to_string()))?;
-        validate_event_doc(&doc)
-            .map_err(|errs| PlanStoreError::GuardRejected(errs.join("; ")))?;
-        let payload_json = event
-            .payload
-            .as_ref()
-            .map(|p| p.to_string());
+        validate_event_doc(&doc).map_err(|errs| PlanStoreError::GuardRejected(errs.join("; ")))?;
+        let payload_json = event.payload.as_ref().map(|p| p.to_string());
         self.pool
             .with_conn(|c| {
                 c.execute(
@@ -735,7 +728,7 @@ impl PlanStore {
                         event.created_at
                     ],
                 )
-                })
+            })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         Ok(event)
     }
@@ -745,31 +738,39 @@ impl PlanStore {
         let rows = self
             .pool
             .with_conn(|c| {
-                let mut stmt = c
-                    .prepare(
-                        "SELECT event_id, plan_id, item_id, tool_run_id, trace_id, event_type,
+                let mut stmt = c.prepare(
+                    "SELECT event_id, plan_id, item_id, tool_run_id, trace_id, event_type,
                                 payload_json, created_at
                          FROM research_plan_event WHERE plan_id = ?1
                          ORDER BY created_at ASC, event_id ASC",
-                    )?;
-                let rows = stmt
-                    .query_map([plan_id], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                            row.get::<_, Option<String>>(2)?,
-                            row.get::<_, Option<String>>(3)?,
-                            row.get::<_, Option<String>>(4)?,
-                            row.get::<_, String>(5)?,
-                            row.get::<_, Option<String>>(6)?,
-                            row.get::<_, String>(7)?,
-                        ))
-                    })?;
+                )?;
+                let rows = stmt.query_map([plan_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, String>(7)?,
+                    ))
+                })?;
                 rows.collect::<Result<Vec<_>, _>>()
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         let mut events = Vec::with_capacity(rows.len());
-        for (event_id, plan_id, item_id, tool_run_id, trace_id, event_type, payload_json, created_at) in rows {
+        for (
+            event_id,
+            plan_id,
+            item_id,
+            tool_run_id,
+            trace_id,
+            event_type,
+            payload_json,
+            created_at,
+        ) in rows
+        {
             let event = StoreEvent {
                 schema_version: SCHEMA_VERSION,
                 event_id,
@@ -781,7 +782,8 @@ impl PlanStore {
                 payload: payload_json.and_then(|s| serde_json::from_str(&s).ok()),
                 created_at,
             };
-            let doc = serde_json::to_value(&event).map_err(|e| PlanStoreError::Db(e.to_string()))?;
+            let doc =
+                serde_json::to_value(&event).map_err(|e| PlanStoreError::Db(e.to_string()))?;
             validate_event_doc(&doc)
                 .map_err(|errs| PlanStoreError::GuardRejected(errs.join("; ")))?;
             events.push(event);
@@ -810,8 +812,7 @@ impl PlanStore {
         evidence_type: &str,
         payload: &Value,
     ) -> Result<(EvidenceRecord, bool), PlanStoreError> {
-        const EVIDENCE_TYPES: [&str; 3] =
-            ["provider_result", "normalized_result", "log_excerpt"];
+        const EVIDENCE_TYPES: [&str; 3] = ["provider_result", "normalized_result", "log_excerpt"];
         if !EVIDENCE_TYPES.contains(&evidence_type) {
             return Err(PlanStoreError::GuardRejected(format!(
                 "unknown evidence type: {evidence_type}"
@@ -937,14 +938,13 @@ impl PlanStore {
         let rows = self
             .pool
             .with_conn(|c| {
-                let mut stmt = c
-                    .prepare(
-                        "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id,
+                let mut stmt = c.prepare(
+                    "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id,
                                 evidence_type, content_hash, payload_json, created_at
                          FROM research_evidence
                          WHERE item_id = ?1
                          ORDER BY created_at ASC, evidence_id ASC",
-                    )?;
+                )?;
                 let collected = stmt
                     .query_map([item_id], |r| {
                         Ok((
@@ -964,7 +964,18 @@ impl PlanStore {
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         let mut records = Vec::with_capacity(rows.len());
-        for (evidence_id, item, plan, tool_run, trace, evidence_type, content_hash, payload_json, created_at) in rows {
+        for (
+            evidence_id,
+            item,
+            plan,
+            tool_run,
+            trace,
+            evidence_type,
+            content_hash,
+            payload_json,
+            created_at,
+        ) in rows
+        {
             records.push(EvidenceRecord {
                 evidence_id,
                 item_id: item,
@@ -991,14 +1002,13 @@ impl PlanStore {
         let rows = self
             .pool
             .with_conn(|c| {
-                let mut stmt = c
-                    .prepare(
-                        "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id,
+                let mut stmt = c.prepare(
+                    "SELECT evidence_id, item_id, plan_id, tool_run_id, trace_id,
                                 evidence_type, content_hash, payload_json, created_at
                          FROM research_evidence
                          WHERE plan_id = ?1
                          ORDER BY created_at ASC, evidence_id ASC",
-                    )?;
+                )?;
                 let collected = stmt
                     .query_map([plan_id], |r| {
                         Ok((
@@ -1018,7 +1028,18 @@ impl PlanStore {
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         let mut records = Vec::with_capacity(rows.len());
-        for (evidence_id, item, plan, tool_run, trace, evidence_type, content_hash, payload_json, created_at) in rows {
+        for (
+            evidence_id,
+            item,
+            plan,
+            tool_run,
+            trace,
+            evidence_type,
+            content_hash,
+            payload_json,
+            created_at,
+        ) in rows
+        {
             records.push(EvidenceRecord {
                 evidence_id,
                 item_id: item,
@@ -1040,7 +1061,9 @@ impl PlanStore {
         evidence_id: &str,
     ) -> Result<Option<EvidenceRecord>, PlanStoreError> {
         if !id_prefix_matches(evidence_id, "re-") {
-            return Err(PlanStoreError::GuardRejected("evidence id shape".to_owned()));
+            return Err(PlanStoreError::GuardRejected(
+                "evidence id shape".to_owned(),
+            ));
         }
         let row = self.pool.with_conn(|c| {
             c.query_row(
@@ -1155,7 +1178,9 @@ impl PlanStore {
             )));
         }
         if !id_prefix_matches(hypothesis_id, "hi-") {
-            return Err(PlanStoreError::GuardRejected("hypothesis id shape".to_owned()));
+            return Err(PlanStoreError::GuardRejected(
+                "hypothesis id shape".to_owned(),
+            ));
         }
         let current: Option<String> = self
             .pool
@@ -1231,9 +1256,26 @@ impl PlanStore {
             })
             .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         let mut records = Vec::with_capacity(rows.len());
-        for (hypothesis_id, plan_id, dimension, content, source_evidence, association_reason,
-             preconditions, expected_observation, negative_control, suggested_verification,
-             cost_risk, stop_condition, round_number, status, schema_version, created_at, updated_at) in rows {
+        for (
+            hypothesis_id,
+            plan_id,
+            dimension,
+            content,
+            source_evidence,
+            association_reason,
+            preconditions,
+            expected_observation,
+            negative_control,
+            suggested_verification,
+            cost_risk,
+            stop_condition,
+            round_number,
+            status,
+            schema_version,
+            created_at,
+            updated_at,
+        ) in rows
+        {
             records.push(HypothesisRecord {
                 hypothesis_id,
                 plan_id,
@@ -1262,45 +1304,46 @@ impl PlanStore {
         &self,
         hypothesis_id: &str,
     ) -> Result<Option<HypothesisRecord>, PlanStoreError> {
-        let mut all = self.pool.with_conn(|c| {
-            let mut stmt = c.prepare(
-                "SELECT hypothesis_id, plan_id, dimension, content, source_evidence,
+        let mut all = self
+            .pool
+            .with_conn(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT hypothesis_id, plan_id, dimension, content, source_evidence,
                         association_reason, preconditions, expected_observation,
                         negative_control, suggested_verification, cost_risk, stop_condition,
                         round_number, status, schema_version, created_at, updated_at
                  FROM research_hypothesis WHERE hypothesis_id = ?1",
-            )?;
-            let collected = stmt
-                .query_map([hypothesis_id], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                        r.get::<_, String>(4)?,
-                        r.get::<_, String>(5)?,
-                        r.get::<_, Option<String>>(6)?,
-                        r.get::<_, Option<String>>(7)?,
-                        r.get::<_, Option<String>>(8)?,
-                        r.get::<_, Option<String>>(9)?,
-                        r.get::<_, Option<String>>(10)?,
-                        r.get::<_, String>(11)?,
-                        r.get::<_, i64>(12)?,
-                        r.get::<_, String>(13)?,
-                        r.get::<_, i64>(14)?,
-                        r.get::<_, String>(15)?,
-                        r.get::<_, String>(16)?,
-                    ))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok::<Vec<_>, database::rusqlite::Error>(collected)
-        }).map_err(|e| PlanStoreError::Db(e.to_string()))?;
+                )?;
+                let collected = stmt
+                    .query_map([hypothesis_id], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, Option<String>>(6)?,
+                            r.get::<_, Option<String>>(7)?,
+                            r.get::<_, Option<String>>(8)?,
+                            r.get::<_, Option<String>>(9)?,
+                            r.get::<_, Option<String>>(10)?,
+                            r.get::<_, String>(11)?,
+                            r.get::<_, i64>(12)?,
+                            r.get::<_, String>(13)?,
+                            r.get::<_, i64>(14)?,
+                            r.get::<_, String>(15)?,
+                            r.get::<_, String>(16)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok::<Vec<_>, database::rusqlite::Error>(collected)
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
         let _ = &mut all;
         all.pop()
-            .map(|(hypothesis_id, plan_id, dimension, content, source_evidence, association_reason,
-                   preconditions, expected_observation, negative_control, suggested_verification,
-                   cost_risk, stop_condition, round_number, status, schema_version, created_at, updated_at)| {
-                HypothesisRecord {
+            .map(
+                |(
                     hypothesis_id,
                     plan_id,
                     dimension,
@@ -1318,8 +1361,28 @@ impl PlanStore {
                     schema_version,
                     created_at,
                     updated_at,
-                }
-            })
+                )| {
+                    HypothesisRecord {
+                        hypothesis_id,
+                        plan_id,
+                        dimension,
+                        content,
+                        source_evidence,
+                        association_reason,
+                        preconditions,
+                        expected_observation,
+                        negative_control,
+                        suggested_verification,
+                        cost_risk,
+                        stop_condition,
+                        round_number,
+                        status,
+                        schema_version,
+                        created_at,
+                        updated_at,
+                    }
+                },
+            )
             .map(Some)
             .ok_or_else(|| PlanStoreError::NotFound(hypothesis_id.to_owned()))
     }

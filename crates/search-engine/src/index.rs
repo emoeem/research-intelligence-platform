@@ -6,11 +6,11 @@
 //!    建表会改变 schema 并复杂化复核；独立索引库保持 M1 基线不变。
 //! 2. §8.2.3 可重建纪律的最强形态：整个索引库可删可重灌，写面隔离。
 //!
-//! 数据源（双源只读）：
-//! - platform 库：`resource`（正文 + 质量 + 双轴状态）、`resource_source`
-//!   （alias/name 并入：source_section / source_repository 折叠进 aliases 列）
-//! - production catalog 库：`github_metadata`（topics / language / license_status /
-//!   maintenance_status，补齐 M2 报告差异表 #2 的 topics 缺口）
+//! 数据源（只读）：
+//! - platform 库：`resource` / `resource_source`（基础资源、质量、来源章节）
+//! - catalog 库：`github_metadata`（topics / language / license / maintenance）
+//! - platform 库可选：经审核且插件版本可见的 `knowledge_source_entry`
+//! - RTIS 可选：仅 Overlay 明确审核的 POC 元数据；不读取正文、usage 或 verified_note
 //!
 //! FTS5 形态：contentless（content=''）虚拟表，bm25 可用，不支持增量删除，
 //! 与"整库重建"策略一致（更新 = 重建，成本 O(文档数)，catalog 规模可接受）。
@@ -20,19 +20,19 @@ use crate::model::{BuildReport, IndexDoc};
 use crate::tokenizer::{coverage_tokens, index_text};
 use database::{rusqlite, DbResult, Pool};
 use rusqlite::OptionalExtension;
+use std::path::Path;
 use std::time::Instant;
 
 /// 索引库 schema 版本（结构变更即升版，查询端拒绝旧版）。
-/// v2（SK-1/P6-9）：数据源双源扩三源（platform resource/resource_source +
-/// catalog github_metadata + platform knowledge_source_entry 审核通过行），
-/// 旧索引必须整库重建。
-pub const INDEX_SCHEMA_VERSION: i64 = 2;
+/// v6：在 v5 治理字段基础上纳入 Overlay 的上游来源 URL；旧索引必须整库重建。
+pub const INDEX_SCHEMA_VERSION: i64 = 6;
 
 /// 索引库 DDL（头注声明可重建，MODULE_BOUNDARIES §8.2.3）。
 pub const INDEX_SCHEMA: &str = r#"
 -- 可重建派生索引（MODULE_BOUNDARIES §8.2.3）：本库全部内容可由
--- platform-dryrun.db（resource + resource_source）与 production catalog.db
--- （github_metadata）全量重灌恢复；损坏或升版即整库删除重建，不做增量维护。
+-- platform DB（resource/resource_source/plugin knowledge）与 catalog DB
+-- （github_metadata）以及可选 RTIS + RIP curation overlay 全量重灌恢复；
+-- 损坏或升版即整库删除重建，不做增量维护。
 CREATE TABLE IF NOT EXISTS search_index_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -54,6 +54,28 @@ CREATE TABLE IF NOT EXISTS search_index_doc (
   language             TEXT,
   source_sections_json TEXT NOT NULL DEFAULT '[]',
   source_repos_json    TEXT NOT NULL DEFAULT '[]',
+  nuclei_severity      TEXT,
+  nuclei_protocols_json TEXT NOT NULL DEFAULT '[]',
+  nuclei_cve_ids_json  TEXT NOT NULL DEFAULT '[]',
+  nuclei_cwe_ids_json  TEXT NOT NULL DEFAULT '[]',
+  nuclei_tags_json     TEXT NOT NULL DEFAULT '[]',
+  evidence_level       TEXT,
+  knowledge_lifecycle  TEXT,
+  poc_category         TEXT,
+  poc_severity         TEXT,
+  poc_cve_id           TEXT,
+  source_path          TEXT,
+  source_commit        TEXT,
+  related_poc_ids_json TEXT NOT NULL DEFAULT '[]',
+  related_entities_json TEXT NOT NULL DEFAULT '[]',
+  poc_source_integrity TEXT,
+  poc_verification_result TEXT,
+  poc_dedup_status TEXT,
+  poc_independent_knowledge_status TEXT,
+  poc_missing_evidence_json TEXT NOT NULL DEFAULT '[]',
+  poc_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  poc_review_gate TEXT,
+  poc_source_urls_json TEXT NOT NULL DEFAULT '[]',
   built_at             TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_search_doc_governance ON search_index_doc(governance);
@@ -80,13 +102,37 @@ impl SearchIndex {
         pool.with_conn(|c| c.execute_batch(INDEX_SCHEMA))
     }
 
-    /// 全量重建：删除既有索引表后从双源重灌（可重建纪律的显式入口）。
+    /// 全量重建：删除既有索引表后从基础源重灌（可重建纪律的显式入口）。
     pub fn rebuild(
         platform: &Pool,
         catalog: &Pool,
         index: &Pool,
     ) -> Result<BuildReport, SearchError> {
-        Self::build_inner(platform, catalog, index, true)
+        Self::build_inner(platform, catalog, index, true, None)
+    }
+
+    /// Rebuild the standard index and append the RTIS POC records explicitly curated by RIP.
+    /// Only safe metadata columns are read from the RTIS source; POC body and verified_note
+    /// are intentionally not selected. The RTIS DB is expected to be opened read-only.
+    pub fn rebuild_with_rtis_curation(
+        platform: &Pool,
+        catalog: &Pool,
+        rtis: &Pool,
+        overlay_path: &Path,
+        index: &Pool,
+    ) -> Result<BuildReport, SearchError> {
+        Self::build_inner(platform, catalog, index, true, Some((rtis, overlay_path)))
+    }
+
+    /// Build the standard index with explicitly curated RTIS POCs into a new index database.
+    pub fn build_with_rtis_curation(
+        platform: &Pool,
+        catalog: &Pool,
+        rtis: &Pool,
+        overlay_path: &Path,
+        index: &Pool,
+    ) -> Result<BuildReport, SearchError> {
+        Self::build_inner(platform, catalog, index, false, Some((rtis, overlay_path)))
     }
 
     /// 构建索引（目标库应为空库或从未建过索引；已有索引请走 [`SearchIndex::rebuild`]）。
@@ -95,7 +141,7 @@ impl SearchIndex {
         catalog: &Pool,
         index: &Pool,
     ) -> Result<BuildReport, SearchError> {
-        Self::build_inner(platform, catalog, index, false)
+        Self::build_inner(platform, catalog, index, false, None)
     }
 
     fn build_inner(
@@ -103,6 +149,7 @@ impl SearchIndex {
         catalog: &Pool,
         index: &Pool,
         drop_existing: bool,
+        rtis_curation: Option<(&Pool, &Path)>,
     ) -> Result<BuildReport, SearchError> {
         let t0 = Instant::now();
         // 删表重建：fts 虚表先删，再建 schema
@@ -117,7 +164,7 @@ impl SearchIndex {
         }
         Self::ensure_schema(index)?;
 
-        let docs = load_docs(platform, catalog)?;
+        let docs = load_docs(platform, catalog, rtis_curation)?;
         let built_at = domain::time::now_iso();
         let mut fts_rows = 0usize;
         index.with_tx(|c| -> rusqlite::Result<()> {
@@ -126,8 +173,15 @@ impl SearchIndex {
                     "INSERT INTO search_index_doc(resource_id, name, description,
                        canonical_url, resource_type, lifecycle, governance,
                        quality_final_score, quality_grade, license_status, maintenance_status,
-                       topics_json, language, source_sections_json, source_repos_json, built_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       topics_json, language, source_sections_json, source_repos_json,
+                       nuclei_severity, nuclei_protocols_json, nuclei_cve_ids_json,
+                       nuclei_cwe_ids_json, nuclei_tags_json, evidence_level,
+                       knowledge_lifecycle, poc_category, poc_severity, poc_cve_id,
+                       source_path, source_commit, related_poc_ids_json, related_entities_json,
+                       poc_source_integrity, poc_verification_result, poc_dedup_status,
+                       poc_independent_knowledge_status, poc_missing_evidence_json,
+                       poc_evidence_refs_json, poc_review_gate, poc_source_urls_json, built_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     rusqlite::params![
                         d.resource_id,
                         d.name,
@@ -147,6 +201,37 @@ impl SearchIndex {
                             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                         serde_json::to_string(&d.source_repositories)
                             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        d.nuclei_severity,
+                        serde_json::to_string(&d.nuclei_protocols)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        serde_json::to_string(&d.nuclei_cve_ids)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        serde_json::to_string(&d.nuclei_cwe_ids)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        serde_json::to_string(&d.nuclei_tags)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        d.evidence_level,
+                        d.knowledge_lifecycle,
+                        d.poc_category,
+                        d.poc_severity,
+                        d.poc_cve_id,
+                        d.source_path,
+                        d.source_commit,
+                        serde_json::to_string(&d.related_poc_ids)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        serde_json::to_string(&d.related_entities)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        d.poc_source_integrity,
+                        d.poc_verification_result,
+                        d.poc_dedup_status,
+                        d.poc_independent_knowledge_status,
+                        serde_json::to_string(&d.poc_missing_evidence)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        serde_json::to_string(&d.poc_evidence_refs)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        d.poc_review_gate,
+                        serde_json::to_string(&d.poc_source_urls)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                         built_at,
                     ],
                 )?;
@@ -160,11 +245,27 @@ impl SearchIndex {
                         index_text(&d.name),
                         index_text(d.description.as_deref().unwrap_or("")),
                         index_text(&format!(
-                            "{} {}",
+                            "{} {} {} {} {} {} {}",
                             d.source_sections.join(" "),
-                            d.source_repositories.join(" ")
+                            d.source_repositories.join(" "),
+                            d.source_path.as_deref().unwrap_or(""),
+                            d.source_commit.as_deref().unwrap_or(""),
+                            d.related_poc_ids.join(" "),
+                            d.related_entities.join(" "),
+                            d.poc_source_urls.join(" ")
                         )),
-                        index_text(&d.topics.join(" ")),
+                        index_text(&format!("{} {} {} {} {} {} {} {} {} {} {} {}", d.topics.join(" "),
+                            d.evidence_level.as_deref().unwrap_or(""),
+                            d.knowledge_lifecycle.as_deref().unwrap_or(""),
+                            d.poc_category.as_deref().unwrap_or(""),
+                            d.poc_severity.as_deref().unwrap_or(""),
+                            d.poc_cve_id.as_deref().unwrap_or(""),
+                            d.poc_source_integrity.as_deref().unwrap_or(""),
+                            d.poc_verification_result.as_deref().unwrap_or(""),
+                            d.poc_dedup_status.as_deref().unwrap_or(""),
+                            d.poc_missing_evidence.join(" "),
+                            d.poc_review_gate.as_deref().unwrap_or(""),
+                            d.related_entities.join(" "))),
                         index_text(d.language.as_deref().unwrap_or("")),
                     ],
                 )?;
@@ -253,8 +354,12 @@ pub(crate) fn ensure_ready(pool: &Pool) -> Result<(), SearchError> {
     }
 }
 
-/// 双源只读加载并折叠为 IndexDoc（platform 为主表，catalog/github_metadata 左联）。
-fn load_docs(platform: &Pool, catalog: &Pool) -> DbResult<Vec<IndexDoc>> {
+/// 只读加载基础资源、catalog 元数据、可见插件知识和可选 Overlay POC。
+fn load_docs(
+    platform: &Pool,
+    catalog: &Pool,
+    rtis_curation: Option<(&Pool, &Path)>,
+) -> Result<Vec<IndexDoc>, SearchError> {
     // 1) platform resource 主行
     let mut docs: Vec<IndexDoc> = Vec::new();
     platform.with_conn(|c| -> rusqlite::Result<()> {
@@ -359,6 +464,9 @@ fn load_docs(platform: &Pool, catalog: &Pool) -> DbResult<Vec<IndexDoc>> {
     //    ENABLED/LOADED/ACTIVE 且来源未卸载）；禁用即撤出匹配面（重建即刷新，
     //    索引为可整库重建派生物）。表缺失（旧库/内存夹具未迁移）按空源跳过。
     load_plugin_entries(platform, &mut docs)?;
+    if let Some((rtis, overlay_path)) = rtis_curation {
+        load_rtis_curated_pocs(rtis, overlay_path, &mut docs)?;
+    }
 
     Ok(docs)
 }
@@ -383,27 +491,32 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
         if kse_table.as_deref() != Some("knowledge_source_entry") {
             return Ok(());
         }
-        // 可见插件集（缺 plugin 表 = 全部不可见，fail-closed）。
-        let mut visible: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // 可见插件的唯一 active version（缺 plugin 表 / 多 active 版本均
+        // fail-closed）；不能把历史版本的 APPROVED 条目混入当前索引。
+        let mut visible_versions: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         if plugin_table.as_deref() == Some("plugin") {
             let mut stmt = c.prepare(
-                "SELECT DISTINCT plugin_id FROM plugin
+                "SELECT plugin_id, MIN(version) AS version
+                 FROM plugin
                  WHERE is_active = 1
                    AND state IN ('ENABLED','LOADED','ACTIVE')
-                   AND source_uninstalled = 0",
+                   AND source_uninstalled = 0
+                 GROUP BY plugin_id
+                 HAVING COUNT(*) = 1",
             )?;
             let rows = stmt
-                .query_map([], |r| r.get::<_, String>(0))?
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
                 .collect::<Result<Vec<_>, rusqlite::Error>>()?;
-            visible.extend(rows);
+            visible_versions.extend(rows);
         }
-        if visible.is_empty() {
+        if visible_versions.is_empty() {
             return Ok(());
         }
         let mut stmt = c.prepare(
             "SELECT plugin_id, plugin_version, entry_kind, item_key, title, description,
                     body, canonical_url, category_path_json, license_status,
-                    source_location_json
+                    source_location_json, meta_json
              FROM knowledge_source_entry
              WHERE review_status = 'APPROVED'
              ORDER BY plugin_id, entry_kind, item_key",
@@ -422,6 +535,7 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
                     r.get::<_, String>(8)?,
                     r.get::<_, String>(9)?,
                     r.get::<_, String>(10)?,
+                    r.get::<_, Option<String>>(11)?,
                 ))
             })?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
@@ -437,12 +551,26 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
             category_path_json,
             license_status,
             source_location_json,
+            meta_json,
         ) in rows {
-            if !visible.contains(&plugin_id) {
+            if visible_versions.get(&plugin_id).map(String::as_str) != Some(plugin_version.as_str()) {
                 continue;
             }
-            let category_path = parse_topics(Some(category_path_json.as_str()));
+            let mut category_path = parse_topics(Some(category_path_json.as_str()));
             let source_file = parse_source_file(&source_location_json);
+            let nuclei = parse_nuclei_index_metadata(meta_json.as_deref());
+            for topic in nuclei
+                .tags
+                .iter()
+                .chain(nuclei.protocols.iter())
+                .chain(nuclei.cve_ids.iter())
+                .chain(nuclei.cwe_ids.iter())
+                .chain(nuclei.severity.iter())
+            {
+                if !category_path.iter().any(|existing| existing.eq_ignore_ascii_case(topic)) {
+                    category_path.push(topic.clone());
+                }
+            }
             let snippet: String = body.chars().take(200).collect();
             docs.push(IndexDoc {
                 resource_id: format!("kse:{plugin_id}@{plugin_version}:{entry_kind}:{item_key}"),
@@ -470,10 +598,382 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
                 language: None,
                 source_sections: source_file.into_iter().collect(),
                 source_repositories: vec![format!("plugin:{plugin_id}")],
+                nuclei_severity: nuclei.severity,
+                nuclei_protocols: nuclei.protocols,
+                nuclei_cve_ids: nuclei.cve_ids,
+                nuclei_cwe_ids: nuclei.cwe_ids,
+                nuclei_tags: nuclei.tags,
+                ..IndexDoc::default()
             });
         }
         Ok(())
     })
+}
+
+type CuratedPocRow = (
+    i64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+/// Append only POCs explicitly present in the RIP curation overlay.
+/// Only metadata columns are selected from RTIS. POC body, description, usage,
+/// verified_note and other free-form verification material are not read.
+fn load_rtis_curated_pocs(
+    rtis: &Pool,
+    overlay_path: &Path,
+    docs: &mut Vec<IndexDoc>,
+) -> Result<(), SearchError> {
+    let raw = std::fs::read_to_string(overlay_path).map_err(|e| {
+        SearchError::IndexNotReady(format!(
+            "cannot read RTIS curation overlay {}: {e}",
+            overlay_path.display()
+        ))
+    })?;
+    let overlay: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+        SearchError::IndexNotReady(format!(
+            "invalid RTIS curation overlay {}: {e}",
+            overlay_path.display()
+        ))
+    })?;
+    if overlay
+        .get("schema_version")
+        .and_then(serde_json::Value::as_i64)
+        != Some(1)
+    {
+        return Err(SearchError::IndexNotReady(
+            "unsupported RTIS curation overlay schema_version".into(),
+        ));
+    }
+    let entries = overlay
+        .get("entries")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            SearchError::IndexNotReady("RTIS curation overlay entries must be an array".into())
+        })?;
+    let relations = overlay
+        .get("relations")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            SearchError::IndexNotReady("RTIS curation overlay relations must be an array".into())
+        })?;
+    let mut code_to_id = std::collections::HashMap::<String, String>::new();
+    let mut seen_ids = std::collections::HashSet::<i64>::new();
+    for entry in entries {
+        let id = entry
+            .get("knowledge_id")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| {
+                SearchError::IndexNotReady("curation entry has invalid knowledge_id".into())
+            })?;
+        let code = entry
+            .get("code")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                SearchError::IndexNotReady(format!("curation entry {id} has no code"))
+            })?;
+        if !seen_ids.insert(id) {
+            return Err(SearchError::IndexNotReady(format!(
+                "duplicate POC ID in curation overlay: {id}"
+            )));
+        }
+        if code_to_id
+            .insert(code.to_string(), id.to_string())
+            .is_some()
+        {
+            return Err(SearchError::IndexNotReady(format!(
+                "duplicate POC code in curation overlay: {code}"
+            )));
+        }
+    }
+    let external_entities = overlay
+        .get("external_entities")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let external_codes: std::collections::HashSet<String> = external_entities
+        .iter()
+        .filter_map(|entity| entity.get("code").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .collect();
+    let mut related = std::collections::HashMap::<String, Vec<String>>::new();
+    let mut related_external = std::collections::HashMap::<String, Vec<String>>::new();
+    for edge in relations {
+        let (Some(src), Some(dst), Some(kind)) = (
+            edge.get("src").and_then(serde_json::Value::as_str),
+            edge.get("dst").and_then(serde_json::Value::as_str),
+            edge.get("type").and_then(serde_json::Value::as_str),
+        ) else {
+            return Err(SearchError::IndexNotReady(
+                "curation relation has invalid endpoints/type".into(),
+            ));
+        };
+        let src_id = code_to_id.get(src);
+        let dst_id = code_to_id.get(dst);
+        if src_id.is_none() && dst_id.is_none() {
+            continue;
+        }
+        if src_id.is_none() && !external_codes.contains(src) {
+            return Err(SearchError::IndexNotReady(format!(
+                "unresolved curation relation source: {src}"
+            )));
+        }
+        if dst_id.is_none() && !external_codes.contains(dst) {
+            return Err(SearchError::IndexNotReady(format!(
+                "unresolved curation relation target: {dst}"
+            )));
+        }
+        match (src_id, dst_id) {
+            (Some(src_id), Some(dst_id)) => {
+                related
+                    .entry(src_id.clone())
+                    .or_default()
+                    .push(format!("{kind}:{dst_id}"));
+                related
+                    .entry(dst_id.clone())
+                    .or_default()
+                    .push(format!("{kind}:{src_id}"));
+            }
+            (Some(src_id), None) => related_external
+                .entry(src_id.clone())
+                .or_default()
+                .push(format!("{kind}:{dst}")),
+            (None, Some(dst_id)) => related_external
+                .entry(dst_id.clone())
+                .or_default()
+                .push(format!("{kind}:{src}")),
+            (None, None) => {}
+        }
+    }
+    let rows = rtis.with_conn(|c| -> rusqlite::Result<Vec<CuratedPocRow>> {
+        let mut out = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let id = entry
+                .get("knowledge_id")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap();
+            let expected_code = entry
+                .get("code")
+                .and_then(serde_json::Value::as_str)
+                .unwrap();
+            let row = c.query_row(
+                "SELECT id, code, title, kind, category, cve, component, severity, tags
+                 FROM poc WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                        r.get(8)?,
+                    ))
+                },
+            )?;
+            if row.1 != expected_code {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            out.push(row);
+        }
+        Ok(out)
+    })?;
+    for (id, _code, title, kind, category, cve, component, severity, tags) in rows {
+        let entry = entries
+            .iter()
+            .find(|e| e.get("knowledge_id").and_then(serde_json::Value::as_i64) == Some(id))
+            .expect("entry matched row");
+        let string_field = |key: &str| {
+            entry
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        };
+        let category = category.filter(|value| !value.trim().is_empty());
+        let cve = cve.filter(|value| !value.trim().is_empty());
+        let component = component.filter(|value| !value.trim().is_empty());
+        let severity = severity.filter(|value| !value.trim().is_empty());
+        let mut topics = Vec::<String>::new();
+        let mut add = |value: Option<String>| {
+            if let Some(value) = value.filter(|s| !s.trim().is_empty()) {
+                if !topics.iter().any(|v| v.eq_ignore_ascii_case(&value)) {
+                    topics.push(value);
+                }
+            }
+        };
+        for raw_tags in [
+            tags,
+            string_field("technology_tags"),
+            string_field("method_tags"),
+            string_field("archetypes"),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Ok(values) = serde_json::from_str::<Vec<String>>(&raw_tags) {
+                for value in values {
+                    add(Some(value));
+                }
+            } else {
+                for value in raw_tags.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+                    add(Some(value.to_string()));
+                }
+            }
+        }
+        add(category.clone());
+        add(component.clone());
+        add(cve.clone());
+        add(severity.clone());
+        add(string_field("original_category"));
+        add(string_field("normalized_type"));
+        let mut related_ids = related.remove(&id.to_string()).unwrap_or_default();
+        related_ids.sort();
+        related_ids.dedup();
+        let source_path = string_field("source_path");
+        let source_commit = string_field("source_commit");
+        let mut related_entities = related_external.remove(&id.to_string()).unwrap_or_default();
+        related_entities.sort();
+        related_entities.dedup();
+        docs.push(IndexDoc {
+            resource_id: format!("rtis:poc:{id}"),
+            name: title,
+            description: None,
+            canonical_url: format!("rtis://poc/{id}"),
+            resource_type: "rtis_poc".to_string(),
+            lifecycle: "CURATED".to_string(),
+            governance: "ACTIVE".to_string(),
+            quality_final_score: None,
+            quality_grade: None,
+            license_status: "UNKNOWN".to_string(),
+            maintenance_status: "UNKNOWN".to_string(),
+            topics,
+            language: kind,
+            source_sections: source_path.iter().cloned().collect(),
+            source_repositories: Vec::new(),
+            nuclei_severity: None,
+            nuclei_protocols: Vec::new(),
+            nuclei_cve_ids: Vec::new(),
+            nuclei_cwe_ids: Vec::new(),
+            nuclei_tags: Vec::new(),
+            evidence_level: string_field("evidence_level"),
+            knowledge_lifecycle: string_field("lifecycle"),
+            poc_category: category,
+            poc_severity: severity,
+            poc_cve_id: cve,
+            source_path,
+            source_commit,
+            related_poc_ids: related_ids,
+            related_entities,
+            poc_source_integrity: string_field("source_integrity"),
+            poc_verification_result: string_field("verification_result"),
+            poc_dedup_status: string_field("dedup_status"),
+            poc_independent_knowledge_status: string_field("independent_knowledge_status"),
+            poc_missing_evidence: entry
+                .get("missing_evidence")
+                .and_then(serde_json::Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            poc_evidence_refs: entry
+                .get("evidence_refs")
+                .and_then(serde_json::Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            poc_review_gate: string_field("review_gate"),
+            poc_source_urls: entry
+                .get("source_urls")
+                .and_then(serde_json::Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        });
+    }
+    Ok(())
+}
+
+/// 已审核 Nuclei 条目进入搜索索引的结构化投影。
+#[derive(Default)]
+struct NucleiIndexMetadata {
+    severity: Option<String>,
+    protocols: Vec<String>,
+    cve_ids: Vec<String>,
+    cwe_ids: Vec<String>,
+    tags: Vec<String>,
+}
+
+/// 从已审核 Nuclei 条目的 meta_json 投影结构化字段；坏 JSON/非 Nuclei 条目归空。
+fn parse_nuclei_index_metadata(raw: Option<&str>) -> NucleiIndexMetadata {
+    let Some(meta) = raw.and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+    else {
+        return NucleiIndexMetadata::default();
+    };
+    let Some(template) = meta.get("nuclei_template") else {
+        return NucleiIndexMetadata::default();
+    };
+    let strings = |value: Option<&serde_json::Value>| -> Vec<String> {
+        let mut values = match value {
+            Some(serde_json::Value::String(value)) => vec![value.clone()],
+            Some(serde_json::Value::Array(values)) => values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_string)
+                .collect(),
+            _ => Vec::new(),
+        };
+        values.retain(|value| !value.trim().is_empty());
+        values.sort();
+        values.dedup();
+        values
+    };
+    let severity = template
+        .get("severity")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_ascii_lowercase);
+    let protocols = strings(template.get("protocols"));
+    let tags = strings(template.get("tags"));
+    let classification = template.get("classification");
+    let cve_ids = strings(classification.and_then(|value| value.get("cve-id")))
+        .into_iter()
+        .map(|value| value.to_ascii_uppercase())
+        .collect();
+    let cwe_ids = strings(classification.and_then(|value| value.get("cwe-id")))
+        .into_iter()
+        .map(|value| value.to_ascii_uppercase())
+        .collect();
+    NucleiIndexMetadata {
+        severity,
+        protocols,
+        cve_ids,
+        cwe_ids,
+        tags,
+    }
 }
 
 /// source_location_json 的 file 字段抽取（坏 JSON 归空，宽容度与 parse_topics 同）。
@@ -498,11 +998,17 @@ fn parse_topics(raw: Option<&str>) -> Vec<String> {
 /// 见 crate 级文档）。
 pub(crate) fn coverage_blob(doc: &IndexDoc) -> String {
     format!(
-        "{} {} {} {}",
+        "{} {} {} {} {} {} {} {} {} {}",
         doc.name,
         doc.description.as_deref().unwrap_or(""),
         doc.topics.join(" "),
-        doc.language.as_deref().unwrap_or("")
+        doc.language.as_deref().unwrap_or(""),
+        doc.evidence_level.as_deref().unwrap_or(""),
+        doc.knowledge_lifecycle.as_deref().unwrap_or(""),
+        doc.poc_category.as_deref().unwrap_or(""),
+        doc.poc_severity.as_deref().unwrap_or(""),
+        doc.poc_cve_id.as_deref().unwrap_or(""),
+        doc.source_path.as_deref().unwrap_or("")
     )
 }
 
@@ -725,7 +1231,7 @@ mod tests {
                        body TEXT NOT NULL DEFAULT '', canonical_url TEXT,
                        category_path_json TEXT NOT NULL DEFAULT '[]',
                        license_status TEXT NOT NULL DEFAULT 'UNKNOWN',
-                       source_location_json TEXT NOT NULL DEFAULT '{}',
+                       source_location_json TEXT NOT NULL DEFAULT '{}', meta_json TEXT,
                        review_status TEXT NOT NULL DEFAULT 'DISCOVERED');",
                 )
             })
@@ -745,14 +1251,224 @@ mod tests {
     }
 
     fn insert_plugin(platform: &Pool, id: &str, state: &str, active: i64) {
+        insert_plugin_version(platform, id, "0.1.0", state, active);
+    }
+
+    fn insert_plugin_version(platform: &Pool, id: &str, version: &str, state: &str, active: i64) {
         platform
             .with_conn(|c| {
                 c.execute(
-                    "INSERT INTO plugin (plugin_id, version, state, is_active) VALUES (?1,'0.1.0',?2,?3)",
-                    rusqlite::params![id, state, active],
+                    "INSERT INTO plugin (plugin_id, version, state, is_active) VALUES (?1,?2,?3,?4)",
+                    rusqlite::params![id, version, state, active],
                 )
             })
             .unwrap();
+    }
+
+    #[test]
+    fn nuclei_structured_facets_are_indexed_and_exactly_filterable() {
+        let (platform, catalog, index) = fixture_pools();
+        with_plugin_tables(
+            &platform,
+            &[(
+                "knowledge.nuclei",
+                "0.2.0",
+                "nuclei_template",
+                "http/cves/2025/CVE-2025-12345.yaml",
+                "Example SQL Injection",
+                Some("SQL injection detection"),
+                "APPROVED",
+            )],
+        );
+        insert_plugin_version(&platform, "knowledge.nuclei", "0.2.0", "ENABLED", 1);
+        platform
+            .with_conn(|c| {
+                c.execute(
+                    "UPDATE knowledge_source_entry SET meta_json = ?1
+                     WHERE plugin_id = 'knowledge.nuclei'",
+                    [serde_json::json!({
+                        "nuclei_template": {
+                            "parse_status": "parsed",
+                            "severity": "high",
+                            "protocols": ["http"],
+                            "tags": ["cve", "sqli"],
+                            "classification": {
+                                "cve-id": "CVE-2025-12345",
+                                "cwe-id": "CWE-89"
+                            }
+                        }
+                    })
+                    .to_string()],
+                )
+            })
+            .unwrap();
+
+        SearchIndex::build(&platform, &catalog, &index).unwrap();
+        let engine = crate::query::SearchEngine::new(index);
+        let mut query = crate::model::SearchQuery::new(vec!["CVE-2025-12345".to_string()]);
+        query.filters.nuclei_severity = Some("HIGH".to_string());
+        query.filters.nuclei_protocol = Some("HTTP".to_string());
+        query.filters.cve_id = Some("cve-2025-12345".to_string());
+        query.filters.cwe_id = Some("cwe-89".to_string());
+        let hits = engine.search(&query).unwrap();
+        assert_eq!(hits.total_matched, 1);
+        assert_eq!(hits.hits[0].resource_type, "nuclei_template");
+        assert_eq!(hits.hits[0].nuclei_severity.as_deref(), Some("high"));
+        assert_eq!(hits.hits[0].nuclei_protocols, vec!["http"]);
+        assert_eq!(hits.hits[0].nuclei_cve_ids, vec!["CVE-2025-12345"]);
+        assert_eq!(hits.hits[0].nuclei_cwe_ids, vec!["CWE-89"]);
+        assert!(hits.hits[0].topics.contains(&"sqli".to_string()));
+
+        query.filters.cve_id = Some("CVE-2024-00001".to_string());
+        assert_eq!(engine.search(&query).unwrap().total_matched, 0);
+    }
+
+    #[test]
+    fn rtis_curated_pocs_are_indexed_with_overlay_facets_and_relations() {
+        use database::{DbPath, PoolConfig};
+        use std::time::Duration;
+        let (platform, catalog, index) = fixture_pools();
+        let rtis = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(1),
+        })
+        .unwrap();
+        rtis.with_conn(|c| {
+            c.execute_batch(
+                "CREATE TABLE poc (id INTEGER PRIMARY KEY, code TEXT NOT NULL, title TEXT NOT NULL,
+                kind TEXT, category TEXT, cve TEXT, component TEXT, severity TEXT, tags TEXT);
+             INSERT INTO poc VALUES
+                (19, 'gateway-openapi', 'Spring Gateway OpenAPI exposure', 'poc', 'unauthorized',
+                 'CVE-2025-9999', 'Spring Cloud Gateway', 'high', 'spring,gateway,openapi'),
+                (31, 'h5-token', 'H5 token signature validation', 'poc', 'auth-bypass',
+                 NULL, 'H5 API', 'high', 'token,signature');",
+            )
+        })
+        .unwrap();
+        let overlay_path =
+            std::env::temp_dir().join(format!("rip-curation-test-{}.json", std::process::id()));
+        let overlay = serde_json::json!({
+            "schema_version": 1,
+            "entries": [
+                {"knowledge_id":19,"code":"gateway-openapi","evidence_level":"K2","lifecycle":"Researched",
+                 "source_path":"integrations/rtis/pocs/gateway-openapi","source_commit":"abc123",
+                 "technology_tags":"[\"spring\",\"gateway\"]","method_tags":"[\"openapi\"]",
+                 "original_category":"poc:unauthorized","normalized_type":"Case"},
+                {"knowledge_id":31,"code":"h5-token","evidence_level":"K0","lifecycle":"Candidate",
+                 "source_integrity":"missing","verification_result":"candidate_not_verified",
+                 "dedup_status":"independent","independent_knowledge_status":"independent",
+                 "missing_evidence":["raw_request_response","negative_control"],
+                 "evidence_refs":["integrations/rtis/pocs/h5-token/NOTES.md"],
+                 "source_urls":["https://example.org/h5-token-reference"],
+                 "review_gate":"Recover paired request/response and a negative control."}
+            ],
+            "external_entities":[{"code":"case-gateway-audit","entity_type":"case_group","title":"Gateway audit case group"}],
+            "relations": [
+                {"src":"gateway-openapi","dst":"h5-token","type":"supports","confidence":0.8},
+                {"src":"gateway-openapi","dst":"case-gateway-audit","type":"has_case","confidence":0.9}
+            ]
+        });
+        std::fs::write(&overlay_path, serde_json::to_vec(&overlay).unwrap()).unwrap();
+        let report = SearchIndex::rebuild_with_rtis_curation(
+            &platform,
+            &catalog,
+            &rtis,
+            &overlay_path,
+            &index,
+        )
+        .unwrap();
+        assert_eq!(report.doc_count, 5);
+        let engine = crate::query::SearchEngine::new(index);
+        let mut query = crate::model::SearchQuery::new(vec!["Gateway".to_string()]);
+        query.filters.resource_type = Some("rtis_poc".to_string());
+        query.filters.evidence_level = Some("K2".to_string());
+        query.filters.knowledge_lifecycle = Some("Researched".to_string());
+        query.filters.poc_severity = Some("HIGH".to_string());
+        query.filters.poc_category = Some("unauthorized".to_string());
+        query.filters.poc_cve_id = Some("cve-2025-9999".to_string());
+        let hits = engine.search(&query).unwrap();
+        assert_eq!(hits.total_matched, 1);
+        let hit = &hits.hits[0];
+        assert_eq!(hit.resource_id, "rtis:poc:19");
+        assert_eq!(hit.evidence_level.as_deref(), Some("K2"));
+        assert_eq!(hit.knowledge_lifecycle.as_deref(), Some("Researched"));
+        assert_eq!(
+            hit.source_path.as_deref(),
+            Some("integrations/rtis/pocs/gateway-openapi")
+        );
+        assert_eq!(hit.source_commit.as_deref(), Some("abc123"));
+        assert_eq!(hit.related_poc_ids, vec!["supports:31"]);
+        assert_eq!(hit.related_entities, vec!["has_case:case-gateway-audit"]);
+
+        let mut queue = crate::model::SearchQuery::new(Vec::new());
+        queue.filters.resource_type = Some("rtis_poc".to_string());
+        queue.filters.poc_missing_evidence = Some(true);
+        queue.filters.poc_source_integrity = Some("missing".to_string());
+        queue.filters.poc_verification_result = Some("candidate_not_verified".to_string());
+        queue.filters.poc_dedup_status = Some("independent".to_string());
+        let queue_hits = engine.search(&queue).unwrap();
+        assert_eq!(queue_hits.total_matched, 1);
+        let candidate = &queue_hits.hits[0];
+        assert_eq!(candidate.resource_id, "rtis:poc:31");
+        assert_eq!(
+            candidate.poc_missing_evidence,
+            vec!["raw_request_response", "negative_control"]
+        );
+        assert_eq!(
+            candidate.poc_evidence_refs,
+            vec!["integrations/rtis/pocs/h5-token/NOTES.md"]
+        );
+        assert_eq!(
+            candidate.poc_review_gate.as_deref(),
+            Some("Recover paired request/response and a negative control.")
+        );
+        assert_eq!(candidate.poc_source_integrity.as_deref(), Some("missing"));
+        assert_eq!(
+            candidate.poc_verification_result.as_deref(),
+            Some("candidate_not_verified")
+        );
+        assert_eq!(candidate.poc_dedup_status.as_deref(), Some("independent"));
+        std::fs::remove_file(overlay_path).unwrap();
+    }
+
+    #[test]
+    fn third_source_indexes_only_the_unique_active_plugin_version() {
+        let (p, cat, idx) = fixture_pools();
+        with_plugin_tables(
+            &p,
+            &[
+                (
+                    "knowledge.versioned",
+                    "0.1.0",
+                    "catalog_entry",
+                    "https://a/old",
+                    "Old version",
+                    Some("old body"),
+                    "APPROVED",
+                ),
+                (
+                    "knowledge.versioned",
+                    "0.2.0",
+                    "catalog_entry",
+                    "https://a/new",
+                    "Current version",
+                    Some("new body"),
+                    "APPROVED",
+                ),
+            ],
+        );
+        insert_plugin_version(&p, "knowledge.versioned", "0.1.0", "DISABLED", 0);
+        insert_plugin_version(&p, "knowledge.versioned", "0.2.0", "ENABLED", 1);
+        SearchIndex::build(&p, &cat, &idx).unwrap();
+        let ids = doc_ids(&idx);
+        assert!(ids
+            .iter()
+            .any(|id| id.contains("@0.2.0:catalog_entry:https://a/new")));
+        assert!(!ids
+            .iter()
+            .any(|id| id.contains("@0.1.0:catalog_entry:https://a/old")));
     }
 
     #[test]

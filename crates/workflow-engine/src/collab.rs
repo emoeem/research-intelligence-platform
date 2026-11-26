@@ -323,9 +323,10 @@ fn row_to_claim(row: ClaimDbRow) -> CollabResult<ClaimRow> {
         depends_on_claim_id: row.7,
         state: ClaimState::parse(&row.8)?,
         claimed_by: row.9,
-        attempt: row.10.try_into().map_err(|_| {
-            CollabError::InvalidInput(format!("attempt {} out of range", row.10))
-        })?,
+        attempt: row
+            .10
+            .try_into()
+            .map_err(|_| CollabError::InvalidInput(format!("attempt {} out of range", row.10)))?,
         result_json: row.11,
         error_json: row.12,
         created_by: row.13,
@@ -337,15 +338,34 @@ fn row_to_claim(row: ClaimDbRow) -> CollabResult<ClaimRow> {
 }
 
 /// 闭包内读回一行 claim（列序固定；调用方须保证行存在）。
-fn query_claim_row(c: &rusqlite::Connection, sql_where: &str, param: &str) -> rusqlite::Result<ClaimDbRow> {
+fn query_claim_row(
+    c: &rusqlite::Connection,
+    sql_where: &str,
+    param: &str,
+) -> rusqlite::Result<ClaimDbRow> {
     c.query_row(
         &format!("SELECT {CLAIM_COLUMNS} FROM task_claim WHERE {sql_where}"),
         [param],
         |r| {
             Ok((
-                r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?,
-                r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?,
-                r.get(14)?, r.get(15)?, r.get(16)?, r.get(17)?,
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+                r.get(11)?,
+                r.get(12)?,
+                r.get(13)?,
+                r.get(14)?,
+                r.get(15)?,
+                r.get(16)?,
+                r.get(17)?,
             ))
         },
     )
@@ -505,9 +525,24 @@ impl ClaimStore {
                 let rows = stmt
                     .query_map([limit.min(1000) as i64], |r| {
                         Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
-                            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?,
-                            r.get(12)?, r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?, r.get(17)?,
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                            r.get(8)?,
+                            r.get(9)?,
+                            r.get(10)?,
+                            r.get(11)?,
+                            r.get(12)?,
+                            r.get(13)?,
+                            r.get(14)?,
+                            r.get(15)?,
+                            r.get(16)?,
+                            r.get(17)?,
                         ))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
@@ -539,9 +574,24 @@ impl ClaimStore {
                     rusqlite::params![claim_id, caller, now],
                     |r| {
                         Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
-                            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?,
-                            r.get(12)?, r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?, r.get(17)?,
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                            r.get(8)?,
+                            r.get(9)?,
+                            r.get(10)?,
+                            r.get(11)?,
+                            r.get(12)?,
+                            r.get(13)?,
+                            r.get(14)?,
+                            r.get(15)?,
+                            r.get(16)?,
+                            r.get(17)?,
                         ))
                     },
                 ) {
@@ -596,9 +646,15 @@ impl ClaimStore {
     /// 完成（仅 claimed_by 本人可写；CAS 带 `AND claimed_by=?`——成员无法
     /// 伪造他人认领行的状态跃迁，dsh 弱点 3 引擎侧记账反超）。result_json
     /// 必须是合法 JSON。
-    pub fn complete(&self, claim_id: &str, caller: &str, result_json: &str) -> CollabResult<ClaimRow> {
-        serde_json::from_str::<serde_json::Value>(result_json)
-            .map_err(|e| CollabError::InvalidInput(format!("result_json is not valid JSON: {e}")))?;
+    pub fn complete(
+        &self,
+        claim_id: &str,
+        caller: &str,
+        result_json: &str,
+    ) -> CollabResult<ClaimRow> {
+        serde_json::from_str::<serde_json::Value>(result_json).map_err(|e| {
+            CollabError::InvalidInput(format!("result_json is not valid JSON: {e}"))
+        })?;
         self.cas_to_terminal(claim_id, caller, "completed", Some(result_json), None)
     }
 
@@ -640,7 +696,11 @@ impl ClaimStore {
 
     /// 终态 CAS 败方回查（他人写 = NotClaimer；态错 = NotClaimable；无行 =
     /// NotFound）。
-    fn explain_terminal_failure(c: &rusqlite::Connection, claim_id: &str, caller: &str) -> CollabError {
+    fn explain_terminal_failure(
+        c: &rusqlite::Connection,
+        claim_id: &str,
+        caller: &str,
+    ) -> CollabError {
         let res: Result<(Option<String>, Option<String>), rusqlite::Error> = c.query_row(
             "SELECT state, claimed_by FROM task_claim WHERE claim_id = ?1",
             [claim_id],
@@ -867,8 +927,16 @@ impl MessageStore {
                     [&message_id],
                     |r| {
                         Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
-                            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                            r.get(8)?,
+                            r.get(9)?,
                         ))
                     },
                 )?;
@@ -894,8 +962,16 @@ impl MessageStore {
                 let rows = stmt
                     .query_map(rusqlite::params![to_caller, limit.min(1000) as i64], |r| {
                         Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
-                            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                            r.get(8)?,
+                            r.get(9)?,
                         ))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
@@ -956,8 +1032,16 @@ impl MessageStore {
                     [message_id],
                     |r| {
                         Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
-                            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                            r.get(8)?,
+                            r.get(9)?,
                         ))
                     },
                 )?;
@@ -985,8 +1069,16 @@ impl MessageStore {
                 let rows = stmt
                     .query_map([limit.min(1000) as i64], |r| {
                         Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
-                            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                            r.get(8)?,
+                            r.get(9)?,
                         ))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;

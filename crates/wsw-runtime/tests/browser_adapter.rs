@@ -518,8 +518,7 @@ fn browser_capture_truncation_cap_fidelity() {
         "tr-wsw8-e2e-cap",
     );
     assert_eq!(
-        outcome.status_word,
-        "SUCCEEDED",
+        outcome.status_word, "SUCCEEDED",
         "截断保真 e2e：{outcome:?}"
     );
     let page_path = artifact_local_path(&outcome, "page.txt");

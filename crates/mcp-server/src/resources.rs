@@ -89,7 +89,8 @@ pub fn static_resources() -> Vec<ResourceDef> {
         ResourceDef {
             uri: WORKSPACE_URI,
             name: "当前工作区",
-            description: "平台 MCP 面当前工作区上下文（服务器信息、数据面路径、目录与执行面配置；不含凭据）",
+            description:
+                "平台 MCP 面当前工作区上下文（服务器信息、数据面路径、目录与执行面配置；不含凭据）",
             mime_type: "application/json",
         },
         ResourceDef {
@@ -259,8 +260,7 @@ impl McpServer {
                     "主库缺 knowledge 表（迁移水位不足），知识目录暂不可读",
                 ));
             }
-            let total: i64 =
-                conn.query_row("SELECT COUNT(*) FROM knowledge", [], |r| r.get(0))?;
+            let total: i64 = conn.query_row("SELECT COUNT(*) FROM knowledge", [], |r| r.get(0))?;
             let items = rows_as_json(
                 conn,
                 "SELECT knowledge_id, record_kind, lifecycle, governance, title, \
@@ -278,7 +278,11 @@ impl McpServer {
                 "items": items
             }))
         })?;
-        Ok(ResourceDoc { uri: uri.to_string(), mime_type: "application/json", payload })
+        Ok(ResourceDoc {
+            uri: uri.to_string(),
+            mime_type: "application/json",
+            payload,
+        })
     }
 
     /// rip://plugins/catalog：plugin 表目录投影（RP_PLUGIN_DB 读面，
@@ -341,7 +345,11 @@ impl McpServer {
                 "capabilities": caps
             }))
         })?;
-        Ok(ResourceDoc { uri: uri.to_string(), mime_type: "application/json", payload })
+        Ok(ResourceDoc {
+            uri: uri.to_string(),
+            mime_type: "application/json",
+            payload,
+        })
     }
 
     /// rip://tools/catalog：tool 表注册面投影（目录读面 = rip.list_tools
@@ -409,7 +417,11 @@ impl McpServer {
         let Some(row) = row else {
             return Err(ResourceError::NotFound(format!("task {task_id:?}")));
         };
-        Ok(ResourceDoc { uri: uri.to_string(), mime_type: "application/json", payload: row })
+        Ok(ResourceDoc {
+            uri: uri.to_string(),
+            mime_type: "application/json",
+            payload: row,
+        })
     }
 
     /// rip://runs/<run_id>：运行面全链投影（dispatch RunChannel::run_status
@@ -445,7 +457,11 @@ impl McpServer {
             }
         })?;
         payload["uri"] = json!(uri);
-        Ok(ResourceDoc { uri: uri.to_string(), mime_type: "application/json", payload })
+        Ok(ResourceDoc {
+            uri: uri.to_string(),
+            mime_type: "application/json",
+            payload,
+        })
     }
 
     /// rip://evidence/<evidence_id>：证据行（运行库优先，主库回退）+
@@ -484,15 +500,20 @@ impl McpServer {
                     Ok(meta) => {
                         row["artifact_text_truncated"] = json!(true);
                         row["artifact_text_bytes"] = json!(meta.len());
-                        row["note"] =
-                            json!("storage_ref 快照超过内联上限（64 KiB），按 storage_ref 路径取件");
+                        row["note"] = json!(
+                            "storage_ref 快照超过内联上限（64 KiB），按 storage_ref 路径取件"
+                        );
                     }
                     Err(_) => {}
                 }
             }
         }
         row["uri"] = json!(uri);
-        Ok(ResourceDoc { uri: uri.to_string(), mime_type: "application/json", payload: row })
+        Ok(ResourceDoc {
+            uri: uri.to_string(),
+            mime_type: "application/json",
+            payload: row,
+        })
     }
 
     /// 主库只读连接（资源读面无状态模型，P9-1 同款：开查即释）。

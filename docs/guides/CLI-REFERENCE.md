@@ -101,11 +101,27 @@
 
 ### 3.7 rp-search-index（FTS5 索引）
 
-- 模式：`build`（platform 库 + catalog 库 → 派生索引库，`--rebuild` 可重建）与 `query`（bm25 50% / quality 30% / keyword 覆盖 20%）。
+- 模式：`build`（platform + catalog + 可选 RTIS/curation Overlay → 派生索引库，`--rebuild` 可重建）与 `query`（bm25 50% / quality 30% / keyword 覆盖 20%）。
+- 当 RTIS curation Overlay 已配置时，构建时同时传入 `--rtis-db` 与 `--curation-overlay`；二者必须成对提供。RTIS 只读，只有 Overlay 明确列出的 POC 元数据进入 FTS。
+- POC 过滤键：`evidence-level`、`knowledge-lifecycle`、`poc-severity`、`poc-category`、`poc-cve-id`；Nuclei 过滤键保持独立。
 - 例子：
   ~~~bash
-  rp-search-index build --platform-db migrations/platform.db --catalog-db <catalog.db> --index-db /tmp/search-index.db --rebuild
-  rp-search-index query --index-db /tmp/search-index.db --keywords "trace,agent" --limit 10
+  rp-search-index build --platform-db migrations/platform.db --catalog-db <catalog.db> \
+    --rtis-db integrations/rtis/knowledge.db --curation-overlay integrations/rtis/curation/k_meta_overlay.json \
+    --index-db /tmp/search-index.db --rebuild
+  rp-search-index query --index-db /tmp/search-index.db --keywords zeai --resource-type rtis_poc \
+    --evidence-level K2 --knowledge-lifecycle Researched --limit 10
+  ~~~
+
+### 3.7.1 rp-search-unified（SQLite + PG 统一检索）
+
+- SQLite 通道读取 `platform-search.db` FTS 索引；当该索引按 RTIS + RIP curation Overlay 构建时，可检索 Overlay 明确审核的自有 POC。
+- `--sqlite-filters` 支持 `resource-type`、`evidence-level`、`knowledge-lifecycle`、`poc-severity`、`poc-category`、`poc-cve-id`，以及原有 license / maintenance / Nuclei facet。
+- SQLite 结果 `detail` 会返回 K 级、Lifecycle、分类、Severity、CVE、来源路径、Commit 与关联 POC IDs。
+- 例子（需要可用的 PG DSN；只过滤 SQLite 通道）：
+  ~~~bash
+  rp-search-unified --query zeai --index-db migrations/platform-search.db \
+    --sqlite-filters resource-type=rtis_poc,evidence-level=K2,knowledge-lifecycle=Researched
   ~~~
 
 ### 3.8 rp-review（治理评审）

@@ -46,8 +46,8 @@ use agent_engine::evidence::EvidenceRegistrar;
 use agent_engine::store::AgentStore;
 use agent_engine::tool_link::{PythonWorkerDriver, ToolLink};
 use agent_engine::{agent_loop::AgentLoop, LoopConfig};
-use database::{migrate, DbPath, Pool, PoolConfig};
 use database::rusqlite::OptionalExtension;
+use database::{migrate, DbPath, Pool, PoolConfig};
 use tool_engine::adapter::python_worker::{
     execute_via_engine, AdapterCall, PythonWorkerAdapter, PythonWorkerConfig, RestartPolicy,
 };
@@ -897,8 +897,7 @@ impl AgentLoopDriver {
         // = legacy 路径零挂接（既有行为零变化）。
         let loop_ = match &resolved_caller {
             Some(_) => {
-                let caller_budgets = match agent_engine::control::load_caller_budgets(&self.pool)
-                {
+                let caller_budgets = match agent_engine::control::load_caller_budgets(&self.pool) {
                     Ok(map) => map,
                     Err(e) => {
                         eprintln!(

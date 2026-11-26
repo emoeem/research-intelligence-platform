@@ -906,10 +906,11 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
     // caller 感知 acquire（族内判定之上叠加 caller 顶层帽；caller None =
     // 既有 acquire 直通路径逐字节不变）。
     let _family_guard = match call.caller {
-        Some(caller) => call
-            .adapter
-            .limiter
-            .acquire_for(call.family, Some(caller), call.caller_cap),
+        Some(caller) => {
+            call.adapter
+                .limiter
+                .acquire_for(call.family, Some(caller), call.caller_cap)
+        }
         None => call.adapter.limiter.acquire(call.family),
     };
 

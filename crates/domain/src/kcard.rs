@@ -603,10 +603,16 @@ mod tests {
             accuracy: 0.0,
         };
         assert!((quality_score(&w, &zero) - 0.0).abs() < 1e-4);
-        let over = QualityInputs { source_reliability: 2.0, ..zero };
+        let over = QualityInputs {
+            source_reliability: 2.0,
+            ..zero
+        };
         let s = quality_score(&w, &over);
         assert!((0.0..=1.0).contains(&s));
-        let bad = QualityWeights { completeness: 0.30, ..w };
+        let bad = QualityWeights {
+            completeness: 0.30,
+            ..w
+        };
         assert!(bad.validate().is_err());
     }
 

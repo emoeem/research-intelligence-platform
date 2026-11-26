@@ -31,11 +31,11 @@ use audit_engine::AuditEngine;
 use context_broker::{
     est_tokens, AssembleRequest, AssembledContext, ContextItemKind, ContextLayer, InclusionForm,
 };
+use database::rusqlite;
 use domain::{
     AgentId, AgentRun, AgentRunState, CapabilityRef, EvidenceMemoryEntry, MemoryLifecycle,
     MemoryObjectRef, ResearchMemoryEntry, RunId, TaskMemoryEntry,
 };
-use tool_registry::hash::sha256_hex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -43,7 +43,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
-use database::rusqlite;
+use tool_registry::hash::sha256_hex;
 
 /// 闭环配置。
 #[derive(Debug, Clone)]
@@ -423,12 +423,7 @@ struct FoldSegment {
 /// 折前段 canonical JSON = serde_json 规范序列化（Value 默认 BTreeMap 键
 /// 序纪律同 canonical_call_key），sha256 走 tool-registry::hash 既有依赖
 /// （D7 零新依赖）。区间内无步骤返回 None。
-fn fold_segment(
-    steps: &[StepRecord],
-    rounds: &[usize],
-    a: usize,
-    b: usize,
-) -> Option<FoldSegment> {
+fn fold_segment(steps: &[StepRecord], rounds: &[usize], a: usize, b: usize) -> Option<FoldSegment> {
     debug_assert_eq!(steps.len(), rounds.len(), "fold span table parity");
     let mut segment: Vec<StepRecord> = Vec::new();
     for (i, record) in steps.iter().enumerate() {
@@ -648,7 +643,8 @@ impl AgentLoop {
         self.state.ensure_control_row(&run_id_str, &req.goal)?;
         // 受理留痕：caller 归属仅在 Some 时进 payload（None = legacy 行
         // 逐字节现状，不添键）。
-        let mut accepted_detail = json!({"agent_id": agent_id, "goal": req.goal, "trace_id": trace_id});
+        let mut accepted_detail =
+            json!({"agent_id": agent_id, "goal": req.goal, "trace_id": trace_id});
         if let Some(caller) = req.caller_id.as_deref() {
             accepted_detail["caller_id"] = json!(caller);
         }
@@ -791,9 +787,8 @@ impl AgentLoop {
         // MA-2（D7/D2）：caller 预算面解析（装配层内存映射查行；缺行 =
         // 现状零回归：并行关、帽不限）+ 速率窗口进程内计数复核器
         // （std AtomicUsize + Instant，零新依赖；窗口过期即滑动复位）。
-        let caller_budget: Option<&crate::control::CallerBudget> = p
-            .caller_id
-            .and_then(|c| cfg.caller_budgets.get(c));
+        let caller_budget: Option<&crate::control::CallerBudget> =
+            p.caller_id.and_then(|c| cfg.caller_budgets.get(c));
         let rate_tracker = caller_budget
             .filter(|b| b.rate_max_steps > 0)
             .map(|b| CallerRateTracker::new(b.rate_window_ms));
@@ -1108,14 +1103,14 @@ impl AgentLoop {
             // 每段一条合成行原位替代），否则全量切片（默认关路径逐字节现状
             // ——无折叠事件返回 None 直用 &steps）。
             let fold_view: Vec<StepRecord>;
-            let history_ref: &[StepRecord] = match fold_projection(&steps, &step_rounds, &applied_folds)
-            {
-                Some(view) => {
-                    fold_view = view;
-                    &fold_view
-                }
-                None => &steps,
-            };
+            let history_ref: &[StepRecord] =
+                match fold_projection(&steps, &step_rounds, &applied_folds) {
+                    Some(view) => {
+                        fold_view = view;
+                        &fold_view
+                    }
+                    None => &steps,
+                };
             let ctx = PlanContext {
                 goal: &p.goal,
                 run_id: p.run_id_str,
@@ -1162,10 +1157,7 @@ impl AgentLoop {
                         // 先例：声明面并发度、引擎不放大、写面经 Pool 串行化、
                         // 确定性顺序合并）----
                         let budget = caller_budget.expect("budget present when parallel_ready");
-                        let parallelism = plan_steps
-                            .len()
-                            .min(budget.max_parallel_subtasks)
-                            .max(1);
+                        let parallelism = plan_steps.len().min(budget.max_parallel_subtasks).max(1);
                         let round_out = self.run_round_parallel(
                             &p,
                             round,
@@ -1199,92 +1191,92 @@ impl AgentLoop {
                             None => {}
                         }
                     } else {
-                    for step in plan_steps {
-                        // 每步控制消费（步间粒度；cancel 先于 pause）。消费点
-                        // 立即完成 CAS 跃迁，审计随跃迁落。
-                        if self.state.consume_cancel_request(p.run_id_str)? {
-                            control_state = Some(AgentRunState::Cancelled);
-                            finish_reason = format!(
+                        for step in plan_steps {
+                            // 每步控制消费（步间粒度；cancel 先于 pause）。消费点
+                            // 立即完成 CAS 跃迁，审计随跃迁落。
+                            if self.state.consume_cancel_request(p.run_id_str)? {
+                                control_state = Some(AgentRunState::Cancelled);
+                                finish_reason = format!(
                                 "cancelled (cooperative, D-TC-04): request consumed before step {}",
                                 steps.len()
                             );
-                            self.store
-                                .transition_run(p.run_id_str, AgentRunState::Cancelled)?;
-                            self.audit_emit(
+                                self.store
+                                    .transition_run(p.run_id_str, AgentRunState::Cancelled)?;
+                                self.audit_emit(
             control::actions::CANCELLED,
             p.run_id_str,
             p.trace_id.as_deref(),
             p.actor,
                                 json!({"before_step": steps.len(), "round": round, "cooperative": true}),
                             );
-                            break 'rounds;
-                        }
-                        if self.state.consume_pause_request(p.run_id_str)? {
-                            control_state = Some(AgentRunState::Paused);
-                            finish_reason = format!(
+                                break 'rounds;
+                            }
+                            if self.state.consume_pause_request(p.run_id_str)? {
+                                control_state = Some(AgentRunState::Paused);
+                                finish_reason = format!(
                                 "paused (cooperative): request consumed before step {}; resume via AgentLoop::resume",
                                 steps.len()
                             );
-                            self.store
-                                .transition_run(p.run_id_str, AgentRunState::Paused)?;
-                            self.audit_emit(
-                                control::actions::PAUSED,
-                                p.run_id_str,
-                                p.trace_id.as_deref(),
-                                p.actor,
-                                json!({"before_step": steps.len(), "round": round}),
-                            );
-                            break 'rounds;
-                        }
-                        // 预算：墙钟（0 = 不限）。
-                        if control::elapsed_over_budget(started_at, cfg.max_elapsed_ms) {
-                            finish_reason = format!(
-                                "guardrail: budget max_elapsed_ms={} reached",
-                                cfg.max_elapsed_ms
-                            );
-                            self.audit_emit(
+                                self.store
+                                    .transition_run(p.run_id_str, AgentRunState::Paused)?;
+                                self.audit_emit(
+                                    control::actions::PAUSED,
+                                    p.run_id_str,
+                                    p.trace_id.as_deref(),
+                                    p.actor,
+                                    json!({"before_step": steps.len(), "round": round}),
+                                );
+                                break 'rounds;
+                            }
+                            // 预算：墙钟（0 = 不限）。
+                            if control::elapsed_over_budget(started_at, cfg.max_elapsed_ms) {
+                                finish_reason = format!(
+                                    "guardrail: budget max_elapsed_ms={} reached",
+                                    cfg.max_elapsed_ms
+                                );
+                                self.audit_emit(
                                 control::actions::GUARDRAIL,
                                 p.run_id_str,
                                 p.trace_id.as_deref(),
                                 p.actor,
                                 json!({"kind": "budget_elapsed", "limit_ms": cfg.max_elapsed_ms}),
                             );
-                            break 'rounds;
-                        }
-                        // 预算：步数上限。
-                        if steps.len() >= self.config.max_tool_calls {
-                            finish_reason = format!(
-                                "guardrail: max_tool_calls={} reached",
-                                self.config.max_tool_calls
-                            );
-                            break 'rounds;
-                        }
-                        // 能力绑定闸：绑定外工具拒绝（防规划器漂移出能力面）。
-                        if !p
-                            .capability_refs
-                            .iter()
-                            .any(|r| r.tool_id() == step.tool_id)
-                        {
-                            any_failed = true;
-                            finish_reason = format!(
-                                "guardrail: plan step tool {:?} is not in capability_refs",
-                                step.tool_id
-                            );
-                            break 'rounds;
-                        }
-                        // 目标偏移检测：初始计划面外的工具跳转计偏移事件，
-                        // 连续偏移超过容限即停（容限内放行并留痕）。
-                        let surface_ref = surface
-                            .as_deref()
-                            .expect("surface captured before step loop");
-                        if control::drift_step(surface_ref, &step.tool_id) {
-                            drift_streak += 1;
-                            if drift_streak > cfg.drift_tolerance {
+                                break 'rounds;
+                            }
+                            // 预算：步数上限。
+                            if steps.len() >= self.config.max_tool_calls {
                                 finish_reason = format!(
+                                    "guardrail: max_tool_calls={} reached",
+                                    self.config.max_tool_calls
+                                );
+                                break 'rounds;
+                            }
+                            // 能力绑定闸：绑定外工具拒绝（防规划器漂移出能力面）。
+                            if !p
+                                .capability_refs
+                                .iter()
+                                .any(|r| r.tool_id() == step.tool_id)
+                            {
+                                any_failed = true;
+                                finish_reason = format!(
+                                    "guardrail: plan step tool {:?} is not in capability_refs",
+                                    step.tool_id
+                                );
+                                break 'rounds;
+                            }
+                            // 目标偏移检测：初始计划面外的工具跳转计偏移事件，
+                            // 连续偏移超过容限即停（容限内放行并留痕）。
+                            let surface_ref = surface
+                                .as_deref()
+                                .expect("surface captured before step loop");
+                            if control::drift_step(surface_ref, &step.tool_id) {
+                                drift_streak += 1;
+                                if drift_streak > cfg.drift_tolerance {
+                                    finish_reason = format!(
                                     "guardrail: goal drift detected (tool {:?} outside initial plan surface, {drift_streak} consecutive drifted steps)",
                                     step.tool_id
                                 );
-                                self.audit_emit(
+                                    self.audit_emit(
             control::actions::GUARDRAIL,
             p.run_id_str,
             p.trace_id.as_deref(),
@@ -1292,104 +1284,104 @@ impl AgentLoop {
                                     json!({"kind": "goal_drift", "tool_id": step.tool_id,
                                            "drift_streak": drift_streak, "tolerance": cfg.drift_tolerance}),
                                 );
-                                break 'rounds;
-                            }
-                            warnings.push(format!(
+                                    break 'rounds;
+                                }
+                                warnings.push(format!(
                                 "goal drift event: tool {:?} outside initial plan surface (round {round}); within tolerance {}",
                                 step.tool_id, cfg.drift_tolerance
                             ));
-                        } else {
-                            drift_streak = 0;
-                        }
-                        // 重复调用检测：(tool_id, 规范化 input) 已执行即跳过。
-                        let call_key = control::canonical_call_key(&step.tool_id, &step.input);
-                        if executed_keys.iter().any(|k| k == &call_key) {
-                            duplicates_in_round += 1;
-                            warnings.push(format!(
+                            } else {
+                                drift_streak = 0;
+                            }
+                            // 重复调用检测：(tool_id, 规范化 input) 已执行即跳过。
+                            let call_key = control::canonical_call_key(&step.tool_id, &step.input);
+                            if executed_keys.iter().any(|k| k == &call_key) {
+                                duplicates_in_round += 1;
+                                warnings.push(format!(
                                 "duplicate call detected: tool {:?} with identical canonical input already executed; skipped",
                                 step.tool_id
                             ));
+                                self.audit_emit(
+                                    control::actions::STEP_DUPLICATE,
+                                    p.run_id_str,
+                                    p.trace_id.as_deref(),
+                                    p.actor,
+                                    json!({"tool_id": step.tool_id, "round": round}),
+                                );
+                                continue;
+                            }
+                            // 执行 + 轨迹落库。
+                            let seq = steps.len();
+                            let record = self.execute_step(
+                                p.run_id,
+                                seq,
+                                round,
+                                p.trace_id.as_deref(),
+                                p.agent_id,
+                                &step,
+                                p.task_id.as_deref(),
+                                p.caller_id,
+                                &context,
+                                &mut warnings,
+                            );
+                            executed_keys.push(call_key);
+                            if record.status != "SUCCEEDED" {
+                                any_failed = true;
+                            }
+                            // 停滞检测：连续无新证据哈希步数达窗口即停（窗口 0
+                            // 视为关闭，与 max_rounds/max_elapsed_ms 同口径）。
+                            if control::step_has_new_evidence(&record, &seen_hashes) {
+                                no_progress_streak = 0;
+                                if let Some(h) = &record.content_hash {
+                                    seen_hashes.push(h.clone());
+                                }
+                            } else {
+                                no_progress_streak += 1;
+                            }
+                            steps.push(record.clone());
+                            // CB-1（D3）轮界跨度表记录（旁路；折叠默认关零行为影响）。
+                            step_rounds.push(round);
                             self.audit_emit(
-                                control::actions::STEP_DUPLICATE,
+                                "agent.step.completed",
                                 p.run_id_str,
                                 p.trace_id.as_deref(),
                                 p.actor,
-                                json!({"tool_id": step.tool_id, "round": round}),
+                                json!({
+                                    "tool_id": step.tool_id,
+                                    "seq": seq,
+                                    "round": round,
+                                    "status": record.status,
+                                    "tool_run_id": record.tool_run_id,
+                                    "artifact_id": record.artifact_id,
+                                    "evidence_id": record.evidence_id,
+                                    "steps_done": steps.len(),
+                                }),
                             );
-                            continue;
-                        }
-                        // 执行 + 轨迹落库。
-                        let seq = steps.len();
-                        let record = self.execute_step(
-                            p.run_id,
-                            seq,
-                            round,
-                            p.trace_id.as_deref(),
-                            p.agent_id,
-                            &step,
-                            p.task_id.as_deref(),
-                            p.caller_id,
-                            &context,
-                            &mut warnings,
-                        );
-                        executed_keys.push(call_key);
-                        if record.status != "SUCCEEDED" {
-                            any_failed = true;
-                        }
-                        // 停滞检测：连续无新证据哈希步数达窗口即停（窗口 0
-                        // 视为关闭，与 max_rounds/max_elapsed_ms 同口径）。
-                        if control::step_has_new_evidence(&record, &seen_hashes) {
-                            no_progress_streak = 0;
-                            if let Some(h) = &record.content_hash {
-                                seen_hashes.push(h.clone());
-                            }
-                        } else {
-                            no_progress_streak += 1;
-                        }
-                        steps.push(record.clone());
-                        // CB-1（D3）轮界跨度表记录（旁路；折叠默认关零行为影响）。
-                        step_rounds.push(round);
-                        self.audit_emit(
-                            "agent.step.completed",
-                            p.run_id_str,
-                            p.trace_id.as_deref(),
-                            p.actor,
-                            json!({
-                                "tool_id": step.tool_id,
-                                "seq": seq,
-                                "round": round,
-                                "status": record.status,
-                                "tool_run_id": record.tool_run_id,
-                                "artifact_id": record.artifact_id,
-                                "evidence_id": record.evidence_id,
-                                "steps_done": steps.len(),
-                            }),
-                        );
-                        if cfg.stall_window > 0 && no_progress_streak >= cfg.stall_window {
-                            finish_reason = format!(
+                            if cfg.stall_window > 0 && no_progress_streak >= cfg.stall_window {
+                                finish_reason = format!(
                                 "guardrail: stall detected ({no_progress_streak} steps without new evidence hash)"
                             );
-                            self.audit_emit(
-                                control::actions::GUARDRAIL,
-                                p.run_id_str,
-                                p.trace_id.as_deref(),
-                                p.actor,
-                                json!({"kind": "stall", "streak": no_progress_streak,
+                                self.audit_emit(
+                                    control::actions::GUARDRAIL,
+                                    p.run_id_str,
+                                    p.trace_id.as_deref(),
+                                    p.actor,
+                                    json!({"kind": "stall", "streak": no_progress_streak,
                                        "window": cfg.stall_window}),
-                            );
-                            break 'rounds;
-                        }
-                        // 失败即收尾（重试走 RunControl::retry 新 run 重放）。
-                        if any_failed {
-                            if finish_reason.is_empty() {
-                                finish_reason =
-                                    "tool step failed; stopping (retry via RunControl::retry)"
-                                        .to_string();
+                                );
+                                break 'rounds;
                             }
-                            break 'rounds;
+                            // 失败即收尾（重试走 RunControl::retry 新 run 重放）。
+                            if any_failed {
+                                if finish_reason.is_empty() {
+                                    finish_reason =
+                                        "tool step failed; stopping (retry via RunControl::retry)"
+                                            .to_string();
+                                }
+                                break 'rounds;
+                            }
+                            executed_in_round += 1;
                         }
-                        executed_in_round += 1;
-                    }
                     }
                     // 整轮全是重复跳步：无可执行进展，停（防规划器死循环）。
                     if finish_reason.is_empty() && executed_in_round == 0 && duplicates_in_round > 0
@@ -2387,7 +2379,9 @@ fn execute_parallel_step(
             out.record.content_hash = Some(reg_out.content_hash.clone());
             out.reg = Some(reg_out);
         }
-        Err(e) => out.warnings.push(format!("evidence registration failed: {e}")),
+        Err(e) => out
+            .warnings
+            .push(format!("evidence registration failed: {e}")),
     }
     out
 }
@@ -2555,7 +2549,10 @@ mod tests {
         assert_eq!(a.synthetic.tool_id, FOLD_TOOL_ID);
         assert_eq!(a.synthetic.tool_id, "transcript:fold");
         assert_eq!(a.synthetic.tool_version, TRANSCRIPT_FOLD_VERSION);
-        assert_eq!(a.synthetic.tool_run_id, "", "空串先例（SUBMIT_REJECTED 同款）");
+        assert_eq!(
+            a.synthetic.tool_run_id, "",
+            "空串先例（SUBMIT_REJECTED 同款）"
+        );
         assert_eq!(a.synthetic.status, "SUCCEEDED", "ToolRunStatus 词形内");
         assert_eq!(a.synthetic.elapsed_ms, 0);
         assert_eq!(a.synthetic.summary.as_deref(), Some(a.summary.as_str()));
@@ -2571,9 +2568,7 @@ mod tests {
     /// + 热窗段透传 + 无事件返回 None。
     #[test]
     fn cb1_fold_projection_replaces_folded_segments_in_place() {
-        let steps: Vec<StepRecord> = (0..5)
-            .map(|i| fold_step(i, &format!("step {i}")))
-            .collect();
+        let steps: Vec<StepRecord> = (0..5).map(|i| fold_step(i, &format!("step {i}"))).collect();
         // 步轮次：0,0,1,1,2（轮 0/1 各两步，轮 2 一步）。
         let rounds: Vec<usize> = vec![0, 0, 1, 1, 2];
         let seg01 = fold_segment(&steps, &rounds, 0, 1).expect("rounds 0-1");

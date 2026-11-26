@@ -53,7 +53,11 @@ fn free_port() -> u16 {
 fn rp_admin_bin() -> PathBuf {
     if let Ok(p) = std::env::var("RP_ADMIN_BIN") {
         let path = PathBuf::from(p);
-        assert!(path.exists(), "RP_ADMIN_BIN 指向的二进制不存在：{}", path.display());
+        assert!(
+            path.exists(),
+            "RP_ADMIN_BIN 指向的二进制不存在：{}",
+            path.display()
+        );
         return path;
     }
     let mut candidates: Vec<PathBuf> = Vec::new();
@@ -69,7 +73,15 @@ fn rp_admin_bin() -> PathBuf {
     // parity.rs ensure_bin 同范式补建（--offline，vendored 面一致；测试执行段
     // 无构建锁冲突——rp-workflow 载具同路径已在 CI parity job 过门）。
     let status = Command::new("cargo")
-        .args(["build", "--offline", "-q", "-p", "database", "--bin", "rp-admin"])
+        .args([
+            "build",
+            "--offline",
+            "-q",
+            "-p",
+            "database",
+            "--bin",
+            "rp-admin",
+        ])
         .status()
         .expect("cargo build rp-admin spawn");
     assert!(status.success(), "cargo build rp-admin failed");
@@ -111,8 +123,8 @@ struct HttpResp {
 }
 
 fn http_get(port: u16, target: &str, token: Option<&str>) -> Result<HttpResp, String> {
-    let mut stream = TcpStream::connect(("127.0.0.1", port))
-        .map_err(|e| format!("tcp connect: {e}"))?;
+    let mut stream =
+        TcpStream::connect(("127.0.0.1", port)).map_err(|e| format!("tcp connect: {e}"))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(30)))
         .expect("read timeout");
@@ -206,8 +218,8 @@ fn caller_multi_key_auth_e2e() {
             database::migrate(&pool, &repo_root().join("migrations")).expect("migrate temp db");
         assert_eq!(
             applied.last().map(|m| m.version),
-            Some(31),
-            "真实迁移链必须应用到当前链尾（027 MA-2 caller 归属列与 caller_budget 之后已随链演进至 031（Projects/Research Assets））"
+            Some(32),
+            "真实迁移链必须应用到当前链尾（027 MA-2 caller 归属列与 caller_budget 之后已随链演进至 032（Nuclei 模板知识类型））"
         );
     }
 
@@ -241,35 +253,31 @@ fn caller_multi_key_auth_e2e() {
             "caller-e2e-b",
         ],
     );
-    let key_a: Value = serde_json::from_str(
-        &run_admin(
-            &admin,
-            &[
-                "key-gen",
-                "--db",
-                main_db.to_string_lossy().as_ref(),
-                "--caller-id",
-                "caller-e2e-a",
-                "--label",
-                "e2e-a",
-            ],
-        ),
-    )
+    let key_a: Value = serde_json::from_str(&run_admin(
+        &admin,
+        &[
+            "key-gen",
+            "--db",
+            main_db.to_string_lossy().as_ref(),
+            "--caller-id",
+            "caller-e2e-a",
+            "--label",
+            "e2e-a",
+        ],
+    ))
     .expect("key-gen a json");
-    let key_b: Value = serde_json::from_str(
-        &run_admin(
-            &admin,
-            &[
-                "key-gen",
-                "--db",
-                main_db.to_string_lossy().as_ref(),
-                "--caller-id",
-                "caller-e2e-b",
-                "--label",
-                "e2e-b",
-            ],
-        ),
-    )
+    let key_b: Value = serde_json::from_str(&run_admin(
+        &admin,
+        &[
+            "key-gen",
+            "--db",
+            main_db.to_string_lossy().as_ref(),
+            "--caller-id",
+            "caller-e2e-b",
+            "--label",
+            "e2e-b",
+        ],
+    ))
     .expect("key-gen b json");
     let hash_a = key_a["key_hash"].as_str().expect("key a hash").to_string();
     let key_a = key_a["key"].as_str().expect("key a plaintext").to_string();
@@ -342,7 +350,9 @@ fn caller_multi_key_auth_e2e() {
     let resp = must_get(port, Some("rp1_zzz-not-a-real-key"));
     assert_eq!(resp.status, 401, "未知 key 必须 401");
     assert!(
-        resp.headers.to_ascii_lowercase().contains("www-authenticate: bearer"),
+        resp.headers
+            .to_ascii_lowercase()
+            .contains("www-authenticate: bearer"),
         "401 必须携带 WWW-Authenticate: Bearer"
     );
     let err: Value = serde_json::from_str(&resp.body).expect("401 json body");
@@ -375,7 +385,10 @@ fn caller_multi_key_auth_e2e() {
         ],
     );
     let rev2: Value = serde_json::from_str(&rev2).expect("re-revoke json");
-    assert_eq!(rev2["already_revoked"], true, "重复 revoke 非致命（判据 6）");
+    assert_eq!(
+        rev2["already_revoked"], true,
+        "重复 revoke 非致命（判据 6）"
+    );
 
     // ⑥判据 4/5：caller 停用（join 判定）后其 key 下一请求 401；legacy 不受
     // 影响。停用写面 = 测试夹具直写临时库（红线 3 只约束 server 校验路径，
@@ -392,7 +405,10 @@ fn caller_multi_key_auth_e2e() {
         .expect("disable caller-e2e-b");
     }
     let resp = must_get(port, Some(&key_b));
-    assert_eq!(resp.status, 401, "caller 停用后其 key 必须 401（join 判定）");
+    assert_eq!(
+        resp.status, 401,
+        "caller 停用后其 key 必须 401（join 判定）"
+    );
     let resp = must_get(port, Some(TOKEN));
     assert_eq!(resp.status, 200, "caller 停用不影响 legacy default");
 
@@ -411,13 +427,23 @@ fn caller_multi_key_auth_e2e() {
         rows.iter()
             .any(|r| r["caller"] == caller && r["status"] == status)
     };
-    assert!(has("default", 200), "legacy 请求审计 caller=default（判据 2）");
-    assert!(has("caller-e2e-a", 200), "A key 请求审计归 caller-e2e-a（判据 3）");
-    assert!(has("caller-e2e-b", 200), "B key 请求审计归 caller-e2e-b（判据 3）");
+    assert!(
+        has("default", 200),
+        "legacy 请求审计 caller=default（判据 2）"
+    );
+    assert!(
+        has("caller-e2e-a", 200),
+        "A key 请求审计归 caller-e2e-a（判据 3）"
+    );
+    assert!(
+        has("caller-e2e-b", 200),
+        "B key 请求审计归 caller-e2e-b（判据 3）"
+    );
     // 401 行（未知 key / 吊销 key / 停用 caller）= 匿名未过鉴权 → caller="-"
     //（D5 三态；身份只在过鉴权行出现）。
     assert!(
-        rows.iter().any(|r| r["caller"] == "-" && r["status"] == 401),
+        rows.iter()
+            .any(|r| r["caller"] == "-" && r["status"] == 401),
         "401 行必须记匿名 \"-\""
     );
     assert!(

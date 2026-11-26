@@ -105,15 +105,15 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
     assert_eq!(
         versions,
         vec![
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
         ],
-        "discover must see all current migrations 001..031 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget and WSW-4 028 fuzz 两表) (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
+        "discover must see all current migrations 001..032 in order (including MA-1 026 caller/api_key 两表 and MA-2 027 caller 归属列与 caller_budget and WSW-4 028 fuzz 两表) (008 = P4-1 Context Broker 三表，009 = P6-2 Plugin 数据面；编号按 ROADMAP §1.4 先到先得，设计稿 §6.1 草案号 005 让位，P4-0 决议 1; 012 = SK-3 文档抓取审计数据面, 013 = P7-3 Agent Memory 三表, 014 = P7-4 运行控制与步骤轨迹, 015 = P7-5 trace 统一关联, 016 = P8-1 workflow 定义版本化, 017 = P8-2 workflow 运行持久化, 023 = WSW-1 wsw_body_blob CAS)"
     );
 
     reset_dev_copy();
     let pool = open_dev_pool();
 
-    // 第一次：全链 001..031 落地，链尾 031_research_projects_assets（030 WSW-5/6 在前，WSW-4 为 028）。
+    // 第一次：全链 001..032 落地，链尾 032_research_projects_assets（030 WSW-5/6 在前，WSW-4 为 028）。
     let first = migrate(&pool, &dir).unwrap();
     let first_summary: Vec<(i64, String)> =
         first.iter().map(|m| (m.version, m.name.clone())).collect();
@@ -151,16 +151,17 @@ fn p4_1_migrate_twice_no_diff_on_dev_copy() {
             (29, "_collab_protocol".to_string()),
             (30, "_wsw_ws_frame".to_string()),
             (31, "_research_projects_assets".to_string()),
+            (32, "_nuclei_template_kind".to_string()),
         ],
-        "first run must apply exactly 001..031"
+        "first run must apply exactly 001..032"
     );
 
     let dump1 = schema_dump(&pool);
     let uv1 = user_version(&pool);
     let sv1 = schema_version_rows(&pool);
     assert_eq!(
-        uv1, 31,
-        "user_version must be 31 after first run (chain tail 031)"
+        uv1, 32,
+        "user_version must be 32 after first run (chain tail 032)"
     );
     assert!(
         sv1.iter()

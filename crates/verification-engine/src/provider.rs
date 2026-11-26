@@ -28,6 +28,7 @@
 
 use crate::store::PlanItemRecord;
 use domain::verification::ErrorCategory;
+use domain::ToolRunStatus;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -36,7 +37,6 @@ use tool_engine::adapter::egress_proxy::NetworkPlan;
 use tool_engine::adapter::podman_host::{
     execute_container_via_engine, ContainerCall, PodmanHostAdapter,
 };
-use domain::ToolRunStatus;
 use tool_engine::Engine;
 
 /// Provider 执行产出（归一化输入面；五态判定在 P5-7 evaluator，不在本层）。
@@ -124,11 +124,13 @@ impl RtisPocProvider {
                 "rt.py {} exit {}: {}",
                 args.first().unwrap_or(&""),
                 output.status,
-                String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or("")
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
             ));
         }
-        serde_json::from_slice(&output.stdout)
-            .map_err(|e| format!("rt.py json: {e}"))
+        serde_json::from_slice(&output.stdout).map_err(|e| format!("rt.py json: {e}"))
     }
 
     /// 受控引用与元数据（rt.py poc get --json；只取元数据与引用面）。
@@ -140,8 +142,16 @@ impl RtisPocProvider {
     /// 使用关系回填（rt.py poc use --id N --on TARGET --json；RTIS 现有
     /// 接口的 sanctioned 写路径，回填纪律 §进门三件事 1）。
     pub fn record_use(&self, poc_id: i64, used_on: &str) -> Result<Value, (ErrorCategory, String)> {
-        self.run_json(&["poc", "use", "--id", &poc_id.to_string(), "--on", used_on, "--json"])
-            .map_err(|e| (ErrorCategory::ToolUnavailable, e))
+        self.run_json(&[
+            "poc",
+            "use",
+            "--id",
+            &poc_id.to_string(),
+            "--on",
+            used_on,
+            "--json",
+        ])
+        .map_err(|e| (ErrorCategory::ToolUnavailable, e))
     }
 
     /// 验证结论回填（P5-7：CONFIRMED 项经 rt.py poc update --verified --note
@@ -264,7 +274,10 @@ pub fn execute_nuclei(
             .unwrap_or(false);
         if !same {
             std::fs::copy(template, &target).map_err(|e| {
-                (ErrorCategory::ToolUnavailable, format!("template copy failed: {e}"))
+                (
+                    ErrorCategory::ToolUnavailable,
+                    format!("template copy failed: {e}"),
+                )
             })?;
         }
     }
@@ -296,7 +309,12 @@ pub fn execute_nuclei(
     }
     let submitted = engine
         .submit_correlated(&request, options.trace_id)
-        .map_err(|e| (ErrorCategory::ToolUnavailable, format!("submit rejected: {e}")))?;
+        .map_err(|e| {
+            (
+                ErrorCategory::ToolUnavailable,
+                format!("submit rejected: {e}"),
+            )
+        })?;
     let call = ContainerCall {
         engine,
         run_id: &submitted.run_id,
@@ -363,9 +381,7 @@ pub fn execute_nuclei(
         summary,
         error_category,
         tool_version: Some(envelope.tool_version.clone()),
-        rule_ref: item
-            .rtis_poc_id
-            .map(|id| format!("rtis-poc:{id}")),
+        rule_ref: item.rtis_poc_id.map(|id| format!("rtis-poc:{id}")),
         duration_ms: duration,
     };
     outcome
@@ -480,7 +496,12 @@ pub fn execute_zap(
     }
     let submitted = engine
         .submit_correlated(&request, options.trace_id)
-        .map_err(|e| (ErrorCategory::ToolUnavailable, format!("submit rejected: {e}")))?;
+        .map_err(|e| {
+            (
+                ErrorCategory::ToolUnavailable,
+                format!("submit rejected: {e}"),
+            )
+        })?;
     let call = ContainerCall {
         engine,
         run_id: &submitted.run_id,

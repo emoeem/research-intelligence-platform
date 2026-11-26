@@ -115,8 +115,14 @@ target/debug/rp-resolve --db migrations/platform.db --keywords smoke --limit 5
 # 2. search（FTS 索引构建 + 查询；catalog.db 用入库快照）：
 cargo build --offline -p search-engine --bin rp-search-index
 target/debug/rp-search-index build --platform-db migrations/platform.db \
-  --catalog-db migrations/sources-snapshot/catalog.db --index-db /tmp/idx.db
+  --catalog-db migrations/sources-snapshot/catalog.db \
+  --rtis-db integrations/rtis/knowledge.db \
+  --curation-overlay integrations/rtis/curation/k_meta_overlay.json \
+  --index-db /tmp/idx.db --rebuild
 target/debug/rp-search-index query --index-db /tmp/idx.db --keywords smoke --limit 10
+# 自有 POC：
+target/debug/rp-search-index query --index-db /tmp/idx.db --keywords zeai \
+  --resource-type rtis_poc --evidence-level K2 --knowledge-lifecycle Researched
 # 3. 一次工具 run（T0 python_worker 本地面，零网络零容器；前置：rip-data/ 目录在位，
 #    migrations/platform.db 已初始化，工具脚本按该路径只读检索）：
 mkdir -p rip-data

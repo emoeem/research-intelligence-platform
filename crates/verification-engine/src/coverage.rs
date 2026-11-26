@@ -33,11 +33,7 @@ impl CoverageCell {
     /// 该维是否盲区：零项，或有项但没有任何非 NOT_TESTED 的结论。
     pub fn is_blind_spot(&self) -> bool {
         self.item_count == 0
-            || (self.confirmed
-                + self.not_reproduced
-                + self.inconclusive
-                + self.false_positive)
-                == 0
+            || (self.confirmed + self.not_reproduced + self.inconclusive + self.false_positive) == 0
     }
 
     /// 盲区形态（零项 = 未覆盖；有项无结论 = 未判定）。停止原因可见性面。
@@ -209,14 +205,26 @@ mod tests {
             item("api_endpoints", None),
         ];
         let matrix = coverage_matrix(&items);
-        let assets = matrix.cells.iter().find(|c| c.dimension == "assets").unwrap();
+        let assets = matrix
+            .cells
+            .iter()
+            .find(|c| c.dimension == "assets")
+            .unwrap();
         assert_eq!(assets.item_count, 2);
         assert_eq!(assets.not_reproduced, 1);
         assert_eq!(assets.inconclusive, 1);
-        let input = matrix.cells.iter().find(|c| c.dimension == "input_points").unwrap();
+        let input = matrix
+            .cells
+            .iter()
+            .find(|c| c.dimension == "input_points")
+            .unwrap();
         assert_eq!(input.not_tested, 1);
         assert_eq!(input.confirmed, 1);
-        let api = matrix.cells.iter().find(|c| c.dimension == "api_endpoints").unwrap();
+        let api = matrix
+            .cells
+            .iter()
+            .find(|c| c.dimension == "api_endpoints")
+            .unwrap();
         assert_eq!(api.item_count, 1);
         assert_eq!(api.not_tested, 0);
         assert!(api.is_blind_spot(), "unjudged dimension is a blind spot");
@@ -230,11 +238,27 @@ mod tests {
             item("data_flows", Some("FALSE_POSITIVE")),
         ];
         let matrix = coverage_matrix(&items);
-        assert!(matrix.blind_spots.contains(&"assets"), "NOT_TESTED-only dimension is blind");
-        assert!(matrix.blind_spots.contains(&"api_endpoints"), "zero-item dimension is blind");
-        assert!(!matrix.blind_spots.contains(&"data_flows"), "FALSE_POSITIVE is a conclusion");
-        let assets = matrix.cells.iter().find(|c| c.dimension == "assets").unwrap();
-        assert_eq!(assets.blind_spot_kind(), "unjudged (items present but no conclusive five-state result)");
+        assert!(
+            matrix.blind_spots.contains(&"assets"),
+            "NOT_TESTED-only dimension is blind"
+        );
+        assert!(
+            matrix.blind_spots.contains(&"api_endpoints"),
+            "zero-item dimension is blind"
+        );
+        assert!(
+            !matrix.blind_spots.contains(&"data_flows"),
+            "FALSE_POSITIVE is a conclusion"
+        );
+        let assets = matrix
+            .cells
+            .iter()
+            .find(|c| c.dimension == "assets")
+            .unwrap();
+        assert_eq!(
+            assets.blind_spot_kind(),
+            "unjudged (items present but no conclusive five-state result)"
+        );
     }
 
     /// 假设草稿：每个盲区维度一条；来源依据带盲区信号；负向对照与停止
@@ -247,8 +271,12 @@ mod tests {
         // assets 有结论不生成；其余六维全盲 → 六条草稿
         assert_eq!(drafts.len(), 6);
         assert!(drafts.iter().all(|h| !h.dimension.is_empty()));
-        assert!(drafts.iter().all(|h| h.source_evidence.contains("coverage blind-spot signal")));
-        assert!(drafts.iter().all(|h| h.stop_condition.contains("max_rounds")));
+        assert!(drafts
+            .iter()
+            .all(|h| h.source_evidence.contains("coverage blind-spot signal")));
+        assert!(drafts
+            .iter()
+            .all(|h| h.stop_condition.contains("max_rounds")));
         assert!(drafts.iter().all(|h| h.negative_control.is_some()));
     }
 }

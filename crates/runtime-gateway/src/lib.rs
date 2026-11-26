@@ -41,7 +41,7 @@ use tool_engine::Engine;
 pub use health_store::GatewayError;
 pub use health_store::HealthStore;
 pub use heartbeat::{
-    CommandProbe, DEFAULT_PROBE_INTERVAL, HeartbeatProbe, ProbeOutcome, SwitchProbe,
+    CommandProbe, HeartbeatProbe, ProbeOutcome, SwitchProbe, DEFAULT_PROBE_INTERVAL,
 };
 
 /// 网关配置。

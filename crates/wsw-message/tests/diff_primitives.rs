@@ -7,7 +7,7 @@
 //! 纪律：`--test-threads=1`（WSW 批测试口径；本文件纯函数面无 socket，
 //! 串行仅为口径一致）。
 
-use wsw_message::diff::{diff_lines, diff_normalized, similarity_ratio, NormalizeRules, DiffOp};
+use wsw_message::diff::{diff_lines, diff_normalized, similarity_ratio, DiffOp, NormalizeRules};
 
 #[test]
 fn identical_no_diff_full_similarity() {
@@ -96,11 +96,7 @@ fn normalized_skip_line_drops_dynamic_noise() {
         skip_line_substrings: vec!["request_id".into()],
         normalize_keys: vec![],
     };
-    let (_, sim) = diff_normalized(
-        "H\nrequest_id=aaa-1\nT",
-        "H\nrequest_id=bbb-2\nT",
-        &rules,
-    );
+    let (_, sim) = diff_normalized("H\nrequest_id=aaa-1\nT", "H\nrequest_id=bbb-2\nT", &rules);
     assert!((sim - 1.0).abs() < 1e-9);
 }
 

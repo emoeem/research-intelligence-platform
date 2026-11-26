@@ -47,12 +47,8 @@ pub fn persist_fuzz_case_exchange(
     // 1) CAS 三面（非空才落；同 persist_send_result 口径）。
     let request_ref = (!request.body.is_empty())
         .then(|| {
-            wsw_message::cas::store_body(
-                artifacts_root,
-                &request.body,
-                request.body.len() as u64,
-            )
-            .map_err(|e| database::DbError::Validation(format!("request CAS store: {e}")))
+            wsw_message::cas::store_body(artifacts_root, &request.body, request.body.len() as u64)
+                .map_err(|e| database::DbError::Validation(format!("request CAS store: {e}")))
         })
         .transpose()?;
     let outbound_ref = wsw_message::cas::store_body(
@@ -211,7 +207,12 @@ fn fuzz_target_view(req: &OutboundRequest) -> Option<FuzzTargetView> {
                 uri.query().map(|q| format!("?{q}")).unwrap_or_default()
             )
         };
-        return Some(FuzzTargetView { scheme, host, port, path });
+        return Some(FuzzTargetView {
+            scheme,
+            host,
+            port,
+            path,
+        });
     }
     let host_header = req
         .headers
@@ -244,10 +245,7 @@ fn split_authority(authority: &str, default_port: u16) -> (String, u16) {
         }
     }
     match authority.rsplit_once(':') {
-        Some((h, p)) => (
-            h.to_string(),
-            p.parse().unwrap_or(default_port),
-        ),
+        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(default_port)),
         None => (authority.to_string(), default_port),
     }
 }

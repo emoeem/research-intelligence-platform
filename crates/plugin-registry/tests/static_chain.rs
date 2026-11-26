@@ -114,7 +114,7 @@ fn knowledge_example_passes_seven_rules() {
     let report = validate_document(&yaml_doc, Some(&pkg), &existing(&[]), &Default::default());
     assert_seven_checks_pass(&report, "knowledge.rtis-redteam");
     assert_eq!(report.plugin_id.as_deref(), Some("knowledge.rtis-redteam"));
-    assert_eq!(report.version.as_deref(), Some("0.1.0"));
+    assert_eq!(report.version.as_deref(), Some("0.2.0"));
     assert_eq!(report.kind.as_deref(), Some("knowledge"));
     // 机器可读：报告 JSON 可解析且 ok=true。
     let parsed: Value =
@@ -304,7 +304,14 @@ fn static_chain_discover_validate_install() {
 
         // plugin.lock 字段复核（§6 七要素）。
         assert_eq!(lock.plugin_id, id);
-        assert_eq!(lock.resolved_version, "0.1.0");
+        assert_eq!(
+            lock.resolved_version,
+            if name == "knowledge.rtis-redteam" {
+                "0.2.0"
+            } else {
+                "0.1.0"
+            }
+        );
         assert_eq!(lock.source_type, "local_dir");
         assert_eq!(lock.license, "UNLICENSED");
         assert_eq!(lock.trust_level, TrustLevel::Local);

@@ -325,7 +325,7 @@ fn p6_9_plugin_source_fail_closed_without_data() {
     });
     let err = load.expect_err("no visible plugin cannot resolve refs");
     assert!(
-        err.to_string().contains("not visible"),
+        err.to_string().contains("no unique active version"),
         "access control names the visibility gate: {err}"
     );
 }

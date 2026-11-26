@@ -42,7 +42,10 @@ impl TokenizerAdapter {
         tokenizer
             .with_truncation(None)
             .map_err(|e| format!("tokenizer truncation reset failed: {e}"))?;
-        Ok(Self { tokenizer, source: path })
+        Ok(Self {
+            tokenizer,
+            source: path,
+        })
     }
 
     /// 装载来源（诊断面）。
@@ -63,7 +66,10 @@ pub fn global() -> Option<&'static TokenizerAdapter> {
     ADAPTER
         .get_or_init(|| {
             let dirs = [
-                std::env::var("EMBEDDING_TOKENIZER_DIR").ok().filter(|s| !s.trim().is_empty()).map(PathBuf::from),
+                std::env::var("EMBEDDING_TOKENIZER_DIR")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+                    .map(PathBuf::from),
                 Some(PathBuf::from(DEFAULT_TOKENIZER_DIR)),
             ];
             for dir in dirs.into_iter().flatten() {

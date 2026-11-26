@@ -121,6 +121,26 @@ SPA_FALLBACK = os.environ.get("RP_SPA_FALLBACK", "0").strip() == "1"
 REPO_ROOT = os.path.dirname(os.path.dirname(APP_DIR))
 DEFAULT_DB = os.path.join(REPO_ROOT, "migrations", "platform.db")
 DEFAULT_TOKEN_FILE = os.path.join(REPO_ROOT, ".rp-workbench-token")
+# Curated RTIS POC search uses a separately rebuildable FTS index. Source databases
+# and the RIP curation Overlay are opened read-only by rp-search-index; only this
+# derived index is writable. Never reuse migrations/platform-search.db implicitly.
+def _repo_path(value: str) -> str:
+    return value if os.path.isabs(value) else os.path.join(REPO_ROOT, value)
+
+
+CURATED_SEARCH_BIN = _repo_path((os.environ.get("RP_SEARCH_INDEX_BIN") or
+                                  "target/debug/rp-search-index").strip())
+CURATED_SEARCH_INDEX_DB = _repo_path(os.environ.get("RP_CURATED_SEARCH_INDEX_DB") or
+                                     "rip-data/derived/curated-poc-search.db")
+CURATED_SEARCH_CATALOG_DB = _repo_path(os.environ.get("RP_SEARCH_CATALOG_DB") or
+                                       "migrations/sources-snapshot/catalog.db")
+CURATED_SEARCH_RTIS_DB = _repo_path(os.environ.get("RP_SEARCH_RTIS_DB") or
+                                    "integrations/rtis/knowledge.db")
+CURATED_SEARCH_OVERLAY = _repo_path(os.environ.get("RP_SEARCH_CURATION_OVERLAY") or
+                                    "integrations/rtis/curation/k_meta_overlay.json")
+CURATED_SEARCH_LOCK = threading.Lock()
+CURATED_SEARCH_BUILD_TIMEOUT_S = 180
+CURATED_SEARCH_QUERY_TIMEOUT_S = 20
 
 HOST = os.environ.get("RP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("RP_PORT", "7800"))
@@ -898,6 +918,177 @@ def handle_overview(conn: sqlite3.Connection, params: dict) -> dict:
     else:
         result["runtime"] = phase14_unavailable(conn, "runtime_node")
     return result
+
+
+def _ensure_curated_search_index() -> None:
+    """Build/rebuild the disposable FTS index when any read-only source is newer."""
+    sources = [DB_PATH, CURATED_SEARCH_CATALOG_DB, CURATED_SEARCH_RTIS_DB,
+               CURATED_SEARCH_OVERLAY]
+    missing = [path for path in sources if not os.path.isfile(path)]
+    if missing:
+        raise ApiError(503, "poc_search_sources_unavailable",
+                       "POC 搜索源不可用：" + ", ".join(missing))
+    try:
+        newest_source = max(os.path.getmtime(path) for path in sources)
+    except OSError as exc:
+        raise ApiError(503, "poc_search_sources_unavailable", str(exc)) from exc
+
+    with CURATED_SEARCH_LOCK:
+        if (os.path.isfile(CURATED_SEARCH_INDEX_DB) and
+                os.path.getmtime(CURATED_SEARCH_INDEX_DB) >= newest_source):
+            return
+        if not os.path.isfile(CURATED_SEARCH_BIN) or not os.access(CURATED_SEARCH_BIN, os.X_OK):
+            raise ApiError(503, "poc_search_binary_unavailable",
+                           f"rp-search-index 不可执行：{CURATED_SEARCH_BIN}")
+        os.makedirs(os.path.dirname(CURATED_SEARCH_INDEX_DB) or ".", exist_ok=True)
+        command = [CURATED_SEARCH_BIN, "build", "--platform-db", DB_PATH,
+                   "--catalog-db", CURATED_SEARCH_CATALOG_DB,
+                   "--rtis-db", CURATED_SEARCH_RTIS_DB,
+                   "--curation-overlay", CURATED_SEARCH_OVERLAY,
+                   "--index-db", CURATED_SEARCH_INDEX_DB, "--rebuild"]
+        try:
+            proc = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=CURATED_SEARCH_BUILD_TIMEOUT_S, cwd=REPO_ROOT)
+        except subprocess.TimeoutExpired as exc:
+            raise ApiError(504, "poc_search_index_timeout",
+                           f"POC 搜索索引构建超时（{CURATED_SEARCH_BUILD_TIMEOUT_S}s）") from exc
+        except OSError as exc:
+            raise ApiError(502, "poc_search_index_spawn_failed", str(exc)) from exc
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "unknown build error").strip()[-1200:]
+            raise ApiError(502, "poc_search_index_build_failed", detail)
+
+
+def handle_curated_poc_search(_conn: sqlite3.Connection, params: dict) -> dict:
+    """Curated POC FTS endpoint; returns metadata only, never POC source bodies."""
+    query = ((params.get("q") or params.get("keywords") or [""])[0] or "").strip()
+    if len(query) > 200:
+        raise ApiError(400, "bad_query", "搜索关键词最多 200 个字符")
+    raw_limit = (params.get("limit") or ["30"])[0]
+    raw_offset = (params.get("offset") or ["0"])[0]
+    try:
+        limit = max(1, min(int(raw_limit), 100))
+        offset = max(0, min(int(raw_offset), 10000))
+    except ValueError as exc:
+        raise ApiError(400, "bad_pagination", "limit/offset 必须为整数") from exc
+
+    filters = {
+        "evidence_level": ("--evidence-level", {f"K{i}" for i in range(5)}, True),
+        "knowledge_lifecycle": ("--knowledge-lifecycle",
+                                {"Candidate", "Researched", "Lab-validated"}, False),
+        "poc_severity": ("--poc-severity", {"critical", "high", "medium", "low", "info"}, True),
+        "poc_source_integrity": ("--poc-source-integrity", {"complete", "partial", "missing"}, True),
+        "poc_verification_result": ("--poc-verification-result", {"candidate_not_verified", "historical_evidence_supported", "not_applicable"}, True),
+        "poc_dedup_status": ("--poc-dedup-status", {"independent", "related-family", "duplicate_candidate", "duplicate"}, True),
+    }
+    cli_args = ["query", "--index-db", CURATED_SEARCH_INDEX_DB,
+                "--keywords", query, "--resource-type", "rtis_poc",
+                "--limit", str(limit), "--offset", str(offset)]
+    applied = {"resource_type": "rtis_poc"}
+    for key, (flag, allowed, upper) in filters.items():
+        value = (params.get(key) or [""])[0].strip()
+        if value:
+            normalized = value.upper() if upper and key == "evidence_level" else (
+                value.lower() if upper else value)
+            if normalized not in allowed:
+                raise ApiError(400, "bad_poc_filter", f"{key} 不支持值：{value!r}")
+            cli_args.extend([flag, normalized])
+            applied[key] = normalized
+
+    category = (params.get("poc_category") or [""])[0].strip()
+    if category:
+        if len(category) > 80 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", category):
+            raise ApiError(400, "bad_poc_filter", f"poc_category 非法：{category!r}")
+        cli_args.extend(["--poc-category", category.lower()])
+        applied["poc_category"] = category.lower()
+    cve = (params.get("poc_cve_id") or [""])[0].strip().upper()
+    if cve:
+        if len(cve) > 32 or not re.fullmatch(r"CVE-\d{4}-\d{4,}", cve):
+            raise ApiError(400, "bad_poc_filter", f"poc_cve_id 非法：{cve!r}")
+        cli_args.extend(["--poc-cve-id", cve])
+        applied["poc_cve_id"] = cve
+
+    missing_evidence = (params.get("poc_missing_evidence") or [""])[0].strip().lower()
+    if missing_evidence:
+        if missing_evidence not in {"true", "false"}:
+            raise ApiError(400, "bad_poc_filter", "poc_missing_evidence 仅支持 true/false")
+        cli_args.extend(["--poc-missing-evidence", missing_evidence])
+        applied["poc_missing_evidence"] = missing_evidence
+
+    if not query and len(applied) == 1:
+        raise ApiError(400, "poc_search_query_required",
+                       "请提供关键词或至少一个结构化筛选条件")
+
+    _ensure_curated_search_index()
+    try:
+        proc = subprocess.run([CURATED_SEARCH_BIN, *cli_args], capture_output=True,
+                              text=True, timeout=CURATED_SEARCH_QUERY_TIMEOUT_S,
+                              cwd=REPO_ROOT)
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "poc_search_timeout", "POC 搜索超时") from exc
+    except OSError as exc:
+        raise ApiError(502, "poc_search_spawn_failed", str(exc)) from exc
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "unknown query error").strip()[-1200:]
+        raise ApiError(502, "poc_search_failed", detail)
+    try:
+        result = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "poc_search_bad_output", "rp-search-index 返回非 JSON") from exc
+    return {"available": True, "source": "rtis-curation-overlay+search-engine",
+            "query": query, "filters": applied,
+            "total": int(result.get("total_matched", 0)),
+            "returned": len(result.get("hits") or []),
+            "hits": result.get("hits") or [],
+            "search_status": result.get("search_status", "ok"),
+            "elapsed_ms": result.get("elapsed_ms")}
+
+
+def handle_curated_poc_summary(_conn: sqlite3.Connection, _params: dict) -> dict:
+    """Read-only summary of Overlay governance metadata; never opens POC bodies."""
+    try:
+        with open(CURATED_SEARCH_OVERLAY, "r", encoding="utf-8") as handle:
+            overlay = json.load(handle)
+    except FileNotFoundError as exc:
+        raise ApiError(503, "poc_curation_unavailable", "POC curation Overlay 不可用") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ApiError(503, "poc_curation_invalid", f"POC curation Overlay 无法读取：{exc}") from exc
+    entries = overlay.get("entries")
+    relations = overlay.get("relations")
+    external_entities = overlay.get("external_entities") or []
+    if not isinstance(entries, list) or not isinstance(relations, list):
+        raise ApiError(503, "poc_curation_invalid", "POC curation Overlay 缺少 entries/relations")
+    count = lambda key: {value: sum(1 for entry in entries if entry.get(key) == value)
+                         for value in sorted({entry.get(key) for entry in entries if entry.get(key)})}
+    missing_items = sum(len(entry.get("missing_evidence") or []) for entry in entries)
+    source_paths = [entry.get("source_path") for entry in entries]
+    source_urls = [entry.get("source_urls") or [] for entry in entries]
+    return {
+        "available": True,
+        "source": "rip-curation-overlay",
+        "total_curated": len(entries),
+        "by_evidence_level": count("evidence_level"),
+        "by_lifecycle": count("lifecycle"),
+        "by_source_integrity": count("source_integrity"),
+        "by_verification_result": count("verification_result"),
+        "by_dedup_status": count("dedup_status"),
+        "missing_evidence_entries": sum(1 for entry in entries if entry.get("missing_evidence")),
+        "missing_evidence_items": missing_items,
+        "entries_with_source_path": sum(1 for value in source_paths if value),
+        "entries_without_source_path": sum(1 for value in source_paths if not value),
+        "entries_with_source_commit": sum(1 for entry in entries if entry.get("source_commit")),
+        "entries_without_source_commit": sum(1 for entry in entries if not entry.get("source_commit")),
+        "entries_with_source_urls": sum(1 for urls in source_urls if urls),
+        "entries_without_source_urls": sum(1 for urls in source_urls if not urls),
+        "relation_count": len(relations),
+        "external_entity_count": len(external_entities),
+        "review_queue_count": sum(1 for entry in entries
+                                   if entry.get("verification_result") == "candidate_not_verified"
+                                   or entry.get("missing_evidence")),
+        "metadata_incomplete_entries": sum(1 for entry in entries if any(
+            key not in entry for key in ("source_integrity", "verification_result",
+                                         "dedup_status", "independent_knowledge_status"))),
+    }
 
 
 def handle_knowledge(conn: sqlite3.Connection, params: dict) -> dict:
@@ -5907,6 +6098,8 @@ API_ROUTES = {
     "/api/tasks": handle_tasks,
     "/api/overview": handle_overview,
     "/api/knowledge": handle_knowledge,
+    "/api/curated-pocs/search": handle_curated_poc_search,
+    "/api/curated-pocs/summary": handle_curated_poc_summary,
     "/api/tools": handle_tools,
     "/api/mcp-catalog": handle_mcp_catalog,
     "/api/runs": handle_runs,

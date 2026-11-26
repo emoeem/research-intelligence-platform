@@ -263,7 +263,16 @@ impl WorkflowStore {
                 })
                 .map_err(WorkflowError::from)?,
         };
-        let Some((definition_json, input_schema_json, compat, source, legacy_json, created_at, node_count, edge_count)) = row
+        let Some((
+            definition_json,
+            input_schema_json,
+            compat,
+            source,
+            legacy_json,
+            created_at,
+            node_count,
+            edge_count,
+        )) = row
         else {
             return Err(WorkflowError::NotFound {
                 workflow_id: workflow_id.to_string(),
@@ -281,8 +290,8 @@ impl WorkflowStore {
             )));
         }
         let description = definition.description().map(str::to_string);
-        let compat = WorkflowCompat::parse(&compat)
-            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        let compat =
+            WorkflowCompat::parse(&compat).map_err(|e| WorkflowError::Storage(e.to_string()))?;
         Ok(StoredDefinition {
             definition,
             definition_json,
@@ -326,7 +335,8 @@ impl WorkflowStore {
             })
             .map_err(WorkflowError::from)?;
         let mut out = Vec::with_capacity(rows.len());
-        for (workflow_id, latest_version, name, compat, node_count, edge_count, created_at) in rows {
+        for (workflow_id, latest_version, name, compat, node_count, edge_count, created_at) in rows
+        {
             let version_count: u32 = self
                 .pool
                 .with_conn(|c| {
@@ -396,9 +406,11 @@ impl WorkflowStore {
                                 "stop_conditions": r.get::<_, Option<String>>(8)?,
                                 "excluded_activities": r.get::<_, Option<String>>(9)?,
                             }))
-                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(
-                                format!("legacy snapshot serialize failed: {e}").into(),
-                            ))?,
+                            .map_err(|e| {
+                                rusqlite::Error::ToSqlConversionFailure(
+                                    format!("legacy snapshot serialize failed: {e}").into(),
+                                )
+                            })?,
                         })
                     })?
                     .collect::<Result<Vec<_>, rusqlite::Error>>()?;

@@ -106,12 +106,12 @@ mod tests {
             (RESULT_SCHEMA, "result-normalized.v1.json"),
         ] {
             let doc: Value = serde_json::from_str(text).expect("schema json");
-            assert_eq!(doc["$schema"], "https://json-schema.org/draft/2020-12/schema");
+            assert_eq!(
+                doc["$schema"],
+                "https://json-schema.org/draft/2020-12/schema"
+            );
             assert!(
-                doc["$id"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .ends_with(id),
+                doc["$id"].as_str().unwrap_or_default().ends_with(id),
                 "$id tail must match file name: {id}"
             );
         }
@@ -192,7 +192,10 @@ mod tests {
             "updated_at": "2026-11-17T01:02:03Z"
         });
         let errs = validate_item_doc(&doc).unwrap_err();
-        assert!(errs.len() >= 2, "fingerprint + poc id both reject: {errs:?}");
+        assert!(
+            errs.len() >= 2,
+            "fingerprint + poc id both reject: {errs:?}"
+        );
         doc["rtis_poc_id"] = json!(900008);
         doc["dedup_fingerprint"] = json!("a".repeat(64));
         assert!(validate_item_doc(&doc).is_ok());

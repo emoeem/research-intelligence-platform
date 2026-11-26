@@ -25,8 +25,12 @@ use serde_json::{Map, Value};
 /// Condition 节点执行（纯函数；无 IO 无线程）。
 pub fn execute(params_json: Option<&str>, state: &Value) -> Result<Value, NodeFailure> {
     let params: Map<String, Value> = match params_json {
-        Some(raw) => serde_json::from_str(raw)
-            .map_err(|e| NodeFailure::new("params_invalid", format!("condition node params parse failed: {e}")))?,
+        Some(raw) => serde_json::from_str(raw).map_err(|e| {
+            NodeFailure::new(
+                "params_invalid",
+                format!("condition node params parse failed: {e}"),
+            )
+        })?,
         None => Map::new(),
     };
     let expression = params.get("expression").ok_or_else(|| {
@@ -90,11 +94,8 @@ mod tests {
     fn state_ref_in_expression_resolves_before_compile() {
         // $/ 引用先解析再编译：const 引用 run 输入。
         let dynamic = json!({"expression": {"properties": {"kw": {"const": "$/kw"}}}});
-        let out = execute(
-            Some(&dynamic.to_string()),
-            &json!({"kw": "nmap"}),
-        )
-        .expect("resolved const matches");
+        let out = execute(Some(&dynamic.to_string()), &json!({"kw": "nmap"}))
+            .expect("resolved const matches");
         assert_eq!(out, json!({"condition_result": true}));
         // 不可解析引用 fail-closed。
         let broken = json!({"expression": {"properties": {"kw": {"const": "$/missing"}}}});

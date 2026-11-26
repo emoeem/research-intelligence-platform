@@ -65,8 +65,12 @@ print(c.execute("PRAGMA quick_check").fetchone()[0],
 EOF
 # 2. FTS 全量重建对账（恢复副本 rebuild 行数与抽样命中和基线索引一致）：
 target/debug/rp-search-index build --rebuild --platform-db migrations/platform.db \
-  --catalog-db migrations/sources-snapshot/catalog.db --index-db /tmp/idx-after.db
+  --catalog-db migrations/sources-snapshot/catalog.db \
+  --rtis-db integrations/rtis/knowledge.db \
+  --curation-overlay integrations/rtis/curation/k_meta_overlay.json \
+  --index-db /tmp/idx-after.db
 target/debug/rp-search-index query --index-db /tmp/idx-after.db --keywords <抽样词> --limit 100
+# 若该部署未安装 RTIS/Overlay，则省略上面两个 RTIS 参数。
 # 3. verify.py 对账（对账口径沿 verify.py 纪律，RP_TARGET_DB 可换目标库）：
 RP_TARGET_DB=migrations/platform.db python3 -I migrations/verify.py
 ~~~

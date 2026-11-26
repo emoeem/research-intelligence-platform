@@ -7,9 +7,7 @@
 //! Phase 8 以 evidence/artifact 表读面替换实现体，契约面不变。
 
 use crate::capabilities::CapabilityExec;
-use crate::contract::{
-    digest_hex, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor,
-};
+use crate::contract::{digest_hex, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor};
 use domain::ids::{ArtifactId, EvidenceId};
 use serde::{Deserialize, Serialize};
 
@@ -110,14 +108,14 @@ impl CapabilityExec for ExtractionCapability {
                 )
             })?;
             let artifact = match input.artifact_refs.get(index) {
-                Some(raw_artifact) => Some(ArtifactId::try_new(raw_artifact.clone()).map_err(
-                    |e| {
+                Some(raw_artifact) => {
+                    Some(ArtifactId::try_new(raw_artifact.clone()).map_err(|e| {
                         CapabilityFailure::validation(
                             "CAP-EXTRACTION-ARTIFACT-INVALID",
                             format!("artifact_ref 不符合 ArtifactId 口径: {e}"),
                         )
-                    },
-                )?),
+                    })?)
+                }
                 None => None,
             };
             anchors.push(ProvenanceAnchor::evidence(&evidence));
@@ -140,6 +138,13 @@ impl CapabilityExec for ExtractionCapability {
             "抽取 {extracted_count} 条 {} 证据（mock）",
             input.extract_as.as_str()
         );
-        Ok((ExtractionOutput { extractions, extracted_count }, summary, anchors))
+        Ok((
+            ExtractionOutput {
+                extractions,
+                extracted_count,
+            },
+            summary,
+            anchors,
+        ))
     }
 }

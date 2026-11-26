@@ -144,11 +144,11 @@ fn sk3_sync_dry_run_zero_writes_then_real_then_idempotent() {
             .unwrap()
             .counts
             .get("catalog_entry"),
-        Some(&85)
+        Some(&84)
     );
     assert_eq!(kse_count(&pool, ""), 0, "dry-run 必须零落盘");
 
-    // 实跑：85 条 catalog_entry。
+    // 实跑：84 条 catalog_entry（图片徽章链接已从目录条目中排除）。
     let report = sync_knowledge_source(&pool, &manifest, &pkg, &base_opts()).unwrap();
     assert!(report.ok);
     assert!(!report.dry_run);
@@ -157,13 +157,13 @@ fn sk3_sync_dry_run_zero_writes_then_real_then_idempotent() {
         report.pinned_commit.as_deref(),
         Some("440486fd08b0a0d9ad9a041a0bb234dcdf65dee2")
     );
-    assert_eq!(kse_count(&pool, "WHERE entry_kind='catalog_entry'"), 85);
+    assert_eq!(kse_count(&pool, "WHERE entry_kind='catalog_entry'"), 84);
 
     // 幂等二跑：skipped=全量、changed=0。
     let report2 = sync_knowledge_source(&pool, &manifest, &pkg, &base_opts()).unwrap();
     assert!(report2.ok);
     let fr = report2.final_report.as_ref().unwrap();
-    assert_eq!(fr.skipped, 85, "二跑 skipped=全量");
+    assert_eq!(fr.skipped, 84, "二跑 skipped=全量");
     assert_eq!(fr.changed, 0);
     assert!(fr.counts.values().all(|v| *v == 0));
 
@@ -313,7 +313,7 @@ fn sk3_sync_idempotency_key_skips_second_run() {
     .unwrap();
     assert!(report.ok);
     assert!(!report.idempotent_skipped);
-    assert_eq!(kse_count(&pool, ""), 85);
+    assert_eq!(kse_count(&pool, ""), 84);
 
     // 二跑同键（prior 含该键）→ 整体跳过，final_report=None，零新增。
     let report2 = sync_knowledge_source(
@@ -330,7 +330,7 @@ fn sk3_sync_idempotency_key_skips_second_run() {
     assert!(report2.ok);
     assert!(report2.idempotent_skipped);
     assert!(report2.final_report.is_none());
-    assert_eq!(kse_count(&pool, ""), 85, "幂等跳过零新增");
+    assert_eq!(kse_count(&pool, ""), 84, "幂等跳过零新增");
 
     // 键台账侧车：append/read 往返（非数据库写面）。
     let state_dir = unique("sync-keys");

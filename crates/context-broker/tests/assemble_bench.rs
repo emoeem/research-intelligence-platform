@@ -10,11 +10,11 @@
 //! 内存库 + 内存迁移，无外部依赖。
 
 use context_broker::{
-    AssembleRequest, Broker, BudgetPolicy, Candidate, Content, ContentRef, ContextBrokerError,
-    ContextItemKind, ContextLayer, ContextSource, IntentConfig, ManifestStore, RulepackSource,
-    est_tokens,
+    est_tokens, AssembleRequest, Broker, BudgetPolicy, Candidate, Content, ContentRef,
+    ContextBrokerError, ContextItemKind, ContextLayer, ContextSource, IntentConfig, ManifestStore,
+    RulepackSource,
 };
-use database::{DbPath, Pool, PoolConfig, migrate};
+use database::{migrate, DbPath, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 

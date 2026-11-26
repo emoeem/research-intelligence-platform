@@ -120,9 +120,12 @@ fn make_run_db(path: &Path) {
     })
     .expect("run db pool");
     database::migrate(&pool, &repo_root().join("migrations")).expect("run db migrate");
-    let manifest_text =
-        std::fs::read_to_string(repo_root().join("manifests/tools").join(format!("{TOOL_ID}.json")))
-            .expect("read manifest");
+    let manifest_text = std::fs::read_to_string(
+        repo_root()
+            .join("manifests/tools")
+            .join(format!("{TOOL_ID}.json")),
+    )
+    .expect("read manifest");
     let manifest: Value = serde_json::from_str(&manifest_text).expect("parse manifest");
     tool_registry::Registry::open(pool)
         .register(&manifest)
@@ -140,7 +143,10 @@ fn free_port() -> u16 {
 
 fn fixture() -> &'static Fixture {
     FIXTURE.get_or_init(|| {
-        assert!(python3_available(), "python3 在位是载具前置（rp_server 与 worker 都依赖）");
+        assert!(
+            python3_available(),
+            "python3 在位是载具前置（rp_server 与 worker 都依赖）"
+        );
         let dir = tmp_dir();
         let main_db = dir.join("main.db");
         let run_db = dir.join("run.db");
@@ -152,7 +158,12 @@ fn fixture() -> &'static Fixture {
         let rp_workflow = ensure_bin("rp-workflow", "workflow-engine");
         let sample = repo_root().join("docs/phase8/samples/p8-tool-node.json");
         let out = Command::new(&rp_workflow)
-            .args(["put", sample.to_string_lossy().as_ref(), "--db", run_db.to_string_lossy().as_ref()])
+            .args([
+                "put",
+                sample.to_string_lossy().as_ref(),
+                "--db",
+                run_db.to_string_lossy().as_ref(),
+            ])
             .current_dir(repo_root().as_os_str())
             .output()
             .expect("rp-workflow put spawn");
@@ -187,15 +198,15 @@ fn fixture() -> &'static Fixture {
         // rmcp 迁移批次 2026-11-14 起 spawn 而非进程内直调），同一主库 + 同一
         // aux + 同一运行库（run_tool 自锚定 trace_id 载具断言前提）。
         let rp_mcp = ensure_bin("rp-mcp", "mcp-server");
-        let mcp = McpClient::spawn(
-            &rp_mcp,
-            &main_db,
-            &run_db,
-            &run_db,
-            &dir.join("artifacts"),
-        );
+        let mcp = McpClient::spawn(&rp_mcp, &main_db, &run_db, &run_db, &dir.join("artifacts"));
 
-        let fix = Fixture { run_db, port, mcp: Mutex::new(mcp), _server: server, server_stdout };
+        let fix = Fixture {
+            run_db,
+            port,
+            mcp: Mutex::new(mcp),
+            _server: server,
+            server_stdout,
+        };
         wait_rest_ready(&fix);
         fix
     })
@@ -228,9 +239,15 @@ struct HttpResp {
     body: String,
 }
 
-fn http(port: u16, method: &str, target: &str, token: Option<&str>, body: Option<&str>) -> Result<HttpResp, String> {
-    let mut stream = TcpStream::connect(("127.0.0.1", port))
-        .map_err(|e| format!("tcp connect: {e}"))?;
+fn http(
+    port: u16,
+    method: &str,
+    target: &str,
+    token: Option<&str>,
+    body: Option<&str>,
+) -> Result<HttpResp, String> {
+    let mut stream =
+        TcpStream::connect(("127.0.0.1", port)).map_err(|e| format!("tcp connect: {e}"))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(30)))
         .expect("read timeout");
@@ -246,10 +263,16 @@ fn http(port: u16, method: &str, target: &str, token: Option<&str>, body: Option
         request.push_str("Content-Type: application/json\r\n");
     }
     request.push_str("\r\n");
-    stream.write_all(request.as_bytes()).map_err(|e| format!("write request: {e}"))?;
-    stream.write_all(body_bytes).map_err(|e| format!("write body: {e}"))?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("write request: {e}"))?;
+    stream
+        .write_all(body_bytes)
+        .map_err(|e| format!("write body: {e}"))?;
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).map_err(|e| format!("read response: {e}"))?;
+    stream
+        .read_to_end(&mut raw)
+        .map_err(|e| format!("read response: {e}"))?;
     let text = String::from_utf8_lossy(&raw).to_string();
     let (head, payload) = text
         .split_once("\r\n\r\n")
@@ -261,7 +284,11 @@ fn http(port: u16, method: &str, target: &str, token: Option<&str>, body: Option
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    Ok(HttpResp { status, headers: head.to_string(), body: payload.to_string() })
+    Ok(HttpResp {
+        status,
+        headers: head.to_string(),
+        body: payload.to_string(),
+    })
 }
 
 fn rest_get(port: u16, target: &str) -> (u16, Value, String) {
@@ -271,8 +298,14 @@ fn rest_get(port: u16, target: &str) -> (u16, Value, String) {
 }
 
 fn rest_post(port: u16, target: &str, payload: &Value) -> (u16, Value) {
-    let resp = http(port, "POST", target, Some(TOKEN), Some(&payload.to_string()))
-        .expect("rest POST");
+    let resp = http(
+        port,
+        "POST",
+        target,
+        Some(TOKEN),
+        Some(&payload.to_string()),
+    )
+    .expect("rest POST");
     let body = serde_json::from_str(&resp.body).unwrap_or(Value::Null);
     (resp.status, body)
 }
@@ -280,8 +313,17 @@ fn rest_post(port: u16, target: &str, payload: &Value) -> (u16, Value) {
 fn header(headers: &str, name: &str) -> Option<String> {
     headers
         .lines()
-        .find(|l| l.to_ascii_lowercase().starts_with(&format!("{}:", name.to_ascii_lowercase())))
-        .map(|l| l.split_once(':').expect("header colon").1.trim().to_string())
+        .find(|l| {
+            l.to_ascii_lowercase()
+                .starts_with(&format!("{}:", name.to_ascii_lowercase()))
+        })
+        .map(|l| {
+            l.split_once(':')
+                .expect("header colon")
+                .1
+                .trim()
+                .to_string()
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -379,19 +421,26 @@ fn mcp_roundtrip(server: &Fixture, request: Value) -> Value {
 
 fn mcp_call(server: &Fixture, name: &str, args: Value, _id: i64) -> Value {
     let mut client = server.mcp.lock().expect("mcp mutex");
-    let reply = client.request(
-        "tools/call",
-        json!({"name": name, "arguments": args}),
+    let reply = client.request("tools/call", json!({"name": name, "arguments": args}));
+    assert_eq!(
+        reply["result"]["isError"], false,
+        "mcp tools/call {name} 必须 isError=false: {reply}"
     );
-    assert_eq!(reply["result"]["isError"], false, "mcp tools/call {name} 必须 isError=false: {reply}");
-    serde_json::from_str(reply["result"]["content"][0]["text"].as_str().expect("text"))
-        .expect("payload json")
+    serde_json::from_str(
+        reply["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text"),
+    )
+    .expect("payload json")
 }
 
 fn mcp_read_resource(server: &Fixture, uri: &str, _id: i64) -> Value {
     let mut client = server.mcp.lock().expect("mcp mutex");
     let reply = client.request("resources/read", json!({"uri": uri}));
-    assert!(reply.get("error").is_none(), "resources/read {uri} 被拒: {reply}");
+    assert!(
+        reply.get("error").is_none(),
+        "resources/read {uri} 被拒: {reply}"
+    );
     let contents = reply["result"]["contents"].as_array().expect("contents");
     assert_eq!(contents.len(), 1, "单 contents 条目");
     assert_eq!(contents[0]["uri"], uri, "回填 uri");
@@ -404,12 +453,18 @@ fn rest_wait_workflow(port: u16, run_id: &str) -> Value {
     loop {
         let (status, body, _h) = rest_get(port, &format!("/api/workflow-runs?id={run_id}"));
         assert_eq!(status, 200, "workflow run 详情 200: {body}");
-        let state = body["run"]["state"].as_str().unwrap_or_default().to_string();
+        let state = body["run"]["state"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         if matches!(state.as_str(), "succeeded" | "failed" | "cancelled") {
             assert_eq!(state, "succeeded", "REST 通道 workflow run 终态: {body}");
             return body;
         }
-        assert!(Instant::now() < deadline, "workflow run 轮询超时（run {run_id}）");
+        assert!(
+            Instant::now() < deadline,
+            "workflow run 轮询超时（run {run_id}）"
+        );
         std::thread::sleep(Duration::from_millis(400));
     }
 }
@@ -464,15 +519,38 @@ fn op1_list_tools_same_read_face_both_channels() {
     // 同一输出形状：total / returned / 工具 id 序列（同排序）/ 逐条核心字段。
     assert_eq!(rest["total"], mcp["total"], "目录 total 双通道一致");
     assert_eq!(rest["returned"], mcp["returned"], "returned 双通道一致");
-    let rest_ids: Vec<&str> =
-        rest["items"].as_array().unwrap().iter().map(|r| r["tool_id"].as_str().unwrap()).collect();
-    let mcp_ids: Vec<&str> =
-        mcp["items"].as_array().unwrap().iter().map(|r| r["tool_id"].as_str().unwrap()).collect();
+    let rest_ids: Vec<&str> = rest["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["tool_id"].as_str().unwrap())
+        .collect();
+    let mcp_ids: Vec<&str> = mcp["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["tool_id"].as_str().unwrap())
+        .collect();
     assert_eq!(rest_ids, mcp_ids, "工具 id 序列（排序同源）双通道一致");
-    for field in ["kind", "lifecycle", "governance", "permission_level", "source_system", "updated_at"] {
-        for (rest_row, mcp_row) in rest["items"].as_array().unwrap().iter().zip(mcp["items"].as_array().unwrap()) {
-            assert_eq!(rest_row[field], mcp_row[field],
-                "列工具字段 {field} 漂移（tool_id={}）", rest_row["tool_id"]);
+    for field in [
+        "kind",
+        "lifecycle",
+        "governance",
+        "permission_level",
+        "source_system",
+        "updated_at",
+    ] {
+        for (rest_row, mcp_row) in rest["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(mcp["items"].as_array().unwrap())
+        {
+            assert_eq!(
+                rest_row[field], mcp_row[field],
+                "列工具字段 {field} 漂移（tool_id={}）",
+                rest_row["tool_id"]
+            );
         }
     }
 
@@ -480,8 +558,14 @@ fn op1_list_tools_same_read_face_both_channels() {
     // MCP tools/list 能力面（wire 级断言在这里闭合）。
     let (status, mcp_cat, _h) = rest_get(port, "/api/mcp-catalog");
     assert_eq!(status, 200);
-    assert_eq!(mcp_cat["catalog_count"], mcp["total"], "mcp-catalog 计数 == MCP 注册面 total");
-    assert_eq!(mcp_cat["reconciliation"]["ok"], true, "读时对账 ok: {mcp_cat}");
+    assert_eq!(
+        mcp_cat["catalog_count"], mcp["total"],
+        "mcp-catalog 计数 == MCP 注册面 total"
+    );
+    assert_eq!(
+        mcp_cat["reconciliation"]["ok"], true,
+        "读时对账 ok: {mcp_cat}"
+    );
     let capability_names: Vec<String> = mcp_cat["capability_tools"]
         .as_array()
         .unwrap()
@@ -502,7 +586,10 @@ fn op1_list_tools_same_read_face_both_channels() {
         .take(capability_names.len())
         .map(|t| t["name"].as_str().expect("tool name").to_string())
         .collect();
-    assert_eq!(capability_names, wire_capability, "能力面词表双通道一致（目录前段固定次序）");
+    assert_eq!(
+        capability_names, wire_capability,
+        "能力面词表双通道一致（目录前段固定次序）"
+    );
     for tool in wire_tools {
         assert!(
             tool["name"].is_string()
@@ -526,11 +613,20 @@ fn op2_get_tool_schema_identical_both_channels() {
     let mcp = mcp_call(fix, "rip.get_tool_schema", json!({"tool_id": TOOL_ID}), 201);
 
     // 同一输出形状：input/output Schema 逐字节一致（同一 tool 表列直读）。
-    assert_eq!(rest["input_schema"], mcp["input_schema"], "input Schema 双通道一致");
-    assert_eq!(rest["output_schema"], mcp["output_schema"], "output Schema 双通道一致");
+    assert_eq!(
+        rest["input_schema"], mcp["input_schema"],
+        "input Schema 双通道一致"
+    );
+    assert_eq!(
+        rest["output_schema"], mcp["output_schema"],
+        "output Schema 双通道一致"
+    );
     assert_eq!(mcp["tool_id"], TOOL_ID);
     assert_eq!(rest["source"], mcp["source"], "Schema 读面（aux 回退）一致");
-    assert!(rest["input_schema"].is_object(), "fixture 工具带真实 input Schema");
+    assert!(
+        rest["input_schema"].is_object(),
+        "fixture 工具带真实 input Schema"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -565,9 +661,16 @@ fn op3_run_tool_same_engine_both_channels() {
     assert_eq!(status, 200, "REST 受理 200: {accepted}");
     assert_eq!(accepted["result"], "accepted");
     let wfr_id = accepted["run_id"].as_str().expect("run_id").to_string();
-    assert_eq!(accepted["correlation_id"], json!(wfr_id), "受理响应 correlation_id = run_id");
+    assert_eq!(
+        accepted["correlation_id"],
+        json!(wfr_id),
+        "受理响应 correlation_id = run_id"
+    );
     let detail = rest_wait_workflow(port, &wfr_id);
-    let rest_run_id = detail["correlation"]["tool_run_id"].as_str().expect("tool_run_id").to_string();
+    let rest_run_id = detail["correlation"]["tool_run_id"]
+        .as_str()
+        .expect("tool_run_id")
+        .to_string();
 
     // MCP 通道：rip.run_tool 同一引擎受理链（submit_correlated 自锚定）。
     let payload = mcp_call(
@@ -586,7 +689,11 @@ fn op3_run_tool_same_engine_both_channels() {
     assert_eq!(result["keyword"], json!(KEYWORD));
     assert_eq!(result["per_group_limit"], json!(2));
     assert!(result["total_hits"].is_i64(), "total_hits 数值");
-    assert_eq!(result["groups"].as_array().map(Vec::len), Some(5), "五组检索面");
+    assert_eq!(
+        result["groups"].as_array().map(Vec::len),
+        Some(5),
+        "五组检索面"
+    );
     // REST 侧：workflow tool 节点输出 = 同一引擎信封 result（node_tool 返回
     // 结构化 result 合入 run state），与 MCP result 逐字段全等对照。
     let tool_node = detail["nodes"]
@@ -596,8 +703,7 @@ fn op3_run_tool_same_engine_both_channels() {
         .find(|n| n["node_kind"] == "tool")
         .expect("tool 节点在 run 详情 nodes 中");
     assert_eq!(
-        tool_node["output"],
-        payload["result"],
+        tool_node["output"], payload["result"],
         "REST tool 节点输出 == MCP result（同一引擎同一输入确定性输出）"
     );
 
@@ -608,11 +714,22 @@ fn op3_run_tool_same_engine_both_channels() {
     let mcp_row = run_db_row(&fix.run_db, "SELECT run_id, tool_id, tool_version, status, trace_id, workspace_id FROM tool_run WHERE run_id = ?1", &mcp_run_id);
     assert_eq!(rest_row["tool_id"], json!(TOOL_ID));
     assert_eq!(mcp_row["tool_id"], json!(TOOL_ID));
-    assert_eq!(rest_row["tool_version"], mcp_row["tool_version"], "版本解析同源");
+    assert_eq!(
+        rest_row["tool_version"], mcp_row["tool_version"],
+        "版本解析同源"
+    );
     assert_eq!(rest_row["status"], json!("SUCCEEDED"));
     assert_eq!(mcp_row["status"], json!("SUCCEEDED"));
-    assert_eq!(rest_row["trace_id"], json!(wfr_id), "workflow 通道链锚 = wfr run_id（018）");
-    assert_eq!(mcp_row["trace_id"], json!(mcp_run_id), "MCP 通道自锚定 trace_id = run_id（015 同惯例）");
+    assert_eq!(
+        rest_row["trace_id"],
+        json!(wfr_id),
+        "workflow 通道链锚 = wfr run_id（018）"
+    );
+    assert_eq!(
+        mcp_row["trace_id"],
+        json!(mcp_run_id),
+        "MCP 通道自锚定 trace_id = run_id（015 同惯例）"
+    );
     assert_eq!(rest_row["workspace_id"], json!("ws-workflow"));
     assert_eq!(mcp_row["workspace_id"], json!("ws-mcp"));
 }
@@ -632,16 +749,29 @@ fn op4_get_run_cross_channel_same_correlation() {
     let (wfr_id, rest_run_id, mcp_run_id, mcp_payload) = run_both_channels(401);
 
     // MCP 通道读 REST 通道 run（同一运行库只读投影）。
-    let mcp_read_rest = mcp_call(fix, "rip.get_run_status", json!({"run_id": rest_run_id}), 402);
+    let mcp_read_rest = mcp_call(
+        fix,
+        "rip.get_run_status",
+        json!({"run_id": rest_run_id}),
+        402,
+    );
     assert_eq!(mcp_read_rest["status"], "SUCCEEDED");
-    assert_eq!(mcp_read_rest["trace_id"], json!(wfr_id), "MCP 读 REST run 得同一链锚");
+    assert_eq!(
+        mcp_read_rest["trace_id"],
+        json!(wfr_id),
+        "MCP 读 REST run 得同一链锚"
+    );
 
     // REST 通道读 MCP 通道 run：correlation_id + evidence/artifact 关联与
     // MCP 信封引用集一致。
     let target = format!("/api/runs?run_id={mcp_run_id}");
     let (status, rest, headers) = rest_get(port, &target);
     assert_eq!(status, 200);
-    assert_eq!(rest["correlation_id"], json!(mcp_run_id), "P9-3 correlation_id = run_id");
+    assert_eq!(
+        rest["correlation_id"],
+        json!(mcp_run_id),
+        "P9-3 correlation_id = run_id"
+    );
     let evidence_ids: Vec<&str> = rest["correlation"]["evidence_ids"]
         .as_array()
         .unwrap()
@@ -662,12 +792,20 @@ fn op4_get_run_cross_channel_same_correlation() {
         .map(|v| v.as_str().unwrap())
         .collect();
     assert!(
-        artifact_ids.iter().any(|a| *a == mcp_payload["artifact_id"].as_str().unwrap()),
+        artifact_ids
+            .iter()
+            .any(|a| *a == mcp_payload["artifact_id"].as_str().unwrap()),
         "REST artifact 关联含 MCP 信封 artifact_id"
     );
     // P9-3 关联头：REST run 详情对 MCP run 一样发 X-Trace-Id/X-Correlation-Id。
-    assert_eq!(header(&headers, "X-Correlation-Id").as_deref(), Some(mcp_run_id.as_str()));
-    assert_eq!(header(&headers, "X-Trace-Id").as_deref(), mcp_payload["run_id"].as_str());
+    assert_eq!(
+        header(&headers, "X-Correlation-Id").as_deref(),
+        Some(mcp_run_id.as_str())
+    );
+    assert_eq!(
+        header(&headers, "X-Trace-Id").as_deref(),
+        mcp_payload["run_id"].as_str()
+    );
 
     // 未知 run：两通道同一「不存在」语义（REST 404 no_run / MCP VALIDATION）。
     let (status, rest_err, _h) = rest_get(port, "/api/runs?run_id=rn-parity-unknown");
@@ -681,7 +819,10 @@ fn op4_get_run_cross_channel_same_correlation() {
     assert_eq!(reply["result"]["isError"], true);
     let unknown_payload: Value =
         serde_json::from_str(reply["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
-    assert_eq!(unknown_payload["error"]["category"], "VALIDATION", "未知 run VALIDATION 语义一致");
+    assert_eq!(
+        unknown_payload["error"]["category"], "VALIDATION",
+        "未知 run VALIDATION 语义一致"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -702,18 +843,34 @@ fn op5_trace_same_audit_chain_both_channels() {
     // tool_run 探针；MCP = 自锚定 run_id）。
     let (status, rest_trace_rest, _h) = rest_get(port, &format!("/api/traces?id={rest_run_id}"));
     assert_eq!(status, 200);
-    assert_eq!(rest_trace_rest["trace_id"], json!(wfr_id), "REST run 链锚 = wfr-id");
+    assert_eq!(
+        rest_trace_rest["trace_id"],
+        json!(wfr_id),
+        "REST run 链锚 = wfr-id"
+    );
     let (status, rest_trace_mcp, _h) = rest_get(port, &format!("/api/traces?id={mcp_run_id}"));
     assert_eq!(status, 200);
-    assert_eq!(rest_trace_mcp["trace_id"], json!(mcp_run_id), "MCP run 经 REST trace 面反查 = 自锚定 id");
+    assert_eq!(
+        rest_trace_mcp["trace_id"],
+        json!(mcp_run_id),
+        "MCP run 经 REST trace 面反查 = 自锚定 id"
+    );
 
     // MCP rip://runs/<run_id>：与 rip.get_run_status 同一投影（run 行 +
     // evidence + artifact + trace 锚），两 run 的链锚与 REST /api/traces
     // 解析一致（同一审计链语义，不因通道而异）。
     let mcp_resource_rest = mcp_read_resource(fix, &format!("rip://runs/{rest_run_id}"), 502);
-    assert_eq!(mcp_resource_rest["trace_id"], json!(wfr_id), "资源面 REST run 链锚一致");
+    assert_eq!(
+        mcp_resource_rest["trace_id"],
+        json!(wfr_id),
+        "资源面 REST run 链锚一致"
+    );
     let mcp_resource_mcp = mcp_read_resource(fix, &format!("rip://runs/{mcp_run_id}"), 503);
-    assert_eq!(mcp_resource_mcp["trace_id"], json!(mcp_run_id), "资源面 MCP run 链锚一致");
+    assert_eq!(
+        mcp_resource_mcp["trace_id"],
+        json!(mcp_run_id),
+        "资源面 MCP run 链锚一致"
+    );
 
     // evidence 集一致（资源面 evidence 列表 == REST correlation.evidence_ids）。
     let mcp_resource_evidence: Vec<&str> = mcp_resource_mcp["evidence"]
@@ -729,16 +886,30 @@ fn op5_trace_same_audit_chain_both_channels() {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    assert_eq!(mcp_resource_evidence, rest_evidence, "evidence 集双通道一致");
+    assert_eq!(
+        mcp_resource_evidence, rest_evidence,
+        "evidence 集双通道一致"
+    );
 
     // rip://evidence/<id> 实读：evidence 行 + Artifact 快照文本在位
     // （captured_by=rp-mcp:run_tool，storage_ref 指向 artifact 文件）。
     let evidence_id = mcp_resource_evidence[0].to_string();
     let evidence = mcp_read_resource(fix, &format!("rip://evidence/{evidence_id}"), 504);
     assert_eq!(evidence["evidence_id"], json!(evidence_id));
-    assert_eq!(evidence["source_pk"], json!(mcp_run_id), "evidence 回链 run_id");
-    assert_eq!(evidence["trace_id"], json!(mcp_run_id), "evidence 同链 trace_id");
-    assert!(evidence["artifact_text"].is_string(), "storage_ref 快照文本内联在位");
+    assert_eq!(
+        evidence["source_pk"],
+        json!(mcp_run_id),
+        "evidence 回链 run_id"
+    );
+    assert_eq!(
+        evidence["trace_id"],
+        json!(mcp_run_id),
+        "evidence 同链 trace_id"
+    );
+    assert!(
+        evidence["artifact_text"].is_string(),
+        "storage_ref 快照文本内联在位"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -757,8 +928,10 @@ fn run_both_channels(id_base: i64) -> (String, String, String, Value) {
     assert_eq!(status, 200, "REST 受理: {accepted}");
     let wfr_id = accepted["run_id"].as_str().expect("wfr id").to_string();
     let detail = rest_wait_workflow(port, &wfr_id);
-    let rest_run_id =
-        detail["correlation"]["tool_run_id"].as_str().expect("tool_run_id").to_string();
+    let rest_run_id = detail["correlation"]["tool_run_id"]
+        .as_str()
+        .expect("tool_run_id")
+        .to_string();
     let payload = mcp_call(
         fix,
         "rip.run_tool",

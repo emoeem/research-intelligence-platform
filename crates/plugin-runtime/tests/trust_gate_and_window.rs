@@ -111,10 +111,10 @@ fn d10_auto_update_prompt_gate() {
 
     // local：auto 被拒（机器可读错误码），manual 不受影响。
     let err = rt
-        .update_check_auto("user:test", "knowledge.rtis-redteam", "0.2.0")
+        .update_check_auto("user:test", "knowledge.rtis-redteam", "0.3.0")
         .unwrap_err();
     assert_eq!(err.code, "update_check_auto_not_allowed");
-    assert!(rt.update_check("knowledge.rtis-redteam", "0.2.0").unwrap());
+    assert!(rt.update_check("knowledge.rtis-redteam", "0.3.0").unwrap());
     // blocked 留痕（audit-engine Emit，D10 门控审计面）。
     let events = audit_events(&pool, plugin_actions::UPDATE_CHECK);
     assert_eq!(events.len(), 1);
@@ -129,12 +129,12 @@ fn d10_auto_update_prompt_gate() {
         rt_t.install("user:test", &manifest_v1, &pkg, trust)
             .unwrap();
         let err = rt_t
-            .update_check_auto("user:test", "knowledge.rtis-redteam", "0.2.0")
+            .update_check_auto("user:test", "knowledge.rtis-redteam", "0.3.0")
             .unwrap_err();
         assert_eq!(err.code, "update_check_auto_not_allowed");
         // manual 仍可用（§6：其余须手动检查，检查本身不被禁）。
         assert!(rt_t
-            .update_check("knowledge.rtis-redteam", "0.2.0")
+            .update_check("knowledge.rtis-redteam", "0.3.0")
             .unwrap());
         let events = audit_events(&pool_t, plugin_actions::UPDATE_CHECK);
         assert_eq!(events[0]["trust_level"], trust.as_str());
@@ -147,14 +147,14 @@ fn d10_auto_update_prompt_gate() {
     rt_o.install("user:test", &manifest_v1, &pkg_o, PluginTrust::Official)
         .unwrap();
     assert!(rt_o
-        .update_check_auto("user:test", "knowledge.rtis-redteam", "0.2.0")
+        .update_check_auto("user:test", "knowledge.rtis-redteam", "0.3.0")
         .unwrap());
     let events = audit_events(&pool_o, plugin_actions::UPDATE_CHECK);
     assert_eq!(events[0]["result"], "prompted");
     assert_eq!(events[0]["trust_level"], "official");
     // official 无新版：result=no_new_version。
     assert!(!rt_o
-        .update_check_auto("user:test", "knowledge.rtis-redteam", "0.1.0")
+        .update_check_auto("user:test", "knowledge.rtis-redteam", "0.2.0")
         .unwrap());
     let events = audit_events(&pool_o, plugin_actions::UPDATE_CHECK);
     assert_eq!(events[1]["result"], "no_new_version");
@@ -215,7 +215,7 @@ fn rollback_window_cleanup_requires_confirmation_and_respects_red_lines() {
     let pkg_v1 = build_package(&data_root, "v1");
     rt.install("user:test", &manifest_v1, &pkg_v1, PluginTrust::Local)
         .unwrap();
-    let manifest_v2 = upgraded_manifest(&manifest_v1, "0.2.0");
+    let manifest_v2 = upgraded_manifest(&manifest_v1, "0.3.0");
     let pkg_v2 = build_package(&data_root, "v2");
     let outcome: UpgradeOutcome = rt
         .upgrade(
@@ -226,7 +226,7 @@ fn rollback_window_cleanup_requires_confirmation_and_respects_red_lines() {
             PluginTrust::Local,
         )
         .unwrap();
-    assert_eq!(outcome.to_version, "0.2.0");
+    assert_eq!(outcome.to_version, "0.3.0");
 
     // 未确认直接拒绝（合同：用户确认后清理）。
     let err = rt
@@ -234,14 +234,14 @@ fn rollback_window_cleanup_requires_confirmation_and_respects_red_lines() {
         .unwrap_err();
     assert_eq!(err.code, "cleanup_requires_confirmation");
 
-    // 确认后：0.1.0 跃迁 UNINSTALLED，data_root 之下目录物理删除，
-    // active 0.2.0 与其目录不动。
+    // 确认后：0.2.0 跃迁 UNINSTALLED，data_root 之下目录物理删除，
+    // active 0.3.0 与其目录不动。
     let report = rt
         .cleanup_rollback_window("user:test", "knowledge.rtis-redteam", true)
         .unwrap();
     assert_eq!(report.plugin_id, "knowledge.rtis-redteam");
-    assert_eq!(report.active_version, "0.2.0");
-    assert_eq!(report.cleaned, vec!["0.1.0"]);
+    assert_eq!(report.active_version, "0.3.0");
+    assert_eq!(report.cleaned, vec!["0.2.0"]);
     assert_eq!(report.dirs_removed.len(), 1);
     assert!(report.dirs_removed[0].starts_with(data_root.to_string_lossy().as_ref()));
     assert!(
@@ -251,7 +251,7 @@ fn rollback_window_cleanup_requires_confirmation_and_respects_red_lines() {
     assert!(pkg_v2.is_dir(), "active dir untouched");
     let old = rt
         .store()
-        .get("knowledge.rtis-redteam", "0.1.0")
+        .get("knowledge.rtis-redteam", "0.2.0")
         .unwrap()
         .unwrap();
     assert_eq!(old.state, domain::plugin::PluginState::Uninstalled);
@@ -260,7 +260,7 @@ fn rollback_window_cleanup_requires_confirmation_and_respects_red_lines() {
         .get_active("knowledge.rtis-redteam")
         .unwrap()
         .unwrap();
-    assert_eq!(active.version, "0.2.0");
+    assert_eq!(active.version, "0.3.0");
     // 审计：清理 Emit plugin.uninstall（result=rollback_window_cleanup）。
     let events = audit_events(&pool, plugin_actions::UNINSTALL);
     let cleanup_events: Vec<&Value> = events
@@ -268,14 +268,14 @@ fn rollback_window_cleanup_requires_confirmation_and_respects_red_lines() {
         .filter(|e| e["result"] == "rollback_window_cleanup")
         .collect();
     assert_eq!(cleanup_events.len(), 1);
-    assert_eq!(cleanup_events[0]["active_version"], "0.2.0");
+    assert_eq!(cleanup_events[0]["active_version"], "0.3.0");
 
     // 幂等：第二次清理 cleaned 空（历史 UNINSTALLED 行保留不重复处理）。
     let report2 = rt
         .cleanup_rollback_window("user:test", "knowledge.rtis-redteam", true)
         .unwrap();
     assert!(report2.cleaned.is_empty());
-    assert_eq!(report2.retained, vec!["0.1.0"]);
+    assert_eq!(report2.retained, vec!["0.2.0"]);
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn rollback_window_cleanup_never_deletes_outside_data_root() {
     let pkg_v1 = build_package(&outside_root, "v1");
     rt.install("user:test", &manifest_v1, &pkg_v1, PluginTrust::Local)
         .unwrap();
-    let manifest_v2 = upgraded_manifest(&manifest_v1, "0.2.0");
+    let manifest_v2 = upgraded_manifest(&manifest_v1, "0.3.0");
     let pkg_v2 = build_package(&data_root, "v2");
     rt.upgrade(
         "user:test",
@@ -304,7 +304,7 @@ fn rollback_window_cleanup_never_deletes_outside_data_root() {
     let report = rt
         .cleanup_rollback_window("user:test", "knowledge.rtis-redteam", true)
         .unwrap();
-    assert_eq!(report.cleaned, vec!["0.1.0"]);
+    assert_eq!(report.cleaned, vec!["0.2.0"]);
     assert!(report.dirs_removed.is_empty());
     assert_eq!(report.dirs_skipped.len(), 1);
     assert_eq!(report.dirs_skipped[0].reason, "outside_data_root");
@@ -312,7 +312,7 @@ fn rollback_window_cleanup_never_deletes_outside_data_root() {
     // 行仍跃迁 UNINSTALLED（目录守卫不影响状态清理）。
     let old = rt
         .store()
-        .get("knowledge.rtis-redteam", "0.1.0")
+        .get("knowledge.rtis-redteam", "0.2.0")
         .unwrap()
         .unwrap();
     assert_eq!(old.state, domain::plugin::PluginState::Uninstalled);

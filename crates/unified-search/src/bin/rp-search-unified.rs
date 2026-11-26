@@ -3,12 +3,12 @@
 //!
 //! exit: ok=0，运行失败=1，用法错误=2（rp-* 家族惯例）。
 
-use unified_search::{UnifiedSearch, UnifiedOutcome};
+use unified_search::{UnifiedOutcome, UnifiedSearch};
 
 fn usage() -> ! {
     eprintln!(
         "usage: rp-search-unified --query Q [--workspace W] [--limit N] [--type T]\n\
-         [--index-db PATH] [--sqlite-filters grade=A,license=…]\n\
+         [--index-db PATH] [--sqlite-filters grade=A,license=…,evidence-level=K2,poc-severity=high,poc-missing-evidence=true]\n\
          [--pg-dsn DSN] [--run-db P] [--manifest-dir D] [--include-unapproved]\n\
 \n\
 env: RP_PG_DSN（PG 情报核，intel-db 缺省口径）\n\
@@ -19,14 +19,20 @@ help: rp-search-unified --help（stdout, exit 0）"
 }
 
 fn help_only() -> ! {
-    println!("rp-search-unified：RIP3 跨库统一检索 CLI（子命令清单见 stderr usage；此行输出后 exit 0）");
+    println!(
+        "rp-search-unified：RIP3 跨库统一检索 CLI（子命令清单见 stderr usage；此行输出后 exit 0）"
+    );
     std::process::exit(0);
 }
 
 fn main() {
     let mut argv = std::env::args().peekable();
     let _bin = argv.next();
-    if argv.peek().map(|s| s == "--help" || s == "-h").unwrap_or(false) {
+    if argv
+        .peek()
+        .map(|s| s == "--help" || s == "-h")
+        .unwrap_or(false)
+    {
         help_only();
     }
     let mut flags = std::collections::HashMap::new();
@@ -56,7 +62,9 @@ fn main() {
     // PG 情报核面。
     let pg_cfg = intel_db::PgConfig {
         dsn: opt("pg-dsn").unwrap_or_else(|| {
-            std::env::var("RP_PG_DSN").unwrap_or_else(|_| "postgres://postgres:postgres@127.0.0.1:5432/postgres".to_string())
+            std::env::var("RP_PG_DSN").unwrap_or_else(|_| {
+                "postgres://postgres:postgres@127.0.0.1:5432/postgres".to_string()
+            })
         }),
         max_connections: 4,
     };
@@ -97,7 +105,7 @@ fn main() {
         .transpose()
         .expect("type parse");
     // sqlite-filters 解析（P4-2 结构体已备，P4-4 CLI 面展开）：
-    // "grade=A,license=UNKNOWN" k=v 等值对 → SearchFilters 四维。
+    // k=v 等值对 → SearchFilters；支持基础资源、Nuclei 和 RTIS POC facets。
     let sqlite_filters = parse_sqlite_filters(opt("sqlite-filters").as_deref());
 
     let input = UnifiedSearch {
@@ -120,8 +128,10 @@ fn main() {
         Ok(UnifiedOutcome { hits, channels }) => {
             println!(
                 "{}",
-                serde_json::to_string(&serde_json::json!({ "query": query, "channels": channels, "hits": hits }))
-                    .unwrap_or_default()
+                serde_json::to_string(
+                    &serde_json::json!({ "query": query, "channels": channels, "hits": hits })
+                )
+                .unwrap_or_default()
             );
         }
         Err(e) => {
@@ -131,9 +141,8 @@ fn main() {
     }
 }
 
-/// "k=v[,k=v]" 等值对解析（P4-4 CLI 面）：k ∈ {grade, license,
-/// maintenance, resource-type}；未知键与空值显式报错退出（fail-closed，
-/// 防静默吞过滤条件）。
+/// "k=v[,k=v]" 等值对解析（P4-4 CLI 面）：支持基础资源、Nuclei 与 RTIS POC
+/// facets；未知键与空值显式报错退出（fail-closed，防静默吞过滤条件）。
 fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilters {
     let mut f = search_engine::model::SearchFilters::default();
     let Some(raw) = raw else { return f };
@@ -151,11 +160,62 @@ fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilter
             "license" => f.license_status = Some(v.trim().to_string()),
             "maintenance" => f.maintenance_status = Some(v.trim().to_string()),
             "resource-type" => f.resource_type = Some(v.trim().to_string()),
+            "nuclei-severity" => f.nuclei_severity = Some(v.trim().to_ascii_lowercase()),
+            "nuclei-protocol" => f.nuclei_protocol = Some(v.trim().to_string()),
+            "cve-id" => f.cve_id = Some(v.trim().to_ascii_uppercase()),
+            "cwe-id" => f.cwe_id = Some(v.trim().to_ascii_uppercase()),
+            "evidence-level" => f.evidence_level = Some(v.trim().to_ascii_uppercase()),
+            "knowledge-lifecycle" => f.knowledge_lifecycle = Some(v.trim().to_string()),
+            "poc-severity" => f.poc_severity = Some(v.trim().to_ascii_lowercase()),
+            "poc-category" => f.poc_category = Some(v.trim().to_ascii_lowercase()),
+            "poc-cve-id" => f.poc_cve_id = Some(v.trim().to_ascii_uppercase()),
+            "poc-source-integrity" => f.poc_source_integrity = Some(v.trim().to_ascii_lowercase()),
+            "poc-verification-result" => {
+                f.poc_verification_result = Some(v.trim().to_ascii_lowercase())
+            }
+            "poc-dedup-status" => f.poc_dedup_status = Some(v.trim().to_ascii_lowercase()),
+            "poc-missing-evidence" => {
+                f.poc_missing_evidence = Some(match v.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        eprintln!("poc-missing-evidence 仅支持 true/false：{v:?}");
+                        std::process::exit(2);
+                    }
+                });
+            }
             other => {
-                eprintln!("sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type）");
+                eprintln!(
+                    "sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type/nuclei-severity/nuclei-protocol/cve-id/cwe-id/evidence-level/knowledge-lifecycle/poc-severity/poc-category/poc-cve-id/poc-source-integrity/poc-verification-result/poc-dedup-status/poc-missing-evidence）"
+                );
                 std::process::exit(2);
             }
         }
     }
     f
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_sqlite_filters;
+
+    #[test]
+    fn sqlite_filters_parse_curated_poc_facets() {
+        let filters = parse_sqlite_filters(Some(
+            "resource-type=rtis_poc,evidence-level=k2,knowledge-lifecycle=Researched,poc-severity=HIGH,poc-category=Unauthorized,poc-cve-id=cve-2025-1234,poc-source-integrity=partial,poc-verification-result=not_applicable,poc-dedup-status=related-family,poc-missing-evidence=true",
+        ));
+        assert_eq!(filters.resource_type.as_deref(), Some("rtis_poc"));
+        assert_eq!(filters.evidence_level.as_deref(), Some("K2"));
+        assert_eq!(filters.knowledge_lifecycle.as_deref(), Some("Researched"));
+        assert_eq!(filters.poc_severity.as_deref(), Some("high"));
+        assert_eq!(filters.poc_category.as_deref(), Some("unauthorized"));
+        assert_eq!(filters.poc_cve_id.as_deref(), Some("CVE-2025-1234"));
+        assert_eq!(filters.poc_source_integrity.as_deref(), Some("partial"));
+        assert_eq!(
+            filters.poc_verification_result.as_deref(),
+            Some("not_applicable")
+        );
+        assert_eq!(filters.poc_dedup_status.as_deref(), Some("related-family"));
+        assert_eq!(filters.poc_missing_evidence, Some(true));
+    }
 }

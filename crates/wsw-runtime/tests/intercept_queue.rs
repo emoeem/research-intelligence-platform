@@ -44,7 +44,7 @@ fn user_version_is_24_after_migrations() {
     let v = s
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)))
         .expect("user_version");
-    assert_eq!(v, 31, "031 chain head (Projects/Research Assets; 030 ws_frame/passive_hit and prior migrations applied)");
+    assert_eq!(v, 32, "032 chain head (Projects/Research Assets; 030 ws_frame/passive_hit and prior migrations applied)");
     // 三表齐备（024 纯新增）。
     for table in ["wsw_listener", "wsw_session", "wsw_intercept"] {
         let n = s

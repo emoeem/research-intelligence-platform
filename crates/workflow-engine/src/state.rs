@@ -48,7 +48,9 @@ pub enum RunEntityColumn {
 fn node_state_is_terminal(state: WorkflowNodeRunState) -> bool {
     matches!(
         state,
-        WorkflowNodeRunState::Succeeded | WorkflowNodeRunState::Failed | WorkflowNodeRunState::Skipped
+        WorkflowNodeRunState::Succeeded
+            | WorkflowNodeRunState::Failed
+            | WorkflowNodeRunState::Skipped
     )
 }
 
@@ -172,7 +174,14 @@ impl RunStore {
         input: &Value,
         node_kinds: &[(String, String)],
     ) -> Result<(), WorkflowError> {
-        self.create_run_with_caller(run_id, workflow_id, workflow_version, input, node_kinds, None)
+        self.create_run_with_caller(
+            run_id,
+            workflow_id,
+            workflow_version,
+            input,
+            node_kinds,
+            None,
+        )
     }
 
     /// 建一条 run 并落 run 级 caller 归属（MA-3 D1①：workflow_run.caller_id
@@ -211,7 +220,9 @@ impl RunStore {
                     )
                     .map_err(database::DbError::Sqlite)?;
                 if done != 1 {
-                    return Err(database::DbError::Sqlite(rusqlite::Error::ExecuteReturnedResults));
+                    return Err(database::DbError::Sqlite(
+                        rusqlite::Error::ExecuteReturnedResults,
+                    ));
                 }
                 for (node_id, kind) in node_kinds {
                     c.execute(
@@ -262,7 +273,23 @@ impl RunStore {
                 .optional()
             })
             .map_err(WorkflowError::from)?;
-        let Some((workflow_id, workflow_version, state, input_json, output_json, error_json, created_at, started_at, finished_at, trace_id, task_id, agent_run_id, tool_run_id, artifact_id, evidence_id)) = row
+        let Some((
+            workflow_id,
+            workflow_version,
+            state,
+            input_json,
+            output_json,
+            error_json,
+            created_at,
+            started_at,
+            finished_at,
+            trace_id,
+            task_id,
+            agent_run_id,
+            tool_run_id,
+            artifact_id,
+            evidence_id,
+        )) = row
         else {
             return Err(WorkflowError::RunNotFound {
                 run_id: run_id.to_string(),
@@ -318,7 +345,19 @@ impl RunStore {
             })
             .map_err(WorkflowError::from)?;
         let mut out = Vec::with_capacity(rows.len());
-        for (node_id, node_kind, state, attempt, output_json, error_json, started_at, finished_at, tool_run_id, agent_run_id) in rows {
+        for (
+            node_id,
+            node_kind,
+            state,
+            attempt,
+            output_json,
+            error_json,
+            started_at,
+            finished_at,
+            tool_run_id,
+            agent_run_id,
+        ) in rows
+        {
             out.push(NodeRow {
                 node_id,
                 node_kind,
@@ -543,10 +582,14 @@ impl RunStore {
     ) -> Result<(), WorkflowError> {
         let now = domain::time::now_iso();
         let sql = match column {
-            NodeEntityColumn::ToolRun => "UPDATE workflow_run_node SET tool_run_id = ?3,
-                                          updated_at = ?4 WHERE run_id = ?1 AND node_id = ?2",
-            NodeEntityColumn::AgentRun => "UPDATE workflow_run_node SET agent_run_id = ?3,
-                                           updated_at = ?4 WHERE run_id = ?1 AND node_id = ?2",
+            NodeEntityColumn::ToolRun => {
+                "UPDATE workflow_run_node SET tool_run_id = ?3,
+                                          updated_at = ?4 WHERE run_id = ?1 AND node_id = ?2"
+            }
+            NodeEntityColumn::AgentRun => {
+                "UPDATE workflow_run_node SET agent_run_id = ?3,
+                                           updated_at = ?4 WHERE run_id = ?1 AND node_id = ?2"
+            }
         };
         self.pool
             .with_conn(|c| {
@@ -684,18 +727,15 @@ impl RunStore {
             .get("nodes")
             .and_then(Value::as_object)
             .ok_or_else(|| WorkflowError::Storage("snapshot missing nodes object".to_string()))?;
-        let entry = nodes.get(node_id).ok_or_else(|| {
-            WorkflowError::Storage(format!("snapshot missing node {node_id:?}"))
-        })?;
+        let entry = nodes
+            .get(node_id)
+            .ok_or_else(|| WorkflowError::Storage(format!("snapshot missing node {node_id:?}")))?;
         let state = entry
             .get("state")
             .and_then(Value::as_str)
             .unwrap_or_default();
         let attempt = entry.get("attempt").and_then(Value::as_u64).unwrap_or(0) as u32;
-        if !matches!(
-            state,
-            "succeeded" | "failed" | "skipped"
-        ) {
+        if !matches!(state, "succeeded" | "failed" | "skipped") {
             return Err(WorkflowError::Storage(format!(
                 "checkpoint requires terminal node state for {node_id:?}, got {state:?}"
             )));
@@ -707,14 +747,7 @@ impl RunStore {
                 c.query_row(
                     "INSERT INTO workflow_checkpoint (run_id, node_id, node_state, attempt,
                      snapshot_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING seq",
-                    rusqlite::params![
-                        run_id,
-                        node_id,
-                        state,
-                        attempt,
-                        snapshot.to_string(),
-                        now
-                    ],
+                    rusqlite::params![run_id, node_id, state, attempt, snapshot.to_string(), now],
                     |r| r.get(0),
                 )
                 .map_err(database::DbError::Sqlite)
@@ -783,18 +816,23 @@ impl RunStore {
     /// error）；快照内非终态条目与快照外节点复位 pending 且 attempt 保留
     /// （kill 后残留 running 行的真实 attempt 不因快照滞后而丢失，重跑
     /// 进入 running 时再 +1）。返回回放的终态节点数。
-    pub fn restore_from_snapshot(&self, run_id: &str, snapshot: &Value) -> Result<usize, WorkflowError> {
+    pub fn restore_from_snapshot(
+        &self,
+        run_id: &str,
+        snapshot: &Value,
+    ) -> Result<usize, WorkflowError> {
         let nodes = snapshot
             .get("nodes")
             .and_then(Value::as_object)
-            .ok_or_else(|| WorkflowError::InvalidInput("snapshot missing nodes object".to_string()))?;
+            .ok_or_else(|| {
+                WorkflowError::InvalidInput("snapshot missing nodes object".to_string())
+            })?;
         let now = domain::time::now_iso();
         let mut replayed = 0usize;
         for (node_id, entry) in nodes {
-            let state = entry
-                .get("state")
-                .and_then(Value::as_str)
-                .ok_or_else(|| WorkflowError::InvalidInput(format!("snapshot node {node_id:?} missing state")))?;
+            let state = entry.get("state").and_then(Value::as_str).ok_or_else(|| {
+                WorkflowError::InvalidInput(format!("snapshot node {node_id:?} missing state"))
+            })?;
             let parsed = WorkflowNodeRunState::parse(state)?;
             if !node_state_is_terminal(parsed) {
                 // 快照内非终态（pending/running）：复位 pending，attempt 保留
@@ -967,11 +1005,8 @@ mod tests {
     const MIGRATIONS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations");
 
     fn temp_store(tag: &str) -> (PathBuf, RunStore) {
-        let dir = std::env::temp_dir().join(format!(
-            "rip-wf-state-test-{}-{}",
-            tag,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("rip-wf-state-test-{}-{}", tag, std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("test.db");
         let _ = std::fs::remove_file(&path);
@@ -1007,7 +1042,9 @@ mod tests {
         assert_eq!(row.input, json!({"target": "example.com"}));
         let nodes = store.node_rows("wfr-t1").expect("nodes");
         assert_eq!(nodes.len(), 2);
-        assert!(nodes.iter().all(|n| n.state == WorkflowNodeRunState::Pending && n.attempt == 0));
+        assert!(nodes
+            .iter()
+            .all(|n| n.state == WorkflowNodeRunState::Pending && n.attempt == 0));
         assert!(matches!(
             store.run_row("wfr-missing"),
             Err(WorkflowError::RunNotFound { .. })
@@ -1018,10 +1055,22 @@ mod tests {
     fn run_transition_guard_follows_frozen_table() {
         let (_dir, store) = temp_store("transition");
         store
-            .create_run("wfr-t2", "wf-x", 1, &json!({}), &[("start".to_string(), "start".to_string())])
+            .create_run(
+                "wfr-t2",
+                "wf-x",
+                1,
+                &json!({}),
+                &[("start".to_string(), "start".to_string())],
+            )
             .expect("create");
         store
-            .transition_run("wfr-t2", WorkflowRunState::Queued, WorkflowRunState::Running, None, None)
+            .transition_run(
+                "wfr-t2",
+                WorkflowRunState::Queued,
+                WorkflowRunState::Running,
+                None,
+                None,
+            )
             .expect("queued->running");
         // 非法跃迁（running -> queued 不在冻结表）拒绝且读回现态。
         // 乐观守卫：现态 running 之下再报 queued 预期即 0 行命中，错误读回
@@ -1050,12 +1099,24 @@ mod tests {
     fn node_attempt_increments_on_running_and_finish_guards() {
         let (_dir, store) = temp_store("attempt");
         store
-            .create_run("wfr-t3", "wf-x", 1, &json!({}), &[("t1".to_string(), "tool".to_string())])
+            .create_run(
+                "wfr-t3",
+                "wf-x",
+                1,
+                &json!({}),
+                &[("t1".to_string(), "tool".to_string())],
+            )
             .expect("create");
         let a1 = store.node_start("wfr-t3", "t1").expect("start 1");
         assert_eq!(a1, 1);
         store
-            .node_finish("wfr-t3", "t1", WorkflowNodeRunState::Failed, None, Some(&json!({"code": "x"})))
+            .node_finish(
+                "wfr-t3",
+                "t1",
+                WorkflowNodeRunState::Failed,
+                None,
+                Some(&json!({"code": "x"})),
+            )
             .expect("finish");
         // 终态后再 start 拒绝（守卫只放行 pending）。
         assert!(matches!(
@@ -1080,12 +1141,21 @@ mod tests {
                 "wf-x",
                 1,
                 &json!({"k": 1}),
-                &[("t1".to_string(), "tool".to_string()), ("t2".to_string(), "tool".to_string())],
+                &[
+                    ("t1".to_string(), "tool".to_string()),
+                    ("t2".to_string(), "tool".to_string()),
+                ],
             )
             .expect("create");
         store.node_start("wfr-t4", "t1").expect("start");
         store
-            .node_finish("wfr-t4", "t1", WorkflowNodeRunState::Succeeded, Some(&json!({"a": 1})), None)
+            .node_finish(
+                "wfr-t4",
+                "t1",
+                WorkflowNodeRunState::Succeeded,
+                Some(&json!({"a": 1})),
+                None,
+            )
             .expect("finish");
         let seq = store.record_checkpoint("wfr-t4", "t1").expect("checkpoint");
         assert!(seq >= 1);
@@ -1096,16 +1166,23 @@ mod tests {
             && s.state() == WorkflowNodeRunState::Succeeded
             && s.attempts() == 1));
         // 最新 checkpoint 回读与 snapshot 一致。
-        let cp = store.latest_checkpoint("wfr-t4").expect("cp").expect("some");
+        let cp = store
+            .latest_checkpoint("wfr-t4")
+            .expect("cp")
+            .expect("some");
         assert_eq!(cp.node_id, "t1");
         assert_eq!(cp.snapshot, snap);
         // 快照恢复：t2 复位 pending（原 pending 不变），t1 回放 succeeded。
-        let replayed = store.restore_from_snapshot("wfr-t4", &snap).expect("restore");
+        let replayed = store
+            .restore_from_snapshot("wfr-t4", &snap)
+            .expect("restore");
         // 快照含全部节点（t1 succeeded + t2 pending）；只回放终态条目，
         // 非终态条目复位 pending（attempt 保留）。
         assert_eq!(replayed, 1);
         let nodes = store.node_rows("wfr-t4").expect("nodes");
-        assert!(nodes.iter().all(|n| n.state != WorkflowNodeRunState::Running));
+        assert!(nodes
+            .iter()
+            .all(|n| n.state != WorkflowNodeRunState::Running));
         // 恢复态合并：input + succeeded 输出。
         let state = store
             .restored_state("wfr-t4", &snap, &json!({"k": 1}))

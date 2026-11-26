@@ -17,8 +17,8 @@
 //! 测试库：内存库迁移全链；占位 digest 显式放行（仅测试库）；platform*.db
 //! 零改动。
 
-use database::{DbPath, Pool, PoolConfig, migrate};
-use serde_json::{Value, json};
+use database::{migrate, DbPath, Pool, PoolConfig};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tool_engine::mock_runner::MockRunner;

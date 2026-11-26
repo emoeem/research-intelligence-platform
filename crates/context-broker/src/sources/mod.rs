@@ -6,6 +6,7 @@
 //! [`rtis`]（只读子进程 Adapter）。P4-4（M4.3）落：[`artifact`]（只读引用源）。
 
 pub mod artifact;
+pub mod curated_knowledge;
 pub mod knowledge;
 pub mod plugin;
 pub mod registry;

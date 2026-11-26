@@ -60,7 +60,7 @@ pub mod service;
 use std::sync::Arc;
 
 use rmcp::model::Tool;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::catalog::{Catalog, CatalogError, RegistryFilters};
 
@@ -345,10 +345,7 @@ impl CatalogEntry {
             Some(v) if v.is_object() => v.clone(),
             _ => permissive_object_schema(),
         };
-        let props = input_schema
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let props = input_schema.as_object().cloned().unwrap_or_default();
         // rmcp Tool 为 #[non_exhaustive]：Default + 字段赋值构造。
         let mut tool = Tool::default();
         tool.name = self.name.clone().into();
@@ -444,9 +441,7 @@ pub(crate) fn parse_limit_param(raw: Option<&Value>) -> Result<usize, String> {
                 .as_u64()
                 .ok_or_else(|| format!("limit 必须是正整数，收到：{v}"))?;
             if n < 1 || n as usize > MAX_PAGE_LIMIT {
-                return Err(format!(
-                    "limit 需在 1..{MAX_PAGE_LIMIT} 之间，收到：{n}"
-                ));
+                return Err(format!("limit 需在 1..{MAX_PAGE_LIMIT} 之间，收到：{n}"));
             }
             Ok(n as usize)
         }

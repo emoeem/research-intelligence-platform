@@ -3,20 +3,19 @@
 //!
 //! 四实体：Source Snapshot（来源快照，折叠进条目列族）、Catalog Entry
 //! （链接目录条目）、Document（Markdown 正文）、ContentRef（下游统一引用，
-//! 复用 [`crate::context::ContentRef`] 承载）。词表三枚举对应三张 DDL CHECK
-//! 域：EntryKind 六值对应 011 迁移 knowledge_source_entry.content_kind 与
-//! 010 knowledge_ingest.content_kind 的互补并集；ReviewStatus/RightsPolicy
-//! 对应 011 同名列 CHECK 域。
+//! 复用 [`crate::context::ContentRef`] 承载）。EntryKind 七值对应 011/032 迁移
+//! knowledge_source_entry.entry_kind 与 010 knowledge_ingest.content_kind 的
+//! 互补并集；ReviewStatus/RightsPolicy 对应 011 同名列 CHECK 域。
 //!
-//! 两表分工（ADR 第四节）：RTIS 三类（poc/skill_md/method_case）唯一权威
-//! 落点是 knowledge_ingest（010，冻结兼容面）；SK-1 三类（catalog_entry/
-//! document_markdown/skill_candidate）唯一权威落点是 knowledge_source_entry
-//! （011，通用面）。任何一类内容只有一个权威落点。
+//! 两表分工：RTIS 三类（poc/skill_md/method_case）仍唯一落点是
+//! knowledge_ingest（010，冻结兼容面）；SK-1 三类与 Nuclei 专用
+//! nuclei_template 唯一落点是 knowledge_source_entry（011/032，通用审核面）。
+//! 任何一类内容只有一个权威落点。
 
 use crate::error::DomainError;
 use std::fmt;
 
-/// 知识内容类型（六值：010 词表三类 + SK-1 三类，互补不相交）。
+/// 知识内容类型（七值：010 词表三类 + SK-1 三类 + Nuclei 专用类型）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EntryKind {
     /// RTIS POC 条目（knowledge.db poc 表逐行，010）。
@@ -32,17 +31,20 @@ pub enum EntryKind {
     DocumentMarkdown,
     /// Skill/Agent/MCP 候选元数据（SK-1，不代表已安装）。
     SkillCandidate,
+    /// Nuclei YAML 检测模板（结构化字段 + 原始模板正文，独立审核）。
+    NucleiTemplate,
 }
 
 impl EntryKind {
-    /// 全部变体（010 三类在前，SK-1 三类在后）。
-    pub const ALL: [EntryKind; 6] = [
+    /// 全部变体（010 三类、SK-1 三类、Nuclei 专用类型）。
+    pub const ALL: [EntryKind; 7] = [
         EntryKind::Poc,
         EntryKind::SkillMd,
         EntryKind::MethodCase,
         EntryKind::CatalogEntry,
         EntryKind::DocumentMarkdown,
         EntryKind::SkillCandidate,
+        EntryKind::NucleiTemplate,
     ];
 
     /// RTIS 既有三类（010 词表，knowledge_ingest 权威落点）。
@@ -53,7 +55,7 @@ impl EntryKind {
         )
     }
 
-    /// SK-1 新增三类（knowledge_source_entry 权威落点，011）。
+    /// knowledge_source_entry 扩展类型（SK-1 三类 + Nuclei 专用类型，011/032）。
     pub fn is_extended(&self) -> bool {
         !self.is_rtis()
     }
@@ -67,10 +69,11 @@ impl EntryKind {
             EntryKind::CatalogEntry => "catalog_entry",
             EntryKind::DocumentMarkdown => "document_markdown",
             EntryKind::SkillCandidate => "skill_candidate",
+            EntryKind::NucleiTemplate => "nuclei_template",
         }
     }
 
-    /// 从存储值解析（六值并集词表）。
+    /// 从存储值解析（七值并集词表）。
     pub fn parse(value: &str) -> Result<Self, DomainError> {
         Self::ALL
             .into_iter()

@@ -228,18 +228,26 @@ doc = pathlib.Path("docs/phase9/REST-API-CONTRACT.md").read_text()
 
 # rp_server.py API_ROUTES 键（词含连字符：agent-runs / workflow-runs）
 block = re.search(r"API_ROUTES = \{(.*?)\n\}", src, re.S).group(1)
-routes = sorted(set(re.findall(r'"(/api/[a-z0-9_-]+)":', block)))
-assert len(routes) == 18, f"API_ROUTES 应 18 条只读路由（P9-4 起 16 条加 /api/mcp-catalog，RIP3 P1-1 41bf3359 加 /api/documents），实得 {len(routes)}: {routes}"
+routes = sorted(set(re.findall(r'"(/api/(?:[a-z0-9_-]+|research/assets|curated-pocs/(?:search|summary)))":', block)))
+assert len(routes) == 23, f"API_ROUTES 应 23 条只读路由（含 Projects 与 Research Assets），实得 {len(routes)}: {routes}"
 
 # 文档端点总览段（标记之间）
 m = re.search(r"<!-- ENDPOINTS:BEGIN -->(.*?)<!-- ENDPOINTS:END -->", doc, re.S)
 assert m, "文档缺 ENDPOINTS 标记段"
-rows = re.findall(r"^\|\s*(GET|POST)\s*\|\s*(/api/[A-Za-z0-9_<>/-]+)\s*\|", m.group(1), re.M)
+rows = re.findall(r"^\|\s*(GET|POST|PATCH)\s*\|\s*(/api/[A-Za-z0-9_<>/-]+)\s*\|", m.group(1), re.M)
 doc_get = {p for meth, p in rows if meth == "GET"}
 doc_post = {p for meth, p in rows if meth == "POST"}
+doc_patch = {p for meth, p in rows if meth == "PATCH"}
 
-dynamic_get = {"/api/plugins/<plugin_id>"}
+dynamic_get = {"/api/plugins/<plugin_id>", "/api/projects/<project_id>", "/api/research/assets/<asset_id>"}
 expected_post = {
+    "/api/projects",
+    "/api/projects/<project_id>/tasks",
+    "/api/research/assets",
+    "/api/projects/<project_id>/assets",
+    "/api/research/assets/<asset_id>/endpoints",
+    "/api/research/assets/<asset_id>/observations",
+    "/api/research/assets/<asset_id>/technology",
     "/api/plugins/install",
     "/api/plugins/<plugin_id>/<action>",
     "/api/workflows",
@@ -255,8 +263,11 @@ if doc_get != set(routes) | dynamic_get:
     problems.append(f"文档 GET 集合不一致: doc={sorted(doc_get)} expect={sorted(set(routes)|dynamic_get)}")
 if doc_post != expected_post:
     problems.append(f"文档 POST 集合不一致: doc={sorted(doc_post)} expect={sorted(expected_post)}")
-if len(doc_get) != 19:
-    problems.append(f"文档 GET 行应 19（18 静态 + 1 动态详情），实得 {len(doc_get)}")
+expected_patch = {"/api/projects/<project_id>"}
+if doc_patch != expected_patch:
+    problems.append(f"文档 PATCH 集合不一致: doc={sorted(doc_patch)} expect={sorted(expected_patch)}")
+if len(doc_get) != 26:
+    problems.append(f"文档 GET 行应 26（23 静态 + 3 动态详情），实得 {len(doc_get)}")
 
 # 动作词表对账（rp_server.py 词表 ↔ 文档行内词表）
 plug = re.search(r"PLUGIN_WRITE_ACTIONS = \(([^)]*)\)", src).group(1)
@@ -273,7 +284,7 @@ for token in wf_words:
 
 # 文档不得发明端点（总览段内出现的 /api/ 路径全部 ∈ 已知集合）
 all_doc_paths = set(re.findall(r"(/api/[A-Za-z0-9_<>/-]+)", m.group(1)))
-known = set(routes) | dynamic_get | expected_post
+known = set(routes) | dynamic_get | expected_post | expected_patch
 extra = all_doc_paths - known
 if extra:
     problems.append(f"文档发明端点: {sorted(extra)}")

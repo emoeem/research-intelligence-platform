@@ -31,8 +31,12 @@ pub fn execute(
     state: &Value,
 ) -> Result<Value, NodeFailure> {
     let params: Map<String, Value> = match params_json {
-        Some(raw) => serde_json::from_str(raw)
-            .map_err(|e| NodeFailure::new("params_invalid", format!("knowledge node params parse failed: {e}")))?,
+        Some(raw) => serde_json::from_str(raw).map_err(|e| {
+            NodeFailure::new(
+                "params_invalid",
+                format!("knowledge node params parse failed: {e}"),
+            )
+        })?,
         None => Map::new(),
     };
     let query_raw = params
@@ -44,7 +48,10 @@ pub fn execute(
         other => {
             return Err(NodeFailure::new(
                 "params_invalid",
-                format!("knowledge query must resolve to a string, got {}", type_word(&other)),
+                format!(
+                    "knowledge query must resolve to a string, got {}",
+                    type_word(&other)
+                ),
             ))
         }
     };
@@ -66,7 +73,12 @@ pub fn execute(
             trace_id: None,
             actor: actor.to_string(),
         })
-        .map_err(|e| NodeFailure::new("broker_assemble_failed", format!("broker assemble failed: {e}")))?;
+        .map_err(|e| {
+            NodeFailure::new(
+                "broker_assemble_failed",
+                format!("broker assemble failed: {e}"),
+            )
+        })?;
     Ok(summarize(&context, &query))
 }
 
@@ -106,7 +118,10 @@ fn summarize(context: &AssembledContext, query: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context_broker::{Candidate, Content, ContentRef, ContextBrokerError, ContextItemKind, ContextLayer, IntentQuery};
+    use context_broker::{
+        Candidate, Content, ContentRef, ContextBrokerError, ContextItemKind, ContextLayer,
+        IntentQuery,
+    };
 
     /// 测试载具源（ContextSource 端口；Mock 仅作测试载具，决议 2 口径）。
     struct StubSource;
@@ -133,11 +148,8 @@ mod tests {
     /// 独立临时库（同名路径并行测试互删文件会触发 migrate 版本错配竞态，
     /// 每用例独立 tag）。
     fn stub_broker(tag: &str) -> Broker {
-        let dir = std::env::temp_dir().join(format!(
-            "rip-wf-node-kb-{}-{}",
-            tag,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("rip-wf-node-kb-{}-{}", tag, std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("kb.db");
         let _ = std::fs::remove_file(&path);
@@ -154,7 +166,10 @@ mod tests {
         )
         .expect("migrate");
         // 意图配置取仓库 rulepack（与 context-broker 既有测试同源锚定）。
-        let rulepack_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../rulepacks/rip-rules"));
+        let rulepack_dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rulepacks/rip-rules"
+        ));
         Broker::new(
             vec![Box::new(StubSource)],
             context_broker::BudgetPolicy::default_for(8000).expect("policy"),
@@ -189,7 +204,10 @@ mod tests {
         )
         .expect("assemble ok");
         assert_eq!(out["query"], "example.com");
-        assert!(out["context_id"].as_str().expect("ctx id").starts_with("ctx-"));
+        assert!(out["context_id"]
+            .as_str()
+            .expect("ctx id")
+            .starts_with("ctx-"));
         assert!(out["manifest_id"].as_str().is_some());
         assert_eq!(out["knowledge_count"], 0);
         assert!(out["intent_status"].as_str().is_some());

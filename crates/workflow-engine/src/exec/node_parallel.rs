@@ -96,16 +96,17 @@ pub fn execute_fan_out(
                         "child returned pause/awaiting signal (not allowed for fan children)",
                     ),
                 };
-                failures.push(format!("{}: {} ({})", child_id, failure.code, failure.message));
-                executor
-                    .runs
-                    .node_finish(
-                        run_id,
-                        &child_id,
-                        WorkflowNodeRunState::Failed,
-                        None,
-                        Some(&failure.to_json(run_id, &child_id)),
-                    )?;
+                failures.push(format!(
+                    "{}: {} ({})",
+                    child_id, failure.code, failure.message
+                ));
+                executor.runs.node_finish(
+                    run_id,
+                    &child_id,
+                    WorkflowNodeRunState::Failed,
+                    None,
+                    Some(&failure.to_json(run_id, &child_id)),
+                )?;
                 executor.runs.record_checkpoint(run_id, &child_id)?;
             }
         }
@@ -113,12 +114,20 @@ pub fn execute_fan_out(
     if !failures.is_empty() {
         let failure = NodeFailure::new(
             "parallel_child_failed",
-            format!("parallel {:?} join failed: {}", node.id(), failures.join("; ")),
+            format!(
+                "parallel {:?} join failed: {}",
+                node.id(),
+                failures.join("; ")
+            ),
         );
         let error = failure.to_json(run_id, node.id());
-        executor
-            .runs
-            .node_finish(run_id, node.id(), WorkflowNodeRunState::Failed, None, Some(&error))?;
+        executor.runs.node_finish(
+            run_id,
+            node.id(),
+            WorkflowNodeRunState::Failed,
+            None,
+            Some(&error),
+        )?;
         executor.runs.record_checkpoint(run_id, node.id())?;
         executor.finish_run(run_id, WorkflowRunState::Failed, None, Some(&error))?;
         return Err(WorkflowError::Exec(error.to_string()));

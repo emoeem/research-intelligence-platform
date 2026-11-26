@@ -91,7 +91,15 @@ impl WorkflowControl {
             })
             .map_err(WorkflowError::from)?;
         Ok(row.map(
-            |(run_id, pause_requested_at, cancel_requested_at, approval_node_id, approval_request_json, approval_json, approval_updated_at)| ControlRow {
+            |(
+                run_id,
+                pause_requested_at,
+                cancel_requested_at,
+                approval_node_id,
+                approval_request_json,
+                approval_json,
+                approval_updated_at,
+            )| ControlRow {
                 run_id,
                 pause_requested_at,
                 cancel_requested_at,
@@ -122,7 +130,11 @@ impl WorkflowControl {
 
     /// 写协作暂停请求（D-TC-04 请求位；仅非终态 run 受理，终态拒绝返回
     /// false）。已 paused 的 run 无需请求（返回 false，无副作用）。
-    pub fn request_pause(&self, run_id: &str, state: WorkflowRunState) -> Result<bool, WorkflowError> {
+    pub fn request_pause(
+        &self,
+        run_id: &str,
+        state: WorkflowRunState,
+    ) -> Result<bool, WorkflowError> {
         if state.is_terminal() || state == WorkflowRunState::Paused {
             return Ok(false);
         }
@@ -186,8 +198,9 @@ impl WorkflowControl {
         request: &Value,
     ) -> Result<(), WorkflowError> {
         let now = domain::time::now_iso();
-        let request_text = serde_json::to_string(request)
-            .map_err(|e| WorkflowError::InvalidInput(format!("approval request serialize failed: {e}")))?;
+        let request_text = serde_json::to_string(request).map_err(|e| {
+            WorkflowError::InvalidInput(format!("approval request serialize failed: {e}"))
+        })?;
         self.ensure_control_row(run_id)?;
         self.pool
             .with_conn(|c| {
@@ -265,9 +278,11 @@ impl WorkflowControl {
                 Ok(agent_engine::control::PauseOutcome::Requested) => accepted += 1,
                 Ok(agent_engine::control::PauseOutcome::Refused(_)) => {}
                 Err(agent_engine::error::AgentError::RunNotFound(_)) => {}
-                Err(e) => return Err(WorkflowError::Exec(format!(
-                    "agent pause propagation failed for {agent_run_id}: {e}"
-                ))),
+                Err(e) => {
+                    return Err(WorkflowError::Exec(format!(
+                        "agent pause propagation failed for {agent_run_id}: {e}"
+                    )))
+                }
             }
         }
         Ok(accepted)
@@ -398,16 +413,24 @@ mod tests {
         runs.create_run("wfr-c1", "wf-x", 1, &json!({}), &[])
             .expect("create");
         // 非 running 态也可写请求位（queued 受理；执行器侧只对 running 消费）。
-        assert!(control.request_pause("wfr-c1", WorkflowRunState::Running).expect("request"));
+        assert!(control
+            .request_pause("wfr-c1", WorkflowRunState::Running)
+            .expect("request"));
         let row = control.control_row("wfr-c1").expect("row").expect("some");
         assert!(row.pause_requested_at.is_some());
         // consume-on-observe：消费一次即清空，二次消费返回 false。
         assert!(control.consume_pause_request("wfr-c1").expect("consume"));
-        assert!(!control.consume_pause_request("wfr-c1").expect("consume again"));
+        assert!(!control
+            .consume_pause_request("wfr-c1")
+            .expect("consume again"));
         // paused run 拒绝请求位（无副作用）。
-        assert!(!control.request_pause("wfr-c1", WorkflowRunState::Paused).expect("paused"));
+        assert!(!control
+            .request_pause("wfr-c1", WorkflowRunState::Paused)
+            .expect("paused"));
         // 终态拒绝。
-        assert!(!control.request_pause("wfr-c1", WorkflowRunState::Succeeded).expect("terminal"));
+        assert!(!control
+            .request_pause("wfr-c1", WorkflowRunState::Succeeded)
+            .expect("terminal"));
     }
 
     #[test]
@@ -416,9 +439,16 @@ mod tests {
         runs.create_run("wfr-c2", "wf-x", 1, &json!({}), &[])
             .expect("create");
         control
-            .put_approval_request("wfr-c2", "review", &json!({"prompt": "批准?", "key": "approval"}))
+            .put_approval_request(
+                "wfr-c2",
+                "review",
+                &json!({"prompt": "批准?", "key": "approval"}),
+            )
             .expect("request");
-        let awaiting = control.awaiting_approval("wfr-c2").expect("awaiting").expect("some");
+        let awaiting = control
+            .awaiting_approval("wfr-c2")
+            .expect("awaiting")
+            .expect("some");
         assert_eq!(awaiting.approval_node_id.as_deref(), Some("review"));
         assert!(awaiting.is_awaiting_approval());
         control
@@ -428,11 +458,11 @@ mod tests {
         // 批准后不再 awaiting，但 node 锚与请求载荷保留（对账历史面）。
         assert!(!after.is_awaiting_approval());
         assert_eq!(after.approval_node_id.as_deref(), Some("review"));
-        assert_eq!(after.approval_request(), Some(json!({"prompt": "批准?", "key": "approval"})));
         assert_eq!(
-            after.approval_json.as_deref(),
-            Some("{\"ok\":true}")
+            after.approval_request(),
+            Some(json!({"prompt": "批准?", "key": "approval"}))
         );
+        assert_eq!(after.approval_json.as_deref(), Some("{\"ok\":true}"));
     }
 
     #[test]
@@ -444,7 +474,17 @@ mod tests {
         let row = control.control_row("wfr-c3").expect("row").expect("some");
         assert!(row.cancel_requested_at.is_some());
         // 无运行中实体：传播计数 0，不炸。
-        assert_eq!(control.propagate_pause_to_agents("wfr-c3").expect("pause prop"), 0);
-        assert_eq!(control.propagate_cancel_to_entities("wfr-c3").expect("cancel prop"), 0);
+        assert_eq!(
+            control
+                .propagate_pause_to_agents("wfr-c3")
+                .expect("pause prop"),
+            0
+        );
+        assert_eq!(
+            control
+                .propagate_cancel_to_entities("wfr-c3")
+                .expect("cancel prop"),
+            0
+        );
     }
 }

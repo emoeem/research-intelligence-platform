@@ -37,8 +37,12 @@ pub fn execute(
     state: &Value,
 ) -> Result<Value, NodeFailure> {
     let params: Map<String, Value> = match params_json {
-        Some(raw) => serde_json::from_str(raw)
-            .map_err(|e| NodeFailure::new("params_invalid", format!("tool node params parse failed: {e}")))?,
+        Some(raw) => serde_json::from_str(raw).map_err(|e| {
+            NodeFailure::new(
+                "params_invalid",
+                format!("tool node params parse failed: {e}"),
+            )
+        })?,
         None => Map::new(),
     };
     let tool_id = params
@@ -52,7 +56,10 @@ pub fn execute(
     if input.as_object().is_none() {
         return Err(NodeFailure::new(
             "params_invalid",
-            format!("tool input must be a JSON object, got {}", type_word(&input)),
+            format!(
+                "tool input must be a JSON object, got {}",
+                type_word(&input)
+            ),
         ));
     }
     let mut request = json!({
@@ -117,7 +124,9 @@ pub fn execute(
                 .as_ref()
                 .map(|e| format!("{}: {}", e.category, e.message))
                 .or_else(|| envelope.summary.clone())
-                .unwrap_or_else(|| format!("tool run {} ended {}", submitted.run_id, other.as_str()));
+                .unwrap_or_else(|| {
+                    format!("tool run {} ended {}", submitted.run_id, other.as_str())
+                });
             Err(NodeFailure::new(
                 format!("tool_{}", other.as_str().to_lowercase()),
                 message,
@@ -150,19 +159,24 @@ mod tests {
     fn unresolvable_state_ref_is_fail_closed() {
         let engine = test_engine("unresolvable-ref");
         let params = json!({"tool_id": "any", "input": {"k": "$/missing"}});
-        let err = execute(&engine, None, "wfr-x", "t1", 1, Some(&params.to_string()), &json!({}))
-            .expect_err("unresolvable ref");
+        let err = execute(
+            &engine,
+            None,
+            "wfr-x",
+            "t1",
+            1,
+            Some(&params.to_string()),
+            &json!({}),
+        )
+        .expect_err("unresolvable ref");
         assert_eq!(err.code, "state_ref_unresolvable");
     }
 
     /// 独立临时库（同名路径并行测试互删文件会触发 migrate 版本错配竞态，
     /// 每用例独立 tag）。
     fn test_engine(tag: &str) -> Engine {
-        let dir = std::env::temp_dir().join(format!(
-            "rip-wf-node-tool-{}-{}",
-            tag,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("rip-wf-node-tool-{}-{}", tag, std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("t.db");
         let _ = std::fs::remove_file(&path);

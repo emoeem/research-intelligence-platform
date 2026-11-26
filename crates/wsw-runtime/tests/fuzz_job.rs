@@ -17,10 +17,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use wsw_message::serialize::{OutboundFraming, OutboundRequest};
 use wsw_message::types::{HeaderRecord, HttpVersion};
+use wsw_runtime::fuzz::{run_job, FuzzJobOptions};
 use wsw_runtime::persist::{FuzzCaseRow, PersistStore};
 use wsw_runtime::scope::ScopeRules;
 use wsw_runtime::sender::SendPolicy;
-use wsw_runtime::fuzz::{run_job, FuzzJobOptions};
 
 /// 靶场行为。
 #[derive(Clone)]
@@ -86,9 +86,7 @@ async fn spawn_target(behavior: Behavior) -> (u16, Received, tokio::task::JoinHa
                     .next()
                     .and_then(|line| line.split(' ').nth(1))
                     .and_then(|t| t.split('?').nth(1))
-                    .and_then(|q| {
-                        q.split('&').find_map(|p| p.strip_prefix("q="))
-                    })
+                    .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("q=")))
                     .unwrap_or("noq")
                     .to_string();
                 rx.lock().expect("received mutex").push((qval, buf.clone()));
@@ -138,9 +136,11 @@ fn rules_for(port: u16) -> ScopeRules {
 
 fn mem_store() -> PersistStore {
     let s = PersistStore::open_memory().expect("mem store");
-    s.run_migrations(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../migrations")
-        .as_path())
+    s.run_migrations(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../migrations")
+            .as_path(),
+    )
     .expect("migrations");
     s.assert_watermark().expect("watermark 31");
     s
@@ -203,18 +203,25 @@ fn budget_json(max_requests: u64, concurrency: u64) -> serde_json::Value {
 
 /// job 行登记（QUEUED 入口；spec 预检走 prepare_spec 取 estimate）。
 fn create_job(store: &PersistStore, session_id: &str, spec_json: &str) -> String {
-    let prepared =
-        wsw_runtime::fuzz::spec::prepare_spec(spec_json).expect("spec preflight");
+    let prepared = wsw_runtime::fuzz::spec::prepare_spec(spec_json).expect("spec preflight");
     let job_id = wsw_message::ids::FuzzJobId::generate().into_inner();
     let row = wsw_runtime::fuzz::spec::job_row_from_prepared(
-        &prepared, &job_id, session_id, spec_json, wsw_runtime::persist::now_iso(),
+        &prepared,
+        &job_id,
+        session_id,
+        spec_json,
+        wsw_runtime::persist::now_iso(),
     );
     store.insert_fuzz_job(&row).expect("insert job");
     store
-        .advance_fuzz_job(&job_id, "CREATED", &wsw_runtime::persist::FuzzJobPatch {
-            state: "QUEUED",
-            ..Default::default()
-        })
+        .advance_fuzz_job(
+            &job_id,
+            "CREATED",
+            &wsw_runtime::persist::FuzzJobPatch {
+                state: "QUEUED",
+                ..Default::default()
+            },
+        )
         .expect("CREATED->QUEUED");
     job_id
 }
@@ -243,7 +250,13 @@ async fn full_run_echo_marker_hit_and_exchange_rows() {
     let (port, received, _t) = spawn_target(Behavior::Echo).await;
     let store = mem_store();
     let payloads = ["alpha", "bravo", "charlie"];
-    let spec = echo_spec_json(port, &payloads, "cartesian", budget_json(10, 2), serde_json::json!({}));
+    let spec = echo_spec_json(
+        port,
+        &payloads,
+        "cartesian",
+        budget_json(10, 2),
+        serde_json::json!({}),
+    );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
     let summary = run_job(
         &store,
@@ -258,10 +271,18 @@ async fn full_run_echo_marker_hit_and_exchange_rows() {
     assert_eq!(summary.dispatched, 3);
     assert_eq!(summary.responded, 3);
     // 真实命中：靶机收到 3 个 payload（marker echo）。
-    let got: Vec<String> = received.lock().unwrap().iter().map(|(q, _)| q.clone()).collect();
+    let got: Vec<String> = received
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(q, _)| q.clone())
+        .collect();
     assert_eq!(got.len(), 3, "靶机请求数");
     for p in payloads {
-        assert!(got.contains(&p.to_string()), "payload {p} 真实命中靶机：{got:?}");
+        assert!(
+            got.contains(&p.to_string()),
+            "payload {p} 真实命中靶机：{got:?}"
+        );
     }
     // case 行：全 RESPONDED + payload/响应列。
     let cases = store.list_cases_by_job(&job_id).expect("cases");
@@ -318,9 +339,13 @@ async fn budget_truncation_budget_exhausted() {
         serde_json::json!({}),
     );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     assert_eq!(summary.state, "BUDGET_EXHAUSTED", "max_requests 截断");
     assert_eq!(summary.estimated_requests, 6);
     assert_eq!(summary.dispatched, 2, "只派发 2 个");
@@ -348,9 +373,13 @@ async fn rate_window_skip_budget() {
         serde_json::json!({}),
     );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     // 600ms 窗口内 4 case 快速派发：1 发送 + 3 窗口超帽 SKIPPED_BUDGET。
     assert_eq!(summary.state, "COMPLETED");
     assert_eq!(summary.responded, 1, "窗口帽 1");
@@ -374,9 +403,13 @@ async fn min_request_interval_enforced() {
         serde_json::json!({}),
     );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     assert_eq!(summary.state, "COMPLETED");
     // 相邻 case started_at 间隔实测 ≥ ~85ms（ISO ms 宽度；容差 5ms 调度）。
     let cases = store.list_cases_by_job(&job_id).unwrap();
@@ -387,8 +420,9 @@ async fn min_request_interval_enforced() {
             .split(&['-', 'T', ':', '.', 'Z'][..])
             .filter_map(|x| x.parse().ok())
             .collect();
-        let (y, mo, d, h, mi, s, ms) =
-            (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
+        let (y, mo, d, h, mi, s, ms) = (
+            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6],
+        );
         // days-from-civil。
         let y2 = if mo <= 2 { y - 1 } else { y };
         let era = if y2 >= 0 { y2 } else { y2 - 399 } / 400;
@@ -402,7 +436,10 @@ async fn min_request_interval_enforced() {
         let a = parse_ms(w[0].started_at.as_deref().expect("started_at"));
         let b = parse_ms(w[1].started_at.as_deref().expect("started_at"));
         let gap = b - a;
-        assert!(gap >= 80, "相邻 case 间隔实测 {gap}ms < 80ms（interval 90ms）");
+        assert!(
+            gap >= 80,
+            "相邻 case 间隔实测 {gap}ms < 80ms（interval 90ms）"
+        );
     }
 }
 
@@ -414,7 +451,13 @@ async fn min_request_interval_enforced() {
 async fn scope_default_deny_zero_send() {
     let (port, received, _t) = spawn_target(Behavior::Echo).await;
     let store = mem_store();
-    let spec = echo_spec_json(port, &["s1", "s2"], "cartesian", budget_json(10, 2), serde_json::json!({}));
+    let spec = echo_spec_json(
+        port,
+        &["s1", "s2"],
+        "cartesian",
+        budget_json(10, 2),
+        serde_json::json!({}),
+    );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
     // default deny（include 空）。
     let mut opts = job_opts(&job_id, "wsw-ses-fz4-test", ScopeRules::default(), port);
@@ -424,7 +467,11 @@ async fn scope_default_deny_zero_send() {
     assert_eq!(summary.state, "COMPLETED");
     assert_eq!(summary.skipped_scope, 2, "全 case SKIPPED_SCOPE");
     assert_eq!(summary.dispatched, 0, "零发送");
-    assert_eq!(received.lock().unwrap().len(), 0, "靶机请求计数 = 0（负例实证）");
+    assert_eq!(
+        received.lock().unwrap().len(),
+        0,
+        "靶机请求计数 = 0（负例实证）"
+    );
     // error_code = scope.rs:234 词形（default deny）。
     let cases = store.list_cases_by_job(&job_id).unwrap();
     for c in &cases {
@@ -441,20 +488,25 @@ async fn scope_redirect_out_rejected_with_scope_word() {
     let redirect_target = "http://169.254.169.254/latest".to_string();
     tokio::spawn(async move {
         loop {
-            let Ok((mut sock, _)) = listener.accept().await else { break };
+            let Ok((mut sock, _)) = listener.accept().await else {
+                break;
+            };
             let loc = redirect_target.clone();
             tokio::spawn(async move {
                 let mut buf = Vec::new();
                 let mut chunk = [0u8; 4096];
                 loop {
                     let n = sock.read(&mut chunk).await.unwrap_or(0);
-                    if n == 0 { break; }
+                    if n == 0 {
+                        break;
+                    }
                     buf.extend_from_slice(&chunk[..n]);
-                    if buf.windows(4).any(|w| w == b"\r\n\r\n") { break; }
+                    if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
                 }
-                let resp = format!(
-                    "HTTP/1.1 302 Found\r\nLocation: {loc}\r\nContent-Length: 0\r\n\r\n"
-                );
+                let resp =
+                    format!("HTTP/1.1 302 Found\r\nLocation: {loc}\r\nContent-Length: 0\r\n\r\n");
                 let _ = sock.write_all(resp.as_bytes()).await;
             });
         }
@@ -490,7 +542,11 @@ async fn scope_redirect_out_rejected_with_scope_word() {
     assert_eq!(cases.len(), 1);
     // 越界重定向 = scope 拒（send_request hop≥1 → SendError::Scope）。
     assert_eq!(cases[0].state, "NETWORK_ERROR");
-    assert_eq!(cases[0].error_code.as_deref(), Some("scope_blocked"), "scope 词形可见（:528）");
+    assert_eq!(
+        cases[0].error_code.as_deref(),
+        Some("scope_blocked"),
+        "scope 词形可见（:528）"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -527,9 +583,7 @@ async fn cancel_mid_run_graceful() {
     };
     let store2 = store.clone();
     let jid = job_id.clone();
-    let runner = tokio::spawn(async move {
-        run_job(&store2, &jid, opts).await.expect("run ok")
-    });
+    let runner = tokio::spawn(async move { run_job(&store2, &jid, opts).await.expect("run ok") });
     // 等 2 case 发出后取消。
     let deadline = tokio::time::Instant::now() + Duration::from_millis(5000);
     while received.lock().unwrap().len() < 2 {
@@ -538,12 +592,19 @@ async fn cancel_mid_run_graceful() {
     }
     cancel_tx.send(true).expect("cancel send");
     let summary = runner.await.expect("join");
-    assert_eq!(summary.state, "CANCELLED", "SIGTERM → CANCELLING → CANCELLED");
+    assert_eq!(
+        summary.state, "CANCELLED",
+        "SIGTERM → CANCELLING → CANCELLED"
+    );
     // 全 case 行终态（在途 drain；未派 ordinal 无行）。
     let cases = store.list_cases_by_job(&job_id).unwrap();
     assert!(!cases.is_empty());
     for c in &cases {
-        assert!(c.state != "PENDING" && c.state != "SENT", "取消后无悬挂行：{}", c.state);
+        assert!(
+            c.state != "PENDING" && c.state != "SENT",
+            "取消后无悬挂行：{}",
+            c.state
+        );
     }
 }
 
@@ -572,9 +633,7 @@ async fn pause_resume_continues_pending() {
     };
     let store2 = store.clone();
     let jid = job_id.clone();
-    let runner = tokio::spawn(async move {
-        run_job(&store2, &jid, opts).await.expect("run ok")
-    });
+    let runner = tokio::spawn(async move { run_job(&store2, &jid, opts).await.expect("run ok") });
     // 等 PAUSED 落行。
     let deadline = tokio::time::Instant::now() + Duration::from_millis(5000);
     loop {
@@ -599,26 +658,44 @@ async fn resume_does_not_redispatch_terminal_cases() {
     let (port, received, _t) = spawn_target(Behavior::Echo).await;
     let store = mem_store();
     let payloads = ["v0", "v1", "v2", "v3"];
-    let spec = echo_spec_json(port, &payloads, "cartesian", budget_json(10, 1), serde_json::json!({}));
+    let spec = echo_spec_json(
+        port,
+        &payloads,
+        "cartesian",
+        budget_json(10, 1),
+        serde_json::json!({}),
+    );
     let prepared = wsw_runtime::fuzz::spec::prepare_spec(&spec).expect("spec");
     let job_id = wsw_message::ids::FuzzJobId::generate().into_inner();
     let row = wsw_runtime::fuzz::spec::job_row_from_prepared(
-        &prepared, &job_id, "wsw-ses-fz4-test", &spec, wsw_runtime::persist::now_iso(),
+        &prepared,
+        &job_id,
+        "wsw-ses-fz4-test",
+        &spec,
+        wsw_runtime::persist::now_iso(),
     );
     store.insert_fuzz_job(&row).expect("insert job");
     // kill 残留态推进：CREATED→QUEUED→RUNNING（合法迁移链）。
     store
-        .advance_fuzz_job(&job_id, "CREATED", &wsw_runtime::persist::FuzzJobPatch {
-            state: "QUEUED",
-            ..Default::default()
-        })
+        .advance_fuzz_job(
+            &job_id,
+            "CREATED",
+            &wsw_runtime::persist::FuzzJobPatch {
+                state: "QUEUED",
+                ..Default::default()
+            },
+        )
         .expect("to QUEUED");
     store
-        .advance_fuzz_job(&job_id, "QUEUED", &wsw_runtime::persist::FuzzJobPatch {
-            state: "RUNNING",
-            started_at: Some(wsw_runtime::persist::now_iso()),
-            ..Default::default()
-        })
+        .advance_fuzz_job(
+            &job_id,
+            "QUEUED",
+            &wsw_runtime::persist::FuzzJobPatch {
+                state: "RUNNING",
+                started_at: Some(wsw_runtime::persist::now_iso()),
+                ..Default::default()
+            },
+        )
         .expect("to RUNNING");
     // ordinal 0/1 人工 RESPONDED（kill 前已终态）。
     for (ord, val) in [(0i64, "v0"), (1, "v1")] {
@@ -648,8 +725,17 @@ async fn resume_does_not_redispatch_terminal_cases() {
     assert_eq!(summary.state, "COMPLETED");
     assert_eq!(summary.dispatched, 4, "总派发口径 = 既有 2 + 本次 2");
     // 靶机只收到 v2/v3（v0/v1 不重派）。
-    let got: Vec<String> = received.lock().unwrap().iter().map(|(q, _)| q.clone()).collect();
-    assert_eq!(got, vec!["v2".to_string(), "v3".to_string()], "已终态 case 不重派：{got:?}");
+    let got: Vec<String> = received
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(q, _)| q.clone())
+        .collect();
+    assert_eq!(
+        got,
+        vec!["v2".to_string(), "v3".to_string()],
+        "已终态 case 不重派：{got:?}"
+    );
     // case 行 4 行全 RESPONDED（2 人工 + 2 本次）。
     let cases = store.list_cases_by_job(&job_id).unwrap();
     assert_eq!(cases.len(), 4);
@@ -675,7 +761,10 @@ fn job_state_transition_table_rejects_illegal() {
     // 非法直跳（QUEUED→COMPLETED 等终态直跳拒）。
     assert!(!fuzz_job_transition_allowed("QUEUED", "COMPLETED"));
     assert!(!fuzz_job_transition_allowed("CREATED", "RUNNING"));
-    assert!(!fuzz_job_transition_allowed("CANCELLED", "RUNNING"), "终态无出边");
+    assert!(
+        !fuzz_job_transition_allowed("CANCELLED", "RUNNING"),
+        "终态无出边"
+    );
     assert!(!fuzz_job_transition_allowed("COMPLETED", "QUEUED"));
     assert!(!fuzz_job_transition_allowed("BUDGET_EXHAUSTED", "RUNNING"));
     // 词表外词值拒。
@@ -688,8 +777,14 @@ fn job_state_transition_table_rejects_illegal() {
     assert!(fuzz_case_transition_allowed("SENT", "RESPONDED"));
     assert!(fuzz_case_transition_allowed("SENT", "TIMEOUT"));
     assert!(fuzz_case_transition_allowed("SENT", "NETWORK_ERROR"));
-    assert!(!fuzz_case_transition_allowed("PENDING", "RESPONDED"), "PENDING 直跳 RESPONDED 拒");
-    assert!(!fuzz_case_transition_allowed("RESPONDED", "SENT"), "终态无出边");
+    assert!(
+        !fuzz_case_transition_allowed("PENDING", "RESPONDED"),
+        "PENDING 直跳 RESPONDED 拒"
+    );
+    assert!(
+        !fuzz_case_transition_allowed("RESPONDED", "SENT"),
+        "终态无出边"
+    );
     assert!(!fuzz_case_transition_allowed("SENT", "PENDING"));
 }
 
@@ -697,29 +792,50 @@ fn job_state_transition_table_rejects_illegal() {
 async fn illegal_transition_and_state_words_rejected() {
     let store = mem_store();
     // Rust 侧拒：QUEUED→COMPLETED。
-    let spec = echo_spec_json(1, &["x"], "cartesian", budget_json(1, 1), serde_json::json!({}));
+    let spec = echo_spec_json(
+        1,
+        &["x"],
+        "cartesian",
+        budget_json(1, 1),
+        serde_json::json!({}),
+    );
     let prepared = wsw_runtime::fuzz::spec::prepare_spec(&spec).expect("spec");
     let job_id = wsw_message::ids::FuzzJobId::generate().into_inner();
     let row = wsw_runtime::fuzz::spec::job_row_from_prepared(
-        &prepared, &job_id, "wsw-ses-fz4-test", &spec, wsw_runtime::persist::now_iso(),
+        &prepared,
+        &job_id,
+        "wsw-ses-fz4-test",
+        &spec,
+        wsw_runtime::persist::now_iso(),
     );
     store.insert_fuzz_job(&row).expect("insert");
     store
-        .advance_fuzz_job(&job_id, "CREATED", &wsw_runtime::persist::FuzzJobPatch {
-            state: "QUEUED",
-            ..Default::default()
-        })
+        .advance_fuzz_job(
+            &job_id,
+            "CREATED",
+            &wsw_runtime::persist::FuzzJobPatch {
+                state: "QUEUED",
+                ..Default::default()
+            },
+        )
         .expect("to QUEUED");
-    let err = store.advance_fuzz_job(&job_id, "QUEUED", &wsw_runtime::persist::FuzzJobPatch {
-        state: "COMPLETED",
-        ..Default::default()
-    });
+    let err = store.advance_fuzz_job(
+        &job_id,
+        "QUEUED",
+        &wsw_runtime::persist::FuzzJobPatch {
+            state: "COMPLETED",
+            ..Default::default()
+        },
+    );
     assert!(err.is_err(), "QUEUED→COMPLETED 直跳 Rust 侧拒");
     // SQL CHECK 拒：非法九态词值 INSERT。
     let mut bad = row.clone();
     bad.job_id = wsw_message::ids::FuzzJobId::generate().into_inner();
     bad.state = "RUNNIN".to_string();
-    assert!(store.insert_fuzz_job(&bad).is_err(), "非法 job 状态词 INSERT 拒");
+    assert!(
+        store.insert_fuzz_job(&bad).is_err(),
+        "非法 job 状态词 INSERT 拒"
+    );
     // SQL CHECK 拒：非法七态词值 INSERT。
     let case_row = FuzzCaseRow {
         case_id: wsw_message::ids::FuzzCaseId::generate().into_inner(),
@@ -731,7 +847,10 @@ async fn illegal_transition_and_state_words_rejected() {
         created_at: wsw_runtime::persist::now_iso(),
         ..Default::default()
     };
-    assert!(store.insert_fuzz_case(&case_row).is_err(), "非法 case 状态词 INSERT 拒（028 CHECK）");
+    assert!(
+        store.insert_fuzz_case(&case_row).is_err(),
+        "非法 case 状态词 INSERT 拒（028 CHECK）"
+    );
     // case PENDING→RESPONDED 直跳拒（Rust 迁移表）。
     let ok_case = FuzzCaseRow {
         case_id: wsw_message::ids::FuzzCaseId::generate().into_inner(),
@@ -743,11 +862,17 @@ async fn illegal_transition_and_state_words_rejected() {
         created_at: wsw_runtime::persist::now_iso(),
         ..Default::default()
     };
-    store.insert_fuzz_case(&ok_case).expect("insert PENDING case");
-    let err = store.advance_fuzz_case(&ok_case.case_id, "PENDING", &wsw_runtime::persist::FuzzCasePatch {
-        state: "RESPONDED",
-        ..Default::default()
-    });
+    store
+        .insert_fuzz_case(&ok_case)
+        .expect("insert PENDING case");
+    let err = store.advance_fuzz_case(
+        &ok_case.case_id,
+        "PENDING",
+        &wsw_runtime::persist::FuzzCasePatch {
+            state: "RESPONDED",
+            ..Default::default()
+        },
+    );
     assert!(err.is_err(), "PENDING→RESPONDED 直跳拒");
 }
 
@@ -759,23 +884,43 @@ async fn illegal_transition_and_state_words_rejected() {
 async fn rate_limited_429_classified() {
     let (port, _received, _t) = spawn_target(Behavior::Status429).await;
     let store = mem_store();
-    let spec = echo_spec_json(port, &["q1"], "cartesian", budget_json(5, 1), serde_json::json!({}));
+    let spec = echo_spec_json(
+        port,
+        &["q1"],
+        "cartesian",
+        budget_json(5, 1),
+        serde_json::json!({}),
+    );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     assert_eq!(summary.state, "COMPLETED");
     let cases = store.list_cases_by_job(&job_id).unwrap();
     assert_eq!(cases[0].state, "RESPONDED", "429 = 已响应（有响应面）");
     assert_eq!(cases[0].response_status, Some(429));
-    assert_eq!(cases[0].error_code.as_deref(), Some("fuzz_rate_limited"), "限流分类词形");
+    assert_eq!(
+        cases[0].error_code.as_deref(),
+        Some("fuzz_rate_limited"),
+        "限流分类词形"
+    );
 }
 
 #[tokio::test]
 async fn timeout_silent_target() {
     let (port, _received, _t) = spawn_target(Behavior::Silent).await;
     let store = mem_store();
-    let spec = echo_spec_json(port, &["t1"], "cartesian", budget_json(5, 1), serde_json::json!({}));
+    let spec = echo_spec_json(
+        port,
+        &["t1"],
+        "cartesian",
+        budget_json(5, 1),
+        serde_json::json!({}),
+    );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
     let mut opts = job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port);
     opts.policy = SendPolicy {
@@ -805,15 +950,26 @@ async fn duplicate_bodies_grouped_by_sha() {
         serde_json::json!({}),
     );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     assert_eq!(summary.state, "COMPLETED");
     let cases = store.list_cases_by_job(&job_id).unwrap();
     assert_eq!(cases.len(), 2);
     assert_eq!(cases[0].diff_class.as_deref(), Some("baseline"));
-    assert_eq!(cases[1].diff_class.as_deref(), Some("duplicate"), "同 sha → duplicate");
-    assert_eq!(cases[0].response_sha256, cases[1].response_sha256, "同 body → 同 sha");
+    assert_eq!(
+        cases[1].diff_class.as_deref(),
+        Some("duplicate"),
+        "同 sha → duplicate"
+    );
+    assert_eq!(
+        cases[0].response_sha256, cases[1].response_sha256,
+        "同 body → 同 sha"
+    );
     assert!((cases[1].similarity.unwrap() - 1.0).abs() < 1e-9);
 }
 
@@ -841,9 +997,13 @@ async fn header_marker_crlf_payload_serialize_guard() {
     );
     let spec = serde_json::to_string(&serde_json::Value::Object(obj)).unwrap();
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     assert_eq!(summary.state, "COMPLETED");
     let cases = store.list_cases_by_job(&job_id).unwrap();
     assert_eq!(cases[0].state, "NETWORK_ERROR");
@@ -863,12 +1023,19 @@ async fn match_hits_keywords_recorded() {
         serde_json::json!({"analyze": {"keywords": ["TOKEN-FOUND", "absent"]}}),
     );
     let job_id = create_job(&store, "wsw-ses-fz4-test", &spec);
-    let summary = run_job(&store, &job_id, job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port))
-        .await
-        .expect("run ok");
+    let summary = run_job(
+        &store,
+        &job_id,
+        job_opts(&job_id, "wsw-ses-fz4-test", rules_for(port), port),
+    )
+    .await
+    .expect("run ok");
     assert_eq!(summary.state, "COMPLETED");
     let cases = store.list_cases_by_job(&job_id).unwrap();
-    let hits = cases[0].match_hits_json.as_deref().expect("match_hits_json");
+    let hits = cases[0]
+        .match_hits_json
+        .as_deref()
+        .expect("match_hits_json");
     assert!(hits.contains("TOKEN-FOUND"), "命中关键字在场：{hits}");
     assert!(!hits.contains("absent"), "未命中不投影");
 }

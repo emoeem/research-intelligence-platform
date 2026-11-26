@@ -39,7 +39,11 @@ pub fn runtime_budget_ok(consumed: i64, item_budget: i64, plan_cap: Option<i64>)
 
 /// 预算耗尽项的留痕结论（NOT_TESTED + budget_exhausted；reason 带剩余量
 /// 与 cap，供 UI 与补充研究消费）。
-pub fn budget_exhausted_result(consumed: i64, item_budget: i64, plan_cap: i64) -> NormalizedOutcome {
+pub fn budget_exhausted_result(
+    consumed: i64,
+    item_budget: i64,
+    plan_cap: i64,
+) -> NormalizedOutcome {
     NormalizedOutcome {
         result_status: domain::verification::ResultStatus::NotTested.as_str().to_owned(),
         result_reason: format!(
@@ -106,7 +110,10 @@ mod tests {
         let (pending, skipped) = pending_items(items);
         assert_eq!(skipped, 2, "resolved items must not be redispatched");
         assert_eq!(
-            pending.iter().map(|i| i.item_id.as_str()).collect::<Vec<_>>(),
+            pending
+                .iter()
+                .map(|i| i.item_id.as_str())
+                .collect::<Vec<_>>(),
             ["vi-20261117-010203-004-0003", "vi-20261117-010203-004-0004"]
         );
     }
@@ -125,7 +132,10 @@ mod tests {
     fn runtime_budget_gate() {
         assert!(runtime_budget_ok(0, 10, Some(15)));
         assert!(runtime_budget_ok(5, 10, Some(15)));
-        assert!(!runtime_budget_ok(10, 10, Some(15)), "consumed+item must respect cap");
+        assert!(
+            !runtime_budget_ok(10, 10, Some(15)),
+            "consumed+item must respect cap"
+        );
         assert!(!runtime_budget_ok(15, 1, Some(15)));
         // 无 cap 计划不设执行侧门（单项预算仍由派发面约束）。
         assert!(runtime_budget_ok(100, 10, None));
@@ -145,6 +155,9 @@ mod tests {
             Some(&outcome.result_reason),
             outcome.error_category.as_deref(),
         );
-        assert!(guard.is_ok(), "budget exhausted outcome must pass ResultGuard");
+        assert!(
+            guard.is_ok(),
+            "budget exhausted outcome must pass ResultGuard"
+        );
     }
 }

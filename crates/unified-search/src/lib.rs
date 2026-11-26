@@ -1,6 +1,6 @@
 //! 统一检索归并面（RIP3 P4-2，R2 6.1/6.2 + 12-STORAGE C 层「双库各自索引，
 //! 统一 Search API 归并」）：SQLite 运营核知识面（search-engine FTS5/BM25，
-//! resource 语料）+ PG 情报核面（intel-db search：BM25 + 向量 + RRF/MMR）跨库
+//! platform 资源 + Overlay 审核 POC）+ PG 情报核面（intel-db search：BM25 + 向量 + RRF/MMR）跨库
 //! 归并，输出统一 UnifiedHit（store 标注来源库）。
 //!
 //! 薄 crate 边界（ADR-0001 双库边界）：本 crate 只做归并编排，不持有任何
@@ -8,7 +8,10 @@
 //! 既有 FTS 面，RTIS 对账零回归红线不触碰）。RRF 常数与 intel-db::search
 //! 一致（k=60）。
 
-use intel_db::{search::{self as pg_search, SearchFilters as PgFilters, SearchHit as PgHit}, IntelResult};
+use intel_db::{
+    search::{self as pg_search, SearchFilters as PgFilters, SearchHit as PgHit},
+    IntelResult,
+};
 use search_engine::model::{SearchFilters as SqliteFilters, SearchQuery as SqliteQuery};
 use serde::Serialize;
 
@@ -23,7 +26,7 @@ pub struct UnifiedHit {
     pub title: String,
     /// 归并分数（RRF）。
     pub score: f32,
-    /// 补充字段（PG：knowledge_type；SQLite：canonical_url）。
+    /// 补充字段（PG：knowledge_type；SQLite：canonical_url + POC curation facets）。
     pub detail: serde_json::Value,
 }
 
@@ -69,24 +72,46 @@ fn sqlite_query(
         limit: limit as usize,
         offset: 0,
     })?;
-    Ok(hits
-        .hits
-        .into_iter()
-        .map(|h| UnifiedHit {
-            store: "sqlite-knowledge".to_string(),
-            id: h.resource_id.clone(),
-            title: h.name.clone(),
-            score: 0.0,
-            detail: serde_json::json!({
-                "canonical_url": h.canonical_url,
-                "resource_type": h.resource_type,
-                "quality_grade": h.quality_grade,
-            }),
-        })
-        .collect())
+    Ok(hits.hits.into_iter().map(sqlite_hit_to_unified).collect())
 }
 
-fn rrf_merge(pg_hits: Vec<UnifiedHit>, sqlite_hits: Vec<UnifiedHit>, limit: u32) -> Vec<UnifiedHit> {
+fn sqlite_hit_to_unified(h: search_engine::model::SearchHit) -> UnifiedHit {
+    UnifiedHit {
+        store: "sqlite-knowledge".to_string(),
+        id: h.resource_id,
+        title: h.name,
+        score: 0.0,
+        detail: serde_json::json!({
+            "canonical_url": h.canonical_url,
+            "resource_type": h.resource_type,
+            "quality_grade": h.quality_grade,
+            "evidence_level": h.evidence_level,
+            "knowledge_lifecycle": h.knowledge_lifecycle,
+            "poc_category": h.poc_category,
+            "poc_severity": h.poc_severity,
+            "poc_cve_id": h.poc_cve_id,
+            "source_path": h.source_path,
+            "source_commit": h.source_commit,
+            "related_poc_ids": h.related_poc_ids,
+            "related_entities": h.related_entities,
+            "poc_source_integrity": h.poc_source_integrity,
+            "poc_verification_result": h.poc_verification_result,
+            "poc_dedup_status": h.poc_dedup_status,
+            "poc_independent_knowledge_status": h.poc_independent_knowledge_status,
+            "poc_missing_evidence": h.poc_missing_evidence,
+            "poc_evidence_refs": h.poc_evidence_refs,
+            "poc_review_gate": h.poc_review_gate,
+            "poc_source_urls": h.poc_source_urls,
+            "source_annotations": h.source_annotations,
+        }),
+    }
+}
+
+fn rrf_merge(
+    pg_hits: Vec<UnifiedHit>,
+    sqlite_hits: Vec<UnifiedHit>,
+    limit: u32,
+) -> Vec<UnifiedHit> {
     let k = 60.0_f32;
     let mut scores: std::collections::HashMap<(String, String), (f32, UnifiedHit)> =
         std::collections::HashMap::new();
@@ -94,9 +119,7 @@ fn rrf_merge(pg_hits: Vec<UnifiedHit>, sqlite_hits: Vec<UnifiedHit>, limit: u32)
         for (rank, hit) in channel.into_iter().enumerate() {
             let contribution = 1.0 / (k + rank as f32 + 1.0);
             let key = (hit.store.clone(), hit.id.clone());
-            let entry = scores
-                .entry(key)
-                .or_insert_with(|| (0.0, hit.clone()));
+            let entry = scores.entry(key).or_insert_with(|| (0.0, hit.clone()));
             entry.0 += contribution;
         }
     }
@@ -107,7 +130,11 @@ fn rrf_merge(pg_hits: Vec<UnifiedHit>, sqlite_hits: Vec<UnifiedHit>, limit: u32)
             hit
         })
         .collect();
-    merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    merged.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     merged.truncate(limit as usize);
     merged
 }
@@ -140,15 +167,11 @@ pub fn unified_search(input: &UnifiedSearch<'_>, query: &str) -> IntelResult<Uni
 
     // SQLite 面：FTS5/BM25（2.0 既有面；失败降级为空通道——检索是只读派生
     // 面，单库缺席不阻断跨库归并，如实标注 channels）。
-    let (sqlite_hits, sqlite_err) = match sqlite_query(
-        input.sqlite_pool,
-        &input.sqlite_filters,
-        query,
-        input.limit,
-    ) {
-        Ok(hits) => (hits, None),
-        Err(e) => (Vec::new(), Some(e.to_string())),
-    };
+    let (sqlite_hits, sqlite_err) =
+        match sqlite_query(input.sqlite_pool, &input.sqlite_filters, query, input.limit) {
+            Ok(hits) => (hits, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
     let sqlite_count = sqlite_hits.len();
 
     let merged = rrf_merge(pg_hits, sqlite_hits, input.limit);
@@ -167,14 +190,98 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sqlite_projection_preserves_review_facets_and_source_fields() {
+        let hit = search_engine::model::SearchHit {
+            resource_id: "rtis:poc:19".into(),
+            name: "sample".into(),
+            canonical_url: "rtis://poc/19".into(),
+            description: None,
+            resource_type: "rtis_poc".into(),
+            quality_final_score: None,
+            quality_grade: None,
+            license_status: None,
+            maintenance_status: None,
+            topics: vec![],
+            nuclei_severity: None,
+            nuclei_protocols: vec![],
+            nuclei_cve_ids: vec![],
+            nuclei_cwe_ids: vec![],
+            source_sections: vec![],
+            evidence_level: Some("K2".into()),
+            knowledge_lifecycle: Some("Researched".into()),
+            poc_category: Some("unauthorized".into()),
+            poc_severity: Some("high".into()),
+            poc_cve_id: None,
+            source_path: Some("pocs/sample".into()),
+            source_commit: Some("abc123".into()),
+            related_poc_ids: vec!["supports:31".into()],
+            related_entities: vec!["has_case:case-a".into()],
+            poc_source_urls: vec!["https://example.org/source".into()],
+            poc_source_integrity: Some("partial".into()),
+            poc_verification_result: Some("historical_evidence_supported".into()),
+            poc_dedup_status: Some("independent".into()),
+            poc_independent_knowledge_status: Some("independent".into()),
+            poc_missing_evidence: vec![],
+            poc_evidence_refs: vec!["pocs/sample/evidence.md".into()],
+            poc_review_gate: None,
+            score: 0.0,
+            fts_score: None,
+            keyword_coverage: 0.0,
+            keyword_matches: vec![],
+            reasons: vec![],
+            source_annotations: vec![],
+        };
+        let unified = sqlite_hit_to_unified(hit);
+        assert_eq!(unified.id, "rtis:poc:19");
+        assert_eq!(unified.detail["evidence_level"], "K2");
+        assert_eq!(unified.detail["knowledge_lifecycle"], "Researched");
+        assert_eq!(unified.detail["source_commit"], "abc123");
+        assert_eq!(unified.detail["related_poc_ids"][0], "supports:31");
+        assert_eq!(unified.detail["related_entities"][0], "has_case:case-a");
+        assert_eq!(
+            unified.detail["poc_source_urls"][0],
+            "https://example.org/source"
+        );
+        assert_eq!(unified.detail["poc_source_integrity"], "partial");
+        assert_eq!(
+            unified.detail["poc_evidence_refs"][0],
+            "pocs/sample/evidence.md"
+        );
+    }
+
+    #[test]
     fn rrf_merge_cross_store_and_truncate() {
         let pg = vec![
-            UnifiedHit { store: "pg-intel".into(), id: "kc-1".into(), title: "a".into(), score: 0.5, detail: serde_json::json!({}) },
-            UnifiedHit { store: "pg-intel".into(), id: "kc-2".into(), title: "b".into(), score: 0.4, detail: serde_json::json!({}) },
+            UnifiedHit {
+                store: "pg-intel".into(),
+                id: "kc-1".into(),
+                title: "a".into(),
+                score: 0.5,
+                detail: serde_json::json!({}),
+            },
+            UnifiedHit {
+                store: "pg-intel".into(),
+                id: "kc-2".into(),
+                title: "b".into(),
+                score: 0.4,
+                detail: serde_json::json!({}),
+            },
         ];
         let sq = vec![
-            UnifiedHit { store: "sqlite-knowledge".into(), id: "res-1".into(), title: "a 主题".into(), score: 0.0, detail: serde_json::json!({}) },
-            UnifiedHit { store: "sqlite-knowledge".into(), id: "res-9".into(), title: "c".into(), score: 0.0, detail: serde_json::json!({}) },
+            UnifiedHit {
+                store: "sqlite-knowledge".into(),
+                id: "res-1".into(),
+                title: "a 主题".into(),
+                score: 0.0,
+                detail: serde_json::json!({}),
+            },
+            UnifiedHit {
+                store: "sqlite-knowledge".into(),
+                id: "res-9".into(),
+                title: "c".into(),
+                score: 0.0,
+                detail: serde_json::json!({}),
+            },
         ];
         let merged = rrf_merge(pg, sq, 3);
         assert_eq!(merged.len(), 3);

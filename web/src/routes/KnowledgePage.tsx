@@ -376,8 +376,414 @@ function SourceEntriesView() {
   );
 }
 
+interface CuratedPocHit {
+  resource_id: string;
+  name: string;
+  resource_type: string;
+  evidence_level?: string | null;
+  knowledge_lifecycle?: string | null;
+  poc_category?: string | null;
+  poc_severity?: string | null;
+  poc_cve_id?: string | null;
+  source_path?: string | null;
+  source_commit?: string | null;
+  related_poc_ids?: string[];
+  source_annotations?: string[];
+  poc_source_integrity?: string | null;
+  poc_verification_result?: string | null;
+  poc_dedup_status?: string | null;
+  poc_independent_knowledge_status?: string | null;
+  poc_missing_evidence?: string[];
+  poc_evidence_refs?: string[];
+  poc_source_urls?: string[];
+  poc_review_gate?: string | null;
+  related_entities?: string[];
+}
+
+interface CuratedPocSummary {
+  available: boolean;
+  total_curated: number;
+  by_evidence_level: Record<string, number>;
+  by_lifecycle: Record<string, number>;
+  by_source_integrity: Record<string, number>;
+  by_verification_result: Record<string, number>;
+  missing_evidence_entries: number;
+  missing_evidence_items: number;
+  entries_with_source_path: number;
+  entries_without_source_path: number;
+  entries_with_source_commit: number;
+  entries_without_source_commit: number;
+  entries_with_source_urls: number;
+  entries_without_source_urls: number;
+  relation_count: number;
+  external_entity_count: number;
+  review_queue_count: number;
+  metadata_incomplete_entries: number;
+}
+
+interface CuratedPocSearchResult {
+  available: boolean;
+  query: string;
+  total: number;
+  returned: number;
+  hits: CuratedPocHit[];
+  filters: Record<string, string>;
+}
+
+function CuratedPocSearchView() {
+  const [rawQuery, setRawQuery] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [evidence, setEvidence] = useState("");
+  const [lifecycle, setLifecycle] = useState("");
+  const [severity, setSeverity] = useState("");
+  const [category, setCategory] = useState("");
+  const [cve, setCve] = useState("");
+  const [sourceIntegrity, setSourceIntegrity] = useState("");
+  const [verificationResult, setVerificationResult] = useState("");
+  const [dedupStatus, setDedupStatus] = useState("");
+  const [missingEvidence, setMissingEvidence] = useState("true");
+  const summary = useApi<CuratedPocSummary>("/api/curated-pocs/summary");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setKeyword(rawQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [rawQuery]);
+
+  const params = new URLSearchParams({ limit: "100" });
+  if (keyword) params.set("q", keyword);
+  if (evidence) params.set("evidence_level", evidence);
+  if (lifecycle) params.set("knowledge_lifecycle", lifecycle);
+  if (severity) params.set("poc_severity", severity);
+  if (category.trim()) params.set("poc_category", category.trim());
+  if (cve.trim()) params.set("poc_cve_id", cve.trim());
+  if (sourceIntegrity) params.set("poc_source_integrity", sourceIntegrity);
+  if (verificationResult) params.set("poc_verification_result", verificationResult);
+  if (dedupStatus) params.set("poc_dedup_status", dedupStatus);
+  if (missingEvidence) params.set("poc_missing_evidence", missingEvidence);
+  const hasCriteria = Boolean(
+    keyword ||
+    evidence ||
+    lifecycle ||
+    severity ||
+    category.trim() ||
+    cve.trim() ||
+    sourceIntegrity ||
+    verificationResult ||
+    dedupStatus ||
+    missingEvidence,
+  );
+  const result = useApi<CuratedPocSearchResult>(
+    hasCriteria ? `/api/curated-pocs/search?${params.toString()}` : null,
+  );
+  const hits = result.data?.hits ?? [];
+
+  return (
+    <section aria-label={translateUi("自有 POC 证据检索")} data-testid="curated-poc-search">
+      <div className="mb-3 rounded-surface border border-edge bg-base-100 p-3">
+        <div
+          className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6"
+          data-testid="poc-governance-summary"
+        >
+          <div className="rounded-control bg-base-200 p-2">
+            <div className="text-[11px] text-muted">{translateUi("已纳入 POC")}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {summary.data?.total_curated ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-control bg-base-200 p-2">
+            <div className="text-[11px] text-muted">{translateUi("待补证队列")}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {summary.data?.review_queue_count ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-control bg-base-200 p-2">
+            <div className="text-[11px] text-muted">{translateUi("缺失证据项")}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {summary.data?.missing_evidence_items ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-control bg-base-200 p-2">
+            <div className="text-[11px] text-muted">{translateUi("关联关系")}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {summary.data?.relation_count ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-control bg-base-200 p-2">
+            <div className="text-[11px] text-muted">{translateUi("治理元数据待补")}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {summary.data?.metadata_incomplete_entries ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-control bg-base-200 p-2">
+            <div className="text-[11px] text-muted">{translateUi("缺少来源 Commit")}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {summary.data?.entries_without_source_commit ?? "—"}
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <input
+            type="search"
+            className="input input-sm w-full rounded-control border border-edge bg-base-100"
+            placeholder={translateUi("搜索 POC 标题、技术或关键词")}
+            aria-label={translateUi("搜索自有 POC")}
+            value={rawQuery}
+            onChange={(event) => setRawQuery(event.target.value)}
+          />
+          <select
+            aria-label={translateUi("证据等级筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={evidence}
+            onChange={(event) => setEvidence(event.target.value)}
+          >
+            <option value="">{translateUi("全部证据等级")}</option>
+            {(["K0", "K1", "K2", "K3", "K4"] as const).map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={translateUi("POC 生命周期筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={lifecycle}
+            onChange={(event) => setLifecycle(event.target.value)}
+          >
+            <option value="">{translateUi("全部生命周期")}</option>
+            <option value="Candidate">Candidate</option>
+            <option value="Researched">Researched</option>
+            <option value="Lab-validated">Lab-validated</option>
+          </select>
+          <select
+            aria-label={translateUi("POC 严重程度筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={severity}
+            onChange={(event) => setSeverity(event.target.value)}
+          >
+            <option value="">{translateUi("全部严重程度")}</option>
+            {(["critical", "high", "medium", "low", "info"] as const).map((level) => (
+              <option key={level} value={level}>
+                {level.toUpperCase()}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input input-sm rounded-control border border-edge bg-base-100"
+            placeholder={translateUi("漏洞分类，例如 auth-bypass")}
+            aria-label={translateUi("POC 分类筛选")}
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+          />
+          <select
+            aria-label={translateUi("来源完整性筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={sourceIntegrity}
+            onChange={(event) => setSourceIntegrity(event.target.value)}
+          >
+            <option value="">{translateUi("全部来源完整性")}</option>
+            <option value="complete">complete</option>
+            <option value="partial">partial</option>
+            <option value="missing">missing</option>
+          </select>
+          <select
+            aria-label={translateUi("证据核验结论筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={verificationResult}
+            onChange={(event) => setVerificationResult(event.target.value)}
+          >
+            <option value="">{translateUi("全部核验结论")}</option>
+            <option value="candidate_not_verified">candidate_not_verified</option>
+            <option value="historical_evidence_supported">historical_evidence_supported</option>
+          </select>
+          <select
+            aria-label={translateUi("去重状态筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={dedupStatus}
+            onChange={(event) => setDedupStatus(event.target.value)}
+          >
+            <option value="">{translateUi("全部去重状态")}</option>
+            <option value="independent">independent</option>
+            <option value="related-family">related-family</option>
+          </select>
+          <select
+            aria-label={translateUi("缺失证据筛选")}
+            className="select select-sm rounded-control border border-edge bg-base-100"
+            value={missingEvidence}
+            onChange={(event) => setMissingEvidence(event.target.value)}
+          >
+            <option value="">{translateUi("全部证据状态")}</option>
+            <option value="true">{translateUi("仅待补证")}</option>
+            <option value="false">{translateUi("证据项已齐")}</option>
+          </select>
+          <input
+            className="input input-sm rounded-control border border-edge bg-base-100"
+            placeholder="CVE-YYYY-NNNN"
+            aria-label={translateUi("CVE 编号筛选")}
+            value={cve}
+            onChange={(event) => setCve(event.target.value)}
+          />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+          <span>
+            {translateUi(
+              "仅展示 Overlay 明确纳入的 POC 元数据；不会读取 POC 正文。默认显示待补证队列。",
+            )}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => {
+              setRawQuery("");
+              setKeyword("");
+              setEvidence("");
+              setLifecycle("");
+              setSeverity("");
+              setCategory("");
+              setCve("");
+              setSourceIntegrity("");
+              setVerificationResult("");
+              setDedupStatus("");
+              setMissingEvidence("true");
+            }}
+          >
+            {translateUi("清除筛选")}
+          </button>
+        </div>
+      </div>
+
+      {!hasCriteria ? (
+        <EmptyPanel
+          text={translateUi("输入关键词或选择至少一个筛选条件以检索已审核纳入的自有 POC。")}
+        />
+      ) : result.loading ? (
+        <SkeletonPanel lines={5} />
+      ) : result.error !== null ? (
+        <ErrorPanel error={result.error} onRetry={result.retry} />
+      ) : hits.length === 0 ? (
+        <EmptyPanel text={translateUi("没有匹配的自有 POC；可调整关键词或筛选条件。")} />
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-muted" data-testid="poc-search-total">
+            {translateUi("匹配")} {result.data?.total ?? 0} {translateUi("条自有 POC")}
+          </p>
+          <ul className="space-y-2" data-testid="curated-poc-results">
+            {hits.map((hit) => (
+              <li
+                key={hit.resource_id}
+                className="rounded-surface border border-edge bg-base-100 p-3"
+              >
+                <div className="flex flex-wrap items-center gap-1">
+                  {hit.evidence_level ? (
+                    <span
+                      className={`badge badge-sm ${hit.evidence_level === "K0" ? "badge-warning" : "badge-info"}`}
+                    >
+                      {hit.evidence_level}
+                    </span>
+                  ) : null}
+                  {hit.knowledge_lifecycle ? (
+                    <span className="badge badge-sm badge-outline">{hit.knowledge_lifecycle}</span>
+                  ) : null}
+                  {hit.poc_severity ? (
+                    <span
+                      className={`badge badge-sm ${hit.poc_severity === "critical" ? "badge-error" : hit.poc_severity === "high" ? "badge-warning" : "badge-ghost"}`}
+                    >
+                      {hit.poc_severity.toUpperCase()}
+                    </span>
+                  ) : null}
+                  {hit.poc_category ? (
+                    <span className="badge badge-sm badge-ghost">{hit.poc_category}</span>
+                  ) : null}
+                  {hit.poc_source_integrity ? (
+                    <span className="badge badge-sm badge-outline">
+                      {translateUi("来源")}:{hit.poc_source_integrity}
+                    </span>
+                  ) : null}
+                  {hit.poc_dedup_status ? (
+                    <span className="badge badge-sm badge-outline">{hit.poc_dedup_status}</span>
+                  ) : null}
+                  <span className="ml-auto font-mono text-[11px] text-muted">
+                    {hit.resource_id}
+                  </span>
+                </div>
+                <h3 className="mt-2 text-sm font-semibold leading-5">{hit.name}</h3>
+                <div className="mt-2 grid gap-1 text-[11px] text-muted md:grid-cols-2">
+                  {hit.poc_cve_id ? <p>CVE: {hit.poc_cve_id}</p> : null}
+                  {hit.source_commit ? (
+                    <p>
+                      Commit: <span className="font-mono">{hit.source_commit.slice(0, 12)}</span>
+                    </p>
+                  ) : null}
+                  <p className="break-all md:col-span-2">
+                    {translateUi("来源路径")}：
+                    <span className="font-mono">{hit.source_path || translateUi("未记录")}</span>
+                  </p>
+                  <p className="break-all md:col-span-2">
+                    {translateUi("来源 Commit")}：
+                    <span className="font-mono">{hit.source_commit || translateUi("未记录")}</span>
+                  </p>
+                  {hit.poc_verification_result ? (
+                    <p className="md:col-span-2">
+                      {translateUi("核验结论")}：{hit.poc_verification_result}
+                    </p>
+                  ) : null}
+                  {hit.poc_independent_knowledge_status ? (
+                    <p className="md:col-span-2">
+                      {translateUi("独立知识状态")}：{hit.poc_independent_knowledge_status}
+                    </p>
+                  ) : null}
+                  {hit.poc_missing_evidence?.length ? (
+                    <p className="break-all md:col-span-2">
+                      {translateUi("缺失证据")}：{hit.poc_missing_evidence.join(" · ")}
+                    </p>
+                  ) : null}
+                  {hit.poc_evidence_refs?.length ? (
+                    <p className="break-all md:col-span-2">
+                      {translateUi("证据引用")}：{hit.poc_evidence_refs.join(" · ")}
+                    </p>
+                  ) : null}
+                  {hit.poc_source_urls?.length ? (
+                    <p className="break-all md:col-span-2">
+                      {translateUi("上游来源")}：
+                      {hit.poc_source_urls.map((url) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mr-2 underline underline-offset-2"
+                        >
+                          {url}
+                        </a>
+                      ))}
+                    </p>
+                  ) : null}
+                  {hit.poc_review_gate ? (
+                    <p className="break-words md:col-span-2">
+                      {translateUi("下一步审核要求")}：{hit.poc_review_gate}
+                    </p>
+                  ) : null}
+                  {hit.related_poc_ids?.length ? (
+                    <p className="break-all md:col-span-2">
+                      {translateUi("关联 POC")}：{hit.related_poc_ids.join(" · ")}
+                    </p>
+                  ) : null}
+                  {hit.related_entities?.length ? (
+                    <p className="break-all md:col-span-2">
+                      {translateUi("关联案例组")}：{hit.related_entities.join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function KnowledgePage() {
-  const [view, setView] = useState<"platform" | "sources">("platform");
+  const [view, setView] = useState<"platform" | "sources" | "pocs">("platform");
   return (
     <div>
       <PageHeader
@@ -399,11 +805,25 @@ export function KnowledgePage() {
               >
                 {translateUi("知识来源")}
               </button>
+              <button
+                type="button"
+                className={`btn btn-xs ${view === "pocs" ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setView("pocs")}
+                data-testid="knowledge-poc-tab"
+              >
+                {translateUi("自有 POC")}
+              </button>
             </div>
           </div>
         }
       />
-      {view === "sources" ? <SourceEntriesView /> : <PlatformKnowledgeView />}
+      {view === "sources" ? (
+        <SourceEntriesView />
+      ) : view === "pocs" ? (
+        <CuratedPocSearchView />
+      ) : (
+        <PlatformKnowledgeView />
+      )}
     </div>
   );
 }

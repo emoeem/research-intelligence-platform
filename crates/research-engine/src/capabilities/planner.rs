@@ -6,9 +6,7 @@
 //! 规划替换实现体时，request-v1/result-v1 契约面不变。
 
 use crate::capabilities::CapabilityExec;
-use crate::contract::{
-    digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor,
-};
+use crate::contract::{digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor};
 use serde::{Deserialize, Serialize};
 
 /// 计划步骤指向的下游能力词表（含 tool.call 占位；不含 research.planner 自指）。

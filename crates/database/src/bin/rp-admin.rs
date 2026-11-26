@@ -245,15 +245,18 @@ fn parse_args() -> Result<Mode, String> {
             }
             "--rate-window-ms" => {
                 let value = need_value(&argv, &mut i, "--rate-window-ms")?;
-                rate_window_ms = Some(value.parse().map_err(|_| {
-                    format!("--rate-window-ms must be u64 > 0, got {value}")
-                })?);
+                rate_window_ms = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("--rate-window-ms must be u64 > 0, got {value}"))?,
+                );
             }
             "--rate-max-steps" => {
                 let value = need_value(&argv, &mut i, "--rate-max-steps")?;
-                rate_max_steps = Some(value.parse().map_err(|_| {
-                    format!("--rate-max-steps must be usize >= 0, got {value}")
-                })?);
+                rate_max_steps =
+                    Some(value.parse().map_err(|_| {
+                        format!("--rate-max-steps must be usize >= 0, got {value}")
+                    })?);
             }
             "--budget-max-steps-per-run" => {
                 let value = need_value(&argv, &mut i, "--budget-max-steps-per-run")?;
@@ -290,7 +293,9 @@ fn parse_args() -> Result<Mode, String> {
             let level = level.ok_or("caller-add requires --level T0|T1|T2")?;
             if let Some(id) = &caller_id {
                 if !id.starts_with("caller-") {
-                    return Err(format!("--caller-id must start with 'caller-'（026 CHECK），got {id}"));
+                    return Err(format!(
+                        "--caller-id must start with 'caller-'（026 CHECK），got {id}"
+                    ));
                 }
             }
             Ok(Mode::CallerAdd {
@@ -336,7 +341,9 @@ fn parse_args() -> Result<Mode, String> {
             let db = db.ok_or("budget-set requires --db")?;
             let caller_id = caller_id.ok_or("budget-set requires --caller-id")?;
             if !caller_id.starts_with("caller-") {
-                return Err(format!("--caller-id must start with 'caller-'（026 CHECK），got {caller_id}"));
+                return Err(format!(
+                    "--caller-id must start with 'caller-'（026 CHECK），got {caller_id}"
+                ));
             }
             let rate_window_ms = rate_window_ms.unwrap_or(60_000);
             if rate_window_ms == 0 {
@@ -571,11 +578,10 @@ fn run(mode: Mode) -> Result<(), String> {
             let key_hash = key_hash_hex(&plaintext);
             let created_at: String = pool
                 .with_conn(|c| -> rusqlite::Result<String> {
-                    let ts: String = c.query_row(
-                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-                        [],
-                        |r| r.get(0),
-                    )?;
+                    let ts: String =
+                        c.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')", [], |r| {
+                            r.get(0)
+                        })?;
                     c.execute(
                         "INSERT INTO api_key (key_hash, caller_id, label, created_at) \
                          VALUES (?1, ?2, ?3, ?4)",
@@ -732,11 +738,10 @@ fn run(mode: Mode) -> Result<(), String> {
             }
             let updated_at: String = pool
                 .with_conn(|c| -> rusqlite::Result<String> {
-                    let ts: String = c.query_row(
-                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-                        [],
-                        |r| r.get(0),
-                    )?;
+                    let ts: String =
+                        c.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')", [], |r| {
+                            r.get(0)
+                        })?;
                     c.execute(
                         "INSERT INTO caller_budget (caller_id, max_parallel_subtasks,
                          max_concurrent_runs, rate_window_ms, rate_max_steps,
@@ -891,8 +896,6 @@ fn run(mode: Mode) -> Result<(), String> {
     Ok(())
 }
 
-
-
 // ---------------------------------------------------------------------------
 // MA-1（D6）caller/key 管理面：写连接（自动迁移）+ key 生成 + 行投影
 // ---------------------------------------------------------------------------
@@ -1042,7 +1045,9 @@ mod tests {
             assert_eq!(enc.len(), 43, "32 字节 → 43 位无填充");
             assert!(!enc.contains('='));
             assert_eq!(
-                data_encoding::BASE64URL_NOPAD.decode(enc.as_bytes()).unwrap(),
+                data_encoding::BASE64URL_NOPAD
+                    .decode(enc.as_bytes())
+                    .unwrap(),
                 raw
             );
         }

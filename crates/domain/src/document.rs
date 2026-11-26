@@ -189,7 +189,10 @@ mod tests {
 
     #[test]
     fn visibility_parse_is_fail_closed() {
-        assert_eq!(DocumentVisibility::parse("private").unwrap(), DocumentVisibility::Private);
+        assert_eq!(
+            DocumentVisibility::parse("private").unwrap(),
+            DocumentVisibility::Private
+        );
         assert!(DocumentVisibility::parse("internal").is_err());
     }
 

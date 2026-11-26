@@ -5,9 +5,7 @@
 //! 归并与改写；Phase 8 以真实综合实现替换 body 生成逻辑，契约面不变。
 
 use crate::capabilities::CapabilityExec;
-use crate::contract::{
-    digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor,
-};
+use crate::contract::{digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor};
 use domain::ids::{ArtifactId, EvidenceId};
 use serde::{Deserialize, Serialize};
 
@@ -122,8 +120,7 @@ impl CapabilityExec for SynthesisCapability {
             });
         }
         let section_count = sections.len();
-        let summary =
-            format!("综合 {section_count} 节（synthesis {synthesis_id}，mock 逐项展开）");
+        let summary = format!("综合 {section_count} 节（synthesis {synthesis_id}，mock 逐项展开）");
         Ok((
             SynthesisOutput {
                 synthesis_id,

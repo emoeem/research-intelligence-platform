@@ -122,16 +122,21 @@ fn allowed_capability_types(kind: &str) -> Option<&'static [&'static str]> {
 
 const SOURCE_TYPES: [&str; 5] = ["local_dir", "git", "archive", "mcp_server", "http_api"];
 
-/// SK-1 三类新知识内容类型（010 词表之外的扩展，落 knowledge_source_entry，
+/// knowledge_source_entry 扩展知识内容类型（010 词表之外，落 011/032，
 /// 011 迁移；裁决 docs/phase6/SK1-INGEST-ADR.md 第五节）。
-pub const EXTENDED_CONTENT_KINDS: [&str; 3] =
-    ["catalog_entry", "document_markdown", "skill_candidate"];
+pub const EXTENDED_CONTENT_KINDS: [&str; 4] = [
+    "catalog_entry",
+    "document_markdown",
+    "skill_candidate",
+    "nuclei_template",
+];
 
 /// 每类新内容的必配内置解析器（per-kind parser 注册表键，一一对应）。
-pub const KIND_PARSER: [(&str, &str); 3] = [
+pub const KIND_PARSER: [(&str, &str); 4] = [
     ("catalog_entry", "markdown_links"),
     ("document_markdown", "markdown_doc"),
     ("skill_candidate", "skill_frontmatter"),
+    ("nuclei_template", "nuclei_yaml"),
 ];
 
 /// license/rights policy 词表（SK-1）。
@@ -428,7 +433,7 @@ fn rule3_identity(manifest: &Map<String, Value>, existing_ids: &HashSet<String>)
                     ),
                 ));
             }
-            // SK-1：knowledge_source 声明三类新内容类型时，每类型声明必须
+            // 扩展知识：knowledge_source 声明扩展内容类型时，每类型声明必须
             // 完整（source_path/parser/license_policy，schema 层管结构，这里
             // 管语义配对与路径安全），RTIS 三类不触发（零回归）。
             if cap_type == "knowledge_source" {
@@ -461,10 +466,10 @@ fn rule3_identity(manifest: &Map<String, Value>, existing_ids: &HashSet<String>)
     Ok(())
 }
 
-/// knowledge_source capability 的三类新内容声明语义检查（rule 3 内联步骤，
+/// knowledge_source capability 的扩展内容声明语义检查（rule 3 内联步骤，
 /// SK-1：计划 §8 P6-9 第 2 步「每类 source_path/parser/license policy 声明」）。
 /// 结构形状由 v1.json rule 2 全文校验表达；这里给 knowledge_provides_invalid
-/// 的精确归因：声明三类新值任一而缺 kinds.<kind>、parser 与内容类型不配对、
+/// 的精确归因：声明扩展类型任一而缺 kinds.<kind>、parser 与内容类型不配对、
 /// license_policy 出词表、source_path 路径不安全，均在此拒绝。
 fn check_knowledge_provides(cap_obj: &Map<String, Value>, cap_id: &str) -> RuleResult {
     let Some(provides) = cap_obj.get("provides").and_then(Value::as_object) else {

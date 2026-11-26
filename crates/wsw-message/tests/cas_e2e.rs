@@ -129,15 +129,15 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
     // 时序下也可能读到重建前状态——副本先幂等迁到当前链头再断言（migrate 只写副本；
     // 023..031 建表全 IF NOT EXISTS、登记行全 INSERT OR IGNORE，回放安全）。
     // 源文件零写入由 sha256 前后比对断言承载。
-    if source_copy_version < 31 {
+    if source_copy_version < 32 {
         migrate(&pool, &migrations_dir()).expect("bring disposable dev-b1 copy to chain tail");
     }
     let source_copy_version: i64 = pool
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version after bring-up");
     assert_eq!(
-        source_copy_version, 31,
-        "disposable copy must reach current chain tail 031 before the rewind simulation"
+        source_copy_version, 32,
+        "disposable copy must reach current chain tail 032 before the rewind simulation"
     );
     let existing_table: i64 = pool
         .with_conn(|conn| {
@@ -174,8 +174,8 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get(0)))
         .expect("read copied DB version");
     assert_eq!(
-        version, 31,
-        "development copy must reach current chain tail 031 (023 re-applied after rollback)"
+        version, 32,
+        "development copy must reach current chain tail 032 (023 re-applied after rollback)"
     );
     pool.with_conn(|conn| -> Result<(), database::DbError> {
         let table_count: i64 = conn.query_row(
@@ -187,7 +187,7 @@ fn dev_b1_copy_applies_migration_023_without_touching_source_database() {
         Ok(())
     })
     .expect("verify migrated table");
-    assert_eq!(version, 31);
+    assert_eq!(version, 32);
     drop(pool);
 
     let source_sha_after = sha256_hex(&fs::read(&source).expect("re-read source DB read-only"));

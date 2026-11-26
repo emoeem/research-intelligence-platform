@@ -12,15 +12,15 @@
 //! 每次派发都真实重探（生产基线 600s 间隔由 wait_runner.rs 的
 //! probe_interval_guards_against_tight_poll 固化，本文件不重复）。
 
-use database::{DbPath, Pool, PoolConfig, migrate};
+use database::{migrate, DbPath, Pool, PoolConfig};
 use domain::{NodeHealth, RuntimeNode, RuntimeNodeKind, ToolRunStatus};
 use runtime_gateway::{DispatchOutcome, Gateway, GatewayConfig, HealthStore, SwitchProbe};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tool_engine::Engine;
 use tool_engine::mock_runner::MockRunner;
+use tool_engine::Engine;
 use tool_registry::{Options, Registry};
 
 fn repo_root() -> PathBuf {

@@ -51,7 +51,6 @@ pub use domain::context::{
 };
 pub use error::ContextBrokerError;
 pub use estimate::{count_chars, est_tokens, est_tokens_formula, CharCounts};
-pub use tokenizer::{available as tokenizer_available, count_tokens as tokenizer_count, TokenizerAdapter};
 pub use intent::{
     classify, detect_slots, emit_intent_event, ClassifyResult, FamilyRule, IntentConfig,
     KnowledgeIntentRule, AMBIGUOUS_CONFIDENCE_THRESHOLD, INTENT_ACTION,
@@ -64,6 +63,7 @@ pub use score::{
 };
 pub use source::{Candidate, Content, ContextSource};
 pub use sources::artifact::{ArtifactSource, ARTIFACT_SOURCE_ID};
+pub use sources::curated_knowledge::{CuratedKnowledgeSource, CURATED_KNOWLEDGE_SOURCE_ID};
 pub use sources::knowledge::{KnowledgeSource, KNOWLEDGE_SOURCE_ID};
 pub use sources::plugin::PluginSource;
 pub use sources::registry::{
@@ -72,3 +72,6 @@ pub use sources::registry::{
 };
 pub use sources::rtis::{RtisSource, RtisStatus, RTIS_SOURCE_ID, RTIS_TIMEOUT};
 pub use sources::rulepack::{RuleEntry, RulePack, RulepackSource};
+pub use tokenizer::{
+    available as tokenizer_available, count_tokens as tokenizer_count, TokenizerAdapter,
+};

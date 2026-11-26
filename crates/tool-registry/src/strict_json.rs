@@ -41,25 +41,29 @@ impl<'de> serde::Deserialize<'de> for StrictValue {
 
             fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 Ok(StrictValue(Value::Bool(v)))
             }
 
             fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 Ok(StrictValue(Value::Number(v.into())))
             }
 
             fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 Ok(StrictValue(Value::Number(v.into())))
             }
 
             fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 let n = serde_json::Number::from_f64(v)
                     .ok_or_else(|| serde::de::Error::custom("non-finite float"))?;
                 Ok(StrictValue(Value::Number(n)))
@@ -67,19 +71,22 @@ impl<'de> serde::Deserialize<'de> for StrictValue {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 Ok(StrictValue(Value::String(v.to_owned())))
             }
 
             fn visit_unit<E>(self) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 Ok(StrictValue(Value::Null))
             }
 
             fn visit_none<E>(self) -> Result<Self::Value, E>
             where
-                E: serde::de::Error, {
+                E: serde::de::Error,
+            {
                 Ok(StrictValue(Value::Null))
             }
 
@@ -109,9 +116,7 @@ impl<'de> serde::Deserialize<'de> for StrictValue {
                 let mut out = serde_json::Map::new();
                 while let Some(key) = map.next_key::<String>()? {
                     if !seen.insert(key.clone()) {
-                        return Err(serde::de::Error::custom(format!(
-                            "duplicate key: {key}"
-                        )));
+                        return Err(serde::de::Error::custom(format!("duplicate key: {key}")));
                     }
                     let value = map.next_value::<StrictValue>()?;
                     out.insert(key, value.0);

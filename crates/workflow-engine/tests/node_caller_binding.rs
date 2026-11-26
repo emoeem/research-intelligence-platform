@@ -36,8 +36,8 @@ use agent_engine::evidence::EvidenceRegistrar;
 use agent_engine::store::AgentStore;
 use agent_engine::tool_link::{RunDriver, ToolLink};
 use context_broker::{ArtifactSource, Broker, ManifestStore, RegistrySource, RulepackSource};
-use database::{rusqlite, DbPath, Pool, PoolConfig};
 use database::rusqlite::OptionalExtension;
+use database::{rusqlite, DbPath, Pool, PoolConfig};
 use domain::{AgentDefinition, AgentId, AgentRun, CapabilityRef};
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -329,8 +329,8 @@ impl AgentNodeDriver for LoopBindingDriver {
         );
         let loop_ = match &resolved {
             Some(_) => {
-                let caller_budgets = agent_engine::control::load_caller_budgets(&self.pool)
-                    .unwrap_or_default();
+                let caller_budgets =
+                    agent_engine::control::load_caller_budgets(&self.pool).unwrap_or_default();
                 loop_.with_control(RunControlConfig {
                     caller_budgets,
                     ..RunControlConfig::default()
@@ -398,7 +398,9 @@ impl AgentNodeDriver for RecordingDriver {
 
 fn put_definition(pool: &Pool, raw: &str) {
     let doc = workflow_engine::dsl::parse_definition(raw).unwrap();
-    WorkflowStore::new(pool.clone()).put(&doc, "ma3-test").unwrap();
+    WorkflowStore::new(pool.clone())
+        .put(&doc, "ma3-test")
+        .unwrap();
 }
 
 #[test]
@@ -411,7 +413,13 @@ fn node_params_binding_flows_to_driver_and_run_row() {
     let recorder = Arc::new(RecordingDriver::default());
     let executor = WorkflowExecutor::new(pool.clone()).with_agent_driver(recorder.clone());
     let outcome = executor
-        .start_with_caller("wf-ma3-caller-binding", None, &json!({}), None, Some("caller-a"))
+        .start_with_caller(
+            "wf-ma3-caller-binding",
+            None,
+            &json!({}),
+            None,
+            Some("caller-a"),
+        )
         .expect("run succeeds");
     assert_eq!(
         domain::WorkflowRunState::Succeeded,
@@ -438,7 +446,11 @@ fn node_params_binding_flows_to_driver_and_run_row() {
     assert_eq!(seen[0].0, "node1");
     assert_eq!(seen[0].1, None, "node1 无 params 绑定 → None（节点级）");
     assert_eq!(seen[1].0, "node2");
-    assert_eq!(seen[1].1.as_deref(), Some("caller-b"), "node2 params 显式绑定");
+    assert_eq!(
+        seen[1].1.as_deref(),
+        Some("caller-b"),
+        "node2 params 显式绑定"
+    );
 }
 
 #[test]
@@ -474,7 +486,13 @@ fn params_caller_id_non_string_is_params_invalid() {
     let recorder = Arc::new(RecordingDriver::default());
     let executor = WorkflowExecutor::new(pool.clone()).with_agent_driver(recorder.clone());
     let outcome = executor
-        .start_with_caller("wf-ma3-bad-caller-params", None, &json!({}), None, Some("caller-a"))
+        .start_with_caller(
+            "wf-ma3-bad-caller-params",
+            None,
+            &json!({}),
+            None,
+            Some("caller-a"),
+        )
         .expect("run executes (fail-fast node)");
     assert_eq!(domain::WorkflowRunState::Failed, outcome.state);
     let node = outcome
@@ -510,11 +528,15 @@ fn dual_caller_agent_rows_and_guardrail_attribution() {
     // budget_caller_total 落行——审计分账实测载体）；caller-b 不设帽。
     set_budget(&pool, "caller-a", 0, 0, 60000, 0, 1);
     let executor = WorkflowExecutor::new(pool.clone())
-        .with_agent_driver(Arc::new(LoopBindingDriver {
-            pool: pool.clone(),
-        }));
+        .with_agent_driver(Arc::new(LoopBindingDriver { pool: pool.clone() }));
     let outcome = executor
-        .start_with_caller("wf-ma3-caller-binding", None, &json!({}), None, Some("caller-a"))
+        .start_with_caller(
+            "wf-ma3-caller-binding",
+            None,
+            &json!({}),
+            None,
+            Some("caller-a"),
+        )
         .expect("run to terminal");
     assert_eq!(domain::WorkflowRunState::Succeeded, outcome.state);
     // workflow_run.caller_id = caller-a。
@@ -531,10 +553,10 @@ fn dual_caller_agent_rows_and_guardrail_attribution() {
         .flatten();
     assert_eq!(run_caller.as_deref(), Some("caller-a"));
     // agent_run 两行 caller_id 分属两 caller（库直查，节点链接列锚定）。
-    let node1_run = node_agent_run_id(&pool, outcome.run_id.as_str(), "node1")
-        .expect("node1 agent_run link");
-    let node2_run = node_agent_run_id(&pool, outcome.run_id.as_str(), "node2")
-        .expect("node2 agent_run link");
+    let node1_run =
+        node_agent_run_id(&pool, outcome.run_id.as_str(), "node1").expect("node1 agent_run link");
+    let node2_run =
+        node_agent_run_id(&pool, outcome.run_id.as_str(), "node2").expect("node2 agent_run link");
     assert_eq!(
         agent_run_caller(&pool, &node1_run).as_deref(),
         Some("caller-a"),
@@ -565,7 +587,7 @@ fn dual_caller_agent_rows_and_guardrail_attribution() {
     assert!(
         caller_a_guardrails
             .iter()
-.any(|(a, d)| a == "agent.run.guardrail" && d.contains("budget_caller_total")),
+            .any(|(a, d)| a == "agent.run.guardrail" && d.contains("budget_caller_total")),
         "caller-a budget_caller_total GUARDRAIL 行在位: {caller_a_guardrails:?}"
     );
     assert!(
@@ -598,11 +620,15 @@ fn caller_budget_cap_denies_node_with_budget_denied_word_form() {
         .create_run(&preexisting, Some("tr-ma3-cap"), Some("caller-b"))
         .expect("pre-existing caller-b run row");
     let executor = WorkflowExecutor::new(pool.clone())
-        .with_agent_driver(Arc::new(LoopBindingDriver {
-            pool: pool.clone(),
-        }));
+        .with_agent_driver(Arc::new(LoopBindingDriver { pool: pool.clone() }));
     let outcome = executor
-        .start_with_caller("wf-ma3-caller-binding", None, &json!({}), None, Some("caller-a"))
+        .start_with_caller(
+            "wf-ma3-caller-binding",
+            None,
+            &json!({}),
+            None,
+            Some("caller-a"),
+        )
         .expect("run executes (fail-fast at node2)");
     // run fail-fast 收敛 failed；node1 成功（caller-a 无帽）、node2 帽拒。
     assert_eq!(domain::WorkflowRunState::Failed, outcome.state);
@@ -651,7 +677,13 @@ fn executor_run_creates_zero_claims() {
     let recorder = Arc::new(RecordingDriver::default());
     let executor = WorkflowExecutor::new(pool.clone()).with_agent_driver(recorder.clone());
     executor
-        .start_with_caller("wf-ma3-caller-binding", None, &json!({}), None, Some("caller-a"))
+        .start_with_caller(
+            "wf-ma3-caller-binding",
+            None,
+            &json!({}),
+            None,
+            Some("caller-a"),
+        )
         .expect("run succeeds");
     let claims: i64 = pool
         .with_conn(|c| c.query_row("SELECT COUNT(*) FROM task_claim", [], |r| r.get(0)))

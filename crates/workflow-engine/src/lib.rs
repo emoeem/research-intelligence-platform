@@ -50,13 +50,11 @@ pub use collab::{
 pub use control::{ControlRow, WorkflowControl};
 pub use dsl::{
     canonical_document, check_schema_document, from_domain, parse_definition, schema_document,
-    to_domain, CompatV1, DefinitionV1, EdgeKindV1, EdgeV1, GraphV1, NodeV1, NodeTypeV1,
+    to_domain, CompatV1, DefinitionV1, EdgeKindV1, EdgeV1, GraphV1, NodeTypeV1, NodeV1,
     DEFINITION_SCHEMA_ID, SCHEMA_DIR,
 };
 pub use error::WorkflowError;
-pub use exec::{
-    node_agent, RunOutcome, WorkflowExecutor, DEFAULT_NODE_TIMEOUT_MS,
-};
+pub use exec::{node_agent, RunOutcome, WorkflowExecutor, DEFAULT_NODE_TIMEOUT_MS};
 pub use state::{
     snapshot_node_states, CheckpointRow, NodeEntityColumn, NodeRow, NodeSnapshot, RunEntityColumn,
     RunRow, RunStore,

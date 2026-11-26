@@ -101,7 +101,9 @@ pub(crate) fn check_node_id(value: &str) -> Result<(), String> {
     let ok_first = first.is_ascii_alphanumeric();
     let ok_rest = chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-');
     if !(ok_first && ok_rest) {
-        return Err(format!("node id {value:?} outside [A-Za-z0-9][A-Za-z0-9_.-]*"));
+        return Err(format!(
+            "node id {value:?} outside [A-Za-z0-9][A-Za-z0-9_.-]*"
+        ));
     }
     Ok(())
 }
@@ -808,8 +810,14 @@ mod tests {
         let rid = RunId::try_new("wfr-1").expect("run id");
         let ns =
             WorkflowNodeState::try_new("a", WorkflowNodeRunState::Pending, 0).expect("node state");
-        assert!(WorkflowRun::try_new(rid.clone(), wid.clone(), 0, WorkflowRunState::Queued, vec![])
-            .is_err());
+        assert!(WorkflowRun::try_new(
+            rid.clone(),
+            wid.clone(),
+            0,
+            WorkflowRunState::Queued,
+            vec![]
+        )
+        .is_err());
         assert!(WorkflowRun::try_new(
             rid.clone(),
             wid.clone(),
@@ -823,12 +831,10 @@ mod tests {
             wid,
             1,
             WorkflowRunState::Queued,
-            vec![WorkflowNodeState::try_new(
-                "a",
-                WorkflowNodeRunState::Pending,
-                0
-            )
-            .expect("node state")],
+            vec![
+                WorkflowNodeState::try_new("a", WorkflowNodeRunState::Pending, 0)
+                    .expect("node state")
+            ],
         )
         .is_ok());
     }

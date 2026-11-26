@@ -35,8 +35,13 @@ use database::{rusqlite, Pool, PoolConfig};
 use serde_json::Value;
 
 /// lifecycle 五态词表（rp_server.py:496）。
-pub const TOOL_LIFECYCLE: [&str; 5] =
-    ["REGISTERED", "VALIDATED", "ENABLED", "DISABLED", "DEPRECATED"];
+pub const TOOL_LIFECYCLE: [&str; 5] = [
+    "REGISTERED",
+    "VALIDATED",
+    "ENABLED",
+    "DISABLED",
+    "DEPRECATED",
+];
 
 /// governance 四态词表（rp_server.py:497）。
 pub const TOOL_GOVERNANCE: [&str; 4] = ["ACTIVE", "QUARANTINED", "REJECTED", "ARCHIVED"];
@@ -185,7 +190,10 @@ impl Catalog {
                 } else {
                     match Pool::open(PoolConfig::readonly_file(p)) {
                         Ok(pool) => (Some(pool), None),
-                        Err(e) => (None, Some(format!("aux 库打开失败（{}）：{e}", p.display()))),
+                        Err(e) => (
+                            None,
+                            Some(format!("aux 库打开失败（{}）：{e}", p.display())),
+                        ),
                     }
                 }
             }
@@ -225,12 +233,15 @@ impl Catalog {
         let (where_sql, where_args) = build_where(&like, filters);
 
         // 数据面守卫（phase14_source 口径）：主库优先，aux 回退，都无则真实空态。
-        let main_has =
-            self.main.with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool")))?;
+        let main_has = self
+            .main
+            .with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool")))?;
         let aux_has = self
             .aux
             .as_ref()
-            .map(|p| p.with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool"))))
+            .map(|p| {
+                p.with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool")))
+            })
             .transpose()?
             .unwrap_or(false);
         if !main_has && !aux_has {
@@ -263,7 +274,9 @@ impl Catalog {
             }
         } else if let Some(aux_pool) = self.aux.as_ref() {
             // 主库缺表回退 aux（handle_tools 数据面回退口径）。
-            rows.extend(aux_pool.with_conn(|c| query_rows_with_schema(c, &where_sql, &where_args))?);
+            rows.extend(
+                aux_pool.with_conn(|c| query_rows_with_schema(c, &where_sql, &where_args))?,
+            );
         }
         Ok(rows)
     }
@@ -271,24 +284,28 @@ impl Catalog {
     /// 按需 Schema：主库精确查找，未命中且 aux 在场时回退 aux
     /// （handle_tools ?tool_id= 详情同款顺序）。
     pub fn tool_schema(&self, tool_id: &str) -> Result<ToolSchema, CatalogError> {
-        let main_has =
-            self.main.with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool")))?;
+        let main_has = self
+            .main
+            .with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool")))?;
         if main_has {
-            if let Some(row) = self.main.with_conn(|c| query_schema_row(c, "main", tool_id))? {
+            if let Some(row) = self
+                .main
+                .with_conn(|c| query_schema_row(c, "main", tool_id))?
+            {
                 return Ok(row);
             }
         }
         let aux_has = self
             .aux
             .as_ref()
-            .map(|p| p.with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool"))))
+            .map(|p| {
+                p.with_conn(|c| Ok::<bool, database::rusqlite::Error>(table_exists(c, "tool")))
+            })
             .transpose()?
             .unwrap_or(false);
         if aux_has {
             if let Some(aux_pool) = self.aux.as_ref() {
-                if let Some(row) =
-                    aux_pool.with_conn(|c| query_schema_row(c, "aux", tool_id))?
-                {
+                if let Some(row) = aux_pool.with_conn(|c| query_schema_row(c, "aux", tool_id))? {
                     return Ok(row);
                 }
             }
@@ -413,15 +430,16 @@ fn query_rows_with_schema(
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(where_args.iter()), map_row_with_schema)?
+        .query_map(
+            rusqlite::params_from_iter(where_args.iter()),
+            map_row_with_schema,
+        )?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
 
 /// 行映射（rusqlite 列序与 TOOL_LIST_COLUMNS + input_schema 第 13 列一致）。
-fn map_row_with_schema(
-    r: &rusqlite::Row<'_>,
-) -> Result<RegistryRowWithSchema, rusqlite::Error> {
+fn map_row_with_schema(r: &rusqlite::Row<'_>) -> Result<RegistryRowWithSchema, rusqlite::Error> {
     let row = RegistryRow {
         tool_id: r.get(0)?,
         name: r.get(1)?,

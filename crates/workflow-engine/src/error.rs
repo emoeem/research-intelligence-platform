@@ -57,7 +57,10 @@ impl std::fmt::Display for WorkflowError {
             WorkflowError::Parse(r) => write!(f, "workflow definition parse error: {r}"),
             WorkflowError::Schema(r) => write!(f, "workflow definition schema violation: {r}"),
             WorkflowError::Validation(r) => write!(f, "workflow graph validation failed: {r}"),
-            WorkflowError::NotFound { workflow_id, version } => match version {
+            WorkflowError::NotFound {
+                workflow_id,
+                version,
+            } => match version {
                 Some(v) => write!(f, "workflow definition {workflow_id}@v{v} not found"),
                 None => write!(f, "workflow definition {workflow_id} not found"),
             },
@@ -71,7 +74,10 @@ impl std::fmt::Display for WorkflowError {
                 )
             }
             WorkflowError::NodeNotStartable { run_id, node_id } => {
-                write!(f, "workflow node {run_id}/{node_id} not startable in pending")
+                write!(
+                    f,
+                    "workflow node {run_id}/{node_id} not startable in pending"
+                )
             }
             WorkflowError::InvalidInput(r) => write!(f, "workflow run input invalid: {r}"),
             WorkflowError::Exec(r) => write!(f, "workflow run execution error: {r}"),

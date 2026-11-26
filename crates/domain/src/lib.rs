@@ -28,11 +28,11 @@
 
 pub mod agent;
 pub mod audit;
-pub mod kcard;
 pub mod context;
 pub mod document;
 pub mod error;
 pub mod ids;
+pub mod kcard;
 pub mod knowledge;
 pub mod node;
 pub mod plugin;
@@ -47,13 +47,13 @@ pub use agent::{
     MemoryKind, MemoryLifecycle, MemoryObjectRef, MemoryRefType, ResearchMemoryEntry,
     TaskMemoryEntry,
 };
-pub use document::{
-    BlockId, DocumentId, DocumentLifecycle, DocumentRevisionId, DocumentVisibility, RevisionStatus,
-    SourceRecordId,
-};
 pub use context::{
     ContentRef, ContextItemKind, ContextLayer, InclusionForm, IntentQuery, IntentStatus, RefEvent,
     TargetSlot, ToolFamily,
+};
+pub use document::{
+    BlockId, DocumentId, DocumentLifecycle, DocumentRevisionId, DocumentVisibility, RevisionStatus,
+    SourceRecordId,
 };
 pub use error::DomainError;
 pub use ids::{AgentRunId, ArtifactId, EvidenceId, ResourceId, RunId, TaskId, ToolRunId, TraceId};

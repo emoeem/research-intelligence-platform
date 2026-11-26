@@ -254,9 +254,7 @@ mod tests {
         assert!(ResultStatus::parse("").is_err());
         // 词值与迁移 020 CHECK 词表逐字一致。
         assert_eq!(
-            ResultStatus::ALL
-                .map(|s| s.as_str().to_owned())
-                .join(","),
+            ResultStatus::ALL.map(|s| s.as_str().to_owned()).join(","),
             "CONFIRMED,NOT_REPRODUCED,NOT_TESTED,INCONCLUSIVE,FALSE_POSITIVE"
         );
     }
@@ -280,7 +278,10 @@ mod tests {
         ] {
             assert_eq!(ApplicabilityStatus::parse(value).unwrap(), expect);
         }
-        assert_eq!(RiskClass::parse("low_impact").unwrap(), RiskClass::LowImpact);
+        assert_eq!(
+            RiskClass::parse("low_impact").unwrap(),
+            RiskClass::LowImpact
+        );
         assert!(RiskClass::parse("destructive").is_err());
         for value in [
             "timeout",

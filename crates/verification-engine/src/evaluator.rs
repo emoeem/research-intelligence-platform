@@ -166,7 +166,11 @@ mod tests {
         result: &'a Option<serde_json::Value>,
         summary: &'a str,
     ) -> OutcomeView<'a> {
-        OutcomeView { status_word: status, result: result.as_ref(), summary }
+        OutcomeView {
+            status_word: status,
+            result: result.as_ref(),
+            summary,
+        }
     }
 
     /// §11.3 场景 8 反面：退出码 0 ≠ CONFIRMED（干净无命中 = NOT_REPRODUCED）。
@@ -194,7 +198,9 @@ mod tests {
             "findings",
         ));
         assert_eq!(normalized.result_status, "INCONCLUSIVE");
-        assert!(normalized.result_reason.contains("evidence review required"));
+        assert!(normalized
+            .result_reason
+            .contains("evidence review required"));
     }
 
     /// §11.3 场景 6：网络超时 ≠ NOT_REPRODUCED（INCONCLUSIVE + 分类在场）。
@@ -208,13 +214,12 @@ mod tests {
     /// §11.3 场景 7：工具不可用 = NOT_TESTED（覆盖缺口，不冒结论）。
     #[test]
     fn tool_unavailable_is_not_tested() {
-        let normalized = evaluate(&view(
-            "FAILED",
-            &None,
-            "submit rejected: image not present",
-        ));
+        let normalized = evaluate(&view("FAILED", &None, "submit rejected: image not present"));
         assert_eq!(normalized.result_status, "NOT_TESTED");
-        assert_eq!(normalized.error_category.as_deref(), Some("tool_unavailable"));
+        assert_eq!(
+            normalized.error_category.as_deref(),
+            Some("tool_unavailable")
+        );
     }
 
     /// 取消 = NOT_TESTED（无结论）。
@@ -270,7 +275,12 @@ mod tests {
                 "submit rejected: image not present",
                 "NOT_TESTED",
             ),
-            ("FAILED", None, "connect: connection refused", "INCONCLUSIVE"),
+            (
+                "FAILED",
+                None,
+                "connect: connection refused",
+                "INCONCLUSIVE",
+            ),
         ];
         for (status_word, result, summary, expected_status) in cases {
             let normalized = evaluate(&view(status_word, &result, summary));
@@ -297,49 +307,67 @@ mod tests {
         });
         assert!(validate_normalized_doc(&base).is_ok());
         let rejects = [
-            ("工具词值混入 result_status", json!({
-                "schema_version": 1,
-                "item_id": "vi-20261117-120000-001-abcd",
-                "result_status": "SUCCEEDED",
-                "result_reason": "exit 0",
-                "error_category": null,
-            })),
-            ("error_category 词表外", json!({
-                "schema_version": 1,
-                "item_id": "vi-20261117-120000-001-abcd",
-                "result_status": "INCONCLUSIVE",
-                "result_reason": "failed",
-                "error_category": "crash",
-            })),
-            ("空 reason", json!({
-                "schema_version": 1,
-                "item_id": "vi-20261117-120000-001-abcd",
-                "result_status": "NOT_TESTED",
-                "result_reason": "",
-                "error_category": null,
-            })),
-            ("schema_version 漂移", json!({
-                "schema_version": 2,
-                "item_id": "vi-20261117-120000-001-abcd",
-                "result_status": "NOT_TESTED",
-                "result_reason": "x",
-                "error_category": null,
-            })),
-            ("item_id 形状违规", json!({
-                "schema_version": 1,
-                "item_id": "vi-1",
-                "result_status": "NOT_TESTED",
-                "result_reason": "x",
-                "error_category": null,
-            })),
-            ("多余字段", json!({
-                "schema_version": 1,
-                "item_id": "vi-20261117-120000-001-abcd",
-                "result_status": "NOT_TESTED",
-                "result_reason": "x",
-                "error_category": null,
-                "matched_count": 0,
-            })),
+            (
+                "工具词值混入 result_status",
+                json!({
+                    "schema_version": 1,
+                    "item_id": "vi-20261117-120000-001-abcd",
+                    "result_status": "SUCCEEDED",
+                    "result_reason": "exit 0",
+                    "error_category": null,
+                }),
+            ),
+            (
+                "error_category 词表外",
+                json!({
+                    "schema_version": 1,
+                    "item_id": "vi-20261117-120000-001-abcd",
+                    "result_status": "INCONCLUSIVE",
+                    "result_reason": "failed",
+                    "error_category": "crash",
+                }),
+            ),
+            (
+                "空 reason",
+                json!({
+                    "schema_version": 1,
+                    "item_id": "vi-20261117-120000-001-abcd",
+                    "result_status": "NOT_TESTED",
+                    "result_reason": "",
+                    "error_category": null,
+                }),
+            ),
+            (
+                "schema_version 漂移",
+                json!({
+                    "schema_version": 2,
+                    "item_id": "vi-20261117-120000-001-abcd",
+                    "result_status": "NOT_TESTED",
+                    "result_reason": "x",
+                    "error_category": null,
+                }),
+            ),
+            (
+                "item_id 形状违规",
+                json!({
+                    "schema_version": 1,
+                    "item_id": "vi-1",
+                    "result_status": "NOT_TESTED",
+                    "result_reason": "x",
+                    "error_category": null,
+                }),
+            ),
+            (
+                "多余字段",
+                json!({
+                    "schema_version": 1,
+                    "item_id": "vi-20261117-120000-001-abcd",
+                    "result_status": "NOT_TESTED",
+                    "result_reason": "x",
+                    "error_category": null,
+                    "matched_count": 0,
+                }),
+            ),
         ];
         for (label, doc) in rejects {
             assert!(

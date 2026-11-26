@@ -63,9 +63,15 @@ pub enum Mutator {
     /// 字面替换。
     Replace { from: String, to: String },
     /// 拼接扇出：payload × values 列表（方位：prefix/suffix）。
-    Concat { values: Vec<String>, position: ConcatPos },
+    Concat {
+        values: Vec<String>,
+        position: ConcatPos,
+    },
     /// 正则替换（regex crate；编译失败 = spec 拒）。
-    RegexReplace { pattern: String, replacement: String },
+    RegexReplace {
+        pattern: String,
+        replacement: String,
+    },
 }
 
 /// Processor 请求侧后处理链项（D4）。
@@ -204,7 +210,10 @@ fn apply_one(items: &[String], m: &Mutator) -> Result<Vec<String>, SpecError> {
             }
             out
         }
-        Mutator::RegexReplace { pattern, replacement } => {
+        Mutator::RegexReplace {
+            pattern,
+            replacement,
+        } => {
             let re = regex::Regex::new(pattern)
                 .map_err(|e| SpecError::MutatorInvalid(format!("regex {pattern:?}: {e}")))?;
             items
@@ -233,10 +242,7 @@ pub fn apply_mutators(base: &[String], chain: &[Mutator]) -> Result<Vec<String>,
 
 /// Processor 链应用（请求侧后处理；HeaderSet 值含 CR/LF 即拒——头注入
 /// 守卫 fail-closed 前置，发送面 serialize 守卫复用不替代）。
-pub fn apply_processors(
-    req: &mut OutboundRequest,
-    chain: &[Processor],
-) -> Result<(), SpecError> {
+pub fn apply_processors(req: &mut OutboundRequest, chain: &[Processor]) -> Result<(), SpecError> {
     for p in chain {
         match p {
             Processor::HeaderSet { name, value } => {
@@ -253,14 +259,12 @@ pub fn apply_processors(
                 {
                     h.value = value.clone();
                 } else {
-                    req.headers.push(wsw_message::types::HeaderRecord::new(
-                        name, value,
-                    ));
+                    req.headers
+                        .push(wsw_message::types::HeaderRecord::new(name, value));
                 }
             }
             Processor::HeaderRemove { name } => {
-                req.headers
-                    .retain(|h| !h.name.eq_ignore_ascii_case(name));
+                req.headers.retain(|h| !h.name.eq_ignore_ascii_case(name));
             }
             Processor::BodyReplace { from, to } => {
                 let text = req.body.clone();
@@ -314,14 +318,18 @@ mod tests {
         assert_eq!(html_entity_encode("<a>&\"'"), "&lt;a&gt;&amp;&quot;&#39;");
         let out = apply_one(
             &["abc".to_string()],
-            &Mutator::Encode { chain: vec![EncodeKind::Hex] },
+            &Mutator::Encode {
+                chain: vec![EncodeKind::Hex],
+            },
         )
         .unwrap();
         assert_eq!(out, vec!["616263"]);
         // 编码链顺序：url 后 base64。
         let out = apply_one(
             &["a b".to_string()],
-            &Mutator::Encode { chain: vec![EncodeKind::Url, EncodeKind::Base64] },
+            &Mutator::Encode {
+                chain: vec![EncodeKind::Url, EncodeKind::Base64],
+            },
         )
         .unwrap();
         assert_eq!(out, vec![b64_encode(b"a%20b", B64_STD, true)]);
@@ -332,10 +340,18 @@ mod tests {
         let base = vec!["payload".to_string()];
         let chain = vec![
             Mutator::Prefix { value: "/".into() },
-            Mutator::Case { to: CaseKind::Upper },
-            Mutator::Replace { from: "LOAD".into(), to: "X".into() },
+            Mutator::Case {
+                to: CaseKind::Upper,
+            },
+            Mutator::Replace {
+                from: "LOAD".into(),
+                to: "X".into(),
+            },
             Mutator::Suffix { value: ".".into() },
-            Mutator::RegexReplace { pattern: r"\.$".into(), replacement: "!".into() },
+            Mutator::RegexReplace {
+                pattern: r"\.$".into(),
+                replacement: "!".into(),
+            },
         ];
         let out = apply_mutators(&base, &chain).unwrap();
         assert_eq!(out, vec!["/PAYX!".to_string()]);
@@ -345,7 +361,10 @@ mod tests {
     fn concat_fans_out() {
         let out = apply_one(
             &["p1".to_string(), "p2".to_string()],
-            &Mutator::Concat { values: vec!["a".into(), "b".into()], position: ConcatPos::Suffix },
+            &Mutator::Concat {
+                values: vec!["a".into(), "b".into()],
+                position: ConcatPos::Suffix,
+            },
         )
         .unwrap();
         assert_eq!(out, vec!["p1a", "p1b", "p2a", "p2b"]);
@@ -355,7 +374,10 @@ mod tests {
     fn regex_invalid_rejected() {
         let out = apply_mutators(
             &["x".to_string()],
-            &[Mutator::RegexReplace { pattern: "([".into(), replacement: "".into() }],
+            &[Mutator::RegexReplace {
+                pattern: "([".into(),
+                replacement: "".into(),
+            }],
         );
         assert!(matches!(out, Err(SpecError::MutatorInvalid(_))));
     }
@@ -366,7 +388,10 @@ mod tests {
             method: "POST".into(),
             target: "/x".into(),
             version: wsw_message::types::HttpVersion::Http11,
-            headers: vec![wsw_message::types::HeaderRecord::new("Content-Type", "text/plain")],
+            headers: vec![wsw_message::types::HeaderRecord::new(
+                "Content-Type",
+                "text/plain",
+            )],
             body: b"hello world".to_vec(),
             trailers: vec![],
             framing: wsw_message::serialize::OutboundFraming::ContentLength,
@@ -374,20 +399,37 @@ mod tests {
         apply_processors(
             &mut req,
             &[
-                Processor::HeaderSet { name: "X-Fuzz".into(), value: "on".into() },
-                Processor::HeaderSet { name: "content-type".into(), value: "application/json".into() },
-                Processor::BodyReplace { from: "world".into(), to: "fuzz".into() },
+                Processor::HeaderSet {
+                    name: "X-Fuzz".into(),
+                    value: "on".into(),
+                },
+                Processor::HeaderSet {
+                    name: "content-type".into(),
+                    value: "application/json".into(),
+                },
+                Processor::BodyReplace {
+                    from: "world".into(),
+                    to: "fuzz".into(),
+                },
             ],
         )
         .unwrap();
         assert_eq!(req.body, b"hello fuzz");
-        assert!(req.headers.iter().any(|h| h.name == "X-Fuzz" && h.value == "on"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|h| h.name == "X-Fuzz" && h.value == "on"));
         assert!(req
             .headers
             .iter()
             .any(|h| h.name == "Content-Type" && h.value == "application/json"));
-        apply_processors(&mut req, &[Processor::HeaderRemove { name: "x-fuzz".into() }])
-            .unwrap();
+        apply_processors(
+            &mut req,
+            &[Processor::HeaderRemove {
+                name: "x-fuzz".into(),
+            }],
+        )
+        .unwrap();
         assert!(!req.headers.iter().any(|h| h.name == "X-Fuzz"));
     }
 
@@ -404,7 +446,10 @@ mod tests {
         };
         let err = apply_processors(
             &mut req,
-            &[Processor::HeaderSet { name: "X".into(), value: "a\r\nX: y".into() }],
+            &[Processor::HeaderSet {
+                name: "X".into(),
+                value: "a\r\nX: y".into(),
+            }],
         )
         .unwrap_err();
         assert!(matches!(err, SpecError::CaseBuild(_)));

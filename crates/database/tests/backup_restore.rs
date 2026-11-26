@@ -48,8 +48,8 @@ fn build_db(path: &Path) {
     let applied = migrate(&pool, &migrations_dir()).unwrap();
     assert_eq!(
         applied.last().map(|m| m.version),
-        Some(31),
-        "真实迁移链 001..031 应全应用（026 = MA-1 caller/api_key 两表，027 = MA-2 caller 归属列与 caller_budget，029 = MA-3 协作协议两表，030 = WSW-5/6 ws_frame/passive_hit 两表，031 = Projects/Research Assets）"
+        Some(32),
+        "真实迁移链 001..032 应全应用（026 = MA-1 caller/api_key 两表，027 = MA-2 caller 归属列与 caller_budget，029 = MA-3 协作协议两表，030 = WSW-5/6 ws_frame/passive_hit 两表，031 = Projects/Research Assets）"
     );
     pool.with_conn(|c| {
         c.execute_batch(

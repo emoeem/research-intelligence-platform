@@ -285,7 +285,9 @@ fn drill3_boundary_negative_mount_whitelist_and_sensitive_faces() {
     }
     let image = image_ref();
     if !image_ready(&image) {
-        eprintln!("SKIP: 验收镜像不在本地镜像库（{image}），digest 钉死无法现建命中（V-9，受控环境演练）");
+        eprintln!(
+            "SKIP: 验收镜像不在本地镜像库（{image}），digest 钉死无法现建命中（V-9，受控环境演练）"
+        );
         return;
     }
     let _drill = DRILL_LOCK.lock().unwrap_or_else(|p| p.into_inner());

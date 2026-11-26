@@ -35,11 +35,7 @@ use workflow_engine::store::WorkflowStore;
 const MIGRATIONS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations");
 
 fn temp_db(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "rip-wf-p83-test-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("rip-wf-p83-test-{}-{}", tag, std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join(format!("{tag}.db"));
     let _ = std::fs::remove_file(&path);
@@ -177,9 +173,11 @@ const WF_TOOL: &str = r#"{
 
 /// 登记测试工具（kb manifest，与 P8-2 测试同源）。
 fn register_kb_tool(pool: &Pool) {
-    let manifest_text =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../manifests/tools/rip.kb.keyword_search.json"))
-            .expect("read kb manifest");
+    let manifest_text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../manifests/tools/rip.kb.keyword_search.json"
+    ))
+    .expect("read kb manifest");
     let manifest: Value = serde_json::from_str(&manifest_text).expect("kb manifest json");
     tool_registry::Registry::open(pool.clone())
         .register(&manifest)
@@ -202,7 +200,11 @@ struct GatedDriver {
 }
 
 impl ToolRunDriver for GatedDriver {
-    fn drive(&self, engine: &Engine, run_id: &str) -> Result<DriveOutcome, tool_engine::EngineError> {
+    fn drive(
+        &self,
+        engine: &Engine,
+        run_id: &str,
+    ) -> Result<DriveOutcome, tool_engine::EngineError> {
         engine.mark_waiting_for_runner(run_id)?;
         {
             let (lock, cv) = &*self.gate;
@@ -230,17 +232,35 @@ fn agent_node_pauses_then_resumes_with_completed_nodes_untouched() {
     let executor = WorkflowExecutor::new(pool.clone()).with_agent_driver(driver.clone());
 
     let outcome = executor
-        .start_with_id(&workflow_id, None, &json!({"target": "example.com"}), Some("wfr-p83-agent"))
+        .start_with_id(
+            &workflow_id,
+            None,
+            &json!({"target": "example.com"}),
+            Some("wfr-p83-agent"),
+        )
         .expect("paused outcome");
-    assert_eq!(outcome.state, domain::WorkflowRunState::Paused, "{outcome:?}");
+    assert_eq!(
+        outcome.state,
+        domain::WorkflowRunState::Paused,
+        "{outcome:?}"
+    );
     let states = node_states(&outcome);
     // 节点回 pending（attempt 保留 1），start 已完成。
-    assert!(states.contains(&("think".to_string(), "pending", 1)), "{states:?}");
-    assert!(states.contains(&("start".to_string(), "succeeded", 1)), "{states:?}");
+    assert!(
+        states.contains(&("think".to_string(), "pending", 1)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("start".to_string(), "succeeded", 1)),
+        "{states:?}"
+    );
 
     // 六 ID 关联：trace_id = run_id 创建即写；agent_run 链接列节点/run 双落。
     assert_eq!(
-        scalar(&pool, "SELECT trace_id FROM workflow_run WHERE run_id = 'wfr-p83-agent'"),
+        scalar(
+            &pool,
+            "SELECT trace_id FROM workflow_run WHERE run_id = 'wfr-p83-agent'"
+        ),
         Some("wfr-p83-agent".to_string())
     );
     let agent_run_id = scalar(
@@ -266,11 +286,24 @@ fn agent_node_pauses_then_resumes_with_completed_nodes_untouched() {
     // resume：PAUSED agent run 续接（驱动第二次调用）→ succeeded；
     // 已完成节点 attempt 不变，agent 节点重派发 attempt 1 → 2。
     let resumed = executor.resume("wfr-p83-agent").expect("resumed outcome");
-    assert_eq!(resumed.state, domain::WorkflowRunState::Succeeded, "{resumed:?}");
+    assert_eq!(
+        resumed.state,
+        domain::WorkflowRunState::Succeeded,
+        "{resumed:?}"
+    );
     let states = node_states(&resumed);
-    assert!(states.contains(&("think".to_string(), "succeeded", 2)), "{states:?}");
-    assert!(states.contains(&("start".to_string(), "succeeded", 1)), "{states:?}");
-    assert!(states.contains(&("done".to_string(), "succeeded", 1)), "{states:?}");
+    assert!(
+        states.contains(&("think".to_string(), "succeeded", 2)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("start".to_string(), "succeeded", 1)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("done".to_string(), "succeeded", 1)),
+        "{states:?}"
+    );
     assert_eq!(driver.calls.load(Ordering::SeqCst), 2);
 }
 
@@ -287,7 +320,11 @@ fn human_node_awaits_approval_and_resume_injects_params() {
     let outcome = executor
         .start_with_id(&workflow_id, None, &json!({}), Some("wfr-p83-human"))
         .expect("awaiting outcome");
-    assert_eq!(outcome.state, domain::WorkflowRunState::Paused, "{outcome:?}");
+    assert_eq!(
+        outcome.state,
+        domain::WorkflowRunState::Paused,
+        "{outcome:?}"
+    );
     // 停在 awaiting_approval：控制行 approval_node_id 非空且 approval_json 空。
     let awaiting = control
         .awaiting_approval("wfr-p83-human")
@@ -303,20 +340,39 @@ fn human_node_awaits_approval_and_resume_injects_params() {
     // 无注入 resume：恢复态无批准键，节点重写请求再次停等（幂等语义）。
     let again = executor.resume("wfr-p83-human").expect("re-await");
     assert_eq!(again.state, domain::WorkflowRunState::Paused);
-    let awaiting2 = control.awaiting_approval("wfr-p83-human").expect("row").expect("still awaiting");
+    let awaiting2 = control
+        .awaiting_approval("wfr-p83-human")
+        .expect("row")
+        .expect("still awaiting");
     assert_eq!(awaiting2.approval_node_id.as_deref(), Some("review"));
     assert!(awaiting2.approval_json.is_none());
 
     // 注入批准参数 resume：终态 succeeded，approval_json 落值留痕。
     let approved = executor
-        .resume_with_injection("wfr-p83-human", Some(&json!({"approval": {"ok": true, "by": "reviewer"}})))
+        .resume_with_injection(
+            "wfr-p83-human",
+            Some(&json!({"approval": {"ok": true, "by": "reviewer"}})),
+        )
         .expect("approved outcome");
-    assert_eq!(approved.state, domain::WorkflowRunState::Succeeded, "{approved:?}");
+    assert_eq!(
+        approved.state,
+        domain::WorkflowRunState::Succeeded,
+        "{approved:?}"
+    );
     let states = node_states(&approved);
     // attempt = 3：首次派发 + 无注入重派发（重写请求）+ 注入后重派发。
-    assert!(states.contains(&("review".to_string(), "succeeded", 3)), "{states:?}");
-    assert!(states.contains(&("done".to_string(), "succeeded", 1)), "{states:?}");
-    let after = control.control_row("wfr-p83-human").expect("row").expect("some");
+    assert!(
+        states.contains(&("review".to_string(), "succeeded", 3)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("done".to_string(), "succeeded", 1)),
+        "{states:?}"
+    );
+    let after = control
+        .control_row("wfr-p83-human")
+        .expect("row")
+        .expect("some");
     assert!(!after.is_awaiting_approval());
     // serde_json Value 默认 BTreeMap 键序（规范键序，canonical_call_key 同源）。
     assert_eq!(
@@ -324,7 +380,12 @@ fn human_node_awaits_approval_and_resume_injects_params() {
         Some("{\"approval\":{\"by\":\"reviewer\",\"ok\":true}}")
     );
     // run 终态输出含批准参数（浅合并进 state）。
-    let output = executor.status("wfr-p83-human").expect("status").0.output.expect("output");
+    let output = executor
+        .status("wfr-p83-human")
+        .expect("status")
+        .0
+        .output
+        .expect("output");
     assert_eq!(output["approval"]["ok"], json!(true));
 }
 
@@ -336,7 +397,8 @@ fn pause_waits_for_running_tool_node_then_checkpoints() {
     let pool = open_migrated(&path);
     register_kb_tool(&pool);
     let _workflow_id = put_definition(&pool, WF_TOOL);
-    let gate: Arc<(Mutex<bool>, std::sync::Condvar)> = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    let gate: Arc<(Mutex<bool>, std::sync::Condvar)> =
+        Arc::new((Mutex::new(false), std::sync::Condvar::new()));
     let executor = Arc::new(
         WorkflowExecutor::new(pool.clone())
             .with_tool_driver(Arc::new(GatedDriver { gate: gate.clone() })),
@@ -389,13 +451,26 @@ fn pause_waits_for_running_tool_node_then_checkpoints() {
         cv.notify_all();
     }
     let outcome = handle.join().expect("start thread").expect("outcome");
-    assert_eq!(outcome.state, domain::WorkflowRunState::Paused, "{outcome:?}");
+    assert_eq!(
+        outcome.state,
+        domain::WorkflowRunState::Paused,
+        "{outcome:?}"
+    );
     let states = node_states(&outcome);
     // 运行中节点等完成：search succeeded attempt 1 + checkpoint 在位；end 未派发。
-    assert!(states.contains(&("search".to_string(), "succeeded", 1)), "{states:?}");
-    assert!(states.contains(&("done".to_string(), "pending", 0)), "{states:?}");
+    assert!(
+        states.contains(&("search".to_string(), "succeeded", 1)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("done".to_string(), "pending", 0)),
+        "{states:?}"
+    );
     let runs = RunStore::new(runner_pool.clone());
-    let cp = runs.latest_checkpoint("wfr-p83-pause").expect("cp").expect("checkpoint");
+    let cp = runs
+        .latest_checkpoint("wfr-p83-pause")
+        .expect("cp")
+        .expect("checkpoint");
     assert_eq!(cp.node_id, "search");
     assert_eq!(cp.node_state, domain::WorkflowNodeRunState::Succeeded);
 
@@ -422,7 +497,11 @@ fn pause_waits_for_running_tool_node_then_checkpoints() {
 
     // resume：已完成节点 attempt 不变续跑成功（判据 1 后半）。
     let resumed = exec.resume("wfr-p83-pause").expect("resume");
-    assert_eq!(resumed.state, domain::WorkflowRunState::Succeeded, "{resumed:?}");
+    assert_eq!(
+        resumed.state,
+        domain::WorkflowRunState::Succeeded,
+        "{resumed:?}"
+    );
     assert!(node_states(&resumed).contains(&("search".to_string(), "succeeded", 1)));
     assert!(node_states(&resumed).contains(&("done".to_string(), "succeeded", 1)));
 }
@@ -435,7 +514,8 @@ fn cancel_records_state_on_in_flight_tool_run() {
     let pool = open_migrated(&path);
     register_kb_tool(&pool);
     let _workflow_id = put_definition(&pool, WF_TOOL);
-    let gate: Arc<(Mutex<bool>, std::sync::Condvar)> = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    let gate: Arc<(Mutex<bool>, std::sync::Condvar)> =
+        Arc::new((Mutex::new(false), std::sync::Condvar::new()));
     let executor = Arc::new(
         WorkflowExecutor::new(pool.clone())
             .with_tool_driver(Arc::new(GatedDriver { gate: gate.clone() })),

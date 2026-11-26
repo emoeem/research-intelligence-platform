@@ -199,21 +199,19 @@ pub fn load_caller_budgets(
         .map_err(AgentError::from)?;
     Ok(rows
         .into_iter()
-        .map(
-            |(caller_id, parallel, concurrent, window, rate, total)| {
-                (
-                    caller_id.clone(),
-                    CallerBudget {
-                        caller_id,
-                        max_parallel_subtasks: usize::try_from(parallel).unwrap_or(0),
-                        max_concurrent_runs: usize::try_from(concurrent).unwrap_or(0),
-                        rate_window_ms: u64::try_from(window).unwrap_or(60_000),
-                        rate_max_steps: usize::try_from(rate).unwrap_or(0),
-                        budget_max_steps_per_run: usize::try_from(total).unwrap_or(0),
-                    },
-                )
-            },
-        )
+        .map(|(caller_id, parallel, concurrent, window, rate, total)| {
+            (
+                caller_id.clone(),
+                CallerBudget {
+                    caller_id,
+                    max_parallel_subtasks: usize::try_from(parallel).unwrap_or(0),
+                    max_concurrent_runs: usize::try_from(concurrent).unwrap_or(0),
+                    rate_window_ms: u64::try_from(window).unwrap_or(60_000),
+                    rate_max_steps: usize::try_from(rate).unwrap_or(0),
+                    budget_max_steps_per_run: usize::try_from(total).unwrap_or(0),
+                },
+            )
+        })
         .collect())
 }
 
@@ -328,8 +326,11 @@ impl RunControl {
         // 源 run 无关联列即新 run 同样 NULL，不伪造）。MA-2（D4③）：caller
         // 归属同链继承——新 run 继承源 run caller_id（027 列；None 同样
         // 如实 NULL，不伪造）。
-        self.store
-            .create_run(&replay, stored.trace_id.as_deref(), stored.caller_id.as_deref())?;
+        self.store.create_run(
+            &replay,
+            stored.trace_id.as_deref(),
+            stored.caller_id.as_deref(),
+        )?;
         self.state.set_retry_of(new_run_id.as_str(), run_id)?;
         Ok(RetryOutcome {
             new_run_id: new_run_id.as_str().to_string(),

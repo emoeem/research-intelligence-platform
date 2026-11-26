@@ -95,6 +95,125 @@ afterEach(() => {
 });
 
 describe("Knowledge 页（P5-6）", () => {
+  it("自有 POC 证据工作台：默认待补证队列、治理元数据与结构化搜索", async () => {
+    const queueHit = {
+      resource_id: "rtis:poc:900033",
+      name: "Zeai 图形验证码待补证候选",
+      resource_type: "rtis_poc",
+      evidence_level: "K0",
+      knowledge_lifecycle: "Candidate",
+      poc_category: "auth-bypass",
+      poc_severity: "high",
+      source_path: "integrations/rtis/pocs/zeai-captcha",
+      source_commit: "022a71718740a7fad74ca194a10e9cc9269501c4",
+      related_poc_ids: ["supports:900031"],
+      poc_source_integrity: "missing",
+      poc_verification_result: "candidate_not_verified",
+      poc_dedup_status: "independent",
+      poc_independent_knowledge_status: "independent",
+      poc_missing_evidence: ["raw_challenge_response", "negative_control"],
+      poc_evidence_refs: ["integrations/rtis/pocs/zeai-captcha/poc.py"],
+      poc_source_urls: ["https://example.org/zeai-reference"],
+      poc_review_gate: "补齐合成挑战响应与阴性对照记录。",
+      description: null,
+    };
+    const pocHit = {
+      ...queueHit,
+      resource_id: "rtis:poc:900031",
+      name: "Zeai 会员照片访问控制检查",
+      evidence_level: "K2",
+      knowledge_lifecycle: "Researched",
+      poc_category: "unauthorized",
+      poc_source_integrity: "partial",
+      poc_verification_result: "historical_evidence_supported",
+      poc_missing_evidence: [],
+      poc_evidence_refs: ["integrations/rtis/pocs/zeai-photo-blur-bypass/SUMMARY.md"],
+      poc_source_urls: ["https://example.org/zeai-reference"],
+      poc_review_gate: null,
+    };
+    const summary = {
+      available: true,
+      total_curated: 49,
+      by_evidence_level: { K0: 29, K1: 9, K2: 10, K3: 1 },
+      by_lifecycle: { Candidate: 29, Researched: 19, "Lab-validated": 1 },
+      by_source_integrity: { missing: 21, partial: 7 },
+      by_verification_result: { candidate_not_verified: 21, historical_evidence_supported: 7 },
+      missing_evidence_entries: 33,
+      missing_evidence_items: 86,
+      entries_with_source_path: 40,
+      entries_without_source_path: 9,
+      entries_with_source_commit: 38,
+      entries_without_source_commit: 11,
+      relation_count: 25,
+      external_entity_count: 2,
+      review_queue_count: 33,
+      metadata_incomplete_entries: 0,
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("/api/curated-pocs/summary")
+        ? summary
+        : url.includes("/api/curated-pocs/search")
+          ? url.includes("q=zeai")
+            ? {
+                available: true,
+                query: "zeai",
+                total: 1,
+                returned: 1,
+                hits: [pocHit],
+                filters: { resource_type: "rtis_poc", evidence_level: "K2" },
+              }
+            : {
+                available: true,
+                query: "",
+                total: 1,
+                returned: 1,
+                hits: [queueHit],
+                filters: { resource_type: "rtis_poc", poc_missing_evidence: "true" },
+              }
+          : LIST_STUB;
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("knowledge-poc-tab"));
+    expect(await screen.findByText("Zeai 图形验证码待补证候选")).toBeTruthy();
+    expect(screen.getByTestId("poc-governance-summary").textContent).toContain("49");
+    expect(screen.getByTestId("poc-governance-summary").textContent).toContain("33");
+    const queueResults = screen.getByTestId("curated-poc-results");
+    expect(queueResults.textContent).toContain("raw_challenge_response");
+    expect(queueResults.textContent).toContain("negative_control");
+    expect(queueResults.textContent).toContain("补齐合成挑战响应与阴性对照记录。");
+    expect(screen.getByText("candidate_not_verified")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "缺失证据筛选" }), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索自有 POC" }), {
+      target: { value: "zeai" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "证据等级筛选" }), {
+      target: { value: "K2" },
+    });
+    expect(await screen.findByText("Zeai 会员照片访问控制检查")).toBeTruthy();
+    expect(screen.getByTestId("poc-search-total").textContent).toContain("1");
+    const resultText = screen.getByTestId("curated-poc-results").textContent ?? "";
+    expect(resultText).toContain("integrations/rtis/pocs/zeai-photo-blur-bypass/SUMMARY.md");
+    expect(resultText).toContain("022a71718740");
+    expect(resultText).toContain("https://example.org/zeai-reference");
+    await waitFor(() => {
+      const called = fetchMock.mock.calls.some((call) => {
+        const url = String(call[0]);
+        return (
+          url.includes("/api/curated-pocs/search") &&
+          url.includes("q=zeai") &&
+          url.includes("evidence_level=K2")
+        );
+      });
+      if (!called) throw new Error("POC search filters were not sent");
+    });
+    expect(screen.queryByText("源材料正文不应出现在检索结果中")).toBeNull();
+  });
+
   it("渲染列表：标题、生命周期徽标、验证状态与总数", async () => {
     render(<App />);
     expect(await screen.findByText("站群/落地页开放重定向专项测试法")).toBeTruthy();

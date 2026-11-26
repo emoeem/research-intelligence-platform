@@ -101,35 +101,40 @@ impl PluginSource {
         &self.plugin_id
     }
 
-    /// 插件可见性（逐查询重读：禁用/卸载立即生效，无缓存失效窗口）。
-    fn plugin_visible(&self) -> DbResult<bool> {
-        self.pool.with_conn(|c| -> rusqlite::Result<bool> {
-            let exists: Option<String> = c
-                .query_row(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='plugin'",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if exists.is_none() {
-                return Ok(false); // fail-closed：无插件表即不可见
-            }
-            let n: i64 = c.query_row(
-                "SELECT COUNT(*) FROM plugin
+    /// 当前可见插件版本（逐查询重读；禁用/卸载/升级立即生效）。
+    /// 多个 active 版本属于状态损坏，fail-closed 返回 None。
+    fn active_version(&self) -> DbResult<Option<String>> {
+        self.pool
+            .with_conn(|c| -> rusqlite::Result<Option<String>> {
+                let exists: Option<String> = c
+                    .query_row(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='plugin'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if exists.is_none() {
+                    return Ok(None);
+                }
+                let mut stmt = c.prepare(
+                    "SELECT version FROM plugin
                  WHERE plugin_id = ?1 AND is_active = 1
                    AND state IN ('ENABLED','LOADED','ACTIVE')
-                   AND source_uninstalled = 0",
-                [self.plugin_id.as_str()],
-                |r| r.get(0),
-            )?;
-            Ok(n > 0)
-        })
+                   AND source_uninstalled = 0
+                 ORDER BY version",
+                )?;
+                let versions = stmt
+                    .query_map([self.plugin_id.as_str()], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+                Ok((versions.len() == 1).then(|| versions[0].clone()))
+            })
     }
 
     /// 审核通过条目（kind/item_key/标题/描述/正文/哈希/版本/URL）。
     #[allow(clippy::type_complexity)]
     fn approved_entries(
         &self,
+        active_version: &str,
     ) -> DbResult<
         Vec<(
             String,
@@ -157,11 +162,11 @@ impl PluginSource {
                 "SELECT entry_kind, item_key, title, description, body, content_sha256,
                         plugin_version, canonical_url
                  FROM knowledge_source_entry
-                 WHERE plugin_id = ?1 AND review_status = 'APPROVED'
+                 WHERE plugin_id = ?1 AND plugin_version = ?2 AND review_status = 'APPROVED'
                  ORDER BY entry_kind, item_key",
             )?;
             let rows = stmt
-                .query_map([self.plugin_id.as_str()], |r| {
+                .query_map(rusqlite::params![self.plugin_id.as_str(), active_version], |r| {
                     Ok((
                         r.get::<_, String>(0)?,
                         r.get::<_, String>(1)?,
@@ -206,27 +211,27 @@ impl ContextSource for PluginSource {
         limit: usize,
     ) -> Result<Vec<Candidate>, ContextBrokerError> {
         // 插件闸先判（禁用即空集，合法结果，设计稿 §9.2 第 4 条）。
-        let visible = self
-            .plugin_visible()
-            .map_err(|e| ContextBrokerError::Source {
-                source: self.source_id.to_string(),
-                reason: e.to_string(),
-            })?;
-        if !visible {
+        let Some(active_version) =
+            self.active_version()
+                .map_err(|e| ContextBrokerError::Source {
+                    source: self.source_id.to_string(),
+                    reason: e.to_string(),
+                })?
+        else {
             return Ok(Vec::new());
-        }
+        };
         // 关键词取 coverage_tokens（resource-engine ASCII 词 + CJK 2-gram，
         // search-engine 覆盖计分同源口径；CJK 意图同样可召回）。
         let keywords = search_engine::tokenizer::coverage_tokens(&q.text_normalized);
         if keywords.is_empty() {
             return Ok(Vec::new());
         }
-        let entries = self
-            .approved_entries()
-            .map_err(|e| ContextBrokerError::Source {
-                source: self.source_id.to_string(),
-                reason: e.to_string(),
-            })?;
+        let entries =
+            self.approved_entries(&active_version)
+                .map_err(|e| ContextBrokerError::Source {
+                    source: self.source_id.to_string(),
+                    reason: e.to_string(),
+                })?;
         let mut out = Vec::new();
         for (kind, key, title, description, body, sha, version, url) in entries {
             if out.len() >= limit.max(1) {
@@ -269,18 +274,25 @@ impl ContextSource for PluginSource {
             });
         }
         // 双闸复核（load 与 candidates 同口径；ref 无法解析或未过闸即拒绝）。
-        let visible = self
-            .plugin_visible()
+        let active_version = self
+            .active_version()
             .map_err(|e| ContextBrokerError::Source {
                 source: self.source_id.clone(),
                 reason: e.to_string(),
+            })?
+            .ok_or_else(|| ContextBrokerError::Source {
+                source: self.source_id.clone(),
+                reason: format!(
+                    "plugin {:?} has no unique active version (disabled/uninstalled/ambiguous); access denied",
+                    self.plugin_id
+                ),
             })?;
-        if !visible {
+        if r.ref_version.as_deref() != Some(active_version.as_str()) {
             return Err(ContextBrokerError::Source {
                 source: self.source_id.clone(),
                 reason: format!(
-                    "plugin {:?} is not visible (disabled/uninstalled); access denied",
-                    self.plugin_id
+                    "stale plugin ref version {:?}; active version is {active_version}",
+                    r.ref_version
                 ),
             });
         }
@@ -308,8 +320,9 @@ impl ContextSource for PluginSource {
                 c.query_row(
                     "SELECT title, body, content_sha256, plugin_version, canonical_url, review_status
                      FROM knowledge_source_entry
-                     WHERE plugin_id = ?1 AND entry_kind = ?2 AND item_key = ?3",
-                    rusqlite::params![self.plugin_id, kind, key],
+                     WHERE plugin_id = ?1 AND plugin_version = ?2
+                       AND entry_kind = ?3 AND item_key = ?4",
+                    rusqlite::params![self.plugin_id, active_version, kind, key],
                     |row| {
                         Ok((
                             row.get::<_, String>(0)?,
@@ -451,11 +464,67 @@ mod tests {
         let r = ContentRef {
             source: "plugin:p.a".to_string(),
             ref_id: "kse:p.a:catalog_entry:https://x/1".to_string(),
-            ref_version: None,
+            ref_version: Some("0.1.0".to_string()),
             content_hash: None,
             uri: None,
         };
         assert!(src.load(&r).is_err());
+    }
+
+    #[test]
+    fn nuclei_templates_are_visible_to_context_only_after_approval() {
+        let pool = memory_pool();
+        seed(&pool);
+        insert_entry(
+            &pool,
+            "p.nuclei",
+            "nuclei_template",
+            "cloud/cves/2025/CVE-2025-12345.yaml",
+            "Example SQL Injection",
+            "id: cve-2025-12345\ninfo:\n  severity: high\n  tags: cve,sqli\n",
+            "APPROVED",
+        );
+        insert_entry(
+            &pool,
+            "p.nuclei",
+            "nuclei_template",
+            "cloud/cves/2025/CVE-2025-99999.yaml",
+            "Unreviewed SQL Injection",
+            "id: cve-2025-99999\n",
+            "DISCOVERED",
+        );
+        pool.with_conn(|c| {
+            c.execute(
+                "INSERT INTO plugin (plugin_id, version, name, kind, description, license,
+                    trust_level, state, source_type, source_ref, manifest_json, created_at,
+                    updated_at, is_active)
+                 VALUES ('p.nuclei','0.1.0','Nuclei','knowledge','d','UNKNOWN','local',
+                    'ENABLED','local_dir','.','{}','2026-11-26T00:00:00Z',
+                    '2026-11-26T00:00:00Z',1)",
+                [],
+            )
+        })
+        .unwrap();
+        let source = PluginSource::new(pool, "p.nuclei");
+        let hits = source.candidates(&query("CVE-2025-12345"), 10).unwrap();
+        assert_eq!(
+            hits.len(),
+            1,
+            "DISCOVERED templates must not reach model context"
+        );
+        assert_eq!(
+            hits[0].reference.ref_id,
+            "kse:p.nuclei:nuclei_template:cloud/cves/2025/CVE-2025-12345.yaml"
+        );
+        let reference = ContentRef {
+            source: "plugin:p.nuclei".to_string(),
+            ref_id: hits[0].reference.ref_id.clone(),
+            ref_version: Some("0.1.0".to_string()),
+            content_hash: None,
+            uri: None,
+        };
+        let loaded = source.load(&reference).unwrap();
+        assert!(loaded.body.contains("severity: high"));
     }
 
     #[test]
@@ -482,13 +551,46 @@ mod tests {
         let r = ContentRef {
             source: "plugin:p.b".to_string(),
             ref_id: "kse:p.b:document_markdown:docs/g.md".to_string(),
-            ref_version: None,
+            ref_version: Some("0.1.0".to_string()),
             content_hash: None,
             uri: None,
         };
         let content = src.load(&r).unwrap();
         assert_eq!(content.body, "全文正文");
         assert_eq!(content.reference.content_hash.as_deref(), Some("deadbeef"));
+    }
+
+    #[test]
+    fn candidates_and_expand_are_pinned_to_active_plugin_version() {
+        let pool = memory_pool();
+        seed(&pool);
+        pool.with_conn(|c| {
+            c.execute_batch(
+                "INSERT INTO plugin (plugin_id, version, name, kind, description, license, trust_level, state, source_type, source_ref, manifest_json, created_at, updated_at, is_active)
+                 VALUES ('p.versioned','0.1.0','Old','knowledge','d','MIT','local','DISABLED','local_dir','.','{}','2026-11-12T00:00:00Z','2026-11-12T00:00:00Z',0),
+                        ('p.versioned','0.2.0','New','knowledge','d','MIT','local','ENABLED','local_dir','.','{}','2026-11-12T00:00:00Z','2026-11-12T00:00:00Z',1);
+                 INSERT INTO knowledge_source_entry (plugin_id,plugin_version,corpus_id,entry_kind,item_key,title,body,content_sha256,metadata_sha256,first_seen_at,last_seen_at,review_status)
+                 VALUES ('p.versioned','0.1.0','c','catalog_entry','https://x/old','旧版本','old body','oldhash','m','2026-11-12T00:00:00Z','2026-11-12T00:00:00Z','APPROVED'),
+                        ('p.versioned','0.2.0','c','catalog_entry','https://x/new','当前版本','new body','newhash','m','2026-11-12T00:00:00Z','2026-11-12T00:00:00Z','APPROVED');",
+            )
+        })
+        .unwrap();
+        let src = PluginSource::new(pool, "p.versioned");
+        let hits = src.candidates(&query("当前版本"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "当前版本");
+        assert_eq!(hits[0].reference.ref_version.as_deref(), Some("0.2.0"));
+
+        let stale = ContentRef {
+            source: "plugin:p.versioned".to_string(),
+            ref_id: "kse:p.versioned:catalog_entry:https://x/old".to_string(),
+            ref_version: Some("0.1.0".to_string()),
+            content_hash: None,
+            uri: None,
+        };
+        assert!(src.load(&stale).is_err(), "stale refs must not expand");
+        let current = src.load(&hits[0].reference).unwrap();
+        assert_eq!(current.body, "new body");
     }
 
     #[test]

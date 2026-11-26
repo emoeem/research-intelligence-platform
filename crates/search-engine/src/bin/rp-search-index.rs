@@ -2,10 +2,12 @@
 //!
 //! 用法：
 //! ```text
-//! rp-search-index build  --platform-db PATH --catalog-db PATH --index-db PATH [--rebuild]
+//! rp-search-index build  --platform-db PATH --catalog-db PATH --index-db PATH [--rtis-db PATH --curation-overlay PATH] [--rebuild]
 //! rp-search-index query  --index-db PATH --keywords k1,k2 [--limit N] [--offset N]
 //!                        [--grade G] [--license-status S] [--maintenance-status S]
-//!                        [--resource-type T] [--json]
+//!                        [--resource-type T] [--nuclei-severity S] [--nuclei-protocol P]
+//!                        [--cve-id CVE] [--cwe-id CWE] [--evidence-level K0..K4]
+//!                        [--knowledge-lifecycle L] [--poc-severity S] [--poc-category C] [--poc-cve-id CVE] [--json]
 //! ```
 //! 退出码：0 成功；2 参数或执行错误。输出恒为 JSON。
 
@@ -28,18 +30,26 @@ struct Args {
     mode: Mode,
     platform_db: Option<PathBuf>,
     catalog_db: Option<PathBuf>,
+    rtis_db: Option<PathBuf>,
+    curation_overlay: Option<PathBuf>,
     index_db: PathBuf,
     filters: SearchFilters,
 }
 
 fn usage() -> &'static str {
-    "usage: rp-search-index build --platform-db P --catalog-db C --index-db I [--rebuild]
+    "usage: rp-search-index build --platform-db P --catalog-db C --index-db I [--rtis-db R --curation-overlay O] [--rebuild]
         rp-search-index query --index-db I --keywords k1,k2 [--limit N] [--offset N]
                               [--grade A] [--license-status S] [--maintenance-status S]
-                              [--resource-type T]
+                              [--resource-type T] [--nuclei-severity S]
+                              [--nuclei-protocol P] [--cve-id CVE] [--cwe-id CWE]
+                              [--evidence-level K0..K4] [--knowledge-lifecycle L]
+                              [--poc-severity S] [--poc-category C] [--poc-cve-id CVE]
+                              [--poc-source-integrity S] [--poc-verification-result R]
+                              [--poc-dedup-status S] [--poc-missing-evidence true|false]
 
-build  从 platform 库（resource + resource_source）与 catalog 库（github_metadata）
-       构建派生 FTS5 索引；--rebuild 先删既有索引表再重灌（可重建纪律）
+build  从 platform/catalog 构建基础索引；可选 --rtis-db + --curation-overlay
+       将 Overlay 明确审核的自有 POC 元数据加入同一 FTS5 索引。RTIS 只读；
+       不读取 POC 正文、description、usage 或 verified_note。--rebuild 重建派生索引
 query  对已构建索引库执行混合检索（bm25 50% / quality 30% / keyword 覆盖 20%）
 
 exit: ok=0, 运行失败=2（error + usage 到 stderr）
@@ -65,6 +75,8 @@ fn parse_args() -> Result<Args, String> {
     let mut rebuild = false;
     let mut platform_db = None;
     let mut catalog_db = None;
+    let mut rtis_db = None;
+    let mut curation_overlay = None;
     let mut index_db: Option<PathBuf> = None;
     let mut keywords: Vec<String> = Vec::new();
     let mut limit = 10usize;
@@ -85,6 +97,14 @@ fn parse_args() -> Result<Args, String> {
             }
             "--catalog-db" => {
                 catalog_db = Some(PathBuf::from(need_value(&argv, &mut i, "--catalog-db")?))
+            }
+            "--rtis-db" => rtis_db = Some(PathBuf::from(need_value(&argv, &mut i, "--rtis-db")?)),
+            "--curation-overlay" => {
+                curation_overlay = Some(PathBuf::from(need_value(
+                    &argv,
+                    &mut i,
+                    "--curation-overlay",
+                )?))
             }
             "--index-db" => {
                 index_db = Some(PathBuf::from(need_value(&argv, &mut i, "--index-db")?))
@@ -118,6 +138,47 @@ fn parse_args() -> Result<Args, String> {
             "--resource-type" => {
                 filters.resource_type = Some(need_value(&argv, &mut i, "--resource-type")?)
             }
+            "--nuclei-severity" => {
+                filters.nuclei_severity = Some(need_value(&argv, &mut i, "--nuclei-severity")?)
+            }
+            "--nuclei-protocol" => {
+                filters.nuclei_protocol = Some(need_value(&argv, &mut i, "--nuclei-protocol")?)
+            }
+            "--cve-id" => filters.cve_id = Some(need_value(&argv, &mut i, "--cve-id")?),
+            "--cwe-id" => filters.cwe_id = Some(need_value(&argv, &mut i, "--cwe-id")?),
+            "--evidence-level" => {
+                filters.evidence_level = Some(need_value(&argv, &mut i, "--evidence-level")?)
+            }
+            "--knowledge-lifecycle" => {
+                filters.knowledge_lifecycle =
+                    Some(need_value(&argv, &mut i, "--knowledge-lifecycle")?)
+            }
+            "--poc-severity" => {
+                filters.poc_severity = Some(need_value(&argv, &mut i, "--poc-severity")?)
+            }
+            "--poc-category" => {
+                filters.poc_category = Some(need_value(&argv, &mut i, "--poc-category")?)
+            }
+            "--poc-cve-id" => filters.poc_cve_id = Some(need_value(&argv, &mut i, "--poc-cve-id")?),
+            "--poc-source-integrity" => {
+                filters.poc_source_integrity =
+                    Some(need_value(&argv, &mut i, "--poc-source-integrity")?)
+            }
+            "--poc-verification-result" => {
+                filters.poc_verification_result =
+                    Some(need_value(&argv, &mut i, "--poc-verification-result")?)
+            }
+            "--poc-dedup-status" => {
+                filters.poc_dedup_status = Some(need_value(&argv, &mut i, "--poc-dedup-status")?)
+            }
+            "--poc-missing-evidence" => {
+                let value = need_value(&argv, &mut i, "--poc-missing-evidence")?;
+                filters.poc_missing_evidence = Some(match value.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => return Err("--poc-missing-evidence must be true|false".into()),
+                });
+            }
             other => return Err(format!("unknown flag {other}")),
         }
         i += 1;
@@ -127,6 +188,11 @@ fn parse_args() -> Result<Args, String> {
         "build" => {
             if platform_db.is_none() || catalog_db.is_none() {
                 return Err("build requires --platform-db and --catalog-db".to_string());
+            }
+            if rtis_db.is_some() != curation_overlay.is_some() {
+                return Err(
+                    "--rtis-db and --curation-overlay must be supplied together".to_string()
+                );
             }
             Mode::Build { rebuild }
         }
@@ -140,6 +206,8 @@ fn parse_args() -> Result<Args, String> {
         mode: m,
         platform_db,
         catalog_db,
+        rtis_db,
+        curation_overlay,
         index_db,
         filters,
     })
@@ -174,10 +242,29 @@ fn run(args: Args) -> Result<(), String> {
             let catalog = open_ro(args.catalog_db.as_ref().expect("checked"), "catalog db")?;
             let index = Pool::open(PoolConfig::writable_file(&args.index_db))
                 .map_err(|e| format!("open index db: {e}"))?;
-            let report: BuildReport = if rebuild {
-                SearchIndex::rebuild(&platform, &catalog, &index)
-            } else {
-                SearchIndex::build(&platform, &catalog, &index)
+            let report: BuildReport = match (&args.rtis_db, &args.curation_overlay) {
+                (Some(rtis_path), Some(overlay_path)) => {
+                    let rtis = open_ro(rtis_path, "RTIS db")?;
+                    if rebuild {
+                        SearchIndex::rebuild_with_rtis_curation(
+                            &platform,
+                            &catalog,
+                            &rtis,
+                            overlay_path,
+                            &index,
+                        )
+                    } else {
+                        SearchIndex::build_with_rtis_curation(
+                            &platform,
+                            &catalog,
+                            &rtis,
+                            overlay_path,
+                            &index,
+                        )
+                    }
+                }
+                _ if rebuild => SearchIndex::rebuild(&platform, &catalog, &index),
+                _ => SearchIndex::build(&platform, &catalog, &index),
             }
             .map_err(|e| format!("build: {e}"))?;
             println!(

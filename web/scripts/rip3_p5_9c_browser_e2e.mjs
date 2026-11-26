@@ -54,7 +54,10 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
 // 场景 A：Project/Research 工作区 + 模板选择面（Workflows 模板列表）
 {
   const { ctx, page, pageErrors } = await newPage();
-  await page.goto("http://localhost:5173/research/tasks", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/tasks", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForTimeout(700);
   const tasksText = await page.locator("main").textContent();
   pass("场景 A：Research 任务镜像真实行", (tasksText ?? "").includes("任务"), "");
@@ -74,7 +77,10 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
 // 场景 B：验证计划列表（plan-build 产物 + 预算面）
 {
   const { ctx, page, pageErrors } = await newPage();
-  await page.goto("http://localhost:5173/research/plans", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/plans", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForTimeout(900);
   const plansText = await page.locator("main").textContent();
   pass(
@@ -82,7 +88,11 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
     (plansText ?? "").includes("P5-9c 场景 B 知识驱动计划"),
     "",
   );
-  pass("场景 B：CONFIRMED 五态徽标可见（01b0 审证回填）", (plansText ?? "").includes("CONFIRMED"), "");
+  pass(
+    "场景 B：CONFIRMED 五态徽标可见（01b0 审证回填）",
+    (plansText ?? "").includes("CONFIRMED"),
+    "",
+  );
   await page.screenshot({ path: join(outDir, "03-sceneB-plans-confirmed.png") });
   pass("场景 B 无未处理 JS 异常", pageErrors.length === 0, pageErrors.join("; ").slice(0, 200));
   await ctx.close();
@@ -91,12 +101,17 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
 // 场景 C/F：Evidence 页（marker 命中证据 + 六 ID 锚）与 Coverage（有结论 + 盲区）
 {
   const { ctx, page, pageErrors } = await newPage();
-  await page.goto("http://localhost:5173/research/evidence", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/evidence", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForSelector('[data-testid="evidence-plan-select"]', { timeout: 15000 });
   // 按标题动态选"帧协议修复后"演练计划（列表顺序不钉定，按 value 精确选）
   const planValue = await page.evaluate(() => {
     const select = document.querySelector('[data-testid="evidence-plan-select"]');
-    const option = [...(select?.options ?? [])].find((o) => o.textContent?.includes("帧协议修复后"));
+    const option = [...(select?.options ?? [])].find((o) =>
+      o.textContent?.includes("帧协议修复后"),
+    );
     return option?.value ?? "";
   });
   if (!planValue) throw new Error("演练计划（帧协议修复后）不在计划列表");
@@ -119,7 +134,11 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
     await rows.nth(i).click();
     await page.waitForTimeout(400);
     const payload = await page.locator('[data-testid="evidence-payload"]').textContent();
-    if ((payload ?? "").includes('"matched_count": 1') || (payload ?? "").includes("rtis-poc:900064") || (payload ?? "").includes("template matched 1 finding")) {
+    if (
+      (payload ?? "").includes('"matched_count": 1') ||
+      (payload ?? "").includes("rtis-poc:900064") ||
+      (payload ?? "").includes("template matched 1 finding")
+    ) {
       markerHit = true;
       break;
     }
@@ -127,16 +146,15 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
   pass("场景 C：证据为真实命中面（matched 1 + RTIS 引用）", markerHit, `rows=${rowCount}`);
   await page.screenshot({ path: join(outDir, "04-sceneC-evidence-marker.png") });
 
-  await page.goto("http://localhost:5173/research/coverage", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/coverage", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForSelector('[data-testid="coverage-plan-select"]', { timeout: 15000 });
   await page.selectOption('[data-testid="coverage-plan-select"]', planValue);
   await page.waitForSelector('[data-testid="coverage-matrix-section"] table', { timeout: 15000 });
   const matrix = await page.locator('[data-testid="coverage-matrix-section"]').textContent();
-  pass(
-    "场景 E：盲区可见（uncovered 维度在列）",
-    (matrix ?? "").includes("uncovered"),
-    "",
-  );
+  pass("场景 E：盲区可见（uncovered 维度在列）", (matrix ?? "").includes("uncovered"), "");
   await page.screenshot({ path: join(outDir, "05-sceneE-coverage-blindspots.png") });
   pass("场景 C/E 无未处理 JS 异常", pageErrors.length === 0, pageErrors.join("; ").slice(0, 200));
   await ctx.close();
@@ -148,7 +166,11 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
   await page.goto("http://localhost:5173/traces", { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForTimeout(900);
   const traceText = await page.locator("main").textContent();
-  pass("场景 F：Trace 六 ID 关联面渲染（tr-exec 锚）", (traceText ?? "").includes("tr-exec") || (traceText ?? "").includes("trace"), "");
+  pass(
+    "场景 F：Trace 六 ID 关联面渲染（tr-exec 锚）",
+    (traceText ?? "").includes("tr-exec") || (traceText ?? "").includes("trace"),
+    "",
+  );
   await page.screenshot({ path: join(outDir, "06-sceneF-traces.png") });
   await ctx.close();
 }

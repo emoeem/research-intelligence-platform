@@ -64,8 +64,14 @@ impl std::fmt::Display for SpecError {
             SpecError::MarkerUnclosed => write!(f, "fuzz_spec_marker_unclosed"),
             SpecError::MarkerEmpty => write!(f, "fuzz_spec_marker_empty"),
             SpecError::PayloadSource(m) => write!(f, "fuzz_spec_payload_source: {m}"),
-            SpecError::PayloadCountMismatch { positions, payloads } => {
-                write!(f, "fuzz_spec_payload_count_mismatch: positions={positions} payloads={payloads}")
+            SpecError::PayloadCountMismatch {
+                positions,
+                payloads,
+            } => {
+                write!(
+                    f,
+                    "fuzz_spec_payload_count_mismatch: positions={positions} payloads={payloads}"
+                )
             }
             SpecError::SelectorTargetMissing(m) => {
                 write!(f, "fuzz_spec_selector_target_missing: {m}")
@@ -127,7 +133,9 @@ impl FuzzBudget {
             return Err(SpecError::BudgetInvalid("max_requests must be >= 1".into()));
         }
         if self.max_concurrency == 0 {
-            return Err(SpecError::BudgetInvalid("max_concurrency must be >= 1".into()));
+            return Err(SpecError::BudgetInvalid(
+                "max_concurrency must be >= 1".into(),
+            ));
         }
         if (self.rate_window_ms == 0) != (self.rate_max_requests == 0) {
             return Err(SpecError::BudgetInvalid(
@@ -210,7 +218,11 @@ pub enum PayloadSource {
     /// 字母序列（长度 from_len..=to_len 的小写字母全排列）。
     RangeAlpha { from_len: u32, to_len: u32 },
     /// 日期范围（YYYY-MM-DD 含端点，步进天）。
-    RangeDate { from: String, to: String, step_days: u32 },
+    RangeDate {
+        from: String,
+        to: String,
+        step_days: u32,
+    },
 }
 
 /// 字典/生成列表行数帽（fail-closed 防失控生成）。
@@ -222,9 +234,8 @@ impl PayloadSource {
         let out = match self {
             PayloadSource::List { values } => values.clone(),
             PayloadSource::Wordlist { path } => {
-                let text = std::fs::read_to_string(path).map_err(|e| {
-                    SpecError::PayloadSource(format!("wordlist read {path}: {e}"))
-                })?;
+                let text = std::fs::read_to_string(path)
+                    .map_err(|e| SpecError::PayloadSource(format!("wordlist read {path}: {e}")))?;
                 let mut lines = Vec::new();
                 for (i, raw) in text.lines().enumerate() {
                     // 首行 BOM 剥离；空行 / `#` 注释跳过（判据 4）。
@@ -307,7 +318,11 @@ impl PayloadSource {
                 }
                 out
             }
-            PayloadSource::RangeDate { from, to, step_days } => {
+            PayloadSource::RangeDate {
+                from,
+                to,
+                step_days,
+            } => {
                 if step_days == &0 {
                     return Err(SpecError::PayloadSource("date step must be != 0".into()));
                 }
@@ -319,15 +334,15 @@ impl PayloadSource {
                             "date must be YYYY-MM-DD: {s}"
                         )));
                     }
-                    let y: i64 = parts[0].parse().map_err(|_| {
-                        SpecError::PayloadSource(format!("bad date year: {s}"))
-                    })?;
-                    let m: i64 = parts[1].parse().map_err(|_| {
-                        SpecError::PayloadSource(format!("bad date month: {s}"))
-                    })?;
-                    let d: i64 = parts[2].parse().map_err(|_| {
-                        SpecError::PayloadSource(format!("bad date day: {s}"))
-                    })?;
+                    let y: i64 = parts[0]
+                        .parse()
+                        .map_err(|_| SpecError::PayloadSource(format!("bad date year: {s}")))?;
+                    let m: i64 = parts[1]
+                        .parse()
+                        .map_err(|_| SpecError::PayloadSource(format!("bad date month: {s}")))?;
+                    let d: i64 = parts[2]
+                        .parse()
+                        .map_err(|_| SpecError::PayloadSource(format!("bad date day: {s}")))?;
                     if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
                         return Err(SpecError::PayloadSource(format!("bad date: {s}")));
                     }
@@ -448,8 +463,7 @@ pub struct PreparedSpec {
 
 /// 从 spec JSON 文本解析 + 全量预检（CLI 与 JobRunner 共用；fail-closed）。
 pub fn prepare_spec(json: &str) -> Result<PreparedSpec, SpecError> {
-    let spec: FuzzSpec =
-        serde_json::from_str(json).map_err(|e| SpecError::Json(e.to_string()))?;
+    let spec: FuzzSpec = serde_json::from_str(json).map_err(|e| SpecError::Json(e.to_string()))?;
     spec.budget.validate()?;
 
     // 模板可序列化（serialize_request 既有守卫直通；CRLF 注入拒既有词形）。
@@ -502,8 +516,14 @@ pub fn job_row_from_prepared(
     spec_json: &str,
     now: String,
 ) -> FuzzJobRow {
-    let (max_requests, max_concurrency, rate_window_ms, rate_max_requests, min_request_interval_ms, max_duration_ms) =
-        prepared.spec.budget.to_row_fields();
+    let (
+        max_requests,
+        max_concurrency,
+        rate_window_ms,
+        rate_max_requests,
+        min_request_interval_ms,
+        max_duration_ms,
+    ) = prepared.spec.budget.to_row_fields();
     FuzzJobRow {
         job_id: job_id.to_string(),
         session_id: session_id.to_string(),
@@ -535,7 +555,12 @@ pub fn parse_marker_spans(req: &OutboundRequest) -> Result<Vec<MarkerSpan>, Spec
     let mut spans = Vec::new();
     // target（UTF-8 字节偏移）。
     scan_str_markers(&req.target, |fs, fe, s, e| {
-        spans.push(MarkerSpan::Target { full_start: fs, full_end: fe, start: s, end: e })
+        spans.push(MarkerSpan::Target {
+            full_start: fs,
+            full_end: fe,
+            start: s,
+            end: e,
+        })
     })?;
     // headers（value 串内区间；头名不扫）。
     for (i, h) in req.headers.iter().enumerate() {
@@ -677,14 +702,27 @@ pub fn build_case_request(
     });
     for (pos_i, payload) in marker_assignments.iter().rev() {
         match &marker_spans[*pos_i] {
-            MarkerSpan::Target { full_start, full_end, .. } => {
+            MarkerSpan::Target {
+                full_start,
+                full_end,
+                ..
+            } => {
                 req.target = splice_str(&req.target, *full_start, *full_end, payload);
             }
-            MarkerSpan::Header { index, full_start, full_end, .. } => {
+            MarkerSpan::Header {
+                index,
+                full_start,
+                full_end,
+                ..
+            } => {
                 let h = &mut req.headers[*index];
                 h.value = splice_str(&h.value, *full_start, *full_end, payload);
             }
-            MarkerSpan::Body { full_start, full_end, .. } => {
+            MarkerSpan::Body {
+                full_start,
+                full_end,
+                ..
+            } => {
                 req.body = splice_bytes(&req.body, *full_start, *full_end, payload);
             }
         }
@@ -795,7 +833,11 @@ pub fn apply_selector(
             Ok(())
         }
         PositionSelector::PathSegment { index } => {
-            let query = req.target.find('?').map(|p| req.target[p..].to_string()).unwrap_or_default();
+            let query = req
+                .target
+                .find('?')
+                .map(|p| req.target[p..].to_string())
+                .unwrap_or_default();
             let path = req.target.split('?').next().unwrap_or("");
             let mut segs: Vec<&str> = path.split('/').collect();
             // "/a/b" split → ["", "a", "b"]：跳过前导空段计数。
@@ -827,8 +869,10 @@ pub fn apply_selector(
                 .ok_or_else(|| {
                     SpecError::SelectorTargetMissing(format!("{}: no boundary", sel.describe()))
                 })?;
-            req.body = replace_multipart_field(&req.body, &boundary, field, payload)
-                .map_err(|e| SpecError::SelectorTargetMissing(format!("{}: {e}", sel.describe())))?;
+            req.body =
+                replace_multipart_field(&req.body, &boundary, field, payload).map_err(|e| {
+                    SpecError::SelectorTargetMissing(format!("{}: {e}", sel.describe()))
+                })?;
             Ok(())
         }
     }
@@ -857,7 +901,8 @@ fn replace_json_pointer(
                     .ok_or_else(|| format!("key missing: {token}"))?,
                 serde_json::Value::Array(arr) => {
                     let idx: usize = token.parse().map_err(|_| format!("bad index: {token}"))?;
-                    arr.get_mut(idx).ok_or_else(|| format!("index missing: {token}"))?
+                    arr.get_mut(idx)
+                        .ok_or_else(|| format!("index missing: {token}"))?
                 }
                 _ => return Err("parent not object/array".into()),
             };
@@ -873,7 +918,8 @@ fn replace_json_pointer(
                 .ok_or_else(|| format!("key missing: {token}"))?,
             serde_json::Value::Array(arr) => {
                 let idx: usize = token.parse().map_err(|_| format!("bad index: {token}"))?;
-                arr.get_mut(idx).ok_or_else(|| format!("index missing: {token}"))?
+                arr.get_mut(idx)
+                    .ok_or_else(|| format!("index missing: {token}"))?
             }
             _ => return Err("parent not object/array".into()),
         };
@@ -985,32 +1031,30 @@ fn check_selector_target(
                 return Err(SpecError::SelectorTargetMissing(sel.describe()));
             }
             let q = req.target.split('?').nth(1).unwrap_or("");
-            let hit = q.split('&').any(|p| p.split('=').next() == Some(name.as_str()));
+            let hit = q
+                .split('&')
+                .any(|p| p.split('=').next() == Some(name.as_str()));
             if !hit {
                 return Err(SpecError::SelectorTargetMissing(sel.describe()));
             }
         }
         PositionSelector::Header { name } => {
-            conflict(
-                spans
-                    .iter()
-                    .any(|s| matches!(s, MarkerSpan::Header { .. })),
-            )?;
-            if !req.headers.iter().any(|h| h.name.eq_ignore_ascii_case(name)) {
+            conflict(spans.iter().any(|s| matches!(s, MarkerSpan::Header { .. })))?;
+            if !req
+                .headers
+                .iter()
+                .any(|h| h.name.eq_ignore_ascii_case(name))
+            {
                 return Err(SpecError::SelectorTargetMissing(sel.describe()));
             }
         }
         PositionSelector::Cookie { name } => {
-            conflict(
-                spans
-                    .iter()
-                    .any(|s| matches!(s, MarkerSpan::Header { .. })),
-            )?;
+            conflict(spans.iter().any(|s| matches!(s, MarkerSpan::Header { .. })))?;
             let hit = req.headers.iter().any(|h| {
                 h.name.eq_ignore_ascii_case("cookie")
-                    && h.value.split(';').any(|c| {
-                        c.trim().split('=').next() == Some(name.as_str())
-                    })
+                    && h.value
+                        .split(';')
+                        .any(|c| c.trim().split('=').next() == Some(name.as_str()))
             });
             if !hit {
                 return Err(SpecError::SelectorTargetMissing(sel.describe()));
@@ -1213,7 +1257,10 @@ impl<'a> Iterator for CombinationIter<'a> {
 
 /// 位置组合 payload 值串（payload_sha256 对账锚输入：`[v1,v2,…]` 序列化）。
 pub fn payload_vector_json(assignments: &[Option<String>]) -> String {
-    let vals: Vec<&str> = assignments.iter().map(|a| a.as_deref().unwrap_or("")).collect();
+    let vals: Vec<&str> = assignments
+        .iter()
+        .map(|a| a.as_deref().unwrap_or(""))
+        .collect();
     serde_json::to_string(&vals).unwrap_or_else(|_| "[]".into())
 }
 

@@ -78,7 +78,9 @@ fn ensure_image() -> Option<()> {
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !exists {
-        eprintln!("SKIP: 验收镜像 {image} 不在本地镜像库，digest 钉死无法现建命中（V-9，受控环境端到端）");
+        eprintln!(
+            "SKIP: 验收镜像 {image} 不在本地镜像库，digest 钉死无法现建命中（V-9，受控环境端到端）"
+        );
         return None;
     }
     Some(())
@@ -556,7 +558,11 @@ fn family_limiter_acquire_for_two_layer_verdict() {
     drop(a1);
     drop(a2);
     drop(b1);
-    assert_eq!(limiter2.caller_active("caller-1"), 0, "guard drop releases caller ledger");
+    assert_eq!(
+        limiter2.caller_active("caller-1"),
+        0,
+        "guard drop releases caller ledger"
+    );
     assert_eq!(limiter2.caller_active("caller-2"), 0);
 
     // caller 帽 1 的严格面：第二族即拒（顶层帽跨族记账）。
@@ -580,7 +586,9 @@ fn family_limiter_acquire_for_two_layer_verdict() {
     let g2 = limiter3
         .try_acquire_for("utility", Some("caller-x"), None)
         .expect("second slot within family limit 2");
-    assert!(limiter3.try_acquire_for("utility", Some("caller-x"), None).is_none());
+    assert!(limiter3
+        .try_acquire_for("utility", Some("caller-x"), None)
+        .is_none());
     drop(g1);
     drop(g2);
 
@@ -591,12 +599,12 @@ fn family_limiter_acquire_for_two_layer_verdict() {
         .try_acquire_for("utility", Some("caller-hold"), Some(1))
         .unwrap();
     let waiter = limiter4.clone();
-    let t = std::thread::spawn(move || {
-        waiter.acquire_for("utility", Some("caller-hold"), Some(1))
-    });
+    let t = std::thread::spawn(move || waiter.acquire_for("utility", Some("caller-hold"), Some(1)));
     std::thread::sleep(Duration::from_millis(300));
     drop(holder);
-    let guard = t.join().expect("blocking acquire_for must proceed after release");
+    let guard = t
+        .join()
+        .expect("blocking acquire_for must proceed after release");
     assert_eq!(limiter4.caller_active("caller-hold"), 1);
     drop(guard);
     assert_eq!(limiter4.caller_active("caller-hold"), 0);

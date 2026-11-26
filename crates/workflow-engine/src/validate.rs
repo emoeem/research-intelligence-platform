@@ -212,13 +212,10 @@ pub fn validate_definition(def: &WorkflowDefinition) -> Vec<Issue> {
         for required in required_params(node.kind()) {
             let present = node
                 .params_json()
-                .and_then(|raw| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(raw).ok())
-                .map(|params| {
-                    params
-                        .get(*required)
-                        .map(|v| !v.is_null())
-                        .unwrap_or(false)
+                .and_then(|raw| {
+                    serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(raw).ok()
                 })
+                .map(|params| params.get(*required).map(|v| !v.is_null()).unwrap_or(false))
                 .unwrap_or(false);
             if !present {
                 issues.push(Issue {
@@ -250,7 +247,8 @@ fn find_cycle(
     nodes: &[domain::WorkflowNode],
     edges: &[domain::WorkflowEdge],
 ) -> Option<Vec<String>> {
-    let mut adjacency: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    let mut adjacency: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
     for node in nodes {
         adjacency.entry(node.id()).or_default();
     }
@@ -291,10 +289,7 @@ fn find_cycle(
                 match color.get(*next) {
                     Some(Color::Gray) => {
                         // 环：从栈中 next 的位置截到栈顶，再闭合到 next。
-                        let pos = stack
-                            .iter()
-                            .position(|n| *n == *next)
-                            .unwrap_or_default();
+                        let pos = stack.iter().position(|n| *n == *next).unwrap_or_default();
                         let mut path: Vec<String> =
                             stack[pos..].iter().map(|s| (*s).to_string()).collect();
                         path.push((*next).to_string());
@@ -331,7 +326,8 @@ fn reachable_from(
     nodes: &[domain::WorkflowNode],
     edges: &[domain::WorkflowEdge],
 ) -> std::collections::BTreeSet<String> {
-    let mut adjacency: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    let mut adjacency: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
     for node in nodes {
         adjacency.entry(node.id()).or_default();
     }
@@ -381,9 +377,7 @@ mod tests {
             .collect();
         let edge_vec = edges
             .into_iter()
-            .map(|(from, to, kind)| {
-                WorkflowEdge::try_new(from, to, kind, None).expect("edge")
-            })
+            .map(|(from, to, kind)| WorkflowEdge::try_new(from, to, kind, None).expect("edge"))
             .collect();
         WorkflowDefinition::try_new(
             WorkflowId::try_new("wf-test").expect("id"),
@@ -408,8 +402,16 @@ mod tests {
         let def = build_def(
             vec![
                 ("start", WorkflowNodeKind::Start, None),
-                ("fetch", WorkflowNodeKind::Tool, node_param("fetch", serde_json::json!({"tool_id": "webresearch.fetch"}))),
-                ("summarize", WorkflowNodeKind::Knowledge, node_param("summarize", serde_json::json!({"query": "summarize"}))),
+                (
+                    "fetch",
+                    WorkflowNodeKind::Tool,
+                    node_param("fetch", serde_json::json!({"tool_id": "webresearch.fetch"})),
+                ),
+                (
+                    "summarize",
+                    WorkflowNodeKind::Knowledge,
+                    node_param("summarize", serde_json::json!({"query": "summarize"})),
+                ),
                 ("done", WorkflowNodeKind::End, None),
             ],
             vec![
@@ -427,8 +429,16 @@ mod tests {
         let def = build_def(
             vec![
                 ("start", WorkflowNodeKind::Start, None),
-                ("a", WorkflowNodeKind::Tool, node_param("a", serde_json::json!({"tool_id": "t"}))),
-                ("b", WorkflowNodeKind::Knowledge, node_param("b", serde_json::json!({"query": "q"}))),
+                (
+                    "a",
+                    WorkflowNodeKind::Tool,
+                    node_param("a", serde_json::json!({"tool_id": "t"})),
+                ),
+                (
+                    "b",
+                    WorkflowNodeKind::Knowledge,
+                    node_param("b", serde_json::json!({"query": "q"})),
+                ),
                 ("done", WorkflowNodeKind::End, None),
             ],
             vec![
@@ -450,7 +460,11 @@ mod tests {
         let def = build_def(
             vec![
                 ("start", WorkflowNodeKind::Start, None),
-                ("a", WorkflowNodeKind::Tool, node_param("a", serde_json::json!({"tool_id": "t"}))),
+                (
+                    "a",
+                    WorkflowNodeKind::Tool,
+                    node_param("a", serde_json::json!({"tool_id": "t"})),
+                ),
                 ("done", WorkflowNodeKind::End, None),
             ],
             vec![
@@ -470,8 +484,16 @@ mod tests {
         let def = build_def(
             vec![
                 ("start", WorkflowNodeKind::Start, None),
-                ("x", WorkflowNodeKind::Tool, node_param("x", serde_json::json!({"tool_id": "t"}))),
-                ("y", WorkflowNodeKind::Knowledge, node_param("y", serde_json::json!({"query": "q"}))),
+                (
+                    "x",
+                    WorkflowNodeKind::Tool,
+                    node_param("x", serde_json::json!({"tool_id": "t"})),
+                ),
+                (
+                    "y",
+                    WorkflowNodeKind::Knowledge,
+                    node_param("y", serde_json::json!({"query": "q"})),
+                ),
                 ("done", WorkflowNodeKind::End, None),
             ],
             vec![
@@ -481,7 +503,11 @@ mod tests {
         );
         let issues = validate_definition(&def);
         assert_eq!(issues.len(), 1, "{issues:?}");
-        assert!(issues[0].message.contains("orphan node"), "{}", issues[0].message);
+        assert!(
+            issues[0].message.contains("orphan node"),
+            "{}",
+            issues[0].message
+        );
         assert!(issues[0].message.ends_with(": x"), "{}", issues[0].message);
         assert_eq!(issues[0].node.as_deref(), Some("x"));
     }
@@ -493,8 +519,16 @@ mod tests {
             vec![
                 ("start", WorkflowNodeKind::Start, None),
                 ("t1", WorkflowNodeKind::Tool, None),
-                ("k1", WorkflowNodeKind::Knowledge, Some(serde_json::json!({"other": 1}))),
-                ("c1", WorkflowNodeKind::Condition, Some(serde_json::json!({"expression": null}))),
+                (
+                    "k1",
+                    WorkflowNodeKind::Knowledge,
+                    Some(serde_json::json!({"other": 1})),
+                ),
+                (
+                    "c1",
+                    WorkflowNodeKind::Condition,
+                    Some(serde_json::json!({"expression": null})),
+                ),
                 ("done", WorkflowNodeKind::End, None),
             ],
             vec![
@@ -513,9 +547,15 @@ mod tests {
             .map(|i| i.message.as_str())
             .collect();
         assert_eq!(missing.len(), 3, "{missing:?}");
-        assert!(missing.iter().any(|m| m.contains("requires param \"tool_id\"")));
-        assert!(missing.iter().any(|m| m.contains("requires param \"query\"")));
-        assert!(missing.iter().any(|m| m.contains("requires param \"expression\"")));
+        assert!(missing
+            .iter()
+            .any(|m| m.contains("requires param \"tool_id\"")));
+        assert!(missing
+            .iter()
+            .any(|m| m.contains("requires param \"query\"")));
+        assert!(missing
+            .iter()
+            .any(|m| m.contains("requires param \"expression\"")));
     }
 
     #[test]
@@ -537,9 +577,15 @@ mod tests {
             .filter(|i| i.kind == IssueKind::IllegalEndpoint)
             .collect();
         assert_eq!(endpoint.len(), 2, "{issues:?}");
-        assert!(endpoint.iter().all(|i| i.message.contains("illegal edge endpoint")));
-        assert!(endpoint.iter().any(|i| i.message.contains("references missing node \"ghost\"")));
-        assert!(endpoint.iter().any(|i| i.message.contains("references missing node \"phantom\"")));
+        assert!(endpoint
+            .iter()
+            .all(|i| i.message.contains("illegal edge endpoint")));
+        assert!(endpoint
+            .iter()
+            .any(|i| i.message.contains("references missing node \"ghost\"")));
+        assert!(endpoint
+            .iter()
+            .any(|i| i.message.contains("references missing node \"phantom\"")));
     }
 
     #[test]
@@ -547,8 +593,16 @@ mod tests {
         // 0 start（两个 tool 互连成环会先报环；改用无环两节点）
         let def = build_def(
             vec![
-                ("a", WorkflowNodeKind::Tool, node_param("a", serde_json::json!({"tool_id": "t"}))),
-                ("b", WorkflowNodeKind::Knowledge, node_param("b", serde_json::json!({"query": "q"}))),
+                (
+                    "a",
+                    WorkflowNodeKind::Tool,
+                    node_param("a", serde_json::json!({"tool_id": "t"})),
+                ),
+                (
+                    "b",
+                    WorkflowNodeKind::Knowledge,
+                    node_param("b", serde_json::json!({"query": "q"})),
+                ),
             ],
             vec![("a", "b", WorkflowEdgeKind::Seq)],
         );
@@ -579,7 +633,11 @@ mod tests {
             None,
         )
         .expect("definition");
-        assert_eq!(validate_definition(&def), Vec::new(), "legacy 参考行豁免图规则");
+        assert_eq!(
+            validate_definition(&def),
+            Vec::new(),
+            "legacy 参考行豁免图规则"
+        );
     }
 
     #[test]
@@ -589,8 +647,16 @@ mod tests {
             vec![
                 ("start", WorkflowNodeKind::Start, None),
                 ("fan", WorkflowNodeKind::Parallel, None),
-                ("w1", WorkflowNodeKind::Tool, node_param("w1", serde_json::json!({"tool_id": "t1"}))),
-                ("w2", WorkflowNodeKind::Tool, node_param("w2", serde_json::json!({"tool_id": "t2"}))),
+                (
+                    "w1",
+                    WorkflowNodeKind::Tool,
+                    node_param("w1", serde_json::json!({"tool_id": "t1"})),
+                ),
+                (
+                    "w2",
+                    WorkflowNodeKind::Tool,
+                    node_param("w2", serde_json::json!({"tool_id": "t2"})),
+                ),
                 ("done", WorkflowNodeKind::End, None),
             ],
             vec![
@@ -610,7 +676,10 @@ mod tests {
         assert_eq!(required_params(WorkflowNodeKind::Knowledge), &["query"]);
         assert_eq!(required_params(WorkflowNodeKind::Agent), &["agent_id"]);
         assert_eq!(required_params(WorkflowNodeKind::Human), &[] as &[&str]);
-        assert_eq!(required_params(WorkflowNodeKind::Condition), &["expression"]);
+        assert_eq!(
+            required_params(WorkflowNodeKind::Condition),
+            &["expression"]
+        );
         assert_eq!(required_params(WorkflowNodeKind::Parallel), &[] as &[&str]);
         assert_eq!(required_params(WorkflowNodeKind::Start), &[] as &[&str]);
         assert_eq!(required_params(WorkflowNodeKind::End), &[] as &[&str]);
@@ -619,7 +688,11 @@ mod tests {
     #[test]
     fn node_state_helpers_align_with_definition_ids() {
         // WorkflowNodeState 复用同款节点 id 校验（形状一致性冒烟）
-        assert!(WorkflowNodeState::try_new("start", domain::WorkflowNodeRunState::Pending, 0).is_ok());
-        assert!(WorkflowNodeState::try_new("bad id", domain::WorkflowNodeRunState::Pending, 0).is_err());
+        assert!(
+            WorkflowNodeState::try_new("start", domain::WorkflowNodeRunState::Pending, 0).is_ok()
+        );
+        assert!(
+            WorkflowNodeState::try_new("bad id", domain::WorkflowNodeRunState::Pending, 0).is_err()
+        );
     }
 }

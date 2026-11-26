@@ -11,7 +11,7 @@
 
 ## 一、范围与定位
 
-覆盖面：17 条只读路由（`API_ROUTES`；P9-4 起 16 条加 `/api/mcp-catalog`）+ 插件详情动态路径 + 白名单写面（plugins/workflows 两族，经子进程 CLI 落库，本文件零 SQL 写）。服务形态：单文件 stdlib http.server（ThreadingHTTPServer），默认绑定 `127.0.0.1:7800`（`RP_HOST`/`RP_PORT` 可覆盖），静态工作台页与 `/api/*` JSON 同进程承载。
+覆盖面：22 条只读路由（`API_ROUTES`，含 Projects 与 Research Assets）+ 插件/项目/资产详情动态路径 + 白名单写面（plugins/workflows/Projects/Assets，经子进程 CLI 落库，本文件零 SQL 写）。服务形态：单文件 stdlib http.server（ThreadingHTTPServer），默认绑定 `127.0.0.1:7800`（`RP_HOST`/`RP_PORT` 可覆盖），静态工作台页与 `/api/*` JSON 同进程承载。
 
 三面同源关系（复用优先，不重复实现）：Web（本 REST 面）与 MCP（crates/mcp-server，rp-mcp）与 CLI（11 个 rp-* bin，见 docs/guides/CLI-REFERENCE.md）共用同一数据面与同一业务实现；MCP 目录的注册面与 `/api/tools` 同源（PHASE9-DESIGN §四），执行通道与 `/api/workflow-runs` 的 run 一样落 Tool Engine（P9-2 dispatch.rs 唯一实现）。
 
@@ -103,7 +103,7 @@
 
 ## 九、端点总览（与 ROUTES 逐条对账）
 
-下表由 selftest_phase9_rest.sh 第 10 段机器对账：17 条 `API_ROUTES` 只读路由逐条在场且标 GET；动态路径 7 形状；写动作词表（`PLUGIN_WRITE_ACTIONS`/`WORKFLOW_WRITE_ACTIONS`，含 upgrade）与 rp_server.py 词表逐 token 一致；标记段内不得出现表外路径。
+下表由 selftest_phase9_rest.sh 第 10 段机器对账：23 条 `API_ROUTES` 只读路由逐条在场且标 GET；动态详情路径与白名单写面逐条核对；写动作词表（`PLUGIN_WRITE_ACTIONS`/`WORKFLOW_WRITE_ACTIONS`，含 upgrade）与 rp_server.py 词表逐 token 一致；标记段内不得出现表外路径。
 
 <!-- ENDPOINTS:BEGIN -->
 | 方法 | 路径 | 说明 | 鉴权 |
@@ -112,11 +112,18 @@
 | GET | /api/plugins/<plugin_id> | 插件详情（动态路径，?level=1|2|3 三级按需加载） | Bearer |
 | GET | /api/knowledge_sources | 知识来源面 | Bearer |
 | GET | /api/stats | M 面计数（evidence/knowledge 等） | Bearer |
+| GET | /api/metrics | 平台指标只读投影 | Bearer |
 | GET | /api/resources | 资源库读面 | Bearer |
 | GET | /api/reviews | 评审队列读面 | Bearer |
 | GET | /api/tasks | 任务列表 | Bearer |
+| GET | /api/projects | 独立研究项目列表（workspace/status/q/limit） | Bearer |
+| GET | /api/projects/<project_id> | 独立项目详情 | Bearer |
+| GET | /api/research/assets | 独立研究资产列表（workspace/type/q/limit） | Bearer |
+| GET | /api/research/assets/<asset_id> | 资产详情与 append-only Observation | Bearer |
 | GET | /api/overview | Overview 聚合 | Bearer |
 | GET | /api/knowledge | 知识库列表（keyword 过滤） | Bearer |
+| GET | /api/curated-pocs/search | RTIS + curation Overlay 自有 POC FTS 检索（关键词、K 级、Lifecycle、Severity、Category、CVE、来源完整性、核验结论、去重状态、缺失证据） | Bearer |
+| GET | /api/curated-pocs/summary | 自有 POC curation Overlay 治理覆盖统计（只读元数据） | Bearer |
 | GET | /api/tools | 工具目录（Tool Center 同源投影） | Bearer |
 | GET | /api/mcp-catalog | MCP 目录同步状态（P9-4：目录条数 + 读时对账结果，Tool Center MCP 状态卡数据面） | Bearer |
 | GET | /api/runs | 工具运行列表；?run_id= 详情（correlation_id + 关联头） | Bearer |
@@ -127,6 +134,14 @@
 | GET | /api/documents | RIP3 文档列表（?workspace= 过滤，all=1 含软删；RIP3 P1-1 起） | Bearer |
 | GET | /api/workflows | Workflow 定义读面；?id= 全版本 + graph | Bearer |
 | GET | /api/workflow-runs | WorkflowRun 读面；?id= 详情（六 ID correlation + correlation_id + 关联头） | Bearer |
+| POST | /api/projects | 创建独立研究项目（rp-verify 子进程） | Bearer（写面强制） |
+| PATCH | /api/projects/<project_id> | 更新项目元数据与生命周期状态 | Bearer（写面强制） |
+| POST | /api/projects/<project_id>/tasks | 建立 Project-Task 显式关联（不修改 RTIS 任务） | Bearer（写面强制） |
+| POST | /api/research/assets | 手动导入独立研究资产并追加 user_import Observation | Bearer（写面强制） |
+| POST | /api/research/assets/<asset_id>/endpoints | 新增规范化 Asset Endpoint | Bearer（写面强制） |
+| POST | /api/research/assets/<asset_id>/observations | 追加不可变 Asset Observation | Bearer（写面强制） |
+| POST | /api/research/assets/<asset_id>/technology | 新增必须关联 Observation 与 evidence_ref 的技术画像项 | Bearer（写面强制） |
+| POST | /api/projects/<project_id>/assets | 建立 Project-Asset 显式关联 | Bearer（写面强制） |
 | POST | /api/plugins/install | 插件安装（经 rp-plugin 子进程） | Bearer（写面强制） |
 | POST | /api/plugins/<plugin_id>/<action> | 插件写面：action ∈ enable, disable, uninstall, ingest, cleanup-rollback, upgrade | Bearer（写面强制） |
 | POST | /api/workflows | 画布保存（definition-v1，版本存储侧递增；put 同步 60s 超时） | Bearer（写面强制） |
@@ -147,7 +162,10 @@
 
 ## 十一、对账口径与已知边界
 
-- 端点机器对账：selftest_phase9_rest.sh 第 10 段（API_ROUTES 16 键、GET 17 行、POST 6 形状、动作词表逐 token、零发明端点五重断言）。
+- 端点机器对账：selftest_phase9_rest.sh 第 10 段（API_ROUTES 与 GET/POST/PATCH 路径集合、动作词表逐 token、零发明端点五重断言）。
+- 自有 POC 搜索：`GET /api/curated-pocs/search?q=zeai&evidence_level=K2`。支持 `knowledge_lifecycle`（Candidate/Researched/Lab-validated）、`poc_severity`（critical/high/medium/low/info）、`poc_category`、`poc_cve_id`、`poc_source_integrity`、`poc_verification_result`（含 `not_applicable`）、`poc_dedup_status`、`poc_missing_evidence`、`limit`、`offset`。只检索 Overlay 列出的 `rtis_poc`，返回 K 级、Lifecycle、分类、严重程度、CVE、来源路径、Commit、上游来源 URL、证据缺口、证据引用、审核门槛和 POC/外部案例关联；不读取或返回 POC 正文。
+- 自有 POC 治理统计：`GET /api/curated-pocs/summary`。只读取 Overlay JSON 元数据，返回纳入总量、K 级/Lifecycle/来源完整性/核验结论分布、待补证条数、来源路径覆盖和关系数量，不访问 POC 正文。
+- 派生索引默认写入 `rip-data/derived/curated-poc-search.db`，可通过 `RP_CURATED_SEARCH_INDEX_DB` 重定位；源数据库以只读方式构建，索引缺失或源文件更新时自动重建。Search index schema v5，旧索引必须重建。
 - 鉴权 11 项回归：apps/server/selftest_auth.sh（Bearer + 常时比较 + 失败节流 + WWW-Authenticate + 只读语义 + 路径穿越 + 开发模式告警）。
 - 已知边界（如实登记，不是缺口伪装成完整）：CLI 面（11 bin 帮助面统一口径与逐 bin 参考）见 docs/guides/CLI-REFERENCE.md，本文件不重复；MCP 面契约（握手鉴权、目录分页、isError 语义）见 docs/phase9/PHASE9-DESIGN.md；REST 面当前不提供 run_tool 直执端点（执行通道 = POST /api/workflow-runs 受理 workflow 或外部 AI 经 MCP rip.run_tool），P9-4 一致性载具将双通道对账。
 - 本文件与实现漂移即债：改 rp_server.py 路由/词表/信封时必须同步更新本文件与 selftest 对账段（DOC-STANDARD 三道门禁不扫 markdown，对账由 selftest 承担）。

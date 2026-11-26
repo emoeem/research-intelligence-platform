@@ -147,7 +147,7 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         if (1..=6).contains(&hashes) {
             let rest = &trimmed[hashes..];
             if let Some(text_after) = rest.strip_prefix(' ') {
-                let title = text_after.trim().trim_end_matches('#').trim();
+                let title = strip_heading_markdown(text_after.trim().trim_end_matches('#').trim());
                 if !title.is_empty() {
                     out.push(Heading {
                         line: base_line + i as u64 + 1,
@@ -159,6 +159,43 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         }
     }
     out
+}
+
+/// 标题中的行内链接只保留可读 label，图片 / 徽章整段移除；否则 README
+/// 顶部徽章会污染整份目录的 category_path。
+fn strip_heading_markdown(input: &str) -> String {
+    let mut out = String::new();
+    let mut rest = input;
+    while !rest.is_empty() {
+        // 常见徽章外层还包了一层链接：`[![badge](image)](target)`。
+        if rest.starts_with("[![") {
+            if let Some(inner_end) = rest.find(")](") {
+                if let Some(outer_end) = rest[inner_end + 3..].find(')') {
+                    rest = &rest[inner_end + 3 + outer_end + 1..];
+                    continue;
+                }
+            }
+        }
+        let image = rest.starts_with("![");
+        let link = rest.starts_with('[');
+        if image || link {
+            if let Some(close) = rest.find("](") {
+                if let Some(end) = rest[close + 2..].find(')') {
+                    let label = &rest[if image { 2 } else { 1 }..close];
+                    if !image && !label.starts_with('!') {
+                        out.push_str(label);
+                        out.push(' ');
+                    }
+                    rest = &rest[close + 2 + end + 1..];
+                    continue;
+                }
+            }
+        }
+        let ch = rest.chars().next().expect("non-empty remainder");
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// 某行所在标题路径（自顶向下 h1 到最近祖先标题；无祖先为空表）。
@@ -237,11 +274,19 @@ pub fn extract_markdown_links(text: &str) -> (Vec<RawLink>, FilterStats) {
             };
             let url = after[1..1 + paren_close].trim().to_string();
             let desc_raw = &after[1 + paren_close + 1..];
-            let description = desc_raw
-                .trim()
-                .trim_start_matches([':', '-'])
-                .trim()
-                .to_string();
+            // Markdown 表格的分隔符 `|` 不属于描述内容；先去除
+            // 单元格边界，再处理列表常见的 `:` / `-` 描述前缀。
+            let description = if in_table {
+                table_description(raw, &url)
+            } else {
+                desc_raw
+                    .trim()
+                    .trim_start_matches(['|', ':', '-'])
+                    .trim()
+                    .trim_end_matches('|')
+                    .trim()
+                    .to_string()
+            };
             // scheme 白名单过滤（计划 §6.2A）：`scheme:` 形态（含 javascript:/
             // data:/file:/mailto:）非 http/https 即拒绝；无 scheme（相对路径/
             // 纯锚点）单独计数，不从文字猜造 URL。
@@ -268,9 +313,16 @@ pub fn extract_markdown_links(text: &str) -> (Vec<RawLink>, FilterStats) {
                 rest = &after[1 + paren_close + 1..];
                 continue;
             }
+            let label = label.trim();
+            // 图片 / 徽章链接不是知识目录条目（例如 `[![badge](img)](target)`）。
+            // 只保留有语义文本的链接，避免把 README 的状态徽章收录成资源。
+            if label.is_empty() || label.starts_with('!') {
+                rest = &after[1 + paren_close + 1..];
+                continue;
+            }
             links.push(RawLink {
                 line: line_no,
-                text: label.trim().to_string(),
+                text: label.to_string(),
                 url,
                 description,
                 in_table,
@@ -279,6 +331,23 @@ pub fn extract_markdown_links(text: &str) -> (Vec<RawLink>, FilterStats) {
         }
     }
     (links, stats)
+}
+
+/// 从 Markdown 表格行中提取链接相邻的描述单元格。
+/// 常见目录表为「名称 | 描述 | 链接」；若链接位于首列，则读取下一列。
+fn table_description(raw: &str, url: &str) -> String {
+    let cells: Vec<&str> = raw.split('|').collect();
+    let Some(link_cell) = cells.iter().position(|cell| cell.contains(url)) else {
+        return String::new();
+    };
+    let previous = link_cell.checked_sub(1).and_then(|i| cells.get(i));
+    let next = cells.get(link_cell + 1);
+    let candidate = previous
+        .filter(|cell| !cell.trim().is_empty())
+        .or(next)
+        .copied()
+        .unwrap_or_default();
+    candidate.trim().trim_matches('`').trim().to_string()
 }
 
 /// URL 规范化（去首尾空白、去尾部 `/`；保留大小写，路径大小写敏感）。
@@ -336,6 +405,33 @@ mod tests {
             "javascript: inside fence skipped by fence AND scheme filter counts the unfenced one"
         );
         assert_eq!(stats.no_scheme, 2, "relative + anchor-only rejected");
+    }
+
+    #[test]
+    fn headings_strip_inline_links_and_social_badges() {
+        let doc = "# [Awesome Hacking](https://github.com/example/list) [![Tweet](https://img.example/badge.svg)](https://twitter.com/intent/tweet)\n## Other Useful Repositories\n";
+        let headings = extract_headings(doc);
+        assert_eq!(headings[0].text, "Awesome Hacking");
+        assert_eq!(headings[1].text, "Other Useful Repositories");
+        assert_eq!(
+            heading_path_at(&headings, 2),
+            vec!["Awesome Hacking", "Other Useful Repositories"]
+        );
+    }
+
+    #[test]
+    fn table_descriptions_strip_cell_delimiters_and_badges_are_ignored() {
+        let doc = "[![Badge](https://img.example/badge.svg)](https://example.com/badge)\n\n# Catalog\n\n| Name | Description | Link |\n|---|---|---|\n| Project | A useful project | [Project](https://github.com/example/project) |\n";
+        let (links, _) = extract_markdown_links(doc);
+        assert_eq!(links.len(), 1, "badge image must not become a catalog item");
+        assert_eq!(links[0].text, "Project");
+        assert_eq!(links[0].description, "A useful project");
+        assert!(links[0].in_table);
+
+        let doc = "| [Project](https://github.com/example/project) | A useful project |\n";
+        let (links, _) = extract_markdown_links(doc);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].description, "A useful project");
     }
 
     #[test]

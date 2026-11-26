@@ -55,10 +55,11 @@ fn build_corpus(root: &Path) -> PathBuf {
             code TEXT, title TEXT NOT NULL, content TEXT,
             usage TEXT, description TEXT, kind TEXT, category TEXT,
             cve TEXT, component TEXT, versions TEXT, severity TEXT,
-            language TEXT, tags TEXT, verified INTEGER DEFAULT 0
+            language TEXT, tags TEXT, verified INTEGER DEFAULT 0,
+            verified_note TEXT
         );
-        INSERT INTO poc (code, title, content, kind, category, cve, component, tags, verified)
-          VALUES ('svc-1', '服务1 判定', '正文 A：判定规则', 'script', 'info-leak', NULL, 'svc', '[\"k1\"]', 1);
+        INSERT INTO poc (code, title, content, kind, category, cve, component, tags, verified, verified_note, description)
+          VALUES ('svc-1', '服务1 判定', '正文 A：判定规则', 'script', 'info-leak', NULL, 'svc', '[\"k1\"]', 1, '部分验证：只测试本人账号', '验证说明摘要');
         INSERT INTO poc (code, title, content, kind, category, cve, component, tags, verified)
           VALUES ('svc-2', '服务2 绕过', '正文 B：绕过矩阵', 'script', 'auth-bypass', 'CVE-2026-0001', 'svc', '[]', 0);
         INSERT INTO poc (code, title, usage, kind, category, component, tags, verified)
@@ -66,6 +67,12 @@ fn build_corpus(root: &Path) -> PathBuf {
     )
     .unwrap();
     drop(db);
+    fs::create_dir_all(pkg.join("curation")).unwrap();
+    fs::write(
+        pkg.join("curation/k_meta_overlay.json"),
+        r#"{"schema_version":1,"entries":[{"knowledge_id":1,"normalized_type":"Case","evidence_level":"K2","archetypes":"[\"h5-payment\"]","curation_source":"test-overlay"}],"relations":[{"src":"case-a","dst":"svc-1","type":"has_case","confidence":0.9,"note":"test relation"}]}"#,
+    )
+    .unwrap();
     // skills。
     fs::write(
         pkg.join("skills/recon-basic.md"),
@@ -211,6 +218,23 @@ fn ingest_pipeline_provenance_and_idempotence() {
         svc3.0.len() as i64,
         "body_bytes matches body length"
     );
+    let svc1_meta: String = pool
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT meta_json FROM knowledge_ingest WHERE source_pk = '1'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(database::DbError::from)
+        })
+        .unwrap();
+    let svc1_meta: Value = serde_json::from_str(&svc1_meta).unwrap();
+    assert_eq!(svc1_meta["verified"], true);
+    assert_eq!(svc1_meta["verified_note"], "部分验证：只测试本人账号");
+    assert_eq!(svc1_meta["description"], "验证说明摘要");
+    assert_eq!(svc1_meta["curation"]["normalized_type"], "Case");
+    assert_eq!(svc1_meta["curation"]["curation_source"], "test-overlay");
+    assert_eq!(svc1_meta["curation_relations"][0]["type"], "has_case");
 
     // 幂等重跑：counts 空、skipped 全量。
     let again = ingest_knowledge_source(&pool, &manifest, &pkg).unwrap();

@@ -19,8 +19,8 @@
 //! 是 agent-engine 侧引用本 crate，反方向禁止）；零迁移（契约面纯 Schema 加代码）。
 
 use crate::capabilities::{
-    citation::CitationCapability, discovery::DiscoveryCapability, extraction::ExtractionCapability,
-    evaluator::EvaluatorCapability, planner::PlannerCapability, synthesis::SynthesisCapability,
+    citation::CitationCapability, discovery::DiscoveryCapability, evaluator::EvaluatorCapability,
+    extraction::ExtractionCapability, planner::PlannerCapability, synthesis::SynthesisCapability,
     verification::VerificationCapability, CapabilityExec,
 };
 use serde::de::DeserializeOwned;
@@ -762,10 +762,7 @@ fn dispatch<E: CapabilityExec>(
 
 fn parse_input<I: DeserializeOwned>(input: &serde_json::Value) -> Result<I, CapabilityFailure> {
     serde_json::from_value(input.clone()).map_err(|e| {
-        CapabilityFailure::validation(
-            "CAP-INPUT-INVALID",
-            format!("input 载荷不符合契约: {e}"),
-        )
+        CapabilityFailure::validation("CAP-INPUT-INVALID", format!("input 载荷不符合契约: {e}"))
     })
 }
 

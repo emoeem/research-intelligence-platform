@@ -151,9 +151,18 @@ fn cmd_run(args: &[String]) -> i32 {
 
     // correlation 缺省面：同输入恒同 ID（mock 可重放）。
     let id_seed = [capability.as_str(), &input_raw];
-    let run_id = run_id.unwrap_or_else(|| format!("rn-{}", digest16(&["rp-research-run", &id_seed.join("\u{1f}")])));
-    let trace_id = trace_id
-        .unwrap_or_else(|| format!("tr-{}", digest16(&["rp-research-trace", &id_seed.join("\u{1f}")])));
+    let run_id = run_id.unwrap_or_else(|| {
+        format!(
+            "rn-{}",
+            digest16(&["rp-research-run", &id_seed.join("\u{1f}")])
+        )
+    });
+    let trace_id = trace_id.unwrap_or_else(|| {
+        format!(
+            "tr-{}",
+            digest16(&["rp-research-trace", &id_seed.join("\u{1f}")])
+        )
+    });
     let mut correlation = serde_json::json!({
         "run_id": run_id,
         "trace_id": trace_id,

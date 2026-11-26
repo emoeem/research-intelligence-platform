@@ -68,10 +68,7 @@ pub fn discover_migrations(dir: &Path) -> DbResult<Vec<Migration>> {
 /// ALTER 语句按 CREATE TABLE IF NOT EXISTS 同款幂等语义跳过（行替换为注释
 /// 留痕），防 raw file replay 与 009 式 user_version 自钉重放炸
 /// duplicate column name。逐行处理：ALTER 语句须单行书写（迁移文件纪律）。
-fn guard_alter_add_columns(
-    conn: &rusqlite::Connection,
-    sql: &str,
-) -> rusqlite::Result<String> {
+fn guard_alter_add_columns(conn: &rusqlite::Connection, sql: &str) -> rusqlite::Result<String> {
     let mut out = String::with_capacity(sql.len());
     for line in sql.lines() {
         let trimmed = line.trim();
@@ -87,9 +84,7 @@ fn guard_alter_add_columns(
                 .copied()
                 .unwrap_or("")
                 .trim_matches('"');
-            let exists = table
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            let exists = table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && !table.is_empty()
                 && conn
                     .prepare(&format!("PRAGMA table_info(\"{table}\")"))?
@@ -247,7 +242,8 @@ mod tests {
         migrate(&pool, &dir).unwrap();
         // 受守卫重放：user_version 自钉回 0（模拟 009 式文件自钉语义）后再
         // migrate，文件经执行器守卫重放，列已存在的 ALTER 行跳过不炸。
-        pool.with_conn(|c| c.pragma_update(None, "user_version", 0)).unwrap();
+        pool.with_conn(|c| c.pragma_update(None, "user_version", 0))
+            .unwrap();
         {
             let sql = std::fs::read_to_string(dir.join("001_t.sql")).unwrap();
             let guarded = pool

@@ -104,8 +104,7 @@ pub fn diff_lines(left: &str, right: &str) -> Vec<DiffHunk> {
         pre += 1;
     }
     let mut suf = 0usize;
-    while suf < a.len() - pre && suf < b.len() - pre
-        && a[a.len() - 1 - suf] == b[b.len() - 1 - suf]
+    while suf < a.len() - pre && suf < b.len() - pre && a[a.len() - 1 - suf] == b[b.len() - 1 - suf]
     {
         suf += 1;
     }
@@ -203,7 +202,11 @@ pub fn diff_lines(left: &str, right: &str) -> Vec<DiffHunk> {
                     ri += 1;
                     ins_len += 1;
                 }
-                let op = if ins_len > 0 { DiffOp::Replace } else { DiffOp::Delete };
+                let op = if ins_len > 0 {
+                    DiffOp::Replace
+                } else {
+                    DiffOp::Delete
+                };
                 hunks.push(DiffHunk {
                     op,
                     left_start: del_start,
@@ -280,8 +283,7 @@ pub fn similarity_ratio(left: &str, right: &str) -> f64 {
         pre += 1;
     }
     let mut suf = 0usize;
-    while suf < a.len() - pre && suf < b.len() - pre
-        && a[a.len() - 1 - suf] == b[b.len() - 1 - suf]
+    while suf < a.len() - pre && suf < b.len() - pre && a[a.len() - 1 - suf] == b[b.len() - 1 - suf]
     {
         suf += 1;
     }
@@ -331,9 +333,7 @@ fn mask_key(line: &str, key: &str) -> String {
             );
         }
         // 无引号值：到逗号/花括号/行尾。
-        let stop = trimmed
-            .find([',', '}', ']'])
-            .unwrap_or(trimmed.len());
+        let stop = trimmed.find([',', '}', ']']).unwrap_or(trimmed.len());
         return format!(
             "{}{}{}",
             &line[..pos + json_pat.len() + skip],
@@ -356,11 +356,7 @@ fn mask_key(line: &str, key: &str) -> String {
     // 日志形态：key: value（至行尾）。
     let log_pat = format!("{key}: ");
     if let Some(pos) = line.find(&log_pat) {
-        return format!(
-            "{}{}",
-            &line[..pos + log_pat.len()],
-            placeholder
-        );
+        return format!("{}{}", &line[..pos + log_pat.len()], placeholder);
     }
     line.to_string()
 }
@@ -388,11 +384,7 @@ pub fn normalize_text(text: &str, rules: &NormalizeRules) -> String {
 
 /// 归一化 diff 一步面：`(区间表, 相似度)`，两侧先 [`normalize_text`] 再
 /// [`diff_lines`] / [`similarity_ratio`]。
-pub fn diff_normalized(
-    left: &str,
-    right: &str,
-    rules: &NormalizeRules,
-) -> (Vec<DiffHunk>, f64) {
+pub fn diff_normalized(left: &str, right: &str, rules: &NormalizeRules) -> (Vec<DiffHunk>, f64) {
     let l = normalize_text(left, rules);
     let r = normalize_text(right, rules);
     let hunks = diff_lines(&l, &r);
@@ -483,7 +475,10 @@ mod tests {
     #[test]
     fn cap_degrades_without_panic() {
         // 超帽行集：不炸内存、区间表仍闭合（总覆盖两侧行数）。
-        let big: String = (0..3000).map(|i| format!("l{i}")).collect::<Vec<_>>().join("\n");
+        let big: String = (0..3000)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut other: Vec<String> = (0..3000).map(|i| format!("l{i}")).collect();
         other[2500] = "changed".into();
         let hunks = diff_lines(&big, &other.join("\n"));

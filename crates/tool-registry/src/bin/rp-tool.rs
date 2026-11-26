@@ -202,19 +202,20 @@ fn main() {
 /// run/status/cancel 共用：装配 tools/call arguments 后经 rp-mcp 的
 /// rip.run_tool / rip.get_run_status / rip.cancel_run 通道执行（与外部 AI
 /// MCP 面同一实现，不另建派发逻辑）。isError=true 时 exit 1。
-fn run_via_mcp(
-    command: &str,
-    flag_value: &dyn Fn(&str) -> Option<String>,
-) -> ! {
+fn run_via_mcp(command: &str, flag_value: &dyn Fn(&str) -> Option<String>) -> ! {
     let capability = match command {
         "run" => "rip.run_tool",
         "status" => "rip.get_run_status",
         _ => "rip.cancel_run",
     };
-    let Some(db) = flag_value("--db") else { usage() };
+    let Some(db) = flag_value("--db") else {
+        usage()
+    };
     let arguments = match command {
         "run" => {
-            let Some(tool_id) = flag_value("--tool") else { usage() };
+            let Some(tool_id) = flag_value("--tool") else {
+                usage()
+            };
             let input_raw = flag_value("--input").unwrap_or_else(|| "{}".to_string());
             let input: Value = serde_json::from_str(&input_raw)
                 .unwrap_or_else(|e| die_json("input_json_invalid", &format!("--input parse: {e}")));
@@ -248,7 +249,9 @@ fn run_via_mcp(
             arguments
         }
         _ => {
-            let Some(run_id) = flag_value("--run") else { usage() };
+            let Some(run_id) = flag_value("--run") else {
+                usage()
+            };
             json!({ "run_id": run_id })
         }
     };
@@ -321,7 +324,10 @@ fn run_via_mcp(
         die_json("mcp_write_failed", &format!("write initialize: {e}"));
     }
     if let Err(e) = writeln!(stdin, "{initialized}") {
-        die_json("mcp_write_failed", &format!("write notifications/initialized: {e}"));
+        die_json(
+            "mcp_write_failed",
+            &format!("write notifications/initialized: {e}"),
+        );
     }
     if let Err(e) = writeln!(stdin, "{request}") {
         die_json("mcp_write_failed", &format!("write request: {e}"));
@@ -335,7 +341,9 @@ fn run_via_mcp(
     let mut reply: Option<Value> = None;
     for line in std::io::BufReader::new(stdout).lines() {
         let Ok(line) = line else { break };
-        let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
+        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
         if msg.get("id").and_then(Value::as_i64) == Some(1) {
             reply = Some(msg);
             break;
@@ -353,7 +361,10 @@ fn run_via_mcp(
         std::process::exit(1);
     }
     let result = reply.get("result").cloned().unwrap_or(json!({}));
-    let is_error = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let text = result
         .get("content")
         .and_then(|c| c.get(0))
@@ -374,6 +385,11 @@ fn ephemeral_token() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let material = format!("rp-tool:{}:{}:{}", nanos, std::process::id(), "rp-mcp-ephemeral");
+    let material = format!(
+        "rp-tool:{}:{}:{}",
+        nanos,
+        std::process::id(),
+        "rp-mcp-ephemeral"
+    );
     tool_registry::hash::sha256_hex(material.as_bytes())
 }

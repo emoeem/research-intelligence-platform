@@ -76,8 +76,16 @@ pub fn dedup_fingerprint_v2(
         provider,
         params,
         if authctx.is_empty() { "-" } else { authctx },
-        if profile_version.is_empty() { "-" } else { profile_version },
-        if knowledge_state.is_empty() { "-" } else { knowledge_state },
+        if profile_version.is_empty() {
+            "-"
+        } else {
+            profile_version
+        },
+        if knowledge_state.is_empty() {
+            "-"
+        } else {
+            knowledge_state
+        },
     ]
     .join("\u{1f}");
     let mut hasher = Sha256::new();
@@ -92,23 +100,88 @@ mod tests {
 
     #[test]
     fn deterministic_and_64_hex() {
-        let a = dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-");
-        let b = dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-");
+        let a = dedup_fingerprint(
+            "host:443",
+            "/api/x",
+            "rtis-poc:900008",
+            "rtis-poc@0.1.0",
+            "{}",
+            "-",
+        );
+        let b = dedup_fingerprint(
+            "host:443",
+            "/api/x",
+            "rtis-poc:900008",
+            "rtis-poc@0.1.0",
+            "{}",
+            "-",
+        );
         assert_eq!(a, b);
         assert_eq!(a.len(), 64);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
     }
 
     #[test]
     fn any_segment_change_changes_fingerprint() {
-        let base = dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-");
+        let base = dedup_fingerprint(
+            "host:443",
+            "/api/x",
+            "rtis-poc:900008",
+            "rtis-poc@0.1.0",
+            "{}",
+            "-",
+        );
         for changed in [
-            dedup_fingerprint("host2:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-"),
-            dedup_fingerprint("host:443", "/api/y", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-"),
-            dedup_fingerprint("host:443", "/api/x", "rtis-poc:900009", "rtis-poc@0.1.0", "{}", "-"),
-            dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.2.0", "{}", "-"),
-            dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{\"k\":1}", "-"),
-            dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "authtok"),
+            dedup_fingerprint(
+                "host2:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+            ),
+            dedup_fingerprint(
+                "host:443",
+                "/api/y",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+            ),
+            dedup_fingerprint(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900009",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+            ),
+            dedup_fingerprint(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.2.0",
+                "{}",
+                "-",
+            ),
+            dedup_fingerprint(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{\"k\":1}",
+                "-",
+            ),
+            dedup_fingerprint(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "authtok",
+            ),
         ] {
             assert_ne!(base, changed, "segment change must invalidate fingerprint");
         }
@@ -119,25 +192,94 @@ mod tests {
     #[test]
     fn v2_profile_and_knowledge_segments_invalidate() {
         let base = dedup_fingerprint_v2(
-            "host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "profile-v1", "approved",
+            "host:443",
+            "/api/x",
+            "rtis-poc:900008",
+            "rtis-poc@0.1.0",
+            "{}",
+            "-",
+            "profile-v1",
+            "approved",
         );
         assert_eq!(
             base,
             dedup_fingerprint_v2(
-                "host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "profile-v1", "approved",
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+                "profile-v1",
+                "approved",
             )
         );
         for changed in [
-            dedup_fingerprint_v2("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "profile-v2", "approved"),
-            dedup_fingerprint_v2("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "profile-v1", "recalled"),
-            dedup_fingerprint_v2("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "", "approved"),
-            dedup_fingerprint_v2("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "profile-v1", ""),
+            dedup_fingerprint_v2(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+                "profile-v2",
+                "approved",
+            ),
+            dedup_fingerprint_v2(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+                "profile-v1",
+                "recalled",
+            ),
+            dedup_fingerprint_v2(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+                "",
+                "approved",
+            ),
+            dedup_fingerprint_v2(
+                "host:443",
+                "/api/x",
+                "rtis-poc:900008",
+                "rtis-poc@0.1.0",
+                "{}",
+                "-",
+                "profile-v1",
+                "",
+            ),
         ] {
-            assert_ne!(base, changed, "profile/knowledge segment change must invalidate");
+            assert_ne!(
+                base, changed,
+                "profile/knowledge segment change must invalidate"
+            );
         }
         // v1/v2 值域独立：同六段输入跨版本键不同（跨版本缓存失效安全侧默认）。
-        let v1 = dedup_fingerprint("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-");
-        let v2 = dedup_fingerprint_v2("host:443", "/api/x", "rtis-poc:900008", "rtis-poc@0.1.0", "{}", "-", "-", "-");
+        let v1 = dedup_fingerprint(
+            "host:443",
+            "/api/x",
+            "rtis-poc:900008",
+            "rtis-poc@0.1.0",
+            "{}",
+            "-",
+        );
+        let v2 = dedup_fingerprint_v2(
+            "host:443",
+            "/api/x",
+            "rtis-poc:900008",
+            "rtis-poc@0.1.0",
+            "{}",
+            "-",
+            "-",
+            "-",
+        );
         assert_ne!(v1, v2);
     }
 

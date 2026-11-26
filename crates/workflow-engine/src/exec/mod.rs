@@ -252,7 +252,13 @@ impl WorkflowExecutor {
             caller_id,
         )?;
         self.control.ensure_control_row(&run_id)?;
-        self.runs.transition_run(&run_id, WorkflowRunState::Queued, WorkflowRunState::Running, None, None)?;
+        self.runs.transition_run(
+            &run_id,
+            WorkflowRunState::Queued,
+            WorkflowRunState::Running,
+            None,
+            None,
+        )?;
         self.drive_run(&run_id, &def, input.clone())
     }
 
@@ -323,8 +329,7 @@ impl WorkflowExecutor {
         let mut state = match &checkpoint {
             Some(cp) => {
                 self.runs.restore_from_snapshot(run_id, &cp.snapshot)?;
-                self.runs
-                    .restored_state(run_id, &cp.snapshot, &row.input)?
+                self.runs.restored_state(run_id, &cp.snapshot, &row.input)?
             }
             None => row.input.clone(),
         };
@@ -338,9 +343,21 @@ impl WorkflowExecutor {
             }
         }
         if row.state == WorkflowRunState::Queued {
-            self.runs.transition_run(run_id, WorkflowRunState::Queued, WorkflowRunState::Running, None, None)?;
+            self.runs.transition_run(
+                run_id,
+                WorkflowRunState::Queued,
+                WorkflowRunState::Running,
+                None,
+                None,
+            )?;
         } else if row.state == WorkflowRunState::Paused {
-            self.runs.transition_run(run_id, WorkflowRunState::Paused, WorkflowRunState::Running, None, None)?;
+            self.runs.transition_run(
+                run_id,
+                WorkflowRunState::Paused,
+                WorkflowRunState::Running,
+                None,
+                None,
+            )?;
         }
         self.drive_run(run_id, &def, state)
     }
@@ -368,17 +385,18 @@ impl WorkflowExecutor {
                 row.state.as_str()
             )));
         }
-        let checkpoint = self
-            .runs
-            .latest_checkpoint(run_id)?
-            .ok_or_else(|| WorkflowError::InvalidInput(format!("run {run_id} has no checkpoint to inherit")))?;
+        let checkpoint = self.runs.latest_checkpoint(run_id)?.ok_or_else(|| {
+            WorkflowError::InvalidInput(format!("run {run_id} has no checkpoint to inherit"))
+        })?;
         let entry = checkpoint
             .snapshot
             .get("nodes")
             .and_then(Value::as_object)
             .and_then(|nodes| nodes.get(node_id))
             .ok_or_else(|| {
-                WorkflowError::InvalidInput(format!("node {node_id:?} not in run {run_id} snapshot"))
+                WorkflowError::InvalidInput(format!(
+                    "node {node_id:?} not in run {run_id} snapshot"
+                ))
             })?;
         if entry.get("state").and_then(Value::as_str) != Some("failed") {
             return Err(WorkflowError::InvalidInput(format!(
@@ -411,10 +429,16 @@ impl WorkflowExecutor {
             &node_kinds,
             inherited_caller.as_deref(),
         )?;
-        self.runs.restore_from_snapshot(&new_run_id, &checkpoint.snapshot)?;
-        self.runs.node_reset_pending(&new_run_id, node_id)?;
         self.runs
-            .transition_run(&new_run_id, WorkflowRunState::Queued, WorkflowRunState::Running, None, None)?;
+            .restore_from_snapshot(&new_run_id, &checkpoint.snapshot)?;
+        self.runs.node_reset_pending(&new_run_id, node_id)?;
+        self.runs.transition_run(
+            &new_run_id,
+            WorkflowRunState::Queued,
+            WorkflowRunState::Running,
+            None,
+            None,
+        )?;
         let state = self
             .runs
             .restored_state(&new_run_id, &checkpoint.snapshot, &row.input)?;
@@ -496,15 +520,19 @@ impl WorkflowExecutor {
             if rows.iter().all(|r| {
                 matches!(
                     r.state,
-                    WorkflowNodeRunState::Succeeded | WorkflowNodeRunState::Failed | WorkflowNodeRunState::Skipped
+                    WorkflowNodeRunState::Succeeded
+                        | WorkflowNodeRunState::Failed
+                        | WorkflowNodeRunState::Skipped
                 )
             }) {
-                let failed = rows.iter().find(|r| r.state == WorkflowNodeRunState::Failed);
+                let failed = rows
+                    .iter()
+                    .find(|r| r.state == WorkflowNodeRunState::Failed);
                 return match failed {
                     Some(row) => {
-                        let error = row.error.clone().unwrap_or_else(|| {
-                            json!({"node_id": row.node_id, "code": "node_failed"})
-                        });
+                        let error = row.error.clone().unwrap_or_else(
+                            || json!({"node_id": row.node_id, "code": "node_failed"}),
+                        );
                         self.finish_run(run_id, WorkflowRunState::Failed, None, Some(&error))?;
                         self.outcome(run_id, WorkflowRunState::Failed)
                     }
@@ -550,10 +578,8 @@ impl WorkflowExecutor {
                 if row.state != WorkflowNodeRunState::Pending {
                     continue;
                 }
-                let in_edges: Vec<&WorkflowEdge> = edges
-                    .iter()
-                    .filter(|e| e.to() == node.id())
-                    .collect();
+                let in_edges: Vec<&WorkflowEdge> =
+                    edges.iter().filter(|e| e.to() == node.id()).collect();
                 let views: Vec<EdgeView> = in_edges
                     .iter()
                     .map(|e| edge_view(e, by_id.get(e.from()).copied()))
@@ -585,14 +611,12 @@ impl WorkflowExecutor {
                 if row.state != WorkflowNodeRunState::Pending {
                     continue;
                 }
-                let in_edges: Vec<&WorkflowEdge> = edges
-                    .iter()
-                    .filter(|e| e.to() == node.id())
-                    .collect();
+                let in_edges: Vec<&WorkflowEdge> =
+                    edges.iter().filter(|e| e.to() == node.id()).collect();
                 if in_edges.is_empty()
-                    || in_edges.iter().any(|e| {
-                        edge_view(e, by_id.get(e.from()).copied()) == EdgeView::Selected
-                    })
+                    || in_edges
+                        .iter()
+                        .any(|e| edge_view(e, by_id.get(e.from()).copied()) == EdgeView::Selected)
                 {
                     ready = Some(node);
                     break;
@@ -671,14 +695,18 @@ impl WorkflowExecutor {
         state: Value,
     ) -> Result<StepFlow, WorkflowError> {
         match node.kind() {
-            WorkflowNodeKind::Parallel => node_parallel::execute_fan_out(
-                self, run_id, node, state,
-            )
-            .map(StepFlow::Continue),
+            WorkflowNodeKind::Parallel => {
+                node_parallel::execute_fan_out(self, run_id, node, state).map(StepFlow::Continue)
+            }
             WorkflowNodeKind::Start | WorkflowNodeKind::End => {
                 self.runs.node_start(run_id, node.id())?;
-                self.runs
-                    .node_finish(run_id, node.id(), WorkflowNodeRunState::Succeeded, None, None)?;
+                self.runs.node_finish(
+                    run_id,
+                    node.id(),
+                    WorkflowNodeRunState::Succeeded,
+                    None,
+                    None,
+                )?;
                 self.runs.record_checkpoint(run_id, node.id())?;
                 Ok(StepFlow::Continue(state))
             }
@@ -747,7 +775,8 @@ impl WorkflowExecutor {
                         // human 人工介入：节点保持 running（人的步进未完），
                         // 018 控制行落 awaiting 记录，run 转 paused 由调用方
                         // 收口；resume 注入批准参数后节点重派发（attempt+1）。
-                        self.control.put_approval_request(run_id, node.id(), &request)?;
+                        self.control
+                            .put_approval_request(run_id, node.id(), &request)?;
                         Ok(StepFlow::Pause)
                     }
                     AwaitedOutcome::Failed(failure) => {
@@ -814,8 +843,13 @@ impl WorkflowExecutor {
             let outcome = match kind {
                 WorkflowNodeKind::Tool => {
                     match node_tool::execute(
-                        &engine, driver.as_deref(), &run_id_owned, &node_id, attempt,
-                        params_json.as_deref(), &state,
+                        &engine,
+                        driver.as_deref(),
+                        &run_id_owned,
+                        &node_id,
+                        attempt,
+                        params_json.as_deref(),
+                        &state,
                     ) {
                         Ok(output) => DispatchOutcome::Succeeded(Some(output)),
                         Err(failure) => DispatchOutcome::Failed(failure),
@@ -823,8 +857,11 @@ impl WorkflowExecutor {
                 }
                 WorkflowNodeKind::Knowledge => {
                     match node_knowledge::execute(
-                        broker.as_deref(), &run_id_owned, &node_id,
-                        params_json.as_deref(), &state,
+                        broker.as_deref(),
+                        &run_id_owned,
+                        &node_id,
+                        params_json.as_deref(),
+                        &state,
                     ) {
                         Ok(output) => DispatchOutcome::Succeeded(Some(output)),
                         Err(failure) => DispatchOutcome::Failed(failure),
@@ -873,7 +910,10 @@ impl WorkflowExecutor {
                 }
                 _ => DispatchOutcome::Failed(NodeFailure::new(
                     "node_kind_unsupported",
-                    format!("node {node_id:?} kind {} is not executable here", kind.as_str()),
+                    format!(
+                        "node {node_id:?} kind {} is not executable here",
+                        kind.as_str()
+                    ),
                 )),
             };
             let _ = tx.send(outcome);
@@ -1075,17 +1115,15 @@ pub fn accept_definition(def: &WorkflowDefinition, input: &Value) -> Result<(), 
     if let Some(schema_raw) = def.input_schema_json() {
         let schema: Value = serde_json::from_str(schema_raw)
             .map_err(|e| WorkflowError::InvalidInput(format!("input_schema parse failed: {e}")))?;
-        let validator = jsonschema::validator_for(&schema)
-            .map_err(|e| WorkflowError::InvalidInput(format!("input_schema compile failed: {e}")))?;
+        let validator = jsonschema::validator_for(&schema).map_err(|e| {
+            WorkflowError::InvalidInput(format!("input_schema compile failed: {e}"))
+        })?;
         validator.validate(input).map_err(|e| {
             WorkflowError::InvalidInput(format!("run input violates input_schema: {e}"))
         })?;
     }
-    let by_id: std::collections::BTreeMap<&str, &domain::WorkflowNode> = def
-        .nodes()
-        .iter()
-        .map(|n| (n.id(), n))
-        .collect();
+    let by_id: std::collections::BTreeMap<&str, &domain::WorkflowNode> =
+        def.nodes().iter().map(|n| (n.id(), n)).collect();
     for node in def.nodes() {
         if node.kind() == WorkflowNodeKind::Condition {
             // expression 可编译（受理期即拒坏谓词）。
@@ -1109,10 +1147,9 @@ pub fn accept_definition(def: &WorkflowDefinition, input: &Value) -> Result<(), 
         }
     }
     for edge in def.edges() {
-        let from_kind = by_id
-            .get(edge.from())
-            .map(|n| n.kind())
-            .ok_or_else(|| WorkflowError::InvalidInput(format!("edge from {:?} not in graph", edge.from())))?;
+        let from_kind = by_id.get(edge.from()).map(|n| n.kind()).ok_or_else(|| {
+            WorkflowError::InvalidInput(format!("edge from {:?} not in graph", edge.from()))
+        })?;
         match (edge.kind(), from_kind) {
             (WorkflowEdgeKind::Branch, WorkflowNodeKind::Condition) => {
                 let when = edge
@@ -1202,11 +1239,7 @@ pub fn accept_definition(def: &WorkflowDefinition, input: &Value) -> Result<(), 
                             )))
                         }
                     }
-                    let in_degree = def
-                        .edges()
-                        .iter()
-                        .filter(|e| e.to() == target.id())
-                        .count();
+                    let in_degree = def.edges().iter().filter(|e| e.to() == target.id()).count();
                     if in_degree != 1 {
                         return Err(WorkflowError::InvalidInput(format!(
                             "parallel fan target {:?} has in-degree {in_degree}; \
@@ -1295,8 +1328,12 @@ pub(crate) fn new_id(prefix: &str) -> String {
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     let (salt_a, salt_b) = *SALT.get_or_init(|| {
         (
-            std::collections::hash_map::RandomState::new().build_hasher().finish(),
-            std::collections::hash_map::RandomState::new().build_hasher().finish(),
+            std::collections::hash_map::RandomState::new()
+                .build_hasher()
+                .finish(),
+            std::collections::hash_map::RandomState::new()
+                .build_hasher()
+                .finish(),
         )
     });
     let nanos = std::time::SystemTime::now()
@@ -1304,7 +1341,13 @@ pub(crate) fn new_id(prefix: &str) -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
-    hasher.write(format!("{nanos}|{salt_a:x}{salt_b:x}|{seq}|{}|workflow-engine", std::process::id()).as_bytes());
+    hasher.write(
+        format!(
+            "{nanos}|{salt_a:x}{salt_b:x}|{seq}|{}|workflow-engine",
+            std::process::id()
+        )
+        .as_bytes(),
+    );
     let digest = hasher.finish();
     format!("{prefix}-{digest:016x}{seq:08x}")
 }
@@ -1329,7 +1372,10 @@ mod tests {
             resolve_refs(&json!({"k": "$/nested/a"}), &state).expect("nested"),
             json!({"k": 1})
         );
-        assert_eq!(resolve_refs(&json!("$/list/1"), &state).expect("index"), json!(20));
+        assert_eq!(
+            resolve_refs(&json!("$/list/1"), &state).expect("index"),
+            json!(20)
+        );
         // 非引用字符串原样保留
         assert_eq!(
             resolve_refs(&json!("plain $ not ref"), &state).expect("plain"),
@@ -1341,12 +1387,20 @@ mod tests {
 
     #[test]
     fn edge_view_condition_and_parallel_branch() {
-        let edge_true =
-            domain::WorkflowEdge::try_new("c", "t", WorkflowEdgeKind::Branch, Some(r#"true"#.to_string()))
-                .expect("edge");
-        let edge_false =
-            domain::WorkflowEdge::try_new("c", "f", WorkflowEdgeKind::Branch, Some(r#"false"#.to_string()))
-                .expect("edge");
+        let edge_true = domain::WorkflowEdge::try_new(
+            "c",
+            "t",
+            WorkflowEdgeKind::Branch,
+            Some(r#"true"#.to_string()),
+        )
+        .expect("edge");
+        let edge_false = domain::WorkflowEdge::try_new(
+            "c",
+            "f",
+            WorkflowEdgeKind::Branch,
+            Some(r#"false"#.to_string()),
+        )
+        .expect("edge");
         let succeeded_condition = NodeRow {
             node_id: "c".to_string(),
             node_kind: "condition".to_string(),
@@ -1359,8 +1413,14 @@ mod tests {
             tool_run_id: None,
             agent_run_id: None,
         };
-        assert_eq!(edge_view(&edge_true, Some(&succeeded_condition)), EdgeView::Selected);
-        assert_eq!(edge_view(&edge_false, Some(&succeeded_condition)), EdgeView::Dead);
+        assert_eq!(
+            edge_view(&edge_true, Some(&succeeded_condition)),
+            EdgeView::Selected
+        );
+        assert_eq!(
+            edge_view(&edge_false, Some(&succeeded_condition)),
+            EdgeView::Dead
+        );
         let pending = NodeRow {
             state: WorkflowNodeRunState::Pending,
             ..succeeded_condition.clone()
@@ -1371,7 +1431,8 @@ mod tests {
             ..succeeded_condition.clone()
         };
         assert_eq!(edge_view(&edge_true, Some(&skipped)), EdgeView::Dead);
-        let fan = domain::WorkflowEdge::try_new("p", "w1", WorkflowEdgeKind::Branch, None).expect("edge");
+        let fan =
+            domain::WorkflowEdge::try_new("p", "w1", WorkflowEdgeKind::Branch, None).expect("edge");
         let parallel = NodeRow {
             node_id: "p".to_string(),
             node_kind: "parallel".to_string(),

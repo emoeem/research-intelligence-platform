@@ -26,6 +26,7 @@ tool-registry = { workspace = true }
 resource-engine = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
 
 [dev-dependencies]
 # INVALID 处置接线测试（quality-engine PluginGovernor，§11.5 既有裁定）仅在

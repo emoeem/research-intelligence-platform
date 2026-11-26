@@ -8,18 +8,19 @@
 //! cargo run --offline -p context-broker --bin rp-context -- cache-stats
 //! ~~~
 //!
-//! 默认面（仓库根运行）：--db migrations/dev-p4.db（开发库副本，红线：生产
-//! platform*.db 不接）；源接 rulepack + registry + artifact。knowledge/rtis
-//! 未接 CLI（需索引库与 kit 参数，已移交 Phase 7 Agent Engine 消费场景定参，
-//! PHASE4-ACCEPTANCE §七.5）；缓存挂默认目录
+//! 默认面（仓库根运行）：--db migrations/dev-p4.db（Agent 运行库副本，红线：
+//! platform*.db 不接）；源接 rulepack + registry + artifact + 独立只读
+//! RIP_PLUGIN_DB（默认 migrations/dev-p6.db）+ RTIS Adapter（默认 integrations/rtis，
+//! 可用 RIP_RTIS_DIR 覆盖）；缓存挂默认目录
 //! （`$RIP_DATA_DIR/runtime/broker-cache`，缺省回落临时目录）。
 //!
 //! 装配前对 --db 幂等执行迁移（重复执行 no-op，migrate.rs 幂等机制）；
 //! 只追加写面与测试内存库同纪律。
 
 use context_broker::{
-    ArtifactSource, AssembleRequest, Broker, BrokerCache, BudgetPolicy, IntentConfig,
-    ManifestIndex, ManifestStore, RegistrySource, RulepackSource,
+    ArtifactSource, AssembleRequest, Broker, BrokerCache, BudgetPolicy, CuratedKnowledgeSource,
+    IntentConfig, ManifestIndex, ManifestStore, PluginSource, RegistrySource, RtisSource,
+    RulepackSource,
 };
 use database::{DbPath, Pool, PoolConfig};
 use std::path::{Path, PathBuf};
@@ -35,7 +36,7 @@ fn usage_text() -> &'static str {
     "usage: rp-context <sub> [flags]\n\
      \n\
      subcommands:\n\
-     \x20 assemble --task-id <id> [--text <text>] [--db <path>] [--budget <n>] [--migrations-dir <dir>]\n\
+     \x20 assemble --task-id <id> [--text <text>] [--db <path>] [--plugin-db <path>] [--knowledge-db <path>] [--budget <n>] [--migrations-dir <dir>]\n\
      \x20 expand --manifest-id <id> --item-id <id> [--db <path>]\n\
      \x20 manifest-show --manifest-id <id> [--db <path>]\n\
      \x20 cache-stats [--data-dir <dir>]\n\
@@ -53,6 +54,8 @@ fn usage() -> i32 {
 
 struct Flags {
     db: PathBuf,
+    plugin_db: PathBuf,
+    knowledge_db: PathBuf,
     migrations_dir: PathBuf,
     task_id: Option<String>,
     text: String,
@@ -68,6 +71,12 @@ struct Flags {
 fn parse_flags(args: &[String]) -> Flags {
     let mut flags = Flags {
         db: PathBuf::from("migrations/dev-p4.db"),
+        plugin_db: std::env::var_os("RIP_PLUGIN_DB")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("migrations/dev-p6.db")),
+        knowledge_db: std::env::var_os("RIP_KNOWLEDGE_DB")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("migrations/platform.db")),
         migrations_dir: PathBuf::from("migrations"),
         task_id: None,
         text: "kingdee HTTP 检查".to_string(),
@@ -88,6 +97,8 @@ fn parse_flags(args: &[String]) -> Flags {
         let value = |iter: &mut std::slice::Iter<String>| iter.next().cloned().unwrap_or_default();
         match flag.as_str() {
             "--db" => flags.db = PathBuf::from(value(&mut iter)),
+            "--plugin-db" => flags.plugin_db = PathBuf::from(value(&mut iter)),
+            "--knowledge-db" => flags.knowledge_db = PathBuf::from(value(&mut iter)),
             "--migrations-dir" => flags.migrations_dir = PathBuf::from(value(&mut iter)),
             "--task-id" => flags.task_id = Some(value(&mut iter)),
             "--text" => flags.text = value(&mut iter),
@@ -153,15 +164,68 @@ fn build_broker(flags: &Flags) -> Broker {
         eprintln!("policy: {e}");
         exit(1);
     });
-    // SK-1（P6-9 第 6 步）：插件知识源挂载（库内插件逐个挂 plugin:<id> 源；
-    // 禁用/未审插件候选空集合法，准入闸逐查询重读即失效信号，无缓存窗口）。
+    // 插件知识源单独挂载 RIP_PLUGIN_DB（只读），Agent 主运行库与插件数据面
+    // 分离；未审核条目仍由 PluginSource 的 APPROVED 闸挡住。
     let mut sources: Vec<Box<dyn context_broker::ContextSource>> = vec![
         Box::new(rulepack),
         Box::new(registry_source),
         Box::new(ArtifactSource::new(pool.clone())),
     ];
-    for plugin_source in context_broker::PluginSource::mount_all(&pool) {
-        sources.push(Box::new(plugin_source));
+    if flags.plugin_db.is_file() {
+        match Pool::open(PoolConfig {
+            path: DbPath::File(flags.plugin_db.clone()),
+            readonly: true,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(5),
+        }) {
+            Ok(plugin_pool) => {
+                for plugin_source in PluginSource::mount_all(&plugin_pool) {
+                    sources.push(Box::new(plugin_source));
+                }
+            }
+            Err(error) => eprintln!(
+                "[rp-context] plugin source unavailable ({}): {error}",
+                flags.plugin_db.display()
+            ),
+        }
+    } else {
+        eprintln!(
+            "[rp-context] plugin source DB missing: {}",
+            flags.plugin_db.display()
+        );
+    }
+    // RIP 自有知识库是独立只读库；只暴露 VERIFIED + ACTIVE 条目。
+    if flags.knowledge_db.is_file() {
+        match Pool::open(PoolConfig {
+            path: DbPath::File(flags.knowledge_db.clone()),
+            readonly: true,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(5),
+        }) {
+            Ok(knowledge_pool) => {
+                sources.push(Box::new(CuratedKnowledgeSource::new(knowledge_pool)))
+            }
+            Err(error) => eprintln!(
+                "[rp-context] curated knowledge unavailable ({}): {error}",
+                flags.knowledge_db.display()
+            ),
+        }
+    } else {
+        eprintln!(
+            "[rp-context] curated knowledge DB missing: {}",
+            flags.knowledge_db.display()
+        );
+    }
+    let rtis_dir = std::env::var_os("RIP_RTIS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("integrations/rtis"));
+    if rtis_dir.join("rt.py").is_file() {
+        sources.push(Box::new(RtisSource::new(rtis_dir)));
+    } else {
+        eprintln!(
+            "[rp-context] RTIS read-only source not mounted: {}",
+            rtis_dir.display()
+        );
     }
     Broker::new(
         sources,

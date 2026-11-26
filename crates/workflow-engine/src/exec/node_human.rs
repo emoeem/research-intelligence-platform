@@ -33,13 +33,14 @@ pub const DEFAULT_APPROVAL_KEY: &str = "approval";
 ///   workflow_run_control），节点未终态；
 /// - `awaiting = false`：批准参数在 state 中，output = `{key: 参数}`
 ///   （object 或 null 以外形状 fail-closed，与 Tool/Knowledge 合并口径一致）。
-pub fn execute(
-    params_json: Option<&str>,
-    state: &Value,
-) -> Result<(Value, bool), NodeFailure> {
+pub fn execute(params_json: Option<&str>, state: &Value) -> Result<(Value, bool), NodeFailure> {
     let params: serde_json::Map<String, Value> = match params_json {
-        Some(raw) => serde_json::from_str(raw)
-            .map_err(|e| NodeFailure::new("params_invalid", format!("human node params parse failed: {e}")))?,
+        Some(raw) => serde_json::from_str(raw).map_err(|e| {
+            NodeFailure::new(
+                "params_invalid",
+                format!("human node params parse failed: {e}"),
+            )
+        })?,
         None => serde_json::Map::new(),
     };
     let key = match params.get("key").and_then(Value::as_str) {
@@ -47,7 +48,9 @@ pub fn execute(
         Some(k) => {
             let ok = !k.is_empty()
                 && k.chars().count() <= 64
-                && k.chars().next().expect("non-empty checked")
+                && k.chars()
+                    .next()
+                    .expect("non-empty checked")
                     .is_ascii_alphanumeric()
                 && k.chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-');
@@ -114,8 +117,8 @@ mod tests {
     #[test]
     fn awaiting_request_carries_prompt_and_request_payload() {
         let params = json!({"prompt": "批准外部访问?", "request": {"target": "$/target"}});
-        let (request, awaiting) = execute(Some(&params.to_string()), &json!({"target": "example.com"}))
-            .expect("execute");
+        let (request, awaiting) =
+            execute(Some(&params.to_string()), &json!({"target": "example.com"})).expect("execute");
         assert!(awaiting);
         assert_eq!(request["node_key"], json!("approval"));
         assert_eq!(request["prompt"], json!("批准外部访问?"));
@@ -124,7 +127,8 @@ mod tests {
 
     #[test]
     fn approval_in_state_completes_node() {
-        let (output, awaiting) = execute(None, &json!({"approval": {"ok": true}})).expect("execute");
+        let (output, awaiting) =
+            execute(None, &json!({"approval": {"ok": true}})).expect("execute");
         assert!(!awaiting);
         assert_eq!(output, json!({"approval": {"ok": true}}));
         // 标量批准值同样交付。

@@ -219,7 +219,28 @@ impl SearchEngine {
                 license_status: Some(d.license_status.clone()),
                 maintenance_status: Some(d.maintenance_status.clone()),
                 topics: d.topics.clone(),
+                nuclei_severity: d.nuclei_severity.clone(),
+                nuclei_protocols: d.nuclei_protocols.clone(),
+                nuclei_cve_ids: d.nuclei_cve_ids.clone(),
+                nuclei_cwe_ids: d.nuclei_cwe_ids.clone(),
                 source_sections: d.source_sections.clone(),
+                evidence_level: d.evidence_level.clone(),
+                knowledge_lifecycle: d.knowledge_lifecycle.clone(),
+                poc_category: d.poc_category.clone(),
+                poc_severity: d.poc_severity.clone(),
+                poc_cve_id: d.poc_cve_id.clone(),
+                source_path: d.source_path.clone(),
+                source_commit: d.source_commit.clone(),
+                related_poc_ids: d.related_poc_ids.clone(),
+                related_entities: d.related_entities.clone(),
+                poc_source_urls: d.poc_source_urls.clone(),
+                poc_source_integrity: d.poc_source_integrity.clone(),
+                poc_verification_result: d.poc_verification_result.clone(),
+                poc_dedup_status: d.poc_dedup_status.clone(),
+                poc_independent_knowledge_status: d.poc_independent_knowledge_status.clone(),
+                poc_missing_evidence: d.poc_missing_evidence.clone(),
+                poc_evidence_refs: d.poc_evidence_refs.clone(),
+                poc_review_gate: d.poc_review_gate.clone(),
                 score,
                 fts_score: fts_norm,
                 keyword_coverage: round4(coverage_val),
@@ -283,11 +304,72 @@ impl SearchEngine {
             where_clause.push_str(" AND resource_type = ?");
             params.push(rt.clone());
         }
+        if let Some(severity) = &filters.nuclei_severity {
+            where_clause.push_str(" AND nuclei_severity = ?");
+            params.push(severity.to_ascii_lowercase());
+        }
+        if let Some(protocol) = &filters.nuclei_protocol {
+            where_clause.push_str(" AND EXISTS (SELECT 1 FROM json_each(search_index_doc.nuclei_protocols_json) WHERE lower(value) = lower(?))");
+            params.push(protocol.clone());
+        }
+        if let Some(cve) = &filters.cve_id {
+            where_clause.push_str(" AND EXISTS (SELECT 1 FROM json_each(search_index_doc.nuclei_cve_ids_json) WHERE upper(value) = upper(?))");
+            params.push(cve.clone());
+        }
+        if let Some(cwe) = &filters.cwe_id {
+            where_clause.push_str(" AND EXISTS (SELECT 1 FROM json_each(search_index_doc.nuclei_cwe_ids_json) WHERE upper(value) = upper(?))");
+            params.push(cwe.clone());
+        }
+        if let Some(level) = &filters.evidence_level {
+            where_clause.push_str(" AND evidence_level = ?");
+            params.push(level.to_ascii_uppercase());
+        }
+        if let Some(lifecycle) = &filters.knowledge_lifecycle {
+            where_clause.push_str(" AND lower(knowledge_lifecycle) = lower(?)");
+            params.push(lifecycle.clone());
+        }
+        if let Some(severity) = &filters.poc_severity {
+            where_clause.push_str(" AND lower(poc_severity) = lower(?)");
+            params.push(severity.clone());
+        }
+        if let Some(category) = &filters.poc_category {
+            where_clause.push_str(" AND lower(poc_category) = lower(?)");
+            params.push(category.clone());
+        }
+        if let Some(cve) = &filters.poc_cve_id {
+            where_clause.push_str(" AND upper(poc_cve_id) = upper(?)");
+            params.push(cve.clone());
+        }
+        if let Some(value) = &filters.poc_source_integrity {
+            where_clause.push_str(" AND lower(poc_source_integrity) = lower(?)");
+            params.push(value.clone());
+        }
+        if let Some(value) = &filters.poc_verification_result {
+            where_clause.push_str(" AND lower(poc_verification_result) = lower(?)");
+            params.push(value.clone());
+        }
+        if let Some(value) = &filters.poc_dedup_status {
+            where_clause.push_str(" AND lower(poc_dedup_status) = lower(?)");
+            params.push(value.clone());
+        }
+        if let Some(value) = filters.poc_missing_evidence {
+            where_clause.push_str(if value {
+                " AND json_array_length(poc_missing_evidence_json) > 0"
+            } else {
+                " AND json_array_length(poc_missing_evidence_json) = 0"
+            });
+        }
         let sql = format!(
             "SELECT rowid, resource_id, name, description, canonical_url, resource_type,
                     lifecycle, governance, quality_final_score, quality_grade,
                     license_status, maintenance_status, topics_json, language,
-                    source_sections_json, source_repos_json
+                    source_sections_json, source_repos_json, nuclei_severity,
+                    nuclei_protocols_json, nuclei_cve_ids_json, nuclei_cwe_ids_json,
+                    nuclei_tags_json, evidence_level, knowledge_lifecycle, poc_category,
+                    poc_severity, poc_cve_id, source_path, source_commit, related_poc_ids_json,
+                    related_entities_json, poc_source_integrity, poc_verification_result, poc_dedup_status,
+                    poc_independent_knowledge_status, poc_missing_evidence_json,
+                    poc_evidence_refs_json, poc_review_gate, poc_source_urls_json
              FROM search_index_doc WHERE {where_clause} ORDER BY resource_id"
         );
         let rows = self
@@ -333,20 +415,51 @@ fn row_to_indexed(row: &rusqlite::Row<'_>) -> rusqlite::Result<IndexedRow> {
             language: row.get(13)?,
             source_sections: parse_json(row.get(14)?)?,
             source_repositories: parse_json(row.get(15)?)?,
+            nuclei_severity: row.get(16)?,
+            nuclei_protocols: parse_json(row.get(17)?)?,
+            nuclei_cve_ids: parse_json(row.get(18)?)?,
+            nuclei_cwe_ids: parse_json(row.get(19)?)?,
+            nuclei_tags: parse_json(row.get(20)?)?,
+            evidence_level: row.get(21)?,
+            knowledge_lifecycle: row.get(22)?,
+            poc_category: row.get(23)?,
+            poc_severity: row.get(24)?,
+            poc_cve_id: row.get(25)?,
+            source_path: row.get(26)?,
+            source_commit: row.get(27)?,
+            related_poc_ids: parse_json(row.get(28)?)?,
+            related_entities: parse_json(row.get(29)?)?,
+            poc_source_integrity: row.get(30)?,
+            poc_verification_result: row.get(31)?,
+            poc_dedup_status: row.get(32)?,
+            poc_independent_knowledge_status: row.get(33)?,
+            poc_missing_evidence: parse_json(row.get(34)?)?,
+            poc_evidence_refs: parse_json(row.get(35)?)?,
+            poc_review_gate: row.get(36)?,
+            poc_source_urls: parse_json(row.get(37)?)?,
         },
     })
 }
 
 /// 来源标注（文档字段出处声明）。
 fn source_annotations(d: &IndexDoc) -> Vec<String> {
-    let mut out = vec!["platform:resource".to_string()];
+    let is_curated_poc = d.evidence_level.is_some();
+    let mut out = if is_curated_poc {
+        vec!["rtis:poc + rip:curation-overlay".to_string()]
+    } else {
+        vec!["platform:resource".to_string()]
+    };
     if !d.source_sections.is_empty() {
-        out.push(format!(
-            "platform:resource_source(sections:{})",
-            d.source_sections.len()
-        ));
+        out.push(if is_curated_poc {
+            "rip:curation-overlay(source_path)".to_string()
+        } else {
+            format!(
+                "platform:resource_source(sections:{})",
+                d.source_sections.len()
+            )
+        });
     }
-    if !d.topics.is_empty() || d.license_status != "UNKNOWN" {
+    if !is_curated_poc && (!d.topics.is_empty() || d.license_status != "UNKNOWN") {
         out.push("catalog:github_metadata".to_string());
     }
     out

@@ -191,7 +191,7 @@ fn main() {
                     .unwrap_or_else(|| {
                         PathBuf::from("manifests/capabilities/host-catalog-seed.json")
                     }),
-                           // MA-3（D4）协作派发面：caller + 派发子进程路径 + 超时。
+                // MA-3（D4）协作派发面：caller + 派发子进程路径 + 超时。
                 collab_caller,
                 agent_bin: std::env::var("RP_AGENT_BIN")
                     .ok()

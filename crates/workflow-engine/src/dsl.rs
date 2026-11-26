@@ -339,9 +339,9 @@ pub fn from_domain(def: &WorkflowDefinition) -> Result<DefinitionV1, WorkflowErr
     let mut nodes = Vec::with_capacity(def.nodes().len());
     for node in def.nodes() {
         let params = match node.params_json() {
-            Some(raw) => Some(serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
-                raw,
-            )?),
+            Some(raw) => Some(serde_json::from_str::<
+                serde_json::Map<String, serde_json::Value>,
+            >(raw)?),
             None => None,
         };
         nodes.push(NodeV1 {
@@ -479,8 +479,7 @@ mod tests {
         // Schema 层（enum 拒绝）
         let schema: serde_json::Value =
             serde_json::from_str(DEFINITION_SCHEMA).expect("schema json");
-        let validator =
-            jsonschema::validator_for(&schema).expect("schema compile");
+        let validator = jsonschema::validator_for(&schema).expect("schema compile");
         assert!(validator.validate(&raw).is_err());
     }
 }

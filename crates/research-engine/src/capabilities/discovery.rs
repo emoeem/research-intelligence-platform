@@ -7,9 +7,7 @@
 //! knowledge_document 的派生 ID 与 note，不做真实检索。
 
 use crate::capabilities::CapabilityExec;
-use crate::contract::{
-    digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor,
-};
+use crate::contract::{digest16, CapabilityFailure, CapabilityId, Correlation, ProvenanceAnchor};
 use domain::ids::ResourceId;
 use serde::{Deserialize, Serialize};
 
@@ -115,7 +113,8 @@ impl CapabilityExec for DiscoveryCapability {
             ),
             kind: SourceKind::Rulepack,
             resource_id: "gh:rip/rulepacks-rip-rules".to_string(),
-            note: "固定 mock 目录：规则包 rip-rules（Phase 8 接 rulepack 目录真实索引）".to_string(),
+            note: "固定 mock 目录：规则包 rip-rules（Phase 8 接 rulepack 目录真实索引）"
+                .to_string(),
         });
         let manifest_resource = format!("url:{}", digest16(&["manifests", "tools"]));
         sources.push(DiscoveredSource {
@@ -149,7 +148,8 @@ impl CapabilityExec for DiscoveryCapability {
             .map(|resource| ProvenanceAnchor::resource(&resource))
             .collect();
         let query_digest = digest16(&["query", &input.query]);
-        let summary = format!("发现 {total} 个源（query 摘要 {query_digest}，mock 固定目录加 hint）");
+        let summary =
+            format!("发现 {total} 个源（query 摘要 {query_digest}，mock 固定目录加 hint）");
         Ok((DiscoveryOutput { sources, total }, summary, anchors))
     }
 }

@@ -33,11 +33,7 @@ const KB_MANIFEST: &str = concat!(
 
 /// 临时文件库（测试内唯一，目录随测试结束留给 /tmp）。
 fn temp_db(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "rip-wf-exec-test-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("rip-wf-exec-test-{}-{}", tag, std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join(format!("{tag}.db"));
     let _ = std::fs::remove_file(&path);
@@ -87,7 +83,11 @@ struct MockDriver {
 }
 
 impl ToolRunDriver for MockDriver {
-    fn drive(&self, engine: &Engine, run_id: &str) -> Result<DriveOutcome, tool_engine::EngineError> {
+    fn drive(
+        &self,
+        engine: &Engine,
+        run_id: &str,
+    ) -> Result<DriveOutcome, tool_engine::EngineError> {
         engine.drive(run_id, &self.runner)
     }
 }
@@ -98,7 +98,11 @@ struct SlowDriver {
 }
 
 impl ToolRunDriver for SlowDriver {
-    fn drive(&self, engine: &Engine, run_id: &str) -> Result<DriveOutcome, tool_engine::EngineError> {
+    fn drive(
+        &self,
+        engine: &Engine,
+        run_id: &str,
+    ) -> Result<DriveOutcome, tool_engine::EngineError> {
         std::thread::sleep(self.delay);
         engine.drive(run_id, &MockRunner::succeed(mock_result(), "slow ok"))
     }
@@ -131,8 +135,10 @@ impl context_broker::ContextSource for EmptySource {
 
 /// 带全源最小 Broker 的执行器（rulepack 取仓库目录，与既有 broker 测试同源锚定）。
 fn executor_with_broker(pool: Pool) -> WorkflowExecutor {
-    let rulepack_dir =
-        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../rulepacks/rip-rules"));
+    let rulepack_dir = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../rulepacks/rip-rules"
+    ));
     let broker = context_broker::Broker::new(
         vec![Box::new(EmptySource)],
         context_broker::BudgetPolicy::default_for(8000).expect("policy"),
@@ -190,8 +196,13 @@ fn tool_node_minimal_run_succeeds_with_persisted_node_states() {
     // 节点状态对账（库内层）：017 workflow_run_node 每节点独立终态 + attempt。
     let runs = workflow_engine::RunStore::new(pool.clone());
     let rows = runs.node_rows(&outcome.run_id).expect("node rows");
-    assert!(rows.iter().all(|r| r.state != domain::WorkflowNodeRunState::Pending));
-    let search = rows.iter().find(|r| r.node_id == "search").expect("search row");
+    assert!(rows
+        .iter()
+        .all(|r| r.state != domain::WorkflowNodeRunState::Pending));
+    let search = rows
+        .iter()
+        .find(|r| r.node_id == "search")
+        .expect("search row");
     assert_eq!(search.node_kind, "tool");
     assert_eq!(search.attempt, 1);
     // tool_run 关联：trace_id = workflow run id（015 链路）。
@@ -213,7 +224,9 @@ fn tool_node_minimal_run_succeeds_with_persisted_node_states() {
     // checkpoint：每节点终态一行（start/search/done 各一）。
     let snap = runs.snapshot_of(&outcome.run_id).expect("snapshot");
     assert_eq!(
-        snap.get("nodes").and_then(|n| n.as_object()).map(|m| m.len()),
+        snap.get("nodes")
+            .and_then(|n| n.as_object())
+            .map(|m| m.len()),
         Some(3)
     );
 }
@@ -233,7 +246,10 @@ fn knowledge_node_minimal_run_succeeds_via_broker() {
     let retrieve = rows.iter().find(|r| r.node_id == "retrieve").expect("row");
     let output = retrieve.output.clone().expect("knowledge output");
     assert_eq!(output["query"], "example.com");
-    assert!(output["context_id"].as_str().expect("ctx").starts_with("ctx-"));
+    assert!(output["context_id"]
+        .as_str()
+        .expect("ctx")
+        .starts_with("ctx-"));
     assert_eq!(output["knowledge_count"], 0);
     // Broker 副作用：manifest 头行落库（correlation_id = run_id）。
     // Broker 副作用：manifest 头行落库（task_id = run_id，008 列名）。
@@ -272,7 +288,10 @@ fn condition_node_branches_and_skips_cascade() {
     }
     let states = node_states(&outcome);
     assert!(states.contains(&("hit".to_string(), "succeeded", 1)));
-    assert!(states.contains(&("miss".to_string(), "skipped", 0)), "{states:?}");
+    assert!(
+        states.contains(&("miss".to_string(), "skipped", 0)),
+        "{states:?}"
+    );
     assert!(states.contains(&("done-hit".to_string(), "succeeded", 1)));
     assert!(states.contains(&("done-miss".to_string(), "skipped", 0)));
     // false 分支：换 input 反向。
@@ -286,7 +305,10 @@ fn condition_node_branches_and_skips_cascade() {
     // condition 输出并入 state（checkpoint 快照可对账）。
     let runs = workflow_engine::RunStore::new(pool.clone());
     let rows = runs.node_rows(&outcome2.run_id).expect("rows");
-    let check = rows.iter().find(|r| r.node_id == "check").expect("check row");
+    let check = rows
+        .iter()
+        .find(|r| r.node_id == "check")
+        .expect("check row");
     assert_eq!(
         check.output.clone().expect("cond out"),
         json!({"condition_result": false})
@@ -367,9 +389,18 @@ fn parallel_join_failure_fails_run() {
         .expect("terminal outcome");
     assert_eq!(outcome.state, domain::WorkflowRunState::Failed);
     let states = node_states(&outcome);
-    assert!(states.contains(&("w1".to_string(), "failed", 1)), "{states:?}");
-    assert!(states.contains(&("w2".to_string(), "failed", 1)), "{states:?}");
-    assert!(states.contains(&("fan".to_string(), "failed", 1)), "{states:?}");
+    assert!(
+        states.contains(&("w1".to_string(), "failed", 1)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("w2".to_string(), "failed", 1)),
+        "{states:?}"
+    );
+    assert!(
+        states.contains(&("fan".to_string(), "failed", 1)),
+        "{states:?}"
+    );
 }
 
 #[test]
@@ -461,7 +492,10 @@ fn resume_from_checkpoint_keeps_completed_nodes_and_attempts() {
                         .and_then(|t| serde_json::from_str(&t).ok())
                         .unwrap_or(serde_json::Value::Null);
                     Ok::<_, database::DbError>(
-                        parsed.get("input_sanitized").and_then(|v| v["keyword"].as_str()).map(str::to_string),
+                        parsed
+                            .get("input_sanitized")
+                            .and_then(|v| v["keyword"].as_str())
+                            .map(str::to_string),
                     )
                 })
                 .ok()
@@ -479,9 +513,7 @@ fn resume_from_checkpoint_keeps_completed_nodes_and_attempts() {
     let handle = {
         let pool = pool.clone();
         std::thread::spawn(move || {
-            let driver: Arc<dyn ToolRunDriver> = Arc::new(SplitDriver {
-                pool: pool.clone(),
-            });
+            let driver: Arc<dyn ToolRunDriver> = Arc::new(SplitDriver { pool: pool.clone() });
             let exec = WorkflowExecutor::new(pool).with_tool_driver(driver);
             exec.start("wf-p8-resume", None, &json!({}))
         })
@@ -519,7 +551,11 @@ fn resume_from_checkpoint_keeps_completed_nodes_and_attempts() {
     // kill 模拟：残留线程继续阻塞，不再等待其结果（drop handle）。
     drop(handle);
     let row = runs.run_row(&run_id_in_flight).expect("run row");
-    assert_eq!(row.state, domain::WorkflowRunState::Running, "kill leaves running");
+    assert_eq!(
+        row.state,
+        domain::WorkflowRunState::Running,
+        "kill leaves running"
+    );
     let rows = runs.node_rows(&run_id_in_flight).expect("rows");
     let a = rows.iter().find(|r| r.node_id == "a").expect("a row");
     assert_eq!((a.state.as_str(), a.attempt), ("succeeded", 1));
@@ -536,9 +572,15 @@ fn resume_from_checkpoint_keeps_completed_nodes_and_attempts() {
     assert_eq!(outcome.state, domain::WorkflowRunState::Succeeded);
     let states = node_states(&outcome);
     // a：已完成节点保持 succeeded 且 attempt 不变（不重跑）。
-    assert!(states.contains(&("a".to_string(), "succeeded", 1)), "{states:?}");
+    assert!(
+        states.contains(&("a".to_string(), "succeeded", 1)),
+        "{states:?}"
+    );
     // b：kill 时 running（attempt=1），复位 pending 后重跑 attempt 递增为 2。
-    assert!(states.contains(&("b".to_string(), "succeeded", 2)), "{states:?}");
+    assert!(
+        states.contains(&("b".to_string(), "succeeded", 2)),
+        "{states:?}"
+    );
     assert!(states.contains(&("done".to_string(), "succeeded", 1)));
 }
 
@@ -576,7 +618,10 @@ fn retry_after_failure_reruns_only_failed_node_with_incremented_attempt() {
     assert_eq!(outcome2.state, domain::WorkflowRunState::Succeeded);
     assert_ne!(outcome2.run_id, outcome.run_id, "retry 以新 run 承载");
     let states2 = node_states(&outcome2);
-    assert!(states2.contains(&("search".to_string(), "succeeded", 2)), "{states2:?}");
+    assert!(
+        states2.contains(&("search".to_string(), "succeeded", 2)),
+        "{states2:?}"
+    );
     // 原 run 保持 FAILED 终态且 attempt 不变（冻结跃迁表：终态不迁出）。
     let runs = workflow_engine::RunStore::new(pool.clone());
     let old_run = runs.run_row(&outcome.run_id).expect("old run");
@@ -587,7 +632,10 @@ fn retry_after_failure_reruns_only_failed_node_with_incremented_attempt() {
         .into_iter()
         .find(|r| r.node_id == "search")
         .expect("old search");
-    assert_eq!((old_search.state.as_str(), old_search.attempt), ("failed", 1));
+    assert_eq!(
+        (old_search.state.as_str(), old_search.attempt),
+        ("failed", 1)
+    );
     // 非 failed 节点作为 retry 目标拒绝。
     let done_state = outcome2
         .nodes
@@ -707,10 +755,16 @@ fn acceptance_gates_reject_non_executable_definitions() {
     let err = tool_executor
         .start("wf-p8-bad-edge", None, &json!({}))
         .expect_err("seq edge from condition rejected");
-    assert!(err.to_string().contains("condition nodes must branch"), "{err}");
+    assert!(
+        err.to_string().contains("condition nodes must branch"),
+        "{err}"
+    );
     // cancel：非终态 run 可取消；终态 run 拒绝。
     let outcome = tool_executor
         .start("wf-p8-tool", None, &json!({"target": "example.com"}))
         .expect("run ok");
-    assert!(executor.cancel(&outcome.run_id).is_err(), "terminal run cannot cancel");
+    assert!(
+        executor.cancel(&outcome.run_id).is_err(),
+        "terminal run cannot cancel"
+    );
 }

@@ -199,7 +199,7 @@ workspace 根 `Cargo.toml:1-36`：resolver 2，workspace 版本 0.2.0，edition 
 | crates/database | 连接池 + 迁移执行器 | 保留并演进 | backup/restore 未实现；user_version 与 schema_version 双轨待收敛 |
 | crates/audit-engine | Emit / Trace + 旁路缓冲 | 保留并扩展 | Python 与 rtis 侧审计仍是 JSONL 分叉，待收敛进统一事件流 |
 | crates/resource-engine | Repository + Resolve（rp-resolve） | 保留 | 生产切流路径；Enrich/事件接口未实现；权重 0.6+0.4 简化已归因 |
-| crates/search-engine | FTS5 派生索引 + 混合检索（rp-search-index） | 保留，扩展跨插件检索 | 向量轴未接入；索引源仅 platform + catalog 两库 |
+| crates/search-engine | FTS5 派生索引 + 混合检索（rp-search-index） | 保留，扩展跨插件检索 | 向量轴未接入；索引源含 platform/catalog、可见插件知识及可选 RTIS curation Overlay POC |
 | crates/quality-engine | 双轴状态机 + Review 队列 + VERIFIED 守卫（rp-review） | 保留 | Score(id) 未实现；治理对象待从 Resource 扩到 Knowledge / Tool / Plugin |
 | workers/python | 3 worker + runtime + 契约测试（50 功能用例） | 保留，不做全量 Rust 重写 | 协议 v1 可作 Tool Contract 雏形；缺常驻宿主派发器 |
 | apps/server | 只读工作台：4 API + Token 鉴权 + systemd 服务 | 逐步演进为 API / Web 服务边界 | handler 直连 SQL 与「API 唯一入口」原则相悖，是最大架构债 |

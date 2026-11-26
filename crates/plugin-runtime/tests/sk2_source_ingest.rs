@@ -1,9 +1,9 @@
 //! SK-2 集成测试（P6-10，安全知识源计划 §3/§4.2/§8 P6-10）：三源真实
 //! Manifest（manifests/plugins/）+ 固定 Commit 最小快照 fixture
 //! （tests/fixtures/sk2/，见 FIXTURE-NOTES.md）的摄取链：
-//! - 条数对账：awesome-hacking 85（分类表 81 + 自链/徽章/社交 4，no_scheme 2）、
-//!   secskills 102 唯一键（README 102 目录条目含 1 条重复 URL 合并 + mseep
-//!   徽章 1，no_scheme 17）、tongui 75（74 篇 + 来源主页，精选 31 双 ref）；
+//! - 条数对账（徽章过滤后）：awesome-hacking 84（分类表 81 + 自链/Twitter/Facebook 3，no_scheme 2）、
+//!   secskills 101 唯一键（目录表 102 行含 1 条重复 URL 合并，mseep 图片徽章不入库，no_scheme 17）、
+//!   tongui 75（74 篇 + 来源主页，精选 31 双 ref）；
 //! - 幂等：二跑 skipped=全量、changed=0；内容变更走 changed 计数不覆盖历史行；
 //!   上游条目删除不物理删已有行；
 //! - 许可/策略：UNLICENSED + metadata_only（tongui）、catalog_only（ah/secs）、
@@ -107,17 +107,17 @@ fn sk2_three_sources_ingest_counts_reconcile_and_idempotence() {
     let rt = PluginRuntime::open(pool.clone(), audit);
 
     // 同趟重复行：secskills README 代码审计分类内 skill-dfyx_code_security_review
-    // 两条目同 URL（上游原文如此），规范化 canonical URL 去重后 102 唯一键，
-    // 首跑该行计 skipped=1（去重生效的实测形态），二跑 skipped=103。
+    // 两条目同 URL（上游原文如此），规范化 canonical URL 去重后 101 唯一键；
+    // mseep 图片徽章由 parser 明确排除。首跑重复行 skipped=1，二跑 skipped=102。
     let cases = [
         (
             "knowledge.awesome-hacking",
             "awesome-hacking",
-            85u64,
+            84u64,
             2u64,
             0u64,
         ),
-        ("knowledge.secskills", "secskills", 102, 17, 1),
+        ("knowledge.secskills", "secskills", 101, 17, 1),
         (
             "knowledge.tongui-course-notes",
             "tongui-course-notes",
@@ -182,7 +182,7 @@ fn sk2_three_sources_ingest_counts_reconcile_and_idempotence() {
         );
         assert_eq!(again.changed, 0, "{id}: 二跑无变更");
     }
-    assert_eq!(total_rows, 85 + 102 + 75, "三源合计行数");
+    assert_eq!(total_rows, 84 + 101 + 75, "三源合计行数");
 
     // 溯源与策略分组（python 只读断言的测试面镜像）：
     // license_status = Manifest license 原值；rights_policy = per-kind 声明；
@@ -203,8 +203,8 @@ fn sk2_three_sources_ingest_counts_reconcile_and_idempotence() {
     assert_eq!(
         groups,
         vec![
-            ("Apache-2.0".to_string(), "catalog_only".to_string(), 102),
-            ("CC0-1.0".to_string(), "catalog_only".to_string(), 85),
+            ("Apache-2.0".to_string(), "catalog_only".to_string(), 101),
+            ("CC0-1.0".to_string(), "catalog_only".to_string(), 84),
             ("UNLICENSED".to_string(), "metadata_only".to_string(), 75),
         ],
         "三源各行 license/rights 策略正确：{groups:?}"
@@ -492,7 +492,7 @@ fn sk2_review_gate_search_visibility_and_disable() {
     search_engine::SearchIndex::rebuild(&pool, &catalog, &index).unwrap();
     assert_eq!(
         search_engine::SearchIndex::doc_count(&index).unwrap(),
-        85 + 102 + 75,
+        84 + 101 + 75,
         "APPROVED + 可见双闸通过后三源全量入索引"
     );
 
@@ -501,7 +501,7 @@ fn sk2_review_gate_search_visibility_and_disable() {
     search_engine::SearchIndex::rebuild(&pool, &catalog, &index).unwrap();
     assert_eq!(
         search_engine::SearchIndex::doc_count(&index).unwrap(),
-        85 + 75,
+        84 + 75,
         "禁用 secskills 后仅撤出其条目（APPROVED+可见双闸）"
     );
 }

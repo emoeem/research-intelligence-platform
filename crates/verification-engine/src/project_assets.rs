@@ -198,9 +198,7 @@ impl ProjectAssetStore {
             database::rusqlite::params![id,workspace,name,slug,input.get("summary").and_then(Value::as_str).unwrap_or(""),input.get("objective").and_then(Value::as_str).unwrap_or(""),status,priority,scope.to_string(),tags.to_string(),input.get("owner_id").and_then(Value::as_str).unwrap_or("owner-local"),now,now]
         ));
         match result {
-            Ok(_) => self
-                .get_project(&id)?
-                .ok_or(DomainStoreError::NotFound(id)),
+            Ok(_) => self.get_project(&id)?.ok_or(DomainStoreError::NotFound(id)),
             Err(e) if e.to_string().contains("UNIQUE") => Err(DomainStoreError::Conflict(
                 "project slug already exists in workspace".into(),
             )),
@@ -400,9 +398,7 @@ impl ProjectAssetStore {
             Ok::<(),database::rusqlite::Error>(())
         });
         match inserted {
-            Ok(()) => self
-                .get_asset(&id)?
-                .ok_or(DomainStoreError::NotFound(id)),
+            Ok(()) => self.get_asset(&id)?.ok_or(DomainStoreError::NotFound(id)),
             Err(e) if e.to_string().contains("UNIQUE") => Err(DomainStoreError::Conflict(
                 "asset already exists in workspace".into(),
             )),

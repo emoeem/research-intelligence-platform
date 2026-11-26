@@ -150,11 +150,10 @@ impl ToolLink {
             "task_id": spec.task_id,
         });
         let submitted = match spec.caller_id.as_deref() {
-            Some(caller) => self.engine.submit_for_caller(
-                &request,
-                spec.trace_id.as_deref(),
-                Some(caller),
-            )?,
+            Some(caller) => {
+                self.engine
+                    .submit_for_caller(&request, spec.trace_id.as_deref(), Some(caller))?
+            }
             None => self
                 .engine
                 .submit_correlated(&request, spec.trace_id.as_deref())?,

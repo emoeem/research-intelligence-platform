@@ -84,14 +84,25 @@ impl KnowledgeChannel for RtisPocChannel {
     fn fetch(&self, query: &str, limit: usize) -> Result<Vec<ChannelHit>, String> {
         let output = Command::new(&self.python)
             .arg(&self.rt_py)
-            .args(["poc", "search", "--q", query, "--json", "--limit", &limit.to_string()])
+            .args([
+                "poc",
+                "search",
+                "--q",
+                query,
+                "--json",
+                "--limit",
+                &limit.to_string(),
+            ])
             .output()
             .map_err(|e| format!("rt.py spawn failed: {e}"))?;
         if !output.status.success() {
             return Err(format!(
                 "rt.py poc search exit {}: {}",
                 output.status,
-                String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or("")
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
             ));
         }
         let payload: Value =
@@ -119,8 +130,14 @@ impl KnowledgeChannel for RtisPocChannel {
                     .get("component")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
-                versions: row.get("versions").and_then(Value::as_str).map(str::to_owned),
-                severity: row.get("severity").and_then(Value::as_str).map(str::to_owned),
+                versions: row
+                    .get("versions")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                severity: row
+                    .get("severity")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 verified: row.get("verified").and_then(Value::as_i64).unwrap_or(0) == 1,
                 score: row.get("hit_count").and_then(Value::as_f64).unwrap_or(0.0),
             })
@@ -155,12 +172,15 @@ impl KnowledgeChannel for UnifiedSearchChannel {
             return Err(format!(
                 "rp-kc search exit {}: {}",
                 output.status,
-                String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or("")
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
             ));
         }
         let text = String::from_utf8_lossy(&output.stdout);
-        let rows: Vec<Value> = serde_json::from_str(text.trim())
-            .map_err(|e| format!("rp-kc json: {e}"))?;
+        let rows: Vec<Value> =
+            serde_json::from_str(text.trim()).map_err(|e| format!("rp-kc json: {e}"))?;
         Ok(rows
             .into_iter()
             .map(|row| ChannelHit {
@@ -345,7 +365,10 @@ fn match_channel(
                             title: hit.title,
                             component: hit.component.clone(),
                             versions: hit.versions.clone(),
-                            exclude_reasons: vec!["internal invariant broken (matched without component anchor)".to_owned()],
+                            exclude_reasons: vec![
+                                "internal invariant broken (matched without component anchor)"
+                                    .to_owned(),
+                            ],
                         });
                     }
                     (None, Some(hit_component_value)) => {
@@ -374,8 +397,7 @@ fn match_channel(
                                 verified: hit.verified,
                                 channel_score: hit.score,
                                 match_reasons: vec![
-                                    "generic knowledge (no component profile provided)"
-                                        .to_owned(),
+                                    "generic knowledge (no component profile provided)".to_owned(),
                                 ],
                             });
                         } else {
@@ -386,8 +408,7 @@ fn match_channel(
                                 component: None,
                                 versions: hit.versions.clone(),
                                 exclude_reasons: vec![
-                                    "no component anchor (cannot verify applicability)"
-                                        .to_owned(),
+                                    "no component anchor (cannot verify applicability)".to_owned(),
                                 ],
                             });
                         }
@@ -490,7 +511,11 @@ mod tests {
             limit: 10,
         };
         let channel = MockChannel {
-            rows: vec![hit(Some("Kingdee K3Cloud ServiceFacade"), Some("8.2"), true)],
+            rows: vec![hit(
+                Some("Kingdee K3Cloud ServiceFacade"),
+                Some("8.2"),
+                true,
+            )],
             fail: false,
         };
         let result = run_match(&[&channel], &query, 10);
@@ -581,7 +606,10 @@ mod tests {
         };
         let result = run_match(&[&channel], &query, 10);
         assert!(result.has_applicable);
-        assert_eq!(result.hits[0].match_reasons[0], "generic knowledge (no component profile provided)");
+        assert_eq!(
+            result.hits[0].match_reasons[0],
+            "generic knowledge (no component profile provided)"
+        );
     }
 
     #[test]

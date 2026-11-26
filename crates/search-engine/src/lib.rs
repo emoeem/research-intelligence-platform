@@ -4,11 +4,9 @@
 //! 数据面 = 派生索引库（[`index`]），全部可重建（§8.2.3：删掉整个索引库，
 //! 从 domain 库重灌即恢复）。
 //!
-//! - [`index`]：FTS5 派生索引层。从 platform 库（`resource` + `resource_source`
-//!   的 alias/name 即 source_section/source_repository 并入）与 production catalog
-//!   库（`github_metadata` 的 topics/language/license/maintenance，补齐 M2 报告
-//!   差异表 #2 的 topics 数据源缺口）构建独立索引库（全部表 `search_index_` 前缀，
-//!   头注标注可重建）。
+//! - [`index`]：FTS5 派生索引层。从 platform/catalog 基础资源与元数据、可见插件
+//!   知识条目，以及可选 RTIS + RIP curation Overlay（只读、只索引 Overlay 明确
+//!   审核的 POC 元数据）构建独立索引库（全部表 `search_index_` 前缀，可整库重建）。
 //! - [`query`]：`SearchQuery(keywords, filters, limit, offset) -> Hits`，混合排序：
 //!   FTS bm25 50% + quality_score 归一 30% + 六轴中可迁移的 keyword 覆盖 20%
 //!   （权重口径见 [`weights`]），命中带 score、来源标注与可解释 reasons。

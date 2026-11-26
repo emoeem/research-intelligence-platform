@@ -72,7 +72,10 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
 // 2) Evidence 页：选计划 → 列表 8 行 → 详情（SHA256/类型/六 ID 跳转/Raw/Pretty）
 {
   const { ctx, page, pageErrors } = await newPage();
-  await page.goto("http://localhost:5173/research/evidence", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/evidence", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForSelector('[data-testid="evidence-plan-select"]', { timeout: 15000 });
   await page.screenshot({ path: join(outDir, "01-evidence-empty-state.png") });
   // 空态（未选计划不伪造数据）
@@ -88,25 +91,40 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
   await page.waitForSelector('[data-testid="evidence-payload"]', { timeout: 10000 });
   const detail = await page.locator('[data-testid="evidence-detail-section"]').textContent();
   const hashOk = /[0-9a-f]{64}/.test(detail ?? "");
-  pass("详情含 SHA256 与六 ID 锚", hashOk && (detail ?? "").includes("来源计划") && (detail ?? "").includes("trace"), "");
+  pass(
+    "详情含 SHA256 与六 ID 锚",
+    hashOk && (detail ?? "").includes("来源计划") && (detail ?? "").includes("trace"),
+    "",
+  );
   // Pretty/Raw 切换
   const prettyText = await page.locator('[data-testid="evidence-payload"]').textContent();
   await page.getByRole("button", { name: "Raw", exact: true }).click();
   await page.waitForTimeout(300);
   const rawText = await page.locator('[data-testid="evidence-payload"]').textContent();
-  pass("Raw/Pretty 双视图切换", rawText !== prettyText && (rawText ?? "").length > 0, `rawLen=${(rawText ?? "").length}`);
+  pass(
+    "Raw/Pretty 双视图切换",
+    rawText !== prettyText && (rawText ?? "").length > 0,
+    `rawLen=${(rawText ?? "").length}`,
+  );
   await page.screenshot({ path: join(outDir, "02-evidence-detail-raw.png") });
   await page.getByRole("button", { name: "Pretty", exact: true }).click();
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(outDir, "03-evidence-detail-pretty.png") });
-  pass("evidence 交互无未处理 JS 异常", pageErrors.length === 0, pageErrors.join("; ").slice(0, 200));
+  pass(
+    "evidence 交互无未处理 JS 异常",
+    pageErrors.length === 0,
+    pageErrors.join("; ").slice(0, 200),
+  );
   await ctx.close();
 }
 
 // 3) Coverage 矩阵页：选计划 → 七维五态 + 盲区 + 分母明示
 {
   const { ctx, page, pageErrors } = await newPage();
-  await page.goto("http://localhost:5173/research/coverage", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/coverage", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForSelector('[data-testid="coverage-plan-select"]', { timeout: 15000 });
   await page.screenshot({ path: join(outDir, "04-coverage-empty-state.png") });
   await page.selectOption('[data-testid="coverage-plan-select"]', { index: 1 });
@@ -116,23 +134,40 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
     (matrixText ?? "").includes(d),
   );
   pass("七维矩阵行渲染", dimsOk, "");
-  pass("五态列分开显示（未测试与失败独立）", (matrixText ?? "").includes("NOT_TESTED") && (matrixText ?? "").includes("NOT_REPRODUCED"), "");
-  pass("盲区可见（uncovered 三维）", (matrixText ?? "").includes("uncovered") && (matrixText ?? "").includes("identity_permissions"), "");
+  pass(
+    "五态列分开显示（未测试与失败独立）",
+    (matrixText ?? "").includes("NOT_TESTED") && (matrixText ?? "").includes("NOT_REPRODUCED"),
+    "",
+  );
+  pass(
+    "盲区可见（uncovered 三维）",
+    (matrixText ?? "").includes("uncovered") && (matrixText ?? "").includes("identity_permissions"),
+    "",
+  );
   const total = await page.locator('[data-testid="coverage-total"]').textContent();
   pass("分母明示不用百分比掩盖", (total ?? "").includes("计划项共 4"), total ?? "");
   await page.screenshot({ path: join(outDir, "05-coverage-matrix.png") });
-  pass("coverage 交互无未处理 JS 异常", pageErrors.length === 0, pageErrors.join("; ").slice(0, 200));
+  pass(
+    "coverage 交互无未处理 JS 异常",
+    pageErrors.length === 0,
+    pageErrors.join("; ").slice(0, 200),
+  );
   await ctx.close();
 }
 
 // 4) 验证计划页：控制按钮按状态渲染（completed 计划终态无按钮）
 {
   const { ctx, page } = await newPage();
-  await page.goto("http://localhost:5173/research/plans", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/plans", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForTimeout(800);
   const plansText = await page.locator("main").textContent();
   const hasPlan = (plansText ?? "").includes("P5-9b 浏览器实测场景 v3");
-  const completedRow = page.locator("div.rounded-surface", { hasText: "P5-9b 浏览器实测场景 v3" }).first();
+  const completedRow = page
+    .locator("div.rounded-surface", { hasText: "P5-9b 浏览器实测场景 v3" })
+    .first();
   const btnCount = await completedRow.locator("button").count();
   pass("计划列表渲染 v3（completed）", hasPlan, "");
   pass("终态计划不渲染编造操作按钮", btnCount === 0, `buttons=${btnCount}`);
@@ -143,12 +178,18 @@ async function newPage(viewport = { width: 1600, height: 1000 }) {
 // 5) 390 窄屏：两新页无横向溢出
 {
   const { ctx, page } = await newPage({ width: 390, height: 844 });
-  await page.goto("http://localhost:5173/research/evidence", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/evidence", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForTimeout(500);
   const overflow1 = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
-  await page.goto("http://localhost:5173/research/coverage", { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto("http://localhost:5173/research/coverage", {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
   await page.waitForTimeout(500);
   const overflow2 = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

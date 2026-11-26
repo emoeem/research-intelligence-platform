@@ -22,25 +22,25 @@
 
 use std::borrow::Cow;
 
-use rmcp::ErrorData as McpError;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Cursor,
-    ErrorCode, GetPromptRequestParams, GetPromptResponse, GetPromptResult,
-    ListPromptsResult, ListResourcesResult, ListResourceTemplatesResult, ListToolsResult,
-    PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, ProtocolVersion,
-    ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
-    ResourceContents, ResourceTemplate, Role, ServerConfig, ToolsCapability,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Cursor, ErrorCode,
+    GetPromptRequestParams, GetPromptResponse, GetPromptResult, ListPromptsResult,
+    ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+    Prompt, PromptArgument, PromptMessage, ProtocolVersion, ReadResourceRequestParams,
+    ReadResourceResponse, ReadResourceResult, Resource, ResourceContents, ResourceTemplate, Role,
+    ServerConfig, ToolsCapability,
 };
 use rmcp::service::{RequestContext, RoleServer};
-use serde_json::{Value, json};
+use rmcp::ErrorData as McpError;
+use serde_json::{json, Value};
 
 use crate::catalog::{CatalogError, RegistryFilters};
 use crate::dispatch::RunChannel;
 use crate::resources::ResourceError;
 use crate::{
-    CAPABILITY_TOOLS, CatalogEntry, DEFAULT_PAGE_LIMIT, McpServer, SERVER_NAME, SERVER_VERSION,
     capability_input_schema, paginate, parse_filters, parse_limit_param, parse_offset,
+    CatalogEntry, McpServer, CAPABILITY_TOOLS, DEFAULT_PAGE_LIMIT, SERVER_NAME, SERVER_VERSION,
 };
 
 /// rmcp 实际支持的协议版本上限（initialize 握手面；2026-07-28 起生命周期
@@ -182,7 +182,8 @@ impl McpServer {
         let limit = parse_limit_param(args.get("limit")).map_err(invalid_params)?;
         let entries = self.catalog_entries(&filters).map_err(catalog_error)?;
         // 注册面段（能力面不计入 total，handle_tools 口径的工具数）。
-        let registry: Vec<&CatalogEntry> = entries.iter().filter(|e| e.tier == "registry").collect();
+        let registry: Vec<&CatalogEntry> =
+            entries.iter().filter(|e| e.tier == "registry").collect();
         let total = registry.len();
         let (page_rows, next) = crate::paginate_range(total, offset, limit);
         let mut result = json!({
@@ -330,7 +331,10 @@ impl ServerHandler for McpServer {
             }
             "rip.get_run_status" | "rip.cancel_run" => {
                 let kind = name.clone();
-                let Some(run_id) = args.get("run_id").and_then(Value::as_str).map(str::to_string)
+                let Some(run_id) = args
+                    .get("run_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
                 else {
                     return Err(invalid_params(format!("{name} 需要 run_id")));
                 };
@@ -349,8 +353,12 @@ impl ServerHandler for McpServer {
             // run_subtask spawn rp-agent wait + contribute_knowledge spawn
             // rp-kc）；caller 未解析时结构化拒绝 fail-closed（RunChannel
             // collab_caller None → POLICY_DENIED 载荷），目录面零影响。
-            "rip.run_subtask" | "rip.get_subtask_status" | "rip.claim_task"
-            | "rip.complete_claim" | "rip.send_message" | "rip.fetch_messages"
+            "rip.run_subtask"
+            | "rip.get_subtask_status"
+            | "rip.claim_task"
+            | "rip.complete_claim"
+            | "rip.send_message"
+            | "rip.fetch_messages"
             | "rip.contribute_knowledge" => {
                 let kind = name.clone();
                 run_face_blocking(self.run_channel.clone(), &name, move |channel| {
@@ -447,8 +455,8 @@ impl ServerHandler for McpServer {
         let uri = request.uri;
         match self.read_resource(&uri) {
             Ok(doc) => {
-                let text = serde_json::to_string_pretty(&doc.payload)
-                    .unwrap_or_else(|_| "{}".to_string());
+                let text =
+                    serde_json::to_string_pretty(&doc.payload).unwrap_or_else(|_| "{}".to_string());
                 let contents = vec![ResourceContents::TextResourceContents {
                     uri: doc.uri,
                     mime_type: Some(doc.mime_type.to_string()),
@@ -483,11 +491,7 @@ impl ServerHandler for McpServer {
                         })
                         .collect(),
                 );
-                let mut prompt = Prompt::new(
-                    p.name,
-                    Some(p.description.to_string()),
-                    arguments,
-                );
+                let mut prompt = Prompt::new(p.name, Some(p.description.to_string()), arguments);
                 prompt.title = Some(p.title.to_string());
                 prompt
             })

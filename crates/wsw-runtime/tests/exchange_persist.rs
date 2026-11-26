@@ -1,6 +1,6 @@
 //! 025 exchange 落库链路集成测试（WSW-3-TASK §四.2 断言矩阵 S2/S3 面）：
 //!
-//! - 链尾水位断言（assert_watermark 方法 + user_version 直查，Projects/Research Assets 迁移后链尾 031（WSW-5/6 为 030））；
+//! - 链尾水位断言（assert_watermark 方法 + user_version 直查，Projects/Research Assets 迁移后链尾 032（WSW-5/6 为 030））；
 //! - 单行纪律：同请求+响应落一行；响应中断 → 响应体 NULL + parse_status
 //!   ='partial'（W3-D1/D2.1）；
 //! - 批量落行（insert_exchanges 单事务 + salvage 计数）；
@@ -18,13 +18,17 @@ use wsw_runtime::listener::handler::{
     BodyOutcome, ExchangeCapture, ListenerShared, RuntimeOptions,
 };
 use wsw_runtime::persist::{
-    ExchangeRow, PersistStore, BatchInsertOutcome, TabRow, TabVersionRow, SendRow, SendPatch,
+    BatchInsertOutcome, ExchangeRow, PersistStore, SendPatch, SendRow, TabRow, TabVersionRow,
 };
 
 fn mem_store() -> PersistStore {
     let s = PersistStore::open_memory().expect("open memory");
-    s.run_migrations(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations").as_path())
-        .expect("migrate full chain");
+    s.run_migrations(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../migrations")
+            .as_path(),
+    )
+    .expect("migrate full chain");
     s
 }
 
@@ -40,7 +44,11 @@ fn shared_with_persist(store: PersistStore) -> Arc<ListenerShared> {
 fn body_full(bytes: &[u8], mime: &str) -> BodyOutcome {
     BodyOutcome {
         sha256: Some(wsw_message::cas::sha256_hex(bytes)),
-        uri: Some(format!("wsw/{}/{}", &wsw_message::cas::sha256_hex(bytes)[..2], wsw_message::cas::sha256_hex(bytes))),
+        uri: Some(format!(
+            "wsw/{}/{}",
+            &wsw_message::cas::sha256_hex(bytes)[..2],
+            wsw_message::cas::sha256_hex(bytes)
+        )),
         len: Some(bytes.len() as i64),
         mime: mime.to_string(),
         fidelity: "full",
@@ -82,7 +90,7 @@ fn watermark_and_tables() {
     let uv: i64 = s
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(uv, 31, "031 chain head");
+    assert_eq!(uv, 32, "032 chain head");
     for table in [
         "wsw_exchange",
         "wsw_repeater_tab",
@@ -132,7 +140,10 @@ fn batch_insert_and_single_row_discipline() {
     let outcome = s.insert_exchanges(&rows).unwrap();
     assert_eq!(
         outcome,
-        BatchInsertOutcome { inserted: 1, failed: 0 },
+        BatchInsertOutcome {
+            inserted: 1,
+            failed: 0
+        },
         "single row = request+response same row (one INSERT)"
     );
     assert_eq!(s.exchange_count().unwrap(), 1);
@@ -159,7 +170,10 @@ fn response_interrupted_partial_row() {
     let capture = ExchangeCapture::__test_new(&shared, "wsw-2-0-0001", 0, 2_000);
     // 请求侧完整：headers + body。
     let mut headers = hudsucker::hyper::HeaderMap::new();
-    headers.insert("host", hudsucker::hyper::header::HeaderValue::from_static("127.0.0.1:8443"));
+    headers.insert(
+        "host",
+        hudsucker::hyper::header::HeaderValue::from_static("127.0.0.1:8443"),
+    );
     capture.register_request_headers(&headers);
     capture.register_request_body(body_full(b"abc", "text/plain"));
     // 响应头到了，体流被连接中断（Drop 语义 = interrupted outcome）。
@@ -173,7 +187,10 @@ fn response_interrupted_partial_row() {
     assert_eq!(row.parse_status, "partial", "响应中断 → partial");
     assert_eq!(row.request_body_fidelity, Some("full"));
     // 同请求+响应只落一行：channel 恰一条。
-    assert!(rx.try_recv().is_err(), "single row discipline: exactly one row");
+    assert!(
+        rx.try_recv().is_err(),
+        "single row discipline: exactly one row"
+    );
 }
 
 #[test]
@@ -182,7 +199,10 @@ fn response_never_arrives_partial_after_sweep() {
     let mut rx = shared.take_persist_rx().expect("rx");
     let capture = ExchangeCapture::__test_new(&shared, "wsw-3-0-0001", 0, 5_000);
     let mut headers = hudsucker::hyper::HeaderMap::new();
-    headers.insert("host", hudsucker::hyper::header::HeaderValue::from_static("127.0.0.1:8443"));
+    headers.insert(
+        "host",
+        hudsucker::hyper::header::HeaderValue::from_static("127.0.0.1:8443"),
+    );
     capture.register_request_headers(&headers);
     capture.register_request_body(body_full(b"abc", "text/plain"));
     // 无响应且双侧流末未触发 → 清扫兜底（判龄改写绕过 10s 实等）。
@@ -241,7 +261,8 @@ fn backpressure_channel_full_drops_without_blocking() {
 #[test]
 fn tags_notes_edit_updates_row() {
     let s = mem_store();
-    s.insert_exchanges(&[minimal_row("wsw-5-0-0001", 0)]).unwrap();
+    s.insert_exchanges(&[minimal_row("wsw-5-0-0001", 0)])
+        .unwrap();
     let ok = s
         .update_exchange_tags_notes("wsw-5-0-0001", r#"["login","target-a"]"#, Some("复核通过"))
         .unwrap();
@@ -274,14 +295,20 @@ fn wal_enabled_and_concurrent_read_visible() {
     let db = dir.join("wal.db");
     let store = PersistStore::open_file(&db).expect("open file store");
     store
-        .run_migrations(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations").as_path())
+        .run_migrations(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../migrations")
+                .as_path(),
+        )
         .unwrap();
     // WAL 开启（open_file 内 enable_wal；W3-D2.4）。
     let mode: String = store
         .with_conn(|c| c.query_row("PRAGMA journal_mode", [], |r| r.get(0)))
         .unwrap();
     assert_eq!(mode, "wal", "enable_wal 接线生效");
-    store.insert_exchanges(&[minimal_row("wsw-6-0-0001", 0)]).unwrap();
+    store
+        .insert_exchanges(&[minimal_row("wsw-6-0-0001", 0)])
+        .unwrap();
     // 并发只读连接（rp_server mode=ro 同型）立即可见（WAL 快照面）。
     let ro = database::Pool::open(database::PoolConfig::readonly_file(&db)).unwrap();
     let n: i64 = ro
@@ -300,7 +327,10 @@ fn invalid_row_salvaged_out_of_batch() {
     let outcome = s.insert_exchanges(&[bad, good]).unwrap();
     assert_eq!(
         outcome,
-        BatchInsertOutcome { inserted: 1, failed: 1 },
+        BatchInsertOutcome {
+            inserted: 1,
+            failed: 1
+        },
         "salvage 语义：坏行只跳过计数，好行照落"
     );
     assert_eq!(s.exchange_count().unwrap(), 1);
@@ -339,7 +369,10 @@ fn repeater_tab_version_append_only_and_send_rows() {
         origin: "manual".to_string(),
         created_at: wsw_runtime::persist::now_iso(),
     };
-    assert!(s.append_tab_version(&dup).is_err(), "UNIQUE(tab_id,version_no) 锚：重写必拒");
+    assert!(
+        s.append_tab_version(&dup).is_err(),
+        "UNIQUE(tab_id,version_no) 锚：重写必拒"
+    );
     // send 行六态推进：pending → sending → succeeded（终态不可再推）。
     let send = SendRow {
         send_id: wsw_runtime::persist::generate_send_id(),
@@ -352,14 +385,36 @@ fn repeater_tab_version_append_only_and_send_rows() {
     };
     s.insert_send(&send).unwrap();
     assert!(s
-        .advance_send(&send.send_id, &SendPatch { state: "sending", started_at: Some(wsw_runtime::persist::now_iso()), ..Default::default() })
+        .advance_send(
+            &send.send_id,
+            &SendPatch {
+                state: "sending",
+                started_at: Some(wsw_runtime::persist::now_iso()),
+                ..Default::default()
+            }
+        )
         .unwrap());
     assert!(s
-        .advance_send(&send.send_id, &SendPatch { state: "succeeded", response_status: Some(200), completed_at: Some(wsw_runtime::persist::now_iso()), duration_ms: Some(12), ..Default::default() })
+        .advance_send(
+            &send.send_id,
+            &SendPatch {
+                state: "succeeded",
+                response_status: Some(200),
+                completed_at: Some(wsw_runtime::persist::now_iso()),
+                duration_ms: Some(12),
+                ..Default::default()
+            }
+        )
         .unwrap());
     // 终态后推进 = false（SQL WHERE state IN ('pending','sending') 强制）。
     assert!(!s
-        .advance_send(&send.send_id, &SendPatch { state: "failed", ..Default::default() })
+        .advance_send(
+            &send.send_id,
+            &SendPatch {
+                state: "failed",
+                ..Default::default()
+            }
+        )
         .unwrap());
     let got = s.get_send(&send.send_id).unwrap().unwrap();
     assert_eq!(got.state, "succeeded");
@@ -367,7 +422,13 @@ fn repeater_tab_version_append_only_and_send_rows() {
     assert_eq!(s.list_sends(&tab.tab_id, 500).unwrap().len(), 1);
     // 词表越界拒。
     assert!(s
-        .advance_send(&send.send_id, &SendPatch { state: "exploded", ..Default::default() })
+        .advance_send(
+            &send.send_id,
+            &SendPatch {
+                state: "exploded",
+                ..Default::default()
+            }
+        )
         .is_err());
 }
 
@@ -384,7 +445,9 @@ fn repeater_tab_close_and_open_list() {
     };
     s.create_tab(&tab).unwrap();
     assert_eq!(s.list_open_tabs("wsw-ses-default").unwrap().len(), 1);
-    assert!(s.close_tab(&tab.tab_id, &wsw_runtime::persist::now_iso()).unwrap());
+    assert!(s
+        .close_tab(&tab.tab_id, &wsw_runtime::persist::now_iso())
+        .unwrap());
     assert!(s.list_open_tabs("wsw-ses-default").unwrap().is_empty());
 }
 
@@ -428,7 +491,11 @@ fn insert_batch_throughput_measurement() {
     std::fs::create_dir_all(&dir).unwrap();
     let store = PersistStore::open_file(&dir.join("throughput.db")).expect("open file store");
     store
-        .run_migrations(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations").as_path())
+        .run_migrations(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../migrations")
+                .as_path(),
+        )
         .unwrap();
     let started = std::time::Instant::now();
     const BATCHES: usize = 40;

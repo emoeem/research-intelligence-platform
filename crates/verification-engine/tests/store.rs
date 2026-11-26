@@ -87,7 +87,14 @@ fn plan_lifecycle_and_item_flow_on_real_schema() {
 
     // 五态写入：带 error_category 禁止 NOT_REPRODUCED（执行失败 ≠ 未复现）
     let fp_item = store
-        .set_result(&item.item_id, "INCONCLUSIVE", Some("网络超时，判据未观测"), Some("timeout"), None, None)
+        .set_result(
+            &item.item_id,
+            "INCONCLUSIVE",
+            Some("网络超时，判据未观测"),
+            Some("timeout"),
+            None,
+            None,
+        )
         .unwrap();
     assert_eq!(fp_item.result_status.as_deref(), Some("INCONCLUSIVE"));
     assert_eq!(fp_item.error_category.as_deref(), Some("timeout"));
@@ -134,10 +141,19 @@ fn plan_lifecycle_and_item_flow_on_real_schema() {
 #[test]
 fn guard_rejects_failure_classified_as_not_reproduced() {
     let store = store();
-    let plan = store.create_plan(None, "default", None, None, None).unwrap();
+    let plan = store
+        .create_plan(None, "default", None, None, None)
+        .unwrap();
     let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
     let err = store
-        .set_result(&item.item_id, "NOT_REPRODUCED", Some("没跑出来"), Some("network"), None, None)
+        .set_result(
+            &item.item_id,
+            "NOT_REPRODUCED",
+            Some("没跑出来"),
+            Some("network"),
+            None,
+            None,
+        )
         .unwrap_err();
     assert!(matches!(err, PlanStoreError::GuardRejected(_)));
     // 词表外状态拒绝
@@ -156,7 +172,9 @@ fn guard_rejects_failure_classified_as_not_reproduced() {
 #[test]
 fn excluded_item_requires_reason_and_terminal_plan_frozen() {
     let store = store();
-    let plan = store.create_plan(None, "default", None, None, None).unwrap();
+    let plan = store
+        .create_plan(None, "default", None, None, None)
+        .unwrap();
     let mut item = sample_item();
     item.applicability_status = "excluded".to_owned();
     item.applicability_reasons = vec![];
@@ -192,7 +210,6 @@ fn bad_ids_rejected_as_not_found() {
 // 证据档（RIP3 P5-7，021 research_evidence）：采集/SHA256/重复识别/检索
 // ---------------------------------------------------------------------------
 
-
 fn evidence_fixture() -> serde_json::Value {
     serde_json::json!({
         "provider": "nuclei",
@@ -204,7 +221,9 @@ fn evidence_fixture() -> serde_json::Value {
 #[test]
 fn evidence_record_hash_and_retrieval() {
     let store = store();
-    let plan = store.create_plan(Some("rtis-p5-7-ev"), "default", Some("证据档"), None, None).unwrap();
+    let plan = store
+        .create_plan(Some("rtis-p5-7-ev"), "default", Some("证据档"), None, None)
+        .unwrap();
     store.set_plan_status(&plan.plan_id, "ready").unwrap();
     let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
 
@@ -245,30 +264,62 @@ fn evidence_record_hash_and_retrieval() {
 
     // 事件流留痕：evidence_collected 两条（首采 + dedup 标记）
     let events = store.list_events(&plan.plan_id).unwrap();
-    let ev_events: Vec<_> = events.iter().filter(|e| e.event_type == "evidence_collected").collect();
+    let ev_events: Vec<_> = events
+        .iter()
+        .filter(|e| e.event_type == "evidence_collected")
+        .collect();
     assert_eq!(ev_events.len(), 2, "capture + dedup marker events");
 }
 
 #[test]
 fn evidence_type_and_id_shape_guards() {
     let store = store();
-    let plan = store.create_plan(Some("rtis-p5-7-ev2"), "default", Some("证据守卫"), None, None).unwrap();
+    let plan = store
+        .create_plan(
+            Some("rtis-p5-7-ev2"),
+            "default",
+            Some("证据守卫"),
+            None,
+            None,
+        )
+        .unwrap();
     store.set_plan_status(&plan.plan_id, "ready").unwrap();
     let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
 
     // evidence_type 词表外拒绝
     let err = store
-        .record_evidence(&item.item_id, &plan.plan_id, None, None, "screenshot", &evidence_fixture())
+        .record_evidence(
+            &item.item_id,
+            &plan.plan_id,
+            None,
+            None,
+            "screenshot",
+            &evidence_fixture(),
+        )
         .unwrap_err();
     assert!(matches!(err, PlanStoreError::GuardRejected(_)));
 
     // item/plan ID 形状违规拒绝
     let err2 = store
-        .record_evidence("vi-1", &plan.plan_id, None, None, "provider_result", &evidence_fixture())
+        .record_evidence(
+            "vi-1",
+            &plan.plan_id,
+            None,
+            None,
+            "provider_result",
+            &evidence_fixture(),
+        )
         .unwrap_err();
     assert!(matches!(err2, PlanStoreError::GuardRejected(_)));
     let err3 = store
-        .record_evidence(&item.item_id, "plan-1", None, None, "provider_result", &evidence_fixture())
+        .record_evidence(
+            &item.item_id,
+            "plan-1",
+            None,
+            None,
+            "provider_result",
+            &evidence_fixture(),
+        )
         .unwrap_err();
     assert!(matches!(err3, PlanStoreError::GuardRejected(_)));
 }
@@ -277,7 +328,15 @@ fn evidence_type_and_id_shape_guards() {
 #[test]
 fn evidence_plan_scope_listing_and_detail_get() {
     let store = store();
-    let plan = store.create_plan(Some("rtis-p5-9b-ev"), "default", Some("P5-9b 证据检索面"), None, None).unwrap();
+    let plan = store
+        .create_plan(
+            Some("rtis-p5-9b-ev"),
+            "default",
+            Some("P5-9b 证据检索面"),
+            None,
+            None,
+        )
+        .unwrap();
     store.set_plan_status(&plan.plan_id, "ready").unwrap();
     let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
 
@@ -356,7 +415,10 @@ fn hypothesis_lifecycle_on_real_schema() {
     assert_eq!(h.status, "proposed");
     assert_eq!(h.round_number, 1);
     assert_eq!(h.dimension, "assets");
-    assert_eq!(h.negative_control.as_deref(), Some("未开放端口同型探测无匹配"));
+    assert_eq!(
+        h.negative_control.as_deref(),
+        Some("未开放端口同型探测无匹配")
+    );
     assert_eq!(h.schema_version, SCHEMA_VERSION);
 
     store
@@ -442,15 +504,21 @@ fn hypothesis_guards_evidence_round_and_terminal() {
         .set_hypothesis_status(&ok.hypothesis_id, "validated")
         .unwrap();
     assert!(matches!(
-        store.set_hypothesis_status(&ok.hypothesis_id, "proposed").unwrap_err(),
+        store
+            .set_hypothesis_status(&ok.hypothesis_id, "proposed")
+            .unwrap_err(),
         PlanStoreError::GuardRejected(_)
     ));
     assert!(matches!(
-        store.set_hypothesis_status(&ok.hypothesis_id, "dropped").unwrap_err(),
+        store
+            .set_hypothesis_status(&ok.hypothesis_id, "dropped")
+            .unwrap_err(),
         PlanStoreError::GuardRejected(_)
     ));
     assert!(matches!(
-        store.set_hypothesis_status(&ok.hypothesis_id, "flying").unwrap_err(),
+        store
+            .set_hypothesis_status(&ok.hypothesis_id, "flying")
+            .unwrap_err(),
         PlanStoreError::GuardRejected(_)
     ));
 }

@@ -104,7 +104,11 @@ fn nuclei_container_dispatch_end_to_end_local_target() {
         return;
     }
     let image_exists = std::process::Command::new("podman")
-        .args(["image", "exists", verification_engine::provider::NUCLEI_IMAGE])
+        .args([
+            "image",
+            "exists",
+            verification_engine::provider::NUCLEI_IMAGE,
+        ])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
@@ -153,7 +157,10 @@ fn nuclei_container_dispatch_end_to_end_local_target() {
     // 本测试直接 ContainerCall 展开链路语义）
     let _ = &mut item;
     let pre_in: Vec<String> = std::fs::read_dir(&ws.in_dir)
-        .map(|d| d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string())).collect())
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                .collect()
+        })
         .unwrap_or_default();
     eprintln!("WS_DEBUG pre_in={pre_in:?}");
     // 本测试走 NetworkPlan::None（127.0.0.1 本机面无出网需求；egress
@@ -177,20 +184,32 @@ fn nuclei_container_dispatch_end_to_end_local_target() {
         Ok(outcome) => outcome,
         Err((category, message)) => {
             let post_in: Vec<String> = std::fs::read_dir(&ws.in_dir)
-                .map(|d| d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string())).collect())
+                .map(|d| {
+                    d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
             let post_out: Vec<String> = std::fs::read_dir(&ws.out_dir)
-                .map(|d| d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string())).collect())
+                .map(|d| {
+                    d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
             eprintln!("WS_DEBUG post_in={post_in:?} post_out={post_out:?} category={category:?} message={message}");
             panic!("nuclei dispatch: ({category:?}, {message})");
         }
     };
     let post_in: Vec<String> = std::fs::read_dir(&ws.in_dir)
-        .map(|d| d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string())).collect())
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                .collect()
+        })
         .unwrap_or_default();
     let post_out: Vec<String> = std::fs::read_dir(&ws.out_dir)
-        .map(|d| d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string())).collect())
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                .collect()
+        })
         .unwrap_or_default();
     eprintln!(
         "WS_DEBUG post_in={post_in:?} post_out={post_out:?} status={} summary={} result={:?}",

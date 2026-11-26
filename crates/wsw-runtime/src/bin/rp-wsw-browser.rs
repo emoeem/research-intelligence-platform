@@ -76,7 +76,6 @@ fn write_capped(path: &Path, bytes: &[u8], cap: usize) -> std::io::Result<(usize
     Ok((take, bytes.len(), truncated))
 }
 
-
 fn main() {
     std::process::exit(run_cli());
 }
@@ -660,8 +659,7 @@ mod write_capped_tests {
         let dir = std::env::temp_dir().join(format!("w56-wc-u-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("u.txt");
-        let (take, total, truncated) =
-            write_capped(&p, b"hello", PAGE_TEXT_CAP_BYTES).unwrap();
+        let (take, total, truncated) = write_capped(&p, b"hello", PAGE_TEXT_CAP_BYTES).unwrap();
         assert_eq!((take, total, truncated), (5, 5, false));
         assert_eq!(std::fs::read(&p).unwrap(), b"hello");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -672,13 +670,23 @@ mod write_capped_tests {
         let dir = std::env::temp_dir().join(format!("w56-wc-o-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("o.bin");
-        let body: Vec<u8> = (0..=(PAGE_TEXT_CAP_BYTES as u8)).cycle().take(PAGE_TEXT_CAP_BYTES + 7).collect();
+        let body: Vec<u8> = (0..=(PAGE_TEXT_CAP_BYTES as u8))
+            .cycle()
+            .take(PAGE_TEXT_CAP_BYTES + 7)
+            .collect();
         let (take, total, truncated) = write_capped(&p, &body, PAGE_TEXT_CAP_BYTES).unwrap();
-        assert_eq!((take, total, truncated), (PAGE_TEXT_CAP_BYTES, PAGE_TEXT_CAP_BYTES + 7, true));
+        assert_eq!(
+            (take, total, truncated),
+            (PAGE_TEXT_CAP_BYTES, PAGE_TEXT_CAP_BYTES + 7, true)
+        );
         let written = std::fs::read(&p).unwrap();
         assert_eq!(written.len(), PAGE_TEXT_CAP_BYTES);
         assert_eq!(&written[..8], &body[..8], "前缀逐字节保真");
-        assert_eq!(&written[PAGE_TEXT_CAP_BYTES - 8..], &body[PAGE_TEXT_CAP_BYTES - 8..PAGE_TEXT_CAP_BYTES], "帽内尾部逐字节保真");
+        assert_eq!(
+            &written[PAGE_TEXT_CAP_BYTES - 8..],
+            &body[PAGE_TEXT_CAP_BYTES - 8..PAGE_TEXT_CAP_BYTES],
+            "帽内尾部逐字节保真"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -689,7 +697,10 @@ mod write_capped_tests {
         let p = dir.join("e.txt");
         let body = vec![b'x'; PAGE_TEXT_CAP_BYTES];
         let (take, total, truncated) = write_capped(&p, &body, PAGE_TEXT_CAP_BYTES).unwrap();
-        assert_eq!((take, total, truncated), (PAGE_TEXT_CAP_BYTES, PAGE_TEXT_CAP_BYTES, false));
+        assert_eq!(
+            (take, total, truncated),
+            (PAGE_TEXT_CAP_BYTES, PAGE_TEXT_CAP_BYTES, false)
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

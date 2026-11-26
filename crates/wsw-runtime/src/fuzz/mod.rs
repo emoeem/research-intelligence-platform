@@ -80,7 +80,10 @@ impl From<spec::SpecError> for FuzzError {
 
 /// job 终态集合（九态中四态；非法迁移出边 = 无——persist.rs 迁移表同源）。
 pub fn is_terminal_job_state(state: &str) -> bool {
-    matches!(state, "CANCELLED" | "COMPLETED" | "FAILED" | "BUDGET_EXHAUSTED")
+    matches!(
+        state,
+        "CANCELLED" | "COMPLETED" | "FAILED" | "BUDGET_EXHAUSTED"
+    )
 }
 
 /// 速率滑动窗口计数器（CallerRateTracker 同型实现——std AtomicUsize +
@@ -109,8 +112,7 @@ impl RateWindow {
         let mut start = self.window_start.lock().expect("rate window mutex");
         if start.elapsed().as_millis() as u64 >= self.window_ms {
             *start = Instant::now();
-            self.count
-                .store(0, std::sync::atomic::Ordering::SeqCst);
+            self.count.store(0, std::sync::atomic::Ordering::SeqCst);
             0
         } else {
             self.count.load(std::sync::atomic::Ordering::SeqCst)
@@ -118,8 +120,7 @@ impl RateWindow {
     }
 
     fn bump(&self) {
-        self.count
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -166,9 +167,7 @@ pub async fn run_job(
     job_id: &str,
     opts: FuzzJobOptions,
 ) -> Result<FuzzJobSummary, FuzzError> {
-    let row = store
-        .get_fuzz_job(job_id)?
-        .ok_or(FuzzError::JobNotFound)?;
+    let row = store.get_fuzz_job(job_id)?.ok_or(FuzzError::JobNotFound)?;
     let from_state = row.state.clone();
     if is_terminal_job_state(&from_state) {
         return Err(FuzzError::JobTerminal(from_state));
@@ -354,9 +353,7 @@ pub async fn run_job(
         }
         // 3) 速率闸：窗口超帽 → 该 case SKIPPED_BUDGET（不发送；判定后
         //    ord 前进，不重试同一 case）。
-        if budget.rate_max_requests > 0
-            && rate.current() >= budget.rate_max_requests as usize
-        {
+        if budget.rate_max_requests > 0 && rate.current() >= budget.rate_max_requests as usize {
             drop(permit);
             let existing_pending = existing_by_ordinal
                 .get(&(ord as i64))
@@ -405,8 +402,7 @@ pub async fn run_job(
         }
 
         // ---- case 构建 + scope 预检分流 ----
-        let assignment_refs: Vec<Option<&str>> =
-            assignment.iter().map(|o| o.as_deref()).collect();
+        let assignment_refs: Vec<Option<&str>> = assignment.iter().map(|o| o.as_deref()).collect();
         let request = match spec::build_case_request(
             &prepared.spec,
             &prepared.marker_spans,
@@ -535,8 +531,7 @@ pub async fn run_job(
         handles.push(tokio::spawn(async move {
             let _permit = permit;
             let outcome =
-                crate::sender::send_request(&rules, &request, &policy, &extra_ca, &cancel)
-                    .await;
+                crate::sender::send_request(&rules, &request, &policy, &extra_ca, &cancel).await;
             finalize_case(
                 &store2,
                 &artifacts_root,
@@ -636,7 +631,10 @@ pub async fn run_job(
     counters.dispatched = rows
         .iter()
         .filter(|r| {
-            matches!(r.state.as_str(), "SENT" | "RESPONDED" | "TIMEOUT" | "NETWORK_ERROR")
+            matches!(
+                r.state.as_str(),
+                "SENT" | "RESPONDED" | "TIMEOUT" | "NETWORK_ERROR"
+            )
         })
         .count() as u64;
     counters.responded = rows.iter().filter(|r| r.state == "RESPONDED").count() as u64;
@@ -652,9 +650,8 @@ fn compiled_regexes(patterns: &[String]) -> Result<Vec<regex::Regex>, FuzzError>
     patterns
         .iter()
         .map(|p| {
-            regex::Regex::new(p).map_err(|e| {
-                FuzzError::Spec(spec::SpecError::MutatorInvalid(format!("{p}: {e}")))
-            })
+            regex::Regex::new(p)
+                .map_err(|e| FuzzError::Spec(spec::SpecError::MutatorInvalid(format!("{p}: {e}"))))
         })
         .collect()
 }
@@ -712,20 +709,19 @@ fn finalize_case(
     match outcome {
         Ok(o) => {
             // 1) exchange 行（发送成功面；CAS 三面复用——D7）。
-            let refs = persist::persist_fuzz_case_exchange(
-                store, artifacts_root, session_id, request, &o,
-            )
-            .ok();
+            let refs =
+                persist::persist_fuzz_case_exchange(store, artifacts_root, session_id, request, &o)
+                    .ok();
             let exchange_id = refs.as_ref().map(|r| r.exchange_id.clone());
             let outbound_sha = refs.map(|r| r.outbound_sha256);
             // 2) 分类 + 命中（429/5xx 限流面——判据 9）。
-            let error_code = analyzer::classify_status(o.response_status.unwrap_or(0))
-                .map(String::from);
+            let error_code =
+                analyzer::classify_status(o.response_status.unwrap_or(0)).map(String::from);
             let response_sha = (!o.response_bytes.is_empty())
                 .then(|| wsw_message::cas::sha256_hex(&o.response_bytes));
             let hits = analyzer::match_hits(&o.response_bytes, &analyze.keywords, regexes);
-            let hits_json =
-                (!hits.is_empty()).then(|| serde_json::to_string(&hits).unwrap_or_else(|_| "[]".into()));
+            let hits_json = (!hits.is_empty())
+                .then(|| serde_json::to_string(&hits).unwrap_or_else(|_| "[]".into()));
             // 3) baseline 对比 + 去重（body sha 分组——PLAN :261/:303）。
             let mut diff_class: Option<String> = None;
             let mut similarity: Option<f64> = None;
@@ -765,16 +761,14 @@ fn finalize_case(
                     response_status: o.response_status.map(|s| s as i64),
                     response_len: Some(o.response_bytes.len() as i64),
                     response_sha256: response_sha,
-                    response_mime: o
-                        .parsed
-                        .as_ref()
-                        .and_then(|p| p.message.as_ref())
-                        .and_then(|m| {
+                    response_mime: o.parsed.as_ref().and_then(|p| p.message.as_ref()).and_then(
+                        |m| {
                             m.headers
                                 .iter()
                                 .find(|h| h.name.eq_ignore_ascii_case("content-type"))
                                 .map(|h| h.value.clone())
-                        }),
+                        },
+                    ),
                     duration_ms: Some(o.duration_ms),
                     ttfb_ms: o.ttfb_ms,
                     match_hits_json: hits_json,

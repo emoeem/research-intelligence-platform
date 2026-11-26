@@ -257,15 +257,22 @@ fn resolve_target(req: &OutboundRequest) -> Result<RequestTarget, SendError> {
             .ok_or_else(|| SendError::Serialize("target has no host".into()))?
             .trim_matches(['[', ']'])
             .to_string();
-        let port = uri
-            .port_u16()
-            .unwrap_or_else(|| default_port_for(&scheme));
+        let port = uri.port_u16().unwrap_or_else(|| default_port_for(&scheme));
         let path = if uri.path().is_empty() {
             "/".to_string()
         } else {
-            format!("{}{}", uri.path(), uri.query().map(|q| format!("?{q}")).unwrap_or_default())
+            format!(
+                "{}{}",
+                uri.path(),
+                uri.query().map(|q| format!("?{q}")).unwrap_or_default()
+            )
         };
-        return Ok(RequestTarget { scheme, host, port, path });
+        return Ok(RequestTarget {
+            scheme,
+            host,
+            port,
+            path,
+        });
     }
     let host_header = req
         .headers
@@ -319,7 +326,9 @@ fn resolve_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, SendError> {
         .map_err(|e| SendError::Connect(format!("dns resolve {host}: {e}")))?
         .collect();
     if addrs.is_empty() {
-        return Err(SendError::Connect(format!("dns resolved no addresses for {host}")));
+        return Err(SendError::Connect(format!(
+            "dns resolved no addresses for {host}"
+        )));
     }
     let mut ips = Vec::new();
     for a in addrs {
@@ -456,7 +465,9 @@ async fn read_response(
             return Err(SendError::Read("header block exceeds 64KiB cap".into()));
         }
         if Instant::now() >= deadline {
-            return Err(SendError::Timeout("total timeout during response head".into()));
+            return Err(SendError::Timeout(
+                "total timeout during response head".into(),
+            ));
         }
         tokio::select! {
             n = stream.read(&mut chunk) => {
@@ -492,7 +503,9 @@ async fn read_response(
             return Err(SendError::CapExceeded(cap));
         }
         if Instant::now() >= deadline {
-            return Err(SendError::Timeout("total timeout during response body".into()));
+            return Err(SendError::Timeout(
+                "total timeout during response body".into(),
+            ));
         }
         tokio::select! {
             n = stream.read(&mut chunk) => {
@@ -607,9 +620,18 @@ fn build_redirect_request(
         let path = if uri.path().is_empty() {
             "/".to_string()
         } else {
-            format!("{}{}", uri.path(), uri.query().map(|q| format!("?{q}")).unwrap_or_default())
+            format!(
+                "{}{}",
+                uri.path(),
+                uri.query().map(|q| format!("?{q}")).unwrap_or_default()
+            )
         };
-        RequestTarget { scheme, host, port, path }
+        RequestTarget {
+            scheme,
+            host,
+            port,
+            path,
+        }
     };
     // 头表重建：Host 换新 authority，去 Content-Length（serialize 重定界），
     // 其余编辑头序保持。
@@ -637,7 +659,10 @@ fn build_redirect_request(
         framing: OutboundFraming::ContentLength,
     };
     // absolute-form URL（redirect_chain url 列）。
-    let url = format!("{}://{}:{}{}", target.scheme, target.host, target.port, target.path);
+    let url = format!(
+        "{}://{}:{}{}",
+        target.scheme, target.host, target.port, target.path
+    );
     if next.target.contains("://") {
         // absolute-form 目标走 URI authority。
         target = resolve_target(&next)?;
@@ -683,7 +708,10 @@ fn remove_dot_segments(path: &str, query: Option<&str>) -> String {
     let mut out = String::new();
     let mut input = path.to_string();
     while !input.is_empty() {
-        if let Some(rest) = input.strip_prefix("../").or_else(|| input.strip_prefix("./")) {
+        if let Some(rest) = input
+            .strip_prefix("../")
+            .or_else(|| input.strip_prefix("./"))
+        {
             input = rest.to_string();
         } else if let Some(rest) = input.strip_prefix("/./") {
             input = format!("/{rest}");
@@ -753,7 +781,10 @@ pub async fn send_request(
             scope::check(rules, &scope_target)
         } else if hop > redirect_cap {
             scope::ScopeDecision::Blocked {
-                reason: scope::ScopeRejection::RedirectLimit { hop, cap: redirect_cap },
+                reason: scope::ScopeRejection::RedirectLimit {
+                    hop,
+                    cap: redirect_cap,
+                },
             }
         } else {
             scope::check_redirect_hop(rules, &scope_target, hop)
@@ -778,7 +809,11 @@ pub async fn send_request(
         last_remote_ip = Some(ip);
 
         // 4) 建连 + 写 + 读。
-        let tls_for_scheme: Option<&TlsConnector> = if target.scheme == "https" { Some(&tls) } else { None };
+        let tls_for_scheme: Option<&TlsConnector> = if target.scheme == "https" {
+            Some(&tls)
+        } else {
+            None
+        };
         let mut stream = connect_stream(
             &target,
             ip,
@@ -792,8 +827,15 @@ pub async fn send_request(
             .write_all(outbound.as_bytes())
             .await
             .map_err(|e| SendError::Connect(format!("write: {e}")))?;
-        stream.flush().await.map_err(|e| SendError::Connect(format!("flush: {e}")))?;
-        let remaining_total = if deadline > Instant::now() { deadline - Instant::now() } else { Duration::from_millis(0) };
+        stream
+            .flush()
+            .await
+            .map_err(|e| SendError::Connect(format!("flush: {e}")))?;
+        let remaining_total = if deadline > Instant::now() {
+            deadline - Instant::now()
+        } else {
+            Duration::from_millis(0)
+        };
         let read_budget = remaining_total.min(Duration::from_millis(policy.read_timeout_ms));
         let response_bytes = read_response(
             &mut stream,
@@ -804,12 +846,7 @@ pub async fn send_request(
         )
         .await?;
         if ttfb.is_none() {
-            ttfb = Some(
-                write_started
-                    .elapsed()
-                    .as_millis()
-                    .max(1) as i64,
-            );
+            ttfb = Some(write_started.elapsed().as_millis().max(1) as i64);
         }
         drop(stream);
 
@@ -886,12 +923,8 @@ pub fn persist_send_result(
     //    CAS 面服务 History 行读回）。
     let request_ref = (!request.body.is_empty())
         .then(|| {
-            wsw_message::cas::store_body(
-                artifacts_root,
-                &request.body,
-                request.body.len() as u64,
-            )
-            .map_err(|e| database::DbError::Validation(format!("request CAS store: {e}")))
+            wsw_message::cas::store_body(artifacts_root, &request.body, request.body.len() as u64)
+                .map_err(|e| database::DbError::Validation(format!("request CAS store: {e}")))
         })
         .transpose()?;
     let outbound_ref = wsw_message::cas::store_body(
@@ -925,7 +958,10 @@ pub fn persist_send_result(
     //    即原始 wire；响应解析面如实落 parse_status）。
     let exchange_id = crate::listener::handler::new_exchange_id();
     let seq = store.next_sequence_no(listener_id)?;
-    let (req_json, res_json) = (request, outcome.parsed.as_ref().and_then(|p| p.message.as_ref()));
+    let (req_json, res_json) = (
+        request,
+        outcome.parsed.as_ref().and_then(|p| p.message.as_ref()),
+    );
     let req_headers_json = serde_json::to_string(
         &req_json
             .headers
@@ -949,7 +985,11 @@ pub fn persist_send_result(
     let started_at = crate::persist::now_iso();
     let completed_at = crate::persist::now_iso();
     let search = crate::listener::handler::build_search_text(
-        target.as_ref().map(|t| format!("{}:{}", t.host, t.port)).as_deref().unwrap_or(""),
+        target
+            .as_ref()
+            .map(|t| format!("{}:{}", t.host, t.port))
+            .as_deref()
+            .unwrap_or(""),
         target.as_ref().map(|t| t.path.as_str()).unwrap_or(""),
         &req_json
             .headers
@@ -977,14 +1017,13 @@ pub fn persist_send_result(
         alpn: None,
         method: Some(req_json.method.clone()),
         scheme: target.as_ref().map(|t| t.scheme.clone()),
-        authority: target
-            .as_ref()
-            .map(|t| format!("{}:{}", t.host, t.port)),
+        authority: target.as_ref().map(|t| format!("{}:{}", t.host, t.port)),
         path: target.as_ref().map(|t| t.path.clone()),
         response_status: outcome.response_status.map(|s| s as i64),
         request_headers_json: Some(req_headers_json),
         response_headers_json: Some(res_headers_json),
-        request_body_sha256: (!req_json.body.is_empty()).then(|| wsw_message::cas::sha256_hex(&req_json.body)),
+        request_body_sha256: (!req_json.body.is_empty())
+            .then(|| wsw_message::cas::sha256_hex(&req_json.body)),
         request_body_uri: request_ref.as_ref().map(|r| r.uri.clone()),
         request_body_len: Some(req_json.body.len() as i64),
         request_mime: req_json
@@ -1141,7 +1180,10 @@ mod tests {
         );
         assert!(text.contains("Host 127.0.0.1"));
         assert!(text.contains("Authorization"), "可搜头名");
-        assert!(!text.contains("super-secret-token"), "凭据值不进 search_text");
+        assert!(
+            !text.contains("super-secret-token"),
+            "凭据值不进 search_text"
+        );
         assert!(text.contains("Cookie"));
         assert!(!text.contains("session=abc123"));
         assert!(text.contains("body-text"));
