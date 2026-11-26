@@ -92,7 +92,7 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 
 ### 本地验收
 
-- `cargo fmt --all -- --check`、`cargo test --offline --workspace`、`cargo clippy --offline --workspace --all-targets -- -D warnings`：通过（workspace 有 4 个既有 ignored 测试，不计为失败）。
+- `cargo fmt --all -- --check`、`cargo test --offline --workspace`、`cargo clippy --offline --workspace --all-targets -- -D warnings`：通过（既有 ignored 测试按 Cargo 语义跳过，不计为失败）。
 - `cargo test --offline -p rp-mcp-parity`：通过；多 key 与 legacy 交替配对 40 组，增量 p95 为 +1.68 ms，小于 5 ms。
 - `apps/server/selftest_knowledge_review.sh`：通过；包含结构化元数据、显式审核、审计历史、非法批次/status 与 Bearer 鉴权。
 - Nuclei / CISA KEV / PoC Index 三个 metadata package 测试全部通过。
