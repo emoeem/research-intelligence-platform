@@ -71,7 +71,7 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 1. 将 PoC Index 聚合评分与 NVD/FIRST 官方 API 做独立交叉校验，保留来源、采集时间、评分版本和缺失状态；不得用 CVSS 分数替代 KEV 在野利用状态。
 2. 继续评估 PoC Index `CVE_list.json` 与 Awesome-Hacking 下游 Trickest/CVE 的轻量 PoC-link 增量入口；不全量 clone 巨型仓库，不复制未经许可的 PoC 正文，也不自动执行公开 PoC。
 3. Awesome-Hacking 当前固定快照 `440486fd08b0a0d9ad9a041a0bb234dcdf65dee2` 已接入；后续只在上游有内容变化时增量同步。
-4. 生产部署前做数据库备份、插件版本冲突检查、索引重建与回滚演练；完整 cutover clone 已通过插件数据面 schema 31→32、三插件同步/审核、索引重建与跨来源查询，本批尚未修改生产数据库。
+4. 正式切换已于 2026-11-26 完成：切换前数据库备份、插件版本检查、Search v6 重建、API/跨来源查询验收与回滚点均已验证；具体文件哈希和 CI 结果见下方「正式切换结果」。后续维护按来源快照更新与审核队列增量推进。
 
 
 ## 最终 cutover readiness 复核（2026-11-26）
@@ -81,7 +81,7 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 - 应用知识来源读面默认使用 `migrations/dev-p6.db`（`RIP_PLUGIN_DB`），不是 `migrations/platform.db`。源插件库 SHA-256：`42a22d0fe896fe8e0a155b395b9ebe9aa09790ceef4e40fa4b3bc729f212c067`；schema 31。
 - 完整 cutover clone：`/tmp/rip-cisa-kev.qfBoNo/dev-p6-cutover.db`，SHA-256 `ded528333d347881f505e76879ce3f7fe0ee519ae0ad873374f88cd7c7ea64f3`；schema 32；SQLite `integrity_check=ok`，`foreign_key_check=0`。
 - 源库与 clone 的表集合完全相同，没有删除表或新增表。仅五个表有预期变化：`audit_event` 38→85（+47）、`knowledge_source_entry` 890→18,102（+17,212）、`plugin` 12→15（+3）、`plugin_capability` 13→16（+3）、`schema_version` 31→32（+1）。其余表行数完全一致。
-- 原始 `migrations/dev-p6.db`、core `migrations/platform.db`（SHA-256 `af26bb97f5586c12835457b7c4ddd71e3c4c97112ce58d255802b826eb656124`）和 RTIS `integrations/rtis/knowledge.db`（SHA-256 `7b6083f8e1e84c9aff60a3d4f429f29cfc436ef1aafa7221d4d3cd945df641a7`）均保持不变。
+- 在隔离 clone 验收阶段，源 `migrations/dev-p6.db`、core `migrations/platform.db`（SHA-256 `af26bb97f5586c12835457b7c4ddd71e3c4c97112ce58d255802b826eb656124`）和 RTIS `integrations/rtis/knowledge.db`（SHA-256 `7b6083f8e1e84c9aff60a3d4f429f29cfc436ef1aafa7221d4d3cd945df641a7`）均未修改；正式切换后的文件哈希另见下方「正式切换结果」。
 
 ### API 与检索真实读面
 
@@ -97,6 +97,31 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 - `apps/server/selftest_knowledge_review.sh`：通过；包含结构化元数据、显式审核、审计历史、非法批次/status 与 Bearer 鉴权。
 - Nuclei / CISA KEV / PoC Index 三个 metadata package 测试全部通过。
 
-### 切换状态
+### 正式切换结果（2026-11-26）
 
-本次已完成隔离 clone、API、搜索、数据库完整性与本地测试验收，但**尚未替换 `migrations/dev-p6.db` 或生产搜索索引**。原 GitHub Actions run `45778221802` 的 parity job 曾因旧的绝对 HTTP p95 5 ms 断言失败；新配对增量测试已在本地 workspace 与 parity job 命令中通过。修复 commit `6921a5b4` 已在本地创建，但 GitHub SSH/HTTPS 凭据当前不可用，尚未推送，因此还没有针对该 commit 的远程 CI 结果。为避免在远程 CI 未确认前切换，生产数据面保持原状；推送并确认 CI 全绿后再执行带备份与回滚点的切换。
+#### CI 与备份
+
+- 修复后的提交 `888e75b8c3f5caac7e079544503c32c1f3f342da` 已推送至 `main`。
+- GitHub Actions run `45784356602` 对应该提交，8/8 jobs 全部成功：PostgreSQL/Phase 7、REST/MCP parity、Rust workspace + Clippy、安全门禁、Browser visual/accessibility、Python workers、Web 工作台、SQLite performance。
+- 切换前使用 SQLite online backup API 备份两个目标文件，均通过 `PRAGMA integrity_check=ok`：
+  - `/home/emo/backups/research-platform/20261126-165050-dev-p6.db.pre-cutover.bak`；schema 31；备份 SHA-256 `0e7d95a08a1a0f565fd2219149749a0200ded34094a359b4547c12e018e02830`。
+  - `/home/emo/backups/research-platform/20261126-165050-platform-search.db.pre-cutover.bak`；旧索引元数据 schema 1；备份 SHA-256 `0a7ff7da827e159da7d40b916b7e55a096a5f854c394610a2fbb7a5676657ade`。
+- 两份备份位于仓库外的用户备份目录，权限为 0600。回滚时可从对应备份恢复；在线备份逻辑内容一致，但其 SQLite 页布局/hash 不承诺与原文件逐字节相同。
+
+#### 正式文件切换
+
+- 已将隔离验收通过的插件数据面 clone 原子替换到 `migrations/dev-p6.db`：新 SHA-256 `ded528333d347881f505e76879ce3f7fe0ee519ae0ad873374f88cd7c7ea64f3`，schema 32，KSE 18,102，`integrity_check=ok`，`foreign_key_check=0`。
+- 已将 Search v6 clone 原子替换到应用统一搜索 CLI 的实际默认索引 `migrations/platform-search.db`（由 `rp-search-unified` 默认参数与 `search_index_doc/search_index_fts` schema 确认）：新 SHA-256 `2da952cad715e179ee2626b79b55784ab014897e270d18c65c05d1587dd43d54`，schema 6，3,708 documents / 3,708 FTS rows，`integrity_check=ok`。
+- 切换前原文件 SHA-256：`dev-p6.db` 为 `42a22d0fe896fe8e0a155b395b9ebe9aa09790ceef4e40fa4b3bc729f212c067`；`platform-search.db` 为 `e56171dd7e1159abf61d367aeaa1e9b1f90a6044fed690819d3cf01af14a211c`。
+- `migrations/platform.db` 仍为 `af26bb97f5586c12835457b7c4ddd71e3c4c97112ce58d255802b826eb656124`；RTIS 原始 `integrations/rtis/knowledge.db` 仍为 `7b6083f8e1e84c9aff60a3d4f429f29cfc436ef1aafa7221d4d3cd945df641a7`。两者均未改写。
+
+#### 切换后 API / 搜索验收
+
+- 使用真实 `apps/server/rp_server.py`，将 `RIP_PLUGIN_DB` 指向已切换的 `migrations/dev-p6.db`，在临时 core DB、临时端口和临时 Bearer token 下调用 `GET /api/knowledge_sources`：HTTP 200，`available=true`，总数 18,102。
+- API 汇总确认审核状态：CISA KEV 1,805 APPROVED；Nuclei 552 APPROVED、13,559 DISCOVERED；PoC Index 1,296 APPROVED；Awesome-Hacking 24 APPROVED、301 DISCOVERED、12 REJECTED；SecSkills 357 DISCOVERED、48 REJECTED；Tongui 148 DISCOVERED。
+- Nuclei 的 552 条 APPROVED 由 cutover clone 中明确的 `user:cli` 审核批次记录（audit_event 67–72）支持；本次切换没有批量自动批准模板。其余 13,559 条继续保持 DISCOVERED。APPROVED 仅表示静态来源/分类审核，不代表模板执行成功或目标存在漏洞。
+- 对 `knowledge.cisa-kev`、`knowledge.nuclei-templates`、`knowledge.pocindex-kev` 分别按 `CVE-2025-55182` 查询，三者各返回 1 条，并分别包含 `cve_record`、`nuclei_template`、`pocindex_record` 结构化字段。
+- API 响应未包含模板/PoC 正文、`body` 或 `verified_note`；只读数据面不执行模板、不访问真实目标。
+- 切换后的 Search v6 对 `CVE-2014-6271` 命中 4 条（CISA 2、Nuclei 1、PoC Index 1）；`CVE-2021-44228` 命中 47 条；`CVE-2025-55182` 命中 3 条（CISA、PoC Index、Nuclei 各 1）。均为情报/检测元数据命中，不代表目标已验证受影响。
+
+**结论：** 远程 CI、正式数据库切换、API 结构化读面、Search v6 与数据库完整性验收均已完成。原始 core 与 RTIS 数据库未改动；Nuclei 审核门控保持原状态；备份与回滚文件已留存。
