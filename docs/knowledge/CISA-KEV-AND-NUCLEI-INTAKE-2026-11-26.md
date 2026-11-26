@@ -125,3 +125,8 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 - 切换后的 Search v6 对 `CVE-2014-6271` 命中 4 条（CISA 2、Nuclei 1、PoC Index 1）；`CVE-2021-44228` 命中 47 条；`CVE-2025-55182` 命中 3 条（CISA、PoC Index、Nuclei 各 1）。均为情报/检测元数据命中，不代表目标已验证受影响。
 
 **结论：** 远程 CI、正式数据库切换、API 结构化读面、Search v6 与数据库完整性验收均已完成。原始 core 与 RTIS 数据库未改动；Nuclei 审核门控保持原状态；备份与回滚文件已留存。
+
+
+### 持久化插件安装路径修复（2026-11-26）
+
+正式开发库切换后复查发现，CISA KEV / Nuclei / PoC Index 三个 active plugin 的 `installed_dir` 仍指向已清理的临时 `/tmp` 目录。已先备份 `migrations/dev-p6.db`，再通过受控 `rp-plugin repair-path` 修复到 `rip-data/plugins/installed/`。三项 `ingest --dry-run` 均 `changed=0`，分别跳过已存在的 1,805 / 14,111 / 1,296 条记录；KSE 18,102 条、Nuclei 552 APPROVED / 13,559 DISCOVERED 和 Search v6 索引均未改变。修复实现、备份 SHA-256 与包锁定指纹见 [PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md](PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md)。

@@ -262,6 +262,21 @@ pub struct InstalledOutcome {
     pub endpoint_registration: Vec<capability::project_endpoint::EndpointRegistrationReport>,
 }
 
+/// 丢失插件安装目录修复结果。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InstalledPathRepairOutcome {
+    /// 插件 id。
+    pub plugin_id: String,
+    /// 插件版本。
+    pub version: String,
+    /// 修复前记录的路径。
+    pub previous_path: Option<String>,
+    /// 修复后的持久化安装路径。
+    pub installed_dir: String,
+    /// 重建后的包指纹。
+    pub lock_sha256: String,
+}
+
 /// enable 结果。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EnabledOutcome {
@@ -479,6 +494,152 @@ impl PluginRuntime {
             lock_sha256: checksum_manifest.file_sha256,
             tool_registration: tool_report,
             endpoint_registration: endpoint_reports,
+        })
+    }
+
+    /// 修复 active 插件指向已不存在安装目录的情况。
+    ///
+    /// 仅允许 REGISTERED/ENABLED 插件，且旧路径必须不存在。Manifest 必须与
+    /// 数据库中已登记的版本化 Manifest 完全一致；包重新经过七条静态校验，
+    /// checksums 与 plugin.lock 重建。不会重新摄取知识、改变审核状态或切换版本。
+    pub fn repair_install_path(
+        &self,
+        actor: &str,
+        plugin_id: &str,
+        manifest: &Value,
+        package_dir: &Path,
+    ) -> Result<InstalledPathRepairOutcome, RuntimeError> {
+        let plugin = self.store.get_active(plugin_id)?.ok_or_else(|| {
+            RuntimeError::new(
+                "unknown_plugin",
+                format!("plugin {plugin_id:?} not installed"),
+            )
+        })?;
+        if !matches!(plugin.state, PluginState::Registered | PluginState::Enabled) {
+            return Err(RuntimeError::new(
+                "repair_state_refused",
+                format!(
+                    "plugin {plugin_id:?} must be REGISTERED or ENABLED, got {}",
+                    plugin.state
+                ),
+            ));
+        }
+        if plugin.source_uninstalled {
+            return Err(RuntimeError::new(
+                "repair_source_uninstalled",
+                format!("plugin {plugin_id:?} source is marked uninstalled"),
+            ));
+        }
+        if let Some(path) = plugin.installed_dir.as_deref() {
+            if Path::new(path).exists() {
+                return Err(RuntimeError::new(
+                    "installed_path_still_exists",
+                    format!("existing install path {:?} must not be replaced", path),
+                ));
+            }
+        }
+        if !package_dir.is_dir() {
+            return Err(RuntimeError::new(
+                "repair_package_missing",
+                format!(
+                    "repair package {:?} is not a directory",
+                    package_dir.display()
+                ),
+            ));
+        }
+
+        let manifest = normalize(manifest)?;
+        let manifest_id = manifest
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let manifest_version = manifest
+            .get("version")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if manifest_id != plugin_id || manifest_version != plugin.version {
+            return Err(RuntimeError::new(
+                "repair_manifest_identity_mismatch",
+                format!(
+                    "repair manifest identity {manifest_id:?}@{manifest_version:?} does not match active plugin {plugin_id:?}@{}",
+                    plugin.version
+                ),
+            ));
+        }
+        let stored_manifest = Self::manifest_value(&plugin.manifest_json)?;
+        if stored_manifest != manifest {
+            return Err(RuntimeError::new(
+                "repair_manifest_mismatch",
+                "repair manifest differs from the version already registered in the database",
+            ));
+        }
+        let staged_manifest = package_dir.join(paths::MANIFEST_FILE_NAME);
+        let staged_doc = std::fs::read_to_string(&staged_manifest).map_err(|e| {
+            RuntimeError::new(
+                "repair_manifest_missing",
+                format!("read staged manifest {:?}: {e}", staged_manifest.display()),
+            )
+        })?;
+        let staged_value = plugin_registry::parse_document(&staged_doc)
+            .map_err(|e| RuntimeError::new(&e.code, e.message))?;
+        if staged_value != manifest {
+            return Err(RuntimeError::new(
+                "repair_staged_manifest_mismatch",
+                "staged package manifest does not match the registered manifest",
+            ));
+        }
+
+        self.validate_manifest(&manifest, Some(package_dir), Some(plugin_id))?;
+        let checksums = if package_dir
+            .join(plugin_registry::CHECKSUMS_FILENAME)
+            .is_file()
+        {
+            plugin_registry::verify_checksums(package_dir).map_err(|(e, issues)| {
+                RuntimeError::new("checksum_verification_failed", e.to_string())
+                    .with_details(serde_json::to_value(issues).unwrap_or(Value::Null))
+            })?
+        } else {
+            plugin_registry::write_checksums(package_dir)
+                .map_err(|e| RuntimeError::new("checksum_write_failed", e.to_string()))?
+        };
+        let lock = build_lock(
+            &manifest,
+            plugin_id,
+            &plugin.version,
+            &checksums.file_sha256,
+            plugin.trust_level,
+            read_negotiation(package_dir),
+        )?;
+        plugin_registry::write_lock(package_dir, &lock)
+            .map_err(|e| RuntimeError::new("lock_write_failed", e.to_string()))?;
+
+        let installed_dir = package_dir.to_string_lossy().to_string();
+        self.store.repair_installed_path(
+            plugin_id,
+            &plugin.version,
+            &installed_dir,
+            &checksums.file_sha256,
+        )?;
+        self.emit(
+            actor,
+            "plugin.install_path.repaired",
+            plugin_id,
+            &plugin.version,
+            json!({
+                "previous_path": plugin.installed_dir,
+                "installed_dir": installed_dir,
+                "lock_sha256": checksums.file_sha256,
+                "state_preserved": plugin.state.as_str(),
+                "review_states_preserved": true,
+                "knowledge_rows_unchanged": true
+            }),
+        );
+        Ok(InstalledPathRepairOutcome {
+            plugin_id: plugin_id.to_string(),
+            version: plugin.version,
+            previous_path: plugin.installed_dir,
+            installed_dir,
+            lock_sha256: checksums.file_sha256,
         })
     }
 

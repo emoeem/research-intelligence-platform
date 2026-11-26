@@ -1,6 +1,6 @@
 # SESSION HANDOFF：跨会话交接文档（RIP 主线）
 
-更新：2026-11-23　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
+更新：2026-11-26　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
 
 ## Quality remediation status（2026-11-23 续批）
 
@@ -224,3 +224,42 @@ User decisions: Projects=independent; Research Assets=independent; M7=reference;
 - M8: staged SPA is live at http://127.0.0.1:7801/ with an isolated DB clone and CSP/Origin/Bearer/SPA fallback/API 404 tests. The old 7800 service was not listening; default root remains unchanged and M8 is STAGED — NOT DEFAULT.
 - Gates: verification-engine 56 tests; selftest_projects_assets.sh PASS; selftest_phase9_rest.sh 33 PASS / 0 FAIL; selftest_spa_entry.py 5/5; web 155 tests; Playwright 85/85, including the 360-combination locale/theme/five-viewport route sweep.
 - No Git commit/push/reset/clean/stash/checkout/rebase was performed. Existing worktree changes were preserved.
+
+
+## Security knowledge continuation（2026-11-26）
+
+当前活体目录仍为 `/media/emo/code/pensting/research-platform`，分支 `main`。本节覆盖 2026-11-26 最新的 KEV / Nuclei / PoC Index 接入与插件运行时修复；旧阶段记录保留为历史事实。
+
+### 数据切换与 CI
+
+- 已完成持久化开发知识数据面切换：`migrations/dev-p6.db` schema 32，KSE 18,102；Search v6 位于 `migrations/platform-search.db`，3,708 documents / 3,708 FTS rows。
+- 数据分布：CISA KEV 1,805 APPROVED；Nuclei 552 APPROVED、13,559 DISCOVERED；PoC Index 1,296 APPROVED。Nuclei 的 552 条有明确 `user:cli` 审核事件，不代表模板运行成功或目标已验证。
+- 当前 dev-p6 SHA-256：`0c1091dd3ade02cb6ab13e1fb2a8743db80302ac61606a7db0ce70221e1e19ac`；search index hash：`2da952cad715e179ee2626b79b55784ab014897e270d18c65c05d1587dd43d54`。
+- 最近已完成 CI run `45787490421`，8/8 jobs success；本轮新增插件路径修复代码尚需提交后触发新 CI。
+
+### Plugin install-path repair
+
+- 发现 CISA KEV 0.1.2、Nuclei 0.1.1、PoC Index 0.1.0 的 active plugin rows 指向已删除的 `/tmp/rip-cisa-kev.qfBoNo/...` 安装目录。KSE 数据和搜索当时仍可用，但后续插件 ingest/sync 会因找不到 package directory 失败。
+- 新增受控 `rp-plugin repair-path` 命令、`PluginRuntime::repair_install_path`、`PluginStore::repair_installed_path` 和生命周期集成测试。仅允许 active REGISTERED/ENABLED 插件；要求旧路径不存在、Manifest 与数据库登记完全一致、staged package 通过静态校验；重新生成 checksums/plugin.lock；只更新 installed_dir/lock_sha256，不改变状态、active pointer、capabilities、KSE rows 或 review 状态。
+- 三个插件已修复到：
+  - `rip-data/plugins/installed/knowledge.cisa-kev/0.1.2`
+  - `rip-data/plugins/installed/knowledge.nuclei-templates/0.1.1`
+  - `rip-data/plugins/installed/knowledge.pocindex-kev/0.1.0`
+- 修复前备份：`/home/emo/backups/research-platform/20261126-182822-dev-p6.db.pre-plugin-path-repair.bak`；SHA-256 `6a5c05fcd9ca92b54d0da187ea5e05b4447f12cf602428f84a5047894fea24a7`；权限 0600。
+- 三插件 ingest dry-run：1,805 / 14,111 / 1,296 条全部 skipped，changed=0；KSE 18,102 和 Nuclei review distribution 未变；Search v6 文件 hash 未变。全量检查七个 active knowledge plugin 安装目录均存在；失败 Manifest 修复路径也验证会清理本次 staging 目录。
+- 本地验证：完整 `cargo test --offline --workspace` 通过；最终 `cargo test --offline -p plugin-runtime` 85 passed / 0 failed / 3 ignored；全工作区 `cargo clippy --offline --workspace --all-targets -- -D warnings`、Python package tests、Knowledge Review selftest、POC Search selftest 均通过；`cargo check --offline -p plugin-runtime --bin rp-plugin` 通过；CLI 在 disposable clone 上三插件 repair-path 均成功。
+- 全工作区测试发现并修正 MCP 子任务测试夹具环境变量错误：Agent 使用 `RIP_PLUGIN_DB`，测试此前只设置 MCP catalog 的 `RP_PLUGIN_DB`，导致意外读取本机 18,102 条知识记录并超出 8k 测试预算；现已明确指向不存在的隔离路径，完整 workspace 测试复绿。
+- 完整报告：`docs/knowledge/PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md`。
+
+### POC 证据审核后续队列
+
+- Overlay 当前 49 entries、25 resolved relations；Evidence level 分布 K0 29 / K1 9 / K2 10 / K3 1 / K4 0。
+- High POC queue 28；证据缺口 33 records / 95 items；51 个 Evidence Ref 路径可解析；8 条记录没有 Evidence Ref ID（4, 12, 16, 18, 20, 29, 72, 900047）。
+- 旧 POC 源文件只做过静态语法检查，不能等同于 runtime verification。不得执行外部 exploit、不得对真实目标发请求；缺少原始证据的记录继续保持待补。
+- 下一批继续按 evidence recovery matrix 找已有原始材料，能验证来源/完整性/时间线的先补引用；无法恢复的明确标记 missing，不推断 fixed 或 vulnerable。ID 900043 已有 2026-11-11 session-binding fix 记录，仍需单独的当前回归证据。
+- 用户未跟踪目录保持原样，不得触碰：`scripts/security-intel/data/`、`scripts/security-intel/download_trickest_cve_pages.sh`、`test-results/`。
+
+### 工作树纪律
+
+- 本轮新改动尚未 commit/push；完成完整 workspace 测试、Clippy、Python/selftests、diff/status 审核后再按项目授权提交推送并检查 CI。
+- 不得 reset/clean/stash/checkout/rebase；不删除数据库备份；不改 `migrations/platform.db` 或原始 `integrations/rtis/knowledge.db`。

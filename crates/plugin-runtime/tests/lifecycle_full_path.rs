@@ -18,7 +18,7 @@ use audit_engine::plugin_actions;
 use database::{DbPath, Pool, PoolConfig};
 use domain::plugin::PluginTrust;
 use plugin_registry::parse_document;
-use plugin_runtime::{PluginRuntime, RetentionAction};
+use plugin_runtime::{PluginPaths, PluginRuntime, ResolveOptions, RetentionAction};
 use serde_json::Value;
 
 const KNOWLEDGE_EXAMPLE: &str = "schemas/plugin-manifest/examples/knowledge.rtis-redteam.json";
@@ -671,4 +671,107 @@ fn invalid_disposition_via_quality_engine() {
             .any(|r| r.target_type == "plugin_invalid" && r.target_id == "knowledge.rtis-redteam"),
         "review queued: {pending:?}"
     );
+}
+
+#[test]
+fn repair_missing_install_path_preserves_plugin_state_and_capabilities() {
+    let (pool, rt, data_root) = fresh_runtime("repair-path");
+    let manifest = read_example(KNOWLEDGE_EXAMPLE);
+    let original_pkg = build_package(
+        &data_root,
+        "repair-original",
+        &["capabilities/knowledge_source.yaml"],
+    );
+    rt.install("user:test", &manifest, &original_pkg, PluginTrust::Local)
+        .unwrap();
+    rt.enable("user:test", "knowledge.rtis-redteam").unwrap();
+
+    let before = rt
+        .store()
+        .get_active("knowledge.rtis-redteam")
+        .unwrap()
+        .unwrap();
+    let original_path = PathBuf::from(before.installed_dir.clone().unwrap());
+    let capabilities_before = rt
+        .store()
+        .capabilities("knowledge.rtis-redteam", &before.version)
+        .unwrap();
+    assert!(!capabilities_before.is_empty());
+
+    // A still-present install must never be overwritten by the repair operation.
+    let refused = rt.repair_install_path(
+        "user:test",
+        "knowledge.rtis-redteam",
+        &manifest,
+        &original_pkg,
+    );
+    assert_eq!(refused.unwrap_err().code, "installed_path_still_exists");
+
+    // Simulate a temp-directory cleanup: only the package directory disappears.
+    fs::remove_dir_all(&original_path).unwrap();
+    let replacement_pkg = build_package(
+        &data_root,
+        "repair-replacement",
+        &["capabilities/knowledge_source.yaml"],
+    );
+    let paths = PluginPaths::resolve(ResolveOptions {
+        deployment_root: Some(&data_root),
+        data_dir: Some(&data_root),
+        plugins_dir: None,
+        env: None,
+    })
+    .unwrap();
+    let manifest_path = repo_root().join(KNOWLEDGE_EXAMPLE);
+    let staged = paths
+        .stage_package(
+            "knowledge.rtis-redteam",
+            &before.version,
+            &manifest_path,
+            Some(&replacement_pkg),
+        )
+        .unwrap();
+
+    let repaired = rt
+        .repair_install_path("user:test", "knowledge.rtis-redteam", &manifest, &staged)
+        .unwrap();
+    assert_eq!(repaired.plugin_id, "knowledge.rtis-redteam");
+    assert_eq!(repaired.version, before.version);
+    assert_eq!(repaired.installed_dir, staged.to_string_lossy());
+    assert_eq!(repaired.lock_sha256.len(), 64);
+    assert!(staged.join("checksums.sha256").is_file());
+    assert!(staged.join("plugin.lock").is_file());
+
+    let after = rt
+        .store()
+        .get_active("knowledge.rtis-redteam")
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.state, domain::plugin::PluginState::Enabled);
+    assert!(after.is_active);
+    assert_eq!(
+        after.installed_dir.as_deref(),
+        Some(staged.to_str().unwrap())
+    );
+    assert_eq!(
+        after.lock_sha256.as_deref(),
+        Some(repaired.lock_sha256.as_str())
+    );
+    assert_eq!(
+        rt.store()
+            .capabilities("knowledge.rtis-redteam", &before.version)
+            .unwrap(),
+        capabilities_before,
+        "repair must not alter registered capabilities"
+    );
+    let repair_events: i64 = pool
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT COUNT(*) FROM audit_event WHERE action = 'plugin.install_path.repaired'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(database::DbError::from)
+        })
+        .unwrap();
+    assert_eq!(repair_events, 1);
 }

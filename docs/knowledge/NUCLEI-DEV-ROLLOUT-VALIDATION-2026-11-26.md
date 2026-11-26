@@ -54,3 +54,17 @@ Nuclei 0.2.6 接入已在独立开发数据库副本中完成真实摄取和搜�
 - 原始 `integrations/rtis/knowledge.db` 仅只读使用，SHA-256 保持不变。
 
 因此本报告证明的是**隔离开发副本的完整接入链路通过**，不代表生产 rollout 已完成。生产切换仍需单独安排数据库备份、迁移窗口、索引重建和回滚验收。
+
+
+## 后续持久化开发库切换与插件路径修复（2026-11-26）
+
+上面的隔离 rollout 结论描述的是当时的一次性验证副本。此后，经过独立备份和验收，CISA KEV / Nuclei / PoC Index 数据面已切换到持久化开发库 `migrations/dev-p6.db`；这仍是开发环境，不是生产数据库。
+
+- 当前 KSE 数据面：schema 32，`knowledge_source_entry` 18,102 条；其中 Nuclei 14,111 条。
+- Nuclei 审核状态：552 `APPROVED`、13,559 `DISCOVERED`。552 条有明确 `user:cli` 审核事件；没有自动批准。
+- Search v6：`migrations/platform-search.db`，3,708 documents / 3,708 FTS rows；Nuclei 552 条 APPROVED 记录进入搜索索引。
+- 隔离 rollout 中三个插件的 `installed_dir` 曾指向已清理的 `/tmp` 临时目录。已新增 `rp-plugin repair-path`，并将 CISA KEV 0.1.2、Nuclei 0.1.1、PoC Index 0.1.0 的安装目录恢复到持久化 `rip-data/plugins/installed/`。修复仅更新路径与包指纹，不改 plugin 状态、KSE 行或 review 状态。
+- 三个插件的 `ingest --dry-run` 分别检查 1,805 / 14,111 / 1,296 条记录，全部 `changed=0`，证明包路径可读且与现有数据幂等一致。
+- 修复前备份：`/home/emo/backups/research-platform/20261126-182822-dev-p6.db.pre-plugin-path-repair.bak`；SHA-256 `6a5c05fcd9ca92b54d0da187ea5e05b4447f12cf602428f84a5047894fea24a7`。
+
+详细实现、审计事件、包指纹和验证命令见 [PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md](PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md)。本节不改变“未对生产数据库执行 rollout”的历史结论。

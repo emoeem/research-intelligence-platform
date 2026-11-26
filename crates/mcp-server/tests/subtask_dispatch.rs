@@ -167,9 +167,10 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
             ("RP_DB_PATH", db_str.as_str()),
             ("RP_RUN_DB", db_str.as_str()),
             ("RP_PLUGIN_DB", "none"),
-            // This test validates MCP -> rp-agent dispatch and caller attribution, not
-            // the independent RTIS/curated-KB context sources. Keep those optional sources
-            // unmounted so local runtime data cannot inflate the 8k context budget.
+            // rp-agent uses RIP_PLUGIN_DB (distinct from the MCP catalog's RP_PLUGIN_DB).
+            // Keep all optional knowledge sources unmounted so the test stays hermetic even
+            // when the developer's persistent dev-p6.db contains a large approved corpus.
+            ("RIP_PLUGIN_DB", "/tmp/rip-ma3-test-no-plugin.db"),
             ("RIP_KNOWLEDGE_DB", "/tmp/rip-ma3-test-no-knowledge.db"),
             ("RIP_RTIS_DIR", "/tmp/rip-ma3-test-no-rtis"),
             ("RP_AGENT_BIN", agent_bin.to_string_lossy().as_ref()),

@@ -175,3 +175,10 @@ Migration 032、RTIS 插件 0.2.6 和 14,111 条 Nuclei 模板的真实摄取已
 
 
 后续 CISA KEV、PoC Index CVSS/EPSS 与三源联合索引验证见 [CISA-KEV-AND-NUCLEI-INTAKE-2026-11-26.md](CISA-KEV-AND-NUCLEI-INTAKE-2026-11-26.md)。
+
+
+## Persistent development cutover follow-up（2026-11-26）
+
+本报告中「Not performed」与「isolated rollout」段落记录的是本报告初始验收时点。后续已单独完成持久化开发库切换：`migrations/dev-p6.db` schema 32，KSE 18,102；Nuclei 14,111 条，其中 552 APPROVED、13,559 DISCOVERED。Search v6 当前为 3,708 documents / 3,708 FTS rows，含 552 条审核通过的 Nuclei 模板。此项是持久化开发环境数据切换，不是生产数据库 rollout。
+
+三源插件的安装目录随后发现仍指向已清理的 `/tmp` 路径。已通过新增的受控 `rp-plugin repair-path` 将 CISA KEV、Nuclei、PoC Index 三个 active plugin 恢复到持久化 `rip-data/plugins/installed/`；三个 `ingest --dry-run` 均 `changed=0`，KSE 数据与 review 状态保持不变。Search v6 文件 hash 未变化。详见 [PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md](PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md)。

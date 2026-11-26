@@ -57,6 +57,7 @@ fn usage_text() -> &'static str {
      \x20 enable|disable|uninstall|activate|deactivate <id>\n\
      \x20 load <id> | mark-error <id> | list\n\
      \x20 upgrade <id> [--new-version V] [--package DIR]\n\
+     \x20 repair-path <id> --manifest FILE --package DIR\n\
      \x20 update-check <id> --new-version X.Y.Z [--auto]\n\
      \x20 rollback-window <id> | cleanup-rollback <id> [--confirm]\n\
      \x20 ingest [--dry-run] [--idempotency-key K] [--max-files N] [--max-bytes N]\n\
@@ -294,7 +295,7 @@ fn manifest_with_path(rest: &[String]) -> (PathBuf, Value) {
     let path = flag_value(rest, "--manifest").unwrap_or_else(|| {
         die(plugin_runtime::RuntimeError {
             code: "args_missing".into(),
-            message: "install/upgrade requires --manifest <path>".into(),
+            message: "install/upgrade/repair-path requires --manifest <path>".into(),
             details: None,
         })
     });
@@ -515,6 +516,53 @@ fn main() {
                 transition_record("register", &id, &version, Some("INSTALLED"), "REGISTERED"),
             ]);
             json!({"command": "install", "outcome": outcome, "staged": staged.to_string_lossy(), "state_files": state, "layout": ctx.layout})
+        }
+        "repair-path" => {
+            let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let (manifest_src, manifest) = manifest_with_path(&args.rest);
+            let package = package_from(&args.rest).unwrap_or_else(|| usage());
+            let (manifest_id, version) = manifest_id_version(&manifest);
+            if manifest_id != id {
+                die(plugin_runtime::RuntimeError {
+                    code: "repair_manifest_identity_mismatch".into(),
+                    message: format!(
+                        "manifest id {manifest_id:?} does not match requested plugin {id:?}"
+                    ),
+                    details: None,
+                });
+            }
+            let target = ctx
+                .paths
+                .installed_plugin_dir(&id, &version)
+                .unwrap_or_else(|e| die_paths(e));
+            if target.exists() {
+                die(plugin_runtime::RuntimeError {
+                    code: "repair_target_exists".into(),
+                    message: format!(
+                        "canonical repair target {:?} already exists; refusing to replace it",
+                        target.display()
+                    ),
+                    details: None,
+                });
+            }
+            let staged = ctx
+                .paths
+                .stage_package(&id, &version, &manifest_src, Some(&package))
+                .unwrap_or_else(|e| die_paths(e));
+            let outcome = match ctx
+                .runtime
+                .repair_install_path("user:cli", &id, &manifest, &staged)
+            {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    // This directory was absent before this command and was staged by us.
+                    // Remove it on a failed repair so a retry cannot be blocked by an orphan.
+                    let _ = std::fs::remove_dir_all(&staged);
+                    die(error);
+                }
+            };
+            let state = ctx.sync_state(&[]);
+            json!({"command": "repair_path", "outcome": outcome, "state_files": state})
         }
         "enable" => {
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());

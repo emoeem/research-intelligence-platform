@@ -131,6 +131,37 @@ impl PluginStore {
         Ok(())
     }
 
+    /// 修复已安装插件的丢失目录引用；不改变版本、状态、active 指针或能力行。
+    pub fn repair_installed_path(
+        &self,
+        plugin_id: &str,
+        version: &str,
+        installed_dir: &str,
+        lock_sha256: &str,
+    ) -> database::DbResult<()> {
+        let changed = self.pool.with_conn(|c| {
+            c.execute(
+                "UPDATE plugin SET installed_dir = ?1, lock_sha256 = ?2, updated_at = ?3
+                 WHERE plugin_id = ?4 AND version = ?5 AND is_active = 1
+                   AND source_uninstalled = 0 AND state IN ('REGISTERED', 'ENABLED')",
+                database::rusqlite::params![
+                    installed_dir,
+                    lock_sha256,
+                    now_iso(),
+                    plugin_id,
+                    version
+                ],
+            )
+            .map_err(database::DbError::from)
+        })?;
+        if changed != 1 {
+            return Err(database::DbError::Validation(format!(
+                "plugin {plugin_id:?}@{version} is not an active, repairable install"
+            )));
+        }
+        Ok(())
+    }
+
     /// 升级落库（§5.3 第 3/4 步，单事务自动回滚）：新版本行（REGISTERED）
     /// 加 capability 行加指针切换（全部旧行 is_active=0、update_pending=0、
     /// 新行 is_active=1）；任一步失败整事务回滚，旧版本指针不动。
