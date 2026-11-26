@@ -74,10 +74,23 @@ print("PASS: severity facet is case-normalized")
 
 status, queue = get({"poc_missing_evidence":"true", "poc_source_integrity":"missing",
                      "poc_verification_result":"candidate_not_verified", "limit":"100"})
-assert status == 200 and queue["total"] == 22, (status, queue)
+assert status == 200 and queue["total"] == 21, (status, queue)
 assert all(h["poc_missing_evidence"] and h["poc_review_gate"] for h in queue["hits"])
 assert all(h["poc_source_integrity"] == "missing" for h in queue["hits"])
-print("PASS: evidence queue filters return all 22 source-integrity-missing candidates with review gates")
+print("PASS: evidence queue filters return all 21 source-integrity-missing candidates with review gates")
+
+status, recovered = get({"q":"nacos", "poc_source_integrity":"partial",
+                         "poc_verification_result":"candidate_not_verified",
+                         "poc_missing_evidence":"true", "limit":"100"})
+assert status == 200 and recovered["total"] == 1, (status, recovered)
+id16 = recovered["hits"][0]
+assert id16["resource_id"] == "rtis:poc:16"
+assert id16["source_path"].endswith("/poc-actuator.sh")
+assert id16["source_commit"] == "022a71718740a7fad74ca194a10e9cc9269501c4"
+assert id16["poc_missing_evidence"] == ["raw_request_response", "impact_boundary"]
+assert id16["poc_evidence_refs"] == []
+assert id16["evidence_level"] == "K0" and id16["knowledge_lifecycle"] == "Candidate"
+print("PASS: ID 16 source artifact is traceable while raw evidence gaps and K0 gate remain")
 
 status, related = get({"poc_dedup_status":"related-family", "limit":"100"})
 assert status == 200 and related["total"] == 5, (status, related)
@@ -101,9 +114,9 @@ status, summary = get(endpoint=f"http://127.0.0.1:{port}/api/curated-pocs/summar
 assert status == 200 and summary["total_curated"] == 49, (status, summary)
 assert summary["missing_evidence_entries"] == 33 and summary["review_queue_count"] == 33
 assert summary["metadata_incomplete_entries"] == 0
-assert summary["missing_evidence_items"] == 95
-assert summary["entries_with_source_path"] == 41 and summary["entries_without_source_path"] == 8
-assert summary["entries_with_source_commit"] == 38 and summary["entries_without_source_commit"] == 11
+assert summary["missing_evidence_items"] == 94
+assert summary["entries_with_source_path"] == 42 and summary["entries_without_source_path"] == 7
+assert summary["entries_with_source_commit"] == 39 and summary["entries_without_source_commit"] == 10
 assert summary["entries_with_source_urls"] == 9 and summary["entries_without_source_urls"] == 40
 assert summary["relation_count"] == 25 and summary["external_entity_count"] == 2
 print("PASS: governance summary is consistent with 49 overlay records and 33 evidence-gap entries")

@@ -235,7 +235,7 @@ User decisions: Projects=independent; Research Assets=independent; M7=reference;
 - 已完成持久化开发知识数据面切换：`migrations/dev-p6.db` schema 32，KSE 18,102；Search v6 位于 `migrations/platform-search.db`，3,708 documents / 3,708 FTS rows。
 - 数据分布：CISA KEV 1,805 APPROVED；Nuclei 552 APPROVED、13,559 DISCOVERED；PoC Index 1,296 APPROVED。Nuclei 的 552 条有明确 `user:cli` 审核事件，不代表模板运行成功或目标已验证。
 - 当前 dev-p6 SHA-256：`0c1091dd3ade02cb6ab13e1fb2a8743db80302ac61606a7db0ce70221e1e19ac`；search index hash：`2da952cad715e179ee2626b79b55784ab014897e270d18c65c05d1587dd43d54`。
-- 最近已完成 CI run `45787490421`，8/8 jobs success；本轮新增插件路径修复代码尚需提交后触发新 CI。
+- 插件路径修复已由 commit `b9db4453` 推送；GitHub Actions run `45804184849` 已 8/8 jobs success。当前后续 POC source recovery / fixture 更新尚未提交，将单独触发下一轮 CI。
 
 ### Plugin install-path repair
 
@@ -254,12 +254,15 @@ User decisions: Projects=independent; Research Assets=independent; M7=reference;
 ### POC 证据审核后续队列
 
 - Overlay 当前 49 entries、25 resolved relations；Evidence level 分布 K0 29 / K1 9 / K2 10 / K3 1 / K4 0。
-- High POC queue 28；证据缺口 33 records / 95 items；51 个 Evidence Ref 路径可解析；8 条记录没有 Evidence Ref ID（4, 12, 16, 18, 20, 29, 72, 900047）。
+- High POC queue 28；证据缺口 33 records / 94 items；source_path 33/33、source_commit 30/33；51 个 Evidence Ref 路径可解析；8 条记录没有 Evidence Ref ID（4, 12, 16, 18, 20, 29, 72, 900047）。
 - 旧 POC 源文件只做过静态语法检查，不能等同于 runtime verification。不得执行外部 exploit、不得对真实目标发请求；缺少原始证据的记录继续保持待补。
 - 下一批继续按 evidence recovery matrix 找已有原始材料，能验证来源/完整性/时间线的先补引用；无法恢复的明确标记 missing，不推断 fixed 或 vulnerable。ID 900043 已有 2026-11-11 session-binding fix 记录，仍需单独的当前回归证据。
+- 2026-11-26 补充检查 ID 12、20 的候选 sibling runs 目录：../runs/jxnu/pan 有 prefix_probe.txt，../runs/aozoneyun-admin/pwd-oracle 有历史 header/body 与 phpsessid.txt；两者均无 POC verified_note 路径引用或 k_event 关联，ID 4/12/18/20/29/72/900047 的 source_commit 也都只是 2026-11-09 RTIS 迁移提交。未读取响应正文/会话文件，未将候选目录错误挂到 Evidence Ref。详见 docs/knowledge/POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md。
+- ID 16 源文件已恢复：原 RTIS DB 路径 basename 是 poc.sh，当前同目录唯一脚本为 poc-actuator.sh，已记录 source_path 与迁移提交 source_commit；移除 missing_evidence 中 source_artifact，剩 raw_request_response / impact_boundary 两项。K0/Candidate 不变，Evidence Ref 仍为空。
+- 本轮 POC 检索自测已更新：21 条 source_integrity=missing 队列；ID 16 通过 Nacos 查询专项断言验证 source_path/source_commit 可追溯、Evidence Ref 仍空、K0/Candidate 不变、仅剩 raw_request_response / impact_boundary。Web 全量 Vitest 22/22 files、157/157 tests 通过；TypeScript noEmit、npm run build、Knowledge 页专项 8/8 通过。
 - 用户未跟踪目录保持原样，不得触碰：`scripts/security-intel/data/`、`scripts/security-intel/download_trickest_cve_pages.sh`、`test-results/`。
 
 ### 工作树纪律
 
-- 本轮新改动尚未 commit/push；完成完整 workspace 测试、Clippy、Python/selftests、diff/status 审核后再按项目授权提交推送并检查 CI。
+- 插件路径修复 commit `b9db4453` 已提交推送且 CI 8/8 通过。ID 16 source recovery、Overlay、POC selftest、Web summary fixture 与证据矩阵文档构成本轮后续提交；本批本地验证已完成，推送后需检查对应的新 CI run。
 - 不得 reset/clean/stash/checkout/rebase；不删除数据库备份；不改 `migrations/platform.db` 或原始 `integrations/rtis/knowledge.db`。

@@ -98,3 +98,8 @@ target/debug/rp-plugin \
 - 正常的插件更新应继续通过 `rp-plugin upgrade`；`repair-path` 只用于修复已登记版本的丢失安装目录，不是版本升级或数据重摄取入口。
 - 保留上述备份，不自动清理。
 - 后续 POC 工作继续聚焦证据缺口和修复状态核验；没有原始证据的条目保持待补，不得推断为已验证。
+
+
+## GitHub CI
+
+修复代码提交：b9db4453（fix(plugins): repair orphaned install paths）。推送后的 GitHub Actions run 45804184849 全部 8/8 jobs success，包含 Rust workspace 离线测试与 Clippy 零警告、REST/MCP parity、Browser visual/accessibility、PostgreSQL integration、Web build/Vitest、Python worker、安全检查和 SQLite performance smoke。
