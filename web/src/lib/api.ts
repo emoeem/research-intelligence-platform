@@ -364,11 +364,51 @@ export async function pluginCleanupRollback(pluginId: string): Promise<PluginWri
   );
 }
 
+/** SK-1：对知识来源条目执行显式审核；后端经 rp-plugin 与 audit-engine 落审计。 */
+export async function reviewKnowledgeSourceEntries(
+  pluginId: string,
+  itemKeys: string[],
+  status: "APPROVED" | "REJECTED" | "DEPRECATED" | "UNREVIEWED" | "DISCOVERED",
+): Promise<PluginWriteResult> {
+  return apiSend<PluginWriteResult>(
+    "POST",
+    `/api/plugins/${encodeURIComponent(pluginId)}/review`,
+    { item_keys: itemKeys, status },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // SK-2 知识来源条目（/api/knowledge_sources，knowledge_source_entry 011）。
 // ---------------------------------------------------------------------------
 
-/** 知识来源条目行（catalog_entry / document_markdown / skill_candidate）。 */
+/** Nuclei YAML 结构化元数据（不包含模板正文）。 */
+export interface KnowledgeSourceNucleiMetadata {
+  template_id?: string;
+  name?: string;
+  severity?: string;
+  parse_status?: string;
+  protocols?: string[];
+  tags?: string[];
+  classification?: Record<string, string | string[] | undefined> | null;
+  author?: string[];
+  references?: string[];
+  request_block_count?: number;
+  matcher_count?: number;
+  extractor_count?: number;
+  has_flow?: boolean;
+}
+
+export interface KnowledgeSourceReviewHistory {
+  event_id: number;
+  ts: string;
+  actor: string;
+  plugin_id: string;
+  status?: string | null;
+  item_keys: string[];
+  updated: number;
+}
+
+/** 知识来源条目行（含 Nuclei 模板的结构化元数据，不返回正文）。 */
 export interface KnowledgeSourceEntry {
   plugin_id: string;
   plugin_version: string;
@@ -385,6 +425,7 @@ export interface KnowledgeSourceEntry {
   source_commit?: string | null;
   source_url?: string | null;
   source_location?: Record<string, unknown>;
+  nuclei_template?: KnowledgeSourceNucleiMetadata;
   body_bytes?: number;
   first_seen_at?: string | null;
   last_seen_at?: string | null;
@@ -414,6 +455,7 @@ export interface KnowledgeSourceList {
   plugins: KnowledgeSourcePlugin[];
   summary?: { plugin_id: string; entry_kind: string; review_status: string; n: number }[];
   items: KnowledgeSourceEntry[];
+  review_history?: KnowledgeSourceReviewHistory[];
 }
 
 export async function fetchKnowledgeSources(

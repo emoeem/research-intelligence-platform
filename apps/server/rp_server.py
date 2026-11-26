@@ -1886,7 +1886,7 @@ def handle_plugin_detail(conn: sqlite3.Connection, params: dict, plugin_id: str)
         ro.close()
 
 
-PLUGIN_WRITE_ACTIONS = ("enable", "disable", "uninstall", "ingest", "cleanup-rollback")
+PLUGIN_WRITE_ACTIONS = ("enable", "disable", "uninstall", "ingest", "review", "cleanup-rollback")
 
 # P10-2：信任级策略表缓存（plugin-registry::trust_policy 单一事实来源，
 # rp-plugin trust-policy 子命令承载；进程内缓存一次，CLI 词形漂移即失效）。
@@ -2017,7 +2017,9 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
     本进程零直连 SQL 写。返回 CLI 的 JSON stdout；非零退出 → 502 带错误 JSON。"""
     import subprocess
 
-    args = [*PLUGIN_BIN_ARGS]
+    # 前置参数已在 subprocess 命令头统一拼接；此处只累积子命令参数，
+    # 避免默认 cargo run 参数被重复传给 rp-plugin。
+    args = []
     if action == "install":
         manifest_path = (body.get("manifest_path") or "").strip()
         if not manifest_path:
@@ -2043,6 +2045,26 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
         current_trust = _active_plugin_trust(plugin_id)
         args += ["upgrade", plugin_id, "--manifest", rel, "--trust", current_trust]
         _enforce_confirmation(current_trust, body, plugin_id, rel)
+    elif action == "review":
+        # SK-1：知识条目审核只通过 rp-plugin review 子命令写入，
+        # 由 knowledge_review 写 review_status 并发出 audit-engine 事件。
+        item_keys = body.get("item_keys")
+        if not plugin_id:
+            raise ApiError(400, "plugin_id_required", "review 需要 plugin_id")
+        if not isinstance(item_keys, list) or not 1 <= len(item_keys) <= 100:
+            raise ApiError(400, "review_keys_invalid", "item_keys 必须是 1–100 项的数组")
+        normalized_keys = []
+        for key in item_keys:
+            if (not isinstance(key, str) or not key.strip() or len(key) > 512
+                    or "," in key or "\x00" in key):
+                raise ApiError(400, "review_key_invalid", "item_keys 包含非法条目键")
+            normalized_keys.append(key.strip())
+        if len(set(normalized_keys)) != len(normalized_keys):
+            raise ApiError(400, "review_keys_duplicate", "item_keys 不允许重复")
+        status = str(body.get("status") or "").strip().upper()
+        if status not in {"APPROVED", "REJECTED", "DEPRECATED", "UNREVIEWED", "DISCOVERED"}:
+            raise ApiError(400, "review_status_invalid", "status 必须是受支持的审核状态")
+        args += ["review", plugin_id, "--keys", ",".join(normalized_keys), "--status", status]
     elif action == "cleanup-rollback":
         # P10-2 D6：回滚窗口清理（§5.3 第 5 步，用户确认后清理）。
         args += ["cleanup-rollback", plugin_id]
@@ -2135,7 +2157,7 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
 
     plugin_id = clean_str(params, "plugin_id")
     entry_kind = check_enum(params, "entry_kind",
-                            ("catalog_entry", "document_markdown", "skill_candidate"))
+                            ("catalog_entry", "document_markdown", "skill_candidate", "nuclei_template"))
     review_status = check_enum(params, "review_status",
                                ("DISCOVERED", "UNREVIEWED", "APPROVED", "REJECTED", "DEPRECATED"))
     q_raw = clean_str(params, "q")
@@ -2153,9 +2175,9 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
         args.append(review_status)
     if q_raw:
         needle = f"%{like_escape(q_raw)}%"
-        where.append("(title LIKE ? ESCAPE '\\' OR canonical_url LIKE ? ESCAPE '\\'"
-                     " OR description LIKE ? ESCAPE '\\')")
-        args.extend([needle, needle, needle])
+        where.append("(title LIKE ? ESCAPE '\\' OR item_key LIKE ? ESCAPE '\\'"
+                     " OR canonical_url LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')")
+        args.extend([needle, needle, needle, needle])
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
     total = conn.execute(
@@ -2166,7 +2188,7 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
         "SELECT plugin_id, plugin_version, corpus_id, entry_kind, item_key, title,"
         " description, category_path_json, canonical_url, license_status, rights_policy,"
         " review_status, source_commit, source_url, source_location_json, body_bytes,"
-        " first_seen_at, last_seen_at"
+        " first_seen_at, last_seen_at, meta_json"
         " FROM knowledge_source_entry"
         f" {where_sql} ORDER BY plugin_id, entry_kind, item_key LIMIT ?",
         tuple(args) + (limit,),
@@ -2174,6 +2196,9 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
     for item in items:
         item["category_path"] = parse_json_or_none(item.get("category_path_json")) or []
         item["source_location"] = parse_json_or_none(item.get("source_location_json")) or {}
+        meta = parse_json_or_none(item.pop("meta_json", None)) or {}
+        if item.get("entry_kind") == "nuclei_template":
+            item["nuclei_template"] = meta.get("nuclei_template") or {}
         item.pop("category_path_json", None)
         item.pop("source_location_json", None)
     summary = query_all(
@@ -2181,6 +2206,33 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
         "SELECT plugin_id, entry_kind, review_status, COUNT(*) AS n FROM knowledge_source_entry"
         " GROUP BY plugin_id, entry_kind, review_status ORDER BY plugin_id",
     )
+    review_history = []
+    audit_table = query_one(
+        conn, "SELECT name FROM sqlite_master WHERE type='table' AND name='audit_event'"
+    )
+    if audit_table is not None:
+        history_where = "action = ? AND entity_type = ?"
+        history_args = ["plugin.knowledge.review", "plugin"]
+        if plugin_id:
+            history_where += " AND entity_id = ?"
+            history_args.append(plugin_id)
+        events = query_all(
+            conn,
+            "SELECT event_id, ts, actor, entity_id, detail FROM audit_event WHERE "
+            + history_where + " ORDER BY event_id DESC LIMIT 20",
+            tuple(history_args),
+        )
+        for event in events:
+            detail = parse_json_or_none(event.get("detail")) or {}
+            review_history.append({
+                "event_id": event.get("event_id"),
+                "ts": event.get("ts"),
+                "actor": event.get("actor"),
+                "plugin_id": event.get("entity_id"),
+                "status": detail.get("to"),
+                "item_keys": detail.get("item_keys") or [],
+                "updated": detail.get("updated", 0),
+            })
     return {
         "available": True,
         "total": total,
@@ -2204,6 +2256,7 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
         ],
         "summary": summary,
         "items": items,
+        "review_history": review_history,
     }
 
 

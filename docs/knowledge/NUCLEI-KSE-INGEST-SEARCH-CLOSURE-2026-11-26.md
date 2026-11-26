@@ -168,3 +168,7 @@ The worktree already contained extensive unrelated changes before this batch; al
 7. Review source commit and license evidence.
 8. Approve only entries with sufficient review evidence; keep all other entries DISCOVERED.
 9. Run the existing RTIS POC and context regression suite before production rollout.
+
+## 隔离开发副本 rollout 验收（2026-11-26）
+
+Migration 032、RTIS 插件 0.2.6 和 14,111 条 Nuclei 模板的真实摄取已在一次性开发数据库副本中完成验证。14,109 条 YAML 正常解析，1 条无效 YAML、1 条超 2 MiB；全部 14,111 条保持 `DISCOVERED`。Knowledge UI/API 已增加 Nuclei 结构化元数据、显式批量审核与 audit-engine 审核历史。完整验收与生产边界见 [`NUCLEI-DEV-ROLLOUT-VALIDATION-2026-11-26.md`](NUCLEI-DEV-ROLLOUT-VALIDATION-2026-11-26.md)。生产数据库迁移、生产插件升级和生产索引重建仍未执行。

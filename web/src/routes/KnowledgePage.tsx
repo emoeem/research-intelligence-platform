@@ -5,6 +5,7 @@ import {
   type KnowledgeSourceEntry,
   type KnowledgeSourceList,
   type KnowledgeSourcePlugin,
+  reviewKnowledgeSourceEntries,
 } from "../lib/api";
 import { useApi } from "../lib/hooks";
 import { EmptyPanel, ErrorPanel, PageHeader, SkeletonPanel } from "../components/ui";
@@ -79,6 +80,11 @@ function verifiedLabel(verified: number | null | undefined): string {
 function truncate(text: string | null | undefined, max: number): string | null {
   if (!text) return null;
   return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function stringList(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value;
+  return value ? [value] : [];
 }
 
 function MetaRow({ label, value }: { label: string; value: string | null | undefined }) {
@@ -234,6 +240,7 @@ const ENTRY_KIND_LABEL: Record<string, string> = {
   catalog_entry: "目录条目",
   document_markdown: "文档正文",
   skill_candidate: "Skill 候选",
+  nuclei_template: "Nuclei 模板",
 };
 
 function SourceEntriesView() {
@@ -241,11 +248,19 @@ function SourceEntriesView() {
   const [review, setReview] = useState("");
   const [rawQuery, setRawQuery] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [selectedEntries, setSelectedEntries] = useState<Array<{ plugin_id: string; item_key: string }>>([]);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setKeyword(rawQuery.trim()), 300);
     return () => clearTimeout(timer);
   }, [rawQuery]);
+
+  useEffect(() => {
+    setSelectedEntries([]);
+    setReviewError(null);
+  }, [pluginId, review, keyword]);
 
   const qs = new URLSearchParams({ limit: "100" });
   if (pluginId) qs.set("plugin_id", pluginId);
@@ -256,6 +271,43 @@ function SourceEntriesView() {
   const plugins: KnowledgeSourcePlugin[] = list.data?.plugins ?? [];
   const items: KnowledgeSourceEntry[] = list.data?.items ?? [];
   const total = list.data?.total ?? 0;
+  const reviewHistory = list.data?.review_history ?? [];
+  const selectedPluginId = selectedEntries[0]?.plugin_id ?? "";
+  const selectedCount = selectedEntries.length;
+
+  const toggleSelected = (item: KnowledgeSourceEntry) => {
+    setSelectedEntries((current) => {
+      const exists = current.some((entry) =>
+        entry.plugin_id === item.plugin_id && entry.item_key === item.item_key,
+      );
+      if (exists) {
+        return current.filter((entry) =>
+          entry.plugin_id !== item.plugin_id || entry.item_key !== item.item_key,
+        );
+      }
+      if (current.length > 0 && current[0]?.plugin_id !== item.plugin_id) return current;
+      return [...current, { plugin_id: item.plugin_id, item_key: item.item_key }];
+    });
+  };
+
+  const submitReview = async (status: "APPROVED" | "REJECTED") => {
+    if (!selectedPluginId || selectedCount === 0 || reviewSubmitting) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await reviewKnowledgeSourceEntries(
+        selectedPluginId,
+        selectedEntries.map((entry) => entry.item_key),
+        status,
+      );
+      setSelectedEntries([]);
+      await list.retry();
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : translateUi("审核操作失败"));
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   return (
     <section aria-label={translateUi("知识来源条目")}>
@@ -291,7 +343,7 @@ function SourceEntriesView() {
         <input
           type="text"
           className="input input-sm w-52 rounded-control border border-edge bg-base-100"
-          placeholder={translateUi("检索标题 / URL / 描述…")}
+          placeholder={translateUi("检索标题 / Template ID / URL / 描述…")}
           aria-label={translateUi("检索知识来源条目")}
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
@@ -299,6 +351,41 @@ function SourceEntriesView() {
         <span className="text-xs text-muted" data-testid="source-total">
           {translateUi("共")} {total} {translateUi("条（显示")} {items.length}）
         </span>
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-surface border border-edge bg-base-100 p-2" data-testid="knowledge-source-review-actions">
+        <span className="text-xs text-muted">
+          {translateUi("已选择")} {selectedCount} {translateUi("条")}
+          {selectedPluginId ? ` · ${selectedPluginId}` : ""}
+        </span>
+        <button
+          type="button"
+          className="btn btn-xs btn-primary"
+          disabled={selectedCount === 0 || reviewSubmitting}
+          onClick={() => void submitReview("APPROVED")}
+        >
+          {reviewSubmitting ? translateUi("提交中…") : translateUi("批准所选")}
+        </button>
+        <button
+          type="button"
+          className="btn btn-xs btn-outline btn-error"
+          disabled={selectedCount === 0 || reviewSubmitting}
+          onClick={() => void submitReview("REJECTED")}
+        >
+          {translateUi("驳回所选")}
+        </button>
+        <button
+          type="button"
+          className="btn btn-xs btn-ghost"
+          disabled={selectedCount === 0 || reviewSubmitting}
+          onClick={() => setSelectedEntries([])}
+        >
+          {translateUi("清空选择")}
+        </button>
+        <span className="text-[11px] text-muted">
+          {translateUi("审核操作会写入审计历史；批准后才允许进入搜索与模型上下文。")}
+          {translateUi("每次批量审核仅支持同一插件，最多 100 条。")}
+        </span>
+        {reviewError ? <p className="w-full text-xs text-error" role="alert">{reviewError}</p> : null}
       </div>
       {list.loading ? (
         <SkeletonPanel lines={6} />
@@ -317,7 +404,17 @@ function SourceEntriesView() {
           {items.map((item) => (
             <li key={`${item.plugin_id}@${item.entry_kind}:${item.item_key}`}>
               <div className="rounded-surface border border-edge bg-base-100 p-3">
-                <div className="flex flex-wrap items-center gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-xs"
+                    aria-label={`${translateUi("选择条目")} ${item.item_key}`}
+                    checked={selectedEntries.some((entry) =>
+                      entry.plugin_id === item.plugin_id && entry.item_key === item.item_key,
+                    )}
+                    onChange={() => toggleSelected(item)}
+                  />
+                  <div className="flex flex-wrap items-center gap-1">
                   <span
                     className={`badge badge-sm ${REVIEW_BADGE[item.review_status] ?? "badge-ghost"}`}
                   >
@@ -341,10 +438,51 @@ function SourceEntriesView() {
                     </span>
                   ) : null}
                   <span className="text-[11px] text-muted">{item.plugin_id}</span>
+                  </div>
                 </div>
                 <p className="mt-1.5 text-sm font-medium leading-5" data-testid="source-title">
                   {item.title}
                 </p>
+                <p className="mt-1 break-all font-mono text-[10px] text-muted" data-testid="source-item-key">
+                  {item.item_key}
+                </p>
+                {item.nuclei_template ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]" data-testid="nuclei-template-metadata">
+                    {item.nuclei_template.severity ? (
+                      <span className="badge badge-sm badge-warning">{item.nuclei_template.severity}</span>
+                    ) : null}
+                    {item.nuclei_template.parse_status ? (
+                      <span className="badge badge-sm badge-ghost">{item.nuclei_template.parse_status}</span>
+                    ) : null}
+                    {item.nuclei_template.protocols?.length ? (
+                      <span className="text-muted">{translateUi("协议")}: {item.nuclei_template.protocols.join(", ")}</span>
+                    ) : null}
+                    {stringList(item.nuclei_template.classification?.["cve-id"]).length ? (
+                      <span className="text-muted">CVE: {stringList(item.nuclei_template.classification?.["cve-id"]).join(", ")}</span>
+                    ) : null}
+                    {stringList(item.nuclei_template.classification?.["cwe-id"]).length ? (
+                      <span className="text-muted">CWE: {stringList(item.nuclei_template.classification?.["cwe-id"]).join(", ")}</span>
+                    ) : null}
+                    {item.nuclei_template.tags?.length ? (
+                      <span className="text-muted">{translateUi("标签")}: {item.nuclei_template.tags.slice(0, 10).join(", ")}</span>
+                    ) : null}
+                    {item.nuclei_template.author?.length ? (
+                      <span className="text-muted">{translateUi("作者")}: {item.nuclei_template.author.join(", ")}</span>
+                    ) : null}
+                    {item.nuclei_template.request_block_count !== undefined ? (
+                      <span className="text-muted">{translateUi("请求块")}: {item.nuclei_template.request_block_count}</span>
+                    ) : null}
+                    {item.nuclei_template.matcher_count !== undefined ? (
+                      <span className="text-muted">{translateUi("匹配器")}: {item.nuclei_template.matcher_count}</span>
+                    ) : null}
+                    {item.nuclei_template.extractor_count !== undefined ? (
+                      <span className="text-muted">{translateUi("提取器")}: {item.nuclei_template.extractor_count}</span>
+                    ) : null}
+                    {item.nuclei_template.has_flow ? (
+                      <span className="badge badge-sm badge-ghost">Flow</span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {item.category_path.length > 0 ? (
                   <p className="mt-1 text-[11px] text-muted" data-testid="source-category">
                     {translateUi("分类：")}
@@ -372,6 +510,24 @@ function SourceEntriesView() {
           ))}
         </ul>
       )}
+      {reviewHistory.length > 0 ? (
+        <section className="mt-4 rounded-surface border border-edge bg-base-100 p-3" aria-label={translateUi("最近审核历史")} data-testid="knowledge-source-review-history">
+          <h3 className="text-xs font-semibold">{translateUi("最近审核历史")}</h3>
+          <ul className="mt-2 space-y-2">
+            {reviewHistory.map((event) => (
+              <li key={event.event_id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="font-mono text-muted">{formatDateTime(event.ts)}</span>
+                <span className="badge badge-sm badge-outline">{event.status ?? "-"}</span>
+                <span>{event.updated} {translateUi("条")}</span>
+                <span className="text-muted">{event.actor}</span>
+                <span className="min-w-0 flex-1 truncate text-muted" title={event.item_keys.join(", ")}>
+                  {event.item_keys.slice(0, 3).join(", ")}{event.item_keys.length > 3 ? ` +${event.item_keys.length - 3}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </section>
   );
 }

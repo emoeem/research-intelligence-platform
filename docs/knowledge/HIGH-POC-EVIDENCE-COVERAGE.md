@@ -69,3 +69,7 @@
 33 条证据缺口包含原始请求/响应、独立复现、阴性对照、跨账号边界、结构化 outcome 或历史修复状态回归等。每条均已有明确 `review_gate`，但缺失材料没有被自动生成或标记为已验证。8 条工具/方法引用的 `verification_result=not_applicable`，不会被误算成目标漏洞验证。
 
 K0–K4 与 Lifecycle 的既有分布没有改变：K0 29、K1 9、K2 10、K3 1、K4 0；Candidate 29、Researched 19、Lab-validated 1。旧版 `verified=1` 仍不构成升级依据。
+
+## Evidence Ref 与来源文件恢复核对（2026-11-26）
+
+补充的逐条路径核对见 [`POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md`](POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md)。在 33 条证据缺口记录中，32 条本地来源路径存在，ID 16 的历史来源仍未定位；25 条至少有一个 Evidence Ref，8 条没有 Evidence Ref；现有 51 个 Evidence Ref 的路径全部可解析。路径存在不等于证据链完整，脚本、说明或历史报告不能自动满足原始请求响应、阴性对照和独立复现要求。

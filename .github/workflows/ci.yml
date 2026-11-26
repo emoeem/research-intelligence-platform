@@ -141,6 +141,8 @@ jobs:
 
       - name: 双通道一致性断言（cargo test --offline -p rp-mcp-parity）
         run: cargo test --offline -p rp-mcp-parity
+      - name: Knowledge source review API smoke（隔离 SQLite fixture）
+        run: apps/server/selftest_knowledge_review.sh
 
   python-workers:
     name: Python worker 测试

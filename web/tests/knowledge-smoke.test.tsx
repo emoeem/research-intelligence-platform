@@ -375,4 +375,86 @@ describe("Knowledge 页（P5-6）", () => {
     });
     expect(window.location.search).toContain("knowledge_id=k-hex2bin");
   });
+
+  it("Nuclei 模板可见结构化元数据，并支持显式批量审核与审计历史", async () => {
+    let reviewStatus = "DISCOVERED";
+    let reviewHistory: Array<Record<string, unknown>> = [];
+    const pluginId = "knowledge.rtis-redteam";
+    const itemKey = "http/exposed-panels/test-review-fixture.yaml";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/plugins/") && url.endsWith("/review") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { status: string; item_keys: string[] };
+        reviewStatus = body.status;
+        reviewHistory = [{
+          event_id: 1,
+          ts: "2026-11-26T12:00:00Z",
+          actor: "test-reviewer",
+          plugin_id: pluginId,
+          status: body.status,
+          item_keys: body.item_keys,
+          updated: body.item_keys.length,
+        }];
+        return new Response(JSON.stringify({ ok: true, action: "review", plugin_id: pluginId,
+          result: { updated: body.item_keys.length } }), { status: 200 });
+      }
+      if (url.includes("/api/knowledge_sources")) {
+        return new Response(JSON.stringify({
+          available: true,
+          total: 1,
+          returned: 1,
+          plugins: [{ plugin_id: pluginId, name: "RTIS Red Team", version: "0.2.6", state: "ENABLED", license: "MIT" }],
+          summary: [{ plugin_id: pluginId, entry_kind: "nuclei_template", review_status: reviewStatus, n: 1 }],
+          items: [{
+            plugin_id: pluginId,
+            plugin_version: "0.2.6",
+            corpus_id: "nuclei-templates",
+            entry_kind: "nuclei_template",
+            item_key: itemKey,
+            title: "Test exposed panel",
+            description: "Metadata-only review fixture",
+            category_path: ["http", "exposed-panels"],
+            license_status: "MIT",
+            rights_policy: "approved_only",
+            review_status: reviewStatus,
+            source_commit: "ga346d8f",
+            source_url: "https://github.com/projectdiscovery/nuclei-templates",
+            source_location: { path: itemKey },
+            body_bytes: 128,
+            last_seen_at: "2026-11-26T12:00:00Z",
+            nuclei_template: {
+              template_id: "test-exposed-panel",
+              severity: "high",
+              parse_status: "parsed",
+              protocols: ["http"],
+              tags: ["panel", "exposure"],
+              classification: { "cve-id": ["CVE-2026-12345"], "cwe-id": ["CWE-200"] },
+            },
+          }],
+          review_history: reviewHistory,
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "知识来源" }));
+    expect(await screen.findByText("Test exposed panel")).toBeTruthy();
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("high");
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("CVE-2026-12345");
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("CWE-200");
+    expect(screen.getByTestId("source-item-key").textContent).toContain(itemKey);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: `选择条目 ${itemKey}` }));
+    fireEvent.click(screen.getByRole("button", { name: "批准所选" }));
+    await waitFor(() => expect(reviewStatus).toBe("APPROVED"));
+    expect(await screen.findByTestId("knowledge-source-review-history")).toBeTruthy();
+    expect(screen.getByTestId("knowledge-source-review-history").textContent).toContain("test-reviewer");
+    expect(screen.getByTestId("knowledge-source-review-history").textContent).toContain("APPROVED");
+    expect(fetchMock.mock.calls.some((call) =>
+      String(call[0]).endsWith("/api/plugins/knowledge.rtis-redteam/review") && call[1]?.method === "POST",
+    )).toBe(true);
+  });
+
 });

@@ -110,7 +110,7 @@
 | --- | --- | --- | --- |
 | GET | /api/plugins | 插件目录（L1 元数据卡片，?level=1|2|3） | Bearer |
 | GET | /api/plugins/<plugin_id> | 插件详情（动态路径，?level=1|2|3 三级按需加载） | Bearer |
-| GET | /api/knowledge_sources | 知识来源面 | Bearer |
+| GET | /api/knowledge_sources | 知识来源面（含 Nuclei 结构化元数据与最近审核历史；支持 nuclei_template 过滤） | Bearer |
 | GET | /api/stats | M 面计数（evidence/knowledge 等） | Bearer |
 | GET | /api/metrics | 平台指标只读投影 | Bearer |
 | GET | /api/resources | 资源库读面 | Bearer |
@@ -143,14 +143,14 @@
 | POST | /api/research/assets/<asset_id>/technology | 新增必须关联 Observation 与 evidence_ref 的技术画像项 | Bearer（写面强制） |
 | POST | /api/projects/<project_id>/assets | 建立 Project-Asset 显式关联 | Bearer（写面强制） |
 | POST | /api/plugins/install | 插件安装（经 rp-plugin 子进程） | Bearer（写面强制） |
-| POST | /api/plugins/<plugin_id>/<action> | 插件写面：action ∈ enable, disable, uninstall, ingest, cleanup-rollback, upgrade | Bearer（写面强制） |
+| POST | /api/plugins/<plugin_id>/<action> | 插件写面：action ∈ enable, disable, uninstall, ingest, review, cleanup-rollback, upgrade | Bearer（写面强制） |
 | POST | /api/workflows | 画布保存（definition-v1，版本存储侧递增；put 同步 60s 超时） | Bearer（写面强制） |
 | POST | /api/workflow-runs | 受理新 run（run_id 预生成，异步 Popen；action=run） | Bearer（写面强制） |
 | POST | /api/workflow-runs/<action> | 控制面形状一：action ∈ pause, resume, retry（run_id 在 body） | Bearer（写面强制） |
 | POST | /api/workflow-runs/<run_id>/<action> | 控制面形状二（REST 动态路径）：action ∈ pause, resume, retry | Bearer（写面强制） |
 <!-- ENDPOINTS:END -->
 
-动态词表来源：插件写动作 `enable/disable/uninstall/ingest` 加 `upgrade`（rp_server.py `PLUGIN_WRITE_ACTIONS` + upgrade 特例）；workflow 控制动作 `pause/resume/retry`（`WORKFLOW_WRITE_ACTIONS`）。词表外动作 404 `no_route`；白名单外 POST 一律 405 `readonly`。
+动态词表来源：插件写动作 `enable/disable/uninstall/ingest/review` 加 `upgrade`（rp_server.py `PLUGIN_WRITE_ACTIONS` + upgrade 特例）；`review` 仅接受 1–100 个唯一 `item_keys`，`status` ∈ `APPROVED/REJECTED/DEPRECATED/UNREVIEWED/DISCOVERED`，经 `rp-plugin review` 写入并由 audit-engine 记录；workflow 控制动作 `pause/resume/retry`（`WORKFLOW_WRITE_ACTIONS`）。词表外动作 404 `no_route`；白名单外 POST 一律 405 `readonly`。
 
 ## 十、写面响应语义
 

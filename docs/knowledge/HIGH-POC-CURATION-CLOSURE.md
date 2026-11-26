@@ -99,3 +99,7 @@
 搜索索引 schema 升级为 v6，新增上游来源 URL、来源完整性、核验结论、去重状态、独立知识状态、缺失证据、Evidence Ref、审核门槛与外部案例关系字段；新增对应筛选器。Knowledge Web 工作台默认展示待补证队列，并新增 Overlay 汇总 API。真实 HTTP 回归覆盖 22 条缺少来源完整性候选、33 条总体证据缺口、上游 URL、外部案例组、`not_applicable` 和 Bearer 鉴权。
 
 验证结果：`validate_overlay.py` 通过；`cargo test -p search-engine --offline` 22 单测 + 2 集成测试通过；`selftest_poc_search.sh` 全部通过；Web typecheck 和专项测试通过。源数据库和 Overlay 在 HTTP E2E 测试前后 SHA-256 不变，索引只写入临时目录。详细实现见 `POC-WEB-SEARCH-INTEGRATION-2026-11-26.md` 的 2026-11-27 更新段。
+
+## 证据路径恢复核对（2026-11-26）
+
+新增逐条矩阵：[`POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md`](POC-EVIDENCE-RECOVERY-MATRIX-2026-11-26.md)。33 条证据缺口中 32 条本地 source_path 存在，25 条具有 Evidence Ref，51/51 个现有引用路径可解析；8 条没有 Evidence Ref，ID 16 的历史来源文件未定位。没有将脚本/说明误判为原始请求响应或独立复现，也没有提升任何 K 级。

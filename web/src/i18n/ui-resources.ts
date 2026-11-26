@@ -2958,6 +2958,67 @@ const final13JapaneseUi = {
   关联案例组: "関連ケースグループ",
 };
 
+const final14ZhUi = {
+  "Nuclei 模板": "Nuclei 模板",
+  "检索标题 / Template ID / URL / 描述…": "检索标题 / Template ID / URL / 描述…",
+  已选择: "已选择",
+  条: "条",
+  "批准所选": "批准所选",
+  "驳回所选": "驳回所选",
+  "清空选择": "清空选择",
+  "审核操作失败": "审核操作失败",
+  "审核操作会写入审计历史；批准后才允许进入搜索与模型上下文。":
+    "审核操作会写入审计历史；批准后才允许进入搜索与模型上下文。",
+  "每次批量审核仅支持同一插件，最多 100 条。": "每次批量审核仅支持同一插件，最多 100 条。",
+  "选择条目": "选择条目",
+  "最近审核历史": "最近审核历史",
+  标签: "标签",
+  作者: "作者",
+  请求块: "请求块",
+  匹配器: "匹配器",
+  提取器: "提取器",
+};
+const final14EnglishUi = {
+  "Nuclei 模板": "Nuclei template",
+  "检索标题 / Template ID / URL / 描述…": "Search title / Template ID / URL / description…",
+  已选择: "Selected",
+  条: "items",
+  "批准所选": "Approve selected",
+  "驳回所选": "Reject selected",
+  "清空选择": "Clear selection",
+  "审核操作失败": "Review action failed",
+  "审核操作会写入审计历史；批准后才允许进入搜索与模型上下文。":
+    "Review actions are recorded in audit history; only approved entries are available to search and model context.",
+  "每次批量审核仅支持同一插件，最多 100 条。": "Bulk review is limited to one plugin and 100 entries per request.",
+  "选择条目": "Select entry",
+  "最近审核历史": "Recent review history",
+  标签: "Tags",
+  作者: "Authors",
+  请求块: "Request blocks",
+  匹配器: "Matchers",
+  提取器: "Extractors",
+};
+const final14JapaneseUi = {
+  "Nuclei 模板": "Nuclei テンプレート",
+  "检索标题 / Template ID / URL / 描述…": "タイトル / Template ID / URL / 説明を検索…",
+  已选择: "選択済み",
+  条: "件",
+  "批准所选": "選択項目を承認",
+  "驳回所选": "選択項目を却下",
+  "清空选择": "選択をクリア",
+  "审核操作失败": "審査操作に失敗しました",
+  "审核操作会写入审计历史；批准后才允许进入搜索与模型上下文。":
+    "審査操作は監査履歴に記録されます。承認後にのみ検索とモデルコンテキストで利用できます。",
+  "每次批量审核仅支持同一插件，最多 100 条。": "一括審査は同一プラグイン内、1 回につき最大 100 件です。",
+  "选择条目": "項目を選択",
+  "最近审核历史": "最近の審査履歴",
+  标签: "タグ",
+  作者: "作成者",
+  请求块: "リクエストブロック",
+  匹配器: "Matcher",
+  提取器: "Extractor",
+};
+
 export const uiResources = {
   ...baseUiResources,
   "zh-CN": {
@@ -2969,6 +3030,7 @@ export const uiResources = {
     ...final11ZhUi,
     ...final12ZhUi,
     ...final13ZhUi,
+    ...final14ZhUi,
   },
   "en-US": {
     ...baseUiResources["en-US"],
@@ -2987,6 +3049,7 @@ export const uiResources = {
     ...final11EnglishUi,
     ...final12EnglishUi,
     ...final13EnglishUi,
+    ...final14EnglishUi,
   },
   "ja-JP": {
     ...baseUiResources["ja-JP"],
@@ -3005,5 +3068,6 @@ export const uiResources = {
     ...final11JapaneseUi,
     ...final12JapaneseUi,
     ...final13JapaneseUi,
+    ...final14JapaneseUi,
   },
 } as const;
