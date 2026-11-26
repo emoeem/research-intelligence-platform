@@ -29,14 +29,44 @@ cargo build --offline -q -p plugin-runtime --bin rp-plugin
 python3 - "$DB" <<'PY'
 import hashlib, json, sqlite3, sys
 path = sys.argv[1]
-meta = {"nuclei_template": {
-    "template_id": "review-fixture",
-    "severity": "info",
-    "parse_status": "parsed",
-    "protocols": ["http"],
-    "tags": ["synthetic", "review-test"],
-    "classification": {"cve-id": ["CVE-2099-12345"]},
-}}
+meta = {
+    "nuclei_template": {
+        "template_id": "review-fixture",
+        "severity": "info",
+        "parse_status": "parsed",
+        "protocols": ["http"],
+        "tags": ["synthetic", "review-test"],
+        "classification": {"cve-id": ["CVE-2099-12345"]},
+    },
+    "pocindex_record": {
+        "cve_id": "CVE-2099-12345",
+        "cisa_date_added": "2099-01-01",
+        "pocindex_kev_present": True,
+        "epss_score": 0.9,
+        "epss_percentile": 0.99,
+        "cvss_assessments": [{"version": "3.1", "score": 9.8, "severity": "CRITICAL", "vector": "CVSS:3.1/AV:N", "source": "nvd@nist.gov", "assessment_type": "Primary"}],
+        "advisories": [{"url": "https://example.com/advisory", "tags": ["Vendor Advisory"]}],
+        "nuclei_metadata": {"severity": "critical", "cvss": 9.8, "cwe": "CWE-416"},
+        "snapshot": {"repository_commit": "e9076fea96095e014fc107c02dd23ee8dc21476d", "retrieved_at": "2099-01-01T00:00:00Z"},
+    },
+    "cve_record": {
+        "schema": "cisa-kev-v1",
+        "cve_id": "CVE-2099-12345",
+        "source_authority": "CISA",
+        "known_exploited": True,
+        "vendor_project": "Synthetic Vendor",
+        "product": "Synthetic Product",
+        "date_added": "2099-01-01",
+        "due_date": "2099-02-01",
+        "known_ransomware_campaign_use": "Unknown",
+        "forensic_triage": "Yes",
+        "cwes": ["CWE-416"],
+        "cvss_score": None,
+        "epss_score": None,
+        "poc_status": "not_assessed",
+        "current_target_status": "not_tested",
+    },
+}
 meta_json = json.dumps(meta, separators=(",", ":"))
 body = ""
 conn = sqlite3.connect(path)
@@ -101,7 +131,13 @@ item = payload["items"][0]
 assert item["review_status"] == "DISCOVERED", item
 assert item["nuclei_template"]["template_id"] == "review-fixture", item
 assert item["nuclei_template"]["severity"] == "info", item
-print("PASS: Nuclei metadata is visible while the entry remains DISCOVERED")
+assert item["cve_record"]["known_exploited"] is True, item
+assert item["cve_record"]["cvss_score"] is None, item
+assert item["cve_record"]["poc_status"] == "not_assessed", item
+assert item["cve_record"]["forensic_triage"] == "Yes", item
+assert item["pocindex_record"]["epss_score"] == 0.9, item
+assert item["pocindex_record"]["cvss_assessments"][0]["source"] == "nvd@nist.gov", item
+print("PASS: Nuclei, CISA and PoC Index metadata are visible without claiming PoC/target verification")
 
 status, payload = request(
     f"/api/plugins/{plugin_id}/review", "POST",

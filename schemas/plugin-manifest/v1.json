@@ -209,7 +209,7 @@
                 "items": { "type": "string", "minLength": 1 }
               },
               "kinds": {
-                "description": "每内容类型摄取声明（SK-1，计划 §8 P6-9 第 2 步）：键为内容类型，值为对象 source_path（包内相对路径，目录或单文件）、parser（平台内置 per-kind 解析器词表）、license_policy（许可与持久化策略词表）、max_entries（可选摄取条数上限）。扩展内容的 parser 与内容类型一一对应：catalog_entry=markdown_links、document_markdown=markdown_doc、skill_candidate=skill_frontmatter、nuclei_template=nuclei_yaml（配错同样在 rule 3 归因）。",
+                "description": "每内容类型摄取声明（SK-1，计划 §8 P6-9 第 2 步）：键为内容类型，值为对象 source_path（包内相对路径，目录或单文件）、parser（平台内置 per-kind 解析器词表）、license_policy（许可与持久化策略词表）、max_entries（可选摄取条数上限）。扩展内容的 parser 与内容类型一一对应：catalog_entry=markdown_links、document_markdown=markdown_doc、skill_candidate=skill_frontmatter、nuclei_template=nuclei_yaml；catalog_entry 也可使用 cisa_kev_json 解析官方 CISA KEV JSON，或使用 pocindex_kev_json 解析 PoC Index CVSS/EPSS 元数据快照（均为 metadata-only，不含 PoC 正文）。",
                 "type": "object",
                 "additionalProperties": {
                   "type": "object",
@@ -217,7 +217,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "source_path": { "description": "包内相对解析入口（单文件或目录，目录即递归 *.md），安全检查（拒绝绝对路径与 .. 上跳）在 validate rule 3。", "type": "string", "minLength": 1 },
-                    "parser": { "description": "平台内置解析器词表（per-kind parser 注册表键）。", "type": "string", "enum": ["markdown_links", "markdown_doc", "skill_frontmatter", "nuclei_yaml"] },
+                    "parser": { "description": "平台内置解析器词表（per-kind parser 注册表键）。", "type": "string", "enum": ["markdown_links", "cisa_kev_json", "pocindex_kev_json", "markdown_doc", "skill_frontmatter", "nuclei_yaml"] },
                     "license_policy": { "description": "许可与持久化策略：catalog_only（只登记条目元数据）、approved_only（仅审核通过条目进检索面）、metadata_only（只存元数据与哈希）。", "type": "string", "enum": ["catalog_only", "approved_only", "metadata_only"] },
                     "max_entries": { "description": "单类型摄取条数硬上限（超限即截断并在报告过滤计数中显式暴露）。", "type": "integer", "minimum": 1 },
                     "source_commit": { "description": "来源快照基准 Commit（Git 来源固定快照语义，缺省回落顶层 source.pinned.value）。", "type": "string", "minLength": 1 },

@@ -1,0 +1,59 @@
+{
+  "schema_version": "1",
+  "id": "knowledge.pocindex-kev",
+  "name": "PoC Index KEV CVSS/EPSS 情报",
+  "version": "0.1.0",
+  "kind": "knowledge",
+  "description": "PoC Index 聚合的 CISA KEV CVE 风险元数据；包含 EPSS、CVSS 评估、公告链接与 Nuclei 元数据，不包含 PoC 正文。",
+  "authors": ["0xMarcio"],
+  "homepage": "https://github.com/0xMarcio/pocindex",
+  "documentation": "https://github.com/0xMarcio/pocindex#readme",
+  "license": "MIT",
+  "source": {
+    "type": "local_dir",
+    "path": "target/pocindex-kev-package"
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": ["1"]
+  },
+  "capabilities": [
+    {
+      "id": "knowledge-source.pocindex-kev.enrichment",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "为 CISA KEV CVE 提供 PoC Index 的 EPSS、CVSS 多版本评估、advisory 链接与 Nuclei CVE 元数据；不下载或执行 PoC。",
+      "provides": {
+        "corpus_id": "pocindex-kev-enrichment",
+        "content_kinds": ["catalog_entry"],
+        "kinds": {
+          "catalog_entry": {
+            "source_path": "pocindex-kev.json",
+            "parser": "pocindex_kev_json",
+            "license_policy": "metadata_only",
+            "max_entries": 2000,
+            "source_commit": "e9076fea96095e014fc107c02dd23ee8dc21476d",
+            "description": "按 CVE ID 导入 PoC Index 的风险元数据快照，保存各 CVSS assessment 的版本/分数/severity/vector/source/type、FIRST EPSS score/percentile、advisories 与 Nuclei 元数据；每个输入文件均记录 ETag、Last-Modified、SHA-256 与字节数。"
+          }
+        },
+        "index": {
+          "fts": true,
+          "vector": false
+        },
+        "parse_pipeline": "tool.rip.doc.parse"
+      }
+    }
+  ],
+  "dependencies": [],
+  "permissions": {
+    "data_access": "ingest_via_api"
+  },
+  "data_retention": {
+    "ingested_policy": "retain_with_provenance",
+    "persistent": []
+  },
+  "context": {
+    "summary": "社区聚合的 CVE 风险元数据来源。EPSS/CVSS 保留原始数据来源；KEV membership 只代表该 CVE 出现在 PoC Index 的 KEV 索引，不代表存在可运行 PoC。",
+    "docs": "README.md"
+  }
+}

@@ -110,7 +110,7 @@
 | --- | --- | --- | --- |
 | GET | /api/plugins | 插件目录（L1 元数据卡片，?level=1|2|3） | Bearer |
 | GET | /api/plugins/<plugin_id> | 插件详情（动态路径，?level=1|2|3 三级按需加载） | Bearer |
-| GET | /api/knowledge_sources | 知识来源面（含 Nuclei 结构化元数据与最近审核历史；支持 nuclei_template 过滤） | Bearer |
+| GET | /api/knowledge_sources | 知识来源面（含 CISA KEV / Nuclei / PoC Index 结构化元数据与最近审核历史；支持 nuclei_template 过滤） | Bearer |
 | GET | /api/stats | M 面计数（evidence/knowledge 等） | Bearer |
 | GET | /api/metrics | 平台指标只读投影 | Bearer |
 | GET | /api/resources | 资源库读面 | Bearer |
@@ -123,6 +123,8 @@
 | GET | /api/overview | Overview 聚合 | Bearer |
 | GET | /api/knowledge | 知识库列表（keyword 过滤） | Bearer |
 | GET | /api/curated-pocs/search | RTIS + curation Overlay 自有 POC FTS 检索（关键词、K 级、Lifecycle、Severity、Category、CVE、来源完整性、核验结论、去重状态、缺失证据） | Bearer |
+
+`GET /api/knowledge_sources` 对 CISA KEV `catalog_entry` 返回 `cve_record` 结构化对象（CVE ID、vendor/product、CISA 收录日期、修复期限、ransomware/forensicTriage、CWE、requiredAction）；对 Nuclei 条目返回 `nuclei_template`（severity、协议、CVE/CWE、解析状态等）。三类对象均为元数据投影，不返回模板或 PoC 正文；CISA KEV 未提供的 `cvss_score` / `epss_score` 保持 `null`，`poc_status=not_assessed`、`current_target_status=not_tested`。PoC Index `pocindex_record` 保留 EPSS、CVSS assessments、advisory URL、Nuclei 元数据及 snapshot provenance。
 | GET | /api/curated-pocs/summary | 自有 POC curation Overlay 治理覆盖统计（只读元数据） | Bearer |
 | GET | /api/tools | 工具目录（Tool Center 同源投影） | Bearer |
 | GET | /api/mcp-catalog | MCP 目录同步状态（P9-4：目录条数 + 读时对账结果，Tool Center MCP 状态卡数据面） | Bearer |

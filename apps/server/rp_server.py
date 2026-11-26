@@ -2199,6 +2199,12 @@ def _knowledge_sources_payload(conn: sqlite3.Connection, params: dict) -> dict:
         meta = parse_json_or_none(item.pop("meta_json", None)) or {}
         if item.get("entry_kind") == "nuclei_template":
             item["nuclei_template"] = meta.get("nuclei_template") or {}
+        cve_record = meta.get("cve_record")
+        if isinstance(cve_record, dict):
+            item["cve_record"] = cve_record
+        pocindex_record = meta.get("pocindex_record")
+        if isinstance(pocindex_record, dict):
+            item["pocindex_record"] = pocindex_record
         item.pop("category_path_json", None)
         item.pop("source_location_json", None)
     summary = query_all(

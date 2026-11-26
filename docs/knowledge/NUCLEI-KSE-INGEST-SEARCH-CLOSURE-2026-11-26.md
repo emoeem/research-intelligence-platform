@@ -114,7 +114,7 @@ The RTIS manifest examples now declare:
 - rights policy `approved_only`
 - maximum entries `20,000`
 
-The installed Arch/BlackArch package metadata identifies the template package as `nuclei-templates 1:v10.5.2.r748.ga346d8f-1` and declares its license as MIT. The Nuclei source snapshot is therefore pinned to the package's upstream revision identifier `ga346d8f`; the manifest's Nuclei kind config carries that `source_commit`. The parser records MIT for this source only and includes the upstream LICENSE.md evidence URL plus the local package identifier in structured metadata. It does not inherit the RTIS plugin's own license status or commit.
+The installed Arch/BlackArch package metadata identifies the template package as `nuclei-templates 1:v10.5.2.r748.a346d8f00c61bf95bbd30365f12cf923be51ba3d-1` and declares its license as MIT. The Nuclei source snapshot is therefore pinned to the package's upstream revision identifier `a346d8f00c61bf95bbd30365f12cf923be51ba3d`; the manifest's Nuclei kind config carries that `source_commit`. The parser records MIT for this source only and includes the upstream LICENSE.md evidence URL plus the local package identifier in structured metadata. It does not inherit the RTIS plugin's own license status or commit.
 
 This is package/revision-level evidence, not a blanket claim that every third-party template author contribution has independent provenance. Before production approval, retain the exact upstream snapshot/package provenance and re-check the applicable repository license at the pinned revision.
 
@@ -172,3 +172,6 @@ The worktree already contained extensive unrelated changes before this batch; al
 ## 隔离开发副本 rollout 验收（2026-11-26）
 
 Migration 032、RTIS 插件 0.2.6 和 14,111 条 Nuclei 模板的真实摄取已在一次性开发数据库副本中完成验证。14,109 条 YAML 正常解析，1 条无效 YAML、1 条超 2 MiB；全部 14,111 条保持 `DISCOVERED`。Knowledge UI/API 已增加 Nuclei 结构化元数据、显式批量审核与 audit-engine 审核历史。完整验收与生产边界见 [`NUCLEI-DEV-ROLLOUT-VALIDATION-2026-11-26.md`](NUCLEI-DEV-ROLLOUT-VALIDATION-2026-11-26.md)。生产数据库迁移、生产插件升级和生产索引重建仍未执行。
+
+
+后续 CISA KEV、PoC Index CVSS/EPSS 与三源联合索引验证见 [CISA-KEV-AND-NUCLEI-INTAKE-2026-11-26.md](CISA-KEV-AND-NUCLEI-INTAKE-2026-11-26.md)。

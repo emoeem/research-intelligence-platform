@@ -35,6 +35,7 @@ use std::path::Path;
 
 const NUCLEI_TEMPLATE_SOURCE_ROOT: &str = "/usr/share/nuclei-templates";
 const MAX_NUCLEI_TEMPLATE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_CISA_KEV_BYTES: u64 = 16 * 1024 * 1024;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -73,8 +74,10 @@ pub const EXTENDED_CONTENT_KINDS: [&str; 4] = [
 ];
 
 /// parser 注册表键与内容类型的配对（validate rule 3 同款，双处防御）。
-pub const KIND_PARSER: [(&str, &str); 4] = [
+pub const KIND_PARSER: [(&str, &str); 6] = [
     ("catalog_entry", "markdown_links"),
+    ("catalog_entry", "cisa_kev_json"),
+    ("catalog_entry", "pocindex_kev_json"),
     ("document_markdown", "markdown_doc"),
     ("skill_candidate", "skill_frontmatter"),
     ("nuclei_template", "nuclei_yaml"),
@@ -280,16 +283,19 @@ pub fn ingest_knowledge_source_with_opts(
     let mut filtered: BTreeMap<String, u64> = BTreeMap::new();
     for kind in &extended_declared {
         let cfg = kind_config(obj, kind)?;
-        let parser = KIND_PARSER
-            .iter()
-            .find(|(k, _)| *k == kind.as_str())
-            .map(|(_, p)| *p)
-            .unwrap_or_default();
-        if cfg.parser != parser {
+        let parser_registered = KIND_PARSER.iter().any(|(registered_kind, parser)| {
+            *registered_kind == kind.as_str() && *parser == cfg.parser
+        });
+        if !parser_registered {
+            let expected = KIND_PARSER
+                .iter()
+                .filter(|(registered_kind, _)| *registered_kind == kind.as_str())
+                .map(|(_, parser)| *parser)
+                .collect::<Vec<_>>();
             return Err(RuntimeError::new(
                 "ingest_kind_parser_mismatch",
                 format!(
-                    "content_kind {kind:?} requires parser {parser:?}, declared {:?}",
+                    "content_kind {kind:?} requires one of parsers {expected:?}, declared {:?}",
                     cfg.parser
                 ),
             ));
@@ -685,6 +691,22 @@ pub fn parse_catalog_entry(
     package_dir: &Path,
     snap: &SnapshotCtx,
 ) -> Result<(Vec<ExtendedItem>, kp::FilterStats), RuntimeError> {
+    match cfg.parser.as_str() {
+        "markdown_links" => parse_catalog_markdown_entries(cfg, package_dir, snap),
+        "cisa_kev_json" => parse_cisa_kev_json(cfg, package_dir, snap),
+        "pocindex_kev_json" => parse_pocindex_kev_json(cfg, package_dir, snap),
+        other => Err(RuntimeError::new(
+            "ingest_kind_parser_mismatch",
+            format!("unsupported catalog_entry parser {other:?}"),
+        )),
+    }
+}
+
+fn parse_catalog_markdown_entries(
+    cfg: &KindConfig,
+    package_dir: &Path,
+    snap: &SnapshotCtx,
+) -> Result<(Vec<ExtendedItem>, kp::FilterStats), RuntimeError> {
     let mut items = Vec::new();
     let mut total_stats = kp::FilterStats::default();
     for file in resolve_md_files(package_dir, &cfg.source_path)? {
@@ -749,6 +771,739 @@ pub fn parse_catalog_entry(
         }
     }
     Ok((items, total_stats))
+}
+
+/// CISA KEV JSON parser：只导入官方目录的漏洞元数据，不导入或执行 PoC。
+/// 每条记录以 CVE ID 作为稳定键；CVSS/EPSS/PoC 状态明确留空或未评估，
+/// 避免把 KEV 收录误读为 CVSS 分数、PoC 可用性或目标当前仍易受攻击。
+fn parse_cisa_kev_json(
+    cfg: &KindConfig,
+    package_dir: &Path,
+    snap: &SnapshotCtx,
+) -> Result<(Vec<ExtendedItem>, kp::FilterStats), RuntimeError> {
+    let root = package_dir.canonicalize().map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_open_failed",
+            format!("canonicalize package root: {e}"),
+        )
+    })?;
+    let candidate = package_dir.join(&cfg.source_path);
+    let path = candidate.canonicalize().map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_open_failed",
+            format!("resolve CISA KEV source {candidate:?}: {e}"),
+        )
+    })?;
+    if !path.starts_with(&root) {
+        return Err(RuntimeError::new(
+            "ingest_source_path_escape",
+            "CISA KEV source path resolves outside the pinned package",
+        ));
+    }
+    let size = std::fs::metadata(&path)
+        .map_err(|e| {
+            RuntimeError::new(
+                "ingest_source_read_failed",
+                format!("stat CISA KEV source: {e}"),
+            )
+        })?
+        .len();
+    if size == 0 || size > MAX_CISA_KEV_BYTES {
+        return Err(RuntimeError::new(
+            "ingest_source_size_invalid",
+            format!("CISA KEV JSON size {size} is outside 1..={MAX_CISA_KEV_BYTES} bytes"),
+        ));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_read_failed",
+            format!("read CISA KEV JSON: {e}"),
+        )
+    })?;
+    let feed: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_parse_failed",
+            format!("parse CISA KEV JSON: {e}"),
+        )
+    })?;
+    let upstream_commit = cfg
+        .source_commit
+        .as_deref()
+        .filter(|value| value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_provenance_invalid",
+                "CISA KEV parser requires a full 40-character upstream Git commit pin",
+            )
+        })?;
+    let catalog_version = feed
+        .get("catalogVersion")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_schema_invalid",
+                "CISA KEV catalogVersion missing",
+            )
+        })?;
+    let date_released = feed
+        .get("dateReleased")
+        .and_then(Value::as_str)
+        .filter(|s| s.len() >= 20 && s.as_bytes().get(10) == Some(&b'T'))
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_schema_invalid",
+                "CISA KEV dateReleased missing or not an ISO date-time",
+            )
+        })?;
+    let vulnerabilities = feed
+        .get("vulnerabilities")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_schema_invalid",
+                "CISA KEV vulnerabilities array missing",
+            )
+        })?;
+    let declared_count = feed.get("count").and_then(Value::as_u64).ok_or_else(|| {
+        RuntimeError::new(
+            "ingest_source_schema_invalid",
+            "CISA KEV count missing or invalid",
+        )
+    })?;
+    if declared_count != vulnerabilities.len() as u64 || vulnerabilities.is_empty() {
+        return Err(RuntimeError::new(
+            "ingest_source_count_mismatch",
+            format!(
+                "CISA KEV count={declared_count}, actual records={}",
+                vulnerabilities.len()
+            ),
+        ));
+    }
+
+    let mut seen = std::collections::HashSet::with_capacity(vulnerabilities.len());
+    let mut items = Vec::with_capacity(vulnerabilities.len());
+    for (index, record) in vulnerabilities.iter().enumerate() {
+        let field = |name: &str| {
+            record
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        };
+        let cve_id = field("cveID").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("CISA KEV record {index}: cveID missing"),
+            )
+        })?;
+        if !is_cve_identifier(cve_id) || !seen.insert(cve_id.to_string()) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("CISA KEV record {index}: invalid or duplicate CVE ID {cve_id:?}"),
+            ));
+        }
+        let vendor = field("vendorProject").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: vendorProject missing"),
+            )
+        })?;
+        let product = field("product").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: product missing"),
+            )
+        })?;
+        let vulnerability_name = field("vulnerabilityName").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: vulnerabilityName missing"),
+            )
+        })?;
+        let short_description = field("shortDescription").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: shortDescription missing"),
+            )
+        })?;
+        let date_added = field("dateAdded").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: dateAdded missing"),
+            )
+        })?;
+        if !is_iso_date(date_added) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: invalid dateAdded {date_added:?}"),
+            ));
+        }
+        let due_date = field("dueDate").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: dueDate missing"),
+            )
+        })?;
+        if !is_iso_date(due_date) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: invalid dueDate {due_date:?}"),
+            ));
+        }
+        let required_action = field("requiredAction").ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: requiredAction missing"),
+            )
+        })?;
+        for optional_string in ["knownRansomwareCampaignUse", "forensicTriage", "notes"] {
+            if record
+                .get(optional_string)
+                .is_some_and(|value| !value.is_string())
+            {
+                return Err(RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: {optional_string} must be a string when present"),
+                ));
+            }
+        }
+        let ransomware_use = field("knownRansomwareCampaignUse").unwrap_or("Unknown");
+        if !matches!(ransomware_use, "Known" | "Unknown") {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: unexpected ransomware-use value {ransomware_use:?}"),
+            ));
+        }
+        let forensic_triage = field("forensicTriage").unwrap_or("Unknown");
+        if !matches!(forensic_triage, "Yes" | "No" | "Unknown") {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: unexpected forensicTriage value {forensic_triage:?}"),
+            ));
+        }
+        let notes = field("notes");
+        let cwes = match record.get("cwes") {
+            None => Vec::new(),
+            Some(Value::Array(values)) => values
+                .iter()
+                .map(|value| {
+                    value.as_str().map(str::to_string).ok_or_else(|| {
+                        RuntimeError::new(
+                            "ingest_source_record_invalid",
+                            format!("{cve_id}: each CWE value must be a string"),
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => {
+                return Err(RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: cwes must be an array when present"),
+                ));
+            }
+        };
+        if cwes.iter().any(|cwe| !is_cwe_identifier(cwe)) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: invalid CWE value in {cwes:?}"),
+            ));
+        }
+        let title = format!("{cve_id} — {vulnerability_name}");
+        let description = if short_description.is_empty() {
+            None
+        } else {
+            Some(short_description.to_string())
+        };
+        let body = format!(
+            "CISA Known Exploited Vulnerabilities (KEV)\nCVE: {cve_id}\nVendor: {vendor}\nProduct: {product}\nVulnerability: {vulnerability_name}\nDate added: {date_added}\nDue date: {}\nKnown ransomware campaign use: {ransomware_use}\nForensic triage (BOD 26-04): {forensic_triage}\nCWE: {}\nDescription: {short_description}\nRequired action: {required_action}\nNotes: {}\nCatalog version: {catalog_version}\nCatalog released: {date_released}\nCVSS: not supplied by the KEV feed\nEPSS: not supplied by the KEV feed\nPoC status: not assessed\nCurrent target status: not tested",
+            due_date,
+            if cwes.is_empty() { "not supplied".to_string() } else { cwes.join(", ") },
+            notes.unwrap_or("none"),
+        );
+        let meta = json!({
+            "cve_record": {
+                "schema": "cisa-kev-v1",
+                "cve_id": cve_id,
+                "source_authority": "CISA",
+                "record_type": "known_exploited",
+                "known_exploited": true,
+                "vendor_project": vendor,
+                "product": product,
+                "vulnerability_name": vulnerability_name,
+                "short_description": short_description,
+                "date_added": date_added,
+                "due_date": due_date,
+                "known_ransomware_campaign_use": ransomware_use,
+                "forensic_triage": forensic_triage,
+                "required_action": required_action,
+                "notes": notes,
+                "cwes": cwes,
+                "catalog_version": catalog_version,
+                "catalog_date_released": date_released,
+                "cvss_score": null,
+                "cvss_severity": "not_provided_by_kev",
+                "epss_score": null,
+                "epss_percentile": null,
+                "poc_status": "not_assessed",
+                "current_target_status": "not_tested"
+            }
+        });
+        items.push(ExtendedItem {
+            kind: "catalog_entry".to_string(),
+            item_key: cve_id.to_string(),
+            title,
+            description,
+            body,
+            category_path: vec!["CISA KEV".to_string(), vendor.to_string(), product.to_string()],
+            canonical_url: Some(format!("https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve={cve_id}")),
+            source_location: json!({"file": cfg.source_path, "record_index": index, "catalog_version": catalog_version}),
+            meta: Some(meta),
+            license_status: snap.license_status.clone(),
+            rights_policy: cfg.license_policy.clone(),
+            source_type: "git".to_string(),
+            source_url: "https://github.com/cisagov/kev-data".to_string(),
+            source_path: cfg.source_path.clone(),
+            source_commit: Some(upstream_commit.to_string()),
+        });
+    }
+    Ok((items, kp::FilterStats::default()))
+}
+
+/// PoC Index CVE enrichment parser：只导入 CVSS/EPSS/公告链接与 Nuclei 元数据，不导入 PoC 正文。
+/// 所有评分保留原始来源字段；PoC Index KEV membership 仅表示该 CVE 出现在聚合索引中。
+fn parse_pocindex_kev_json(
+    cfg: &KindConfig,
+    package_dir: &Path,
+    snap: &SnapshotCtx,
+) -> Result<(Vec<ExtendedItem>, kp::FilterStats), RuntimeError> {
+    let root = package_dir.canonicalize().map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_open_failed",
+            format!("canonicalize package root: {e}"),
+        )
+    })?;
+    let candidate = package_dir.join(&cfg.source_path);
+    let path = candidate.canonicalize().map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_open_failed",
+            format!("canonicalize PoC Index JSON: {e}"),
+        )
+    })?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return Err(RuntimeError::new(
+            "ingest_source_path_invalid",
+            "PoC Index JSON path escapes the package or is not a file",
+        ));
+    }
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    let size = std::fs::metadata(&path)
+        .map_err(|e| RuntimeError::new("io", format!("stat {path:?}: {e}")))?
+        .len();
+    if size == 0 || size > MAX_BYTES {
+        return Err(RuntimeError::new(
+            "ingest_source_size_invalid",
+            format!("PoC Index JSON size {size} is outside 1..={MAX_BYTES}"),
+        ));
+    }
+    let bytes =
+        std::fs::read(&path).map_err(|e| RuntimeError::new("io", format!("read {path:?}: {e}")))?;
+    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        RuntimeError::new(
+            "ingest_source_json_invalid",
+            format!("parse PoC Index JSON: {e}"),
+        )
+    })?;
+    if payload.get("schema").and_then(Value::as_str) != Some("pocindex-kev-enrichment-v1") {
+        return Err(RuntimeError::new(
+            "ingest_source_schema_invalid",
+            "unsupported PoC Index enrichment schema",
+        ));
+    }
+    let repo_commit = cfg
+        .source_commit
+        .as_deref()
+        .filter(|value| value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_provenance_invalid",
+                "PoC Index parser requires a full 40-character repository commit pin",
+            )
+        })?;
+    let snapshot = payload.get("snapshot").ok_or_else(|| {
+        RuntimeError::new(
+            "ingest_source_snapshot_invalid",
+            "PoC Index snapshot metadata missing",
+        )
+    })?;
+    if snapshot.get("repository").and_then(Value::as_str)
+        != Some("https://github.com/0xMarcio/pocindex")
+        || snapshot.get("repository_commit").and_then(Value::as_str) != Some(repo_commit)
+        || snapshot.get("cdn").and_then(Value::as_str) != Some("https://pocindex.io")
+    {
+        return Err(RuntimeError::new(
+            "ingest_source_snapshot_invalid",
+            "PoC Index snapshot repository/commit/CDN does not match the pinned source",
+        ));
+    }
+    let retrieved_at = snapshot
+        .get("retrieved_at")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !retrieved_at.contains('T') {
+        return Err(RuntimeError::new(
+            "ingest_source_snapshot_invalid",
+            "PoC Index retrieved_at must be an ISO-8601 timestamp",
+        ));
+    }
+    let files = snapshot
+        .get("files")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_snapshot_invalid",
+                "PoC Index file provenance missing",
+            )
+        })?;
+    for name in ["kev.json", "epss.json", "cve_metadata.json", "nuclei.json"] {
+        let file = files.get(name).and_then(Value::as_object).ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_snapshot_invalid",
+                format!("PoC Index file provenance missing {name}"),
+            )
+        })?;
+        let sha = file
+            .get("sha256")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(RuntimeError::new(
+                "ingest_source_snapshot_invalid",
+                format!("PoC Index {name} SHA-256 is invalid"),
+            ));
+        }
+        if file.get("bytes").and_then(Value::as_u64).unwrap_or(0) == 0
+            || file
+                .get("url")
+                .and_then(Value::as_str)
+                .is_none_or(|url| !url.starts_with("https://pocindex.io/"))
+        {
+            return Err(RuntimeError::new(
+                "ingest_source_snapshot_invalid",
+                format!("PoC Index {name} file provenance is incomplete"),
+            ));
+        }
+    }
+    let records = payload
+        .get("records")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "ingest_source_schema_invalid",
+                "PoC Index records array missing",
+            )
+        })?;
+    let count = payload.get("count").and_then(Value::as_u64).unwrap_or(0) as usize;
+    if records.is_empty() || records.len() != count || records.len() > 2_000 {
+        return Err(RuntimeError::new(
+            "ingest_source_count_mismatch",
+            format!(
+                "PoC Index count {count} does not match {} records",
+                records.len()
+            ),
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut items = Vec::with_capacity(records.len());
+    for record in records {
+        let cve_id = record
+            .get("cve_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !is_cve_identifier(cve_id) || !seen.insert(cve_id.to_string()) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("invalid or duplicate PoC Index CVE ID: {cve_id:?}"),
+            ));
+        }
+        let cisa_date_added = record
+            .get("cisa_date_added")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !is_iso_date(cisa_date_added) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: invalid CISA date_added"),
+            ));
+        }
+        let kev_present = record
+            .get("pocindex_kev_present")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: pocindex_kev_present must be boolean"),
+                )
+            })?;
+        let kev_value = record
+            .get("pocindex_kev_value")
+            .filter(|value| !value.is_null());
+        if kev_present != kev_value.is_some() || kev_value.is_some_and(|value| !value.is_array()) {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: PoC Index KEV membership/value mismatch"),
+            ));
+        }
+        let optional_score = |key: &str| -> Result<Option<f64>, RuntimeError> {
+            match record.get(key) {
+                None | Some(Value::Null) => Ok(None),
+                Some(value) => {
+                    let score = value.as_f64().ok_or_else(|| {
+                        RuntimeError::new(
+                            "ingest_source_record_invalid",
+                            format!("{cve_id}: {key} must be numeric"),
+                        )
+                    })?;
+                    if !(0.0..=1.0).contains(&score) {
+                        return Err(RuntimeError::new(
+                            "ingest_source_record_invalid",
+                            format!("{cve_id}: {key} outside 0..=1"),
+                        ));
+                    }
+                    Ok(Some(score))
+                }
+            }
+        };
+        let epss_score = optional_score("epss_score")?;
+        let epss_percentile = optional_score("epss_percentile")?;
+        if epss_score.is_some() != epss_percentile.is_some() {
+            return Err(RuntimeError::new(
+                "ingest_source_record_invalid",
+                format!("{cve_id}: EPSS score and percentile must both be present or absent"),
+            ));
+        }
+        let cvss_values = record
+            .get("cvss_assessments")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: cvss_assessments must be an array"),
+                )
+            })?;
+        let mut cvss_assessments = Vec::with_capacity(cvss_values.len());
+        for assessment in cvss_values {
+            let version = assessment
+                .get("version")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let score = assessment
+                .get("score")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| {
+                    RuntimeError::new(
+                        "ingest_source_record_invalid",
+                        format!("{cve_id}: CVSS score missing"),
+                    )
+                })?;
+            let severity = assessment
+                .get("severity")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let vector = assessment
+                .get("vector")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let source = assessment
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let assessment_type = assessment
+                .get("assessment_type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !matches!(version, "2.0" | "3.0" | "3.1" | "4.0")
+                || !(0.0..=10.0).contains(&score)
+                || !matches!(severity, "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL")
+                || vector.is_empty()
+                || source.is_empty()
+                || assessment_type.is_empty()
+            {
+                return Err(RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: malformed CVSS assessment"),
+                ));
+            }
+            cvss_assessments.push(assessment.clone());
+        }
+        let advisory_values = record
+            .get("advisories")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: advisories must be an array"),
+                )
+            })?;
+        let mut advisories = Vec::with_capacity(advisory_values.len());
+        for advisory in advisory_values {
+            let url = advisory
+                .get("url")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let tags = advisory
+                .get("tags")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    RuntimeError::new(
+                        "ingest_source_record_invalid",
+                        format!("{cve_id}: advisory tags must be an array"),
+                    )
+                })?;
+            if !(url.starts_with("https://") || url.starts_with("http://"))
+                || tags.iter().any(|tag| !tag.is_string())
+            {
+                return Err(RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: malformed advisory URL/tags"),
+                ));
+            }
+            advisories.push(advisory.clone());
+        }
+        let nuclei_metadata = record
+            .get("nuclei_metadata")
+            .filter(|value| !value.is_null());
+        if let Some(nuclei) = nuclei_metadata {
+            let severity = nuclei
+                .get("severity")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !matches!(
+                severity,
+                "info" | "low" | "medium" | "high" | "critical" | "unknown"
+            ) {
+                return Err(RuntimeError::new(
+                    "ingest_source_record_invalid",
+                    format!("{cve_id}: invalid Nuclei severity"),
+                ));
+            }
+            if let Some(score) = nuclei.get("cvss").filter(|value| !value.is_null()) {
+                let score = score.as_f64().ok_or_else(|| {
+                    RuntimeError::new(
+                        "ingest_source_record_invalid",
+                        format!("{cve_id}: Nuclei CVSS must be numeric"),
+                    )
+                })?;
+                if !(0.0..=10.0).contains(&score) {
+                    return Err(RuntimeError::new(
+                        "ingest_source_record_invalid",
+                        format!("{cve_id}: Nuclei CVSS outside 0..=10"),
+                    ));
+                }
+            }
+        }
+        let title = format!("{cve_id} — PoC Index risk enrichment");
+        let mut body = format!(
+            "PoC Index CVE enrichment\nCVE: {cve_id}\nCISA KEV date added: {cisa_date_added}\nPoC Index KEV map membership: {kev_present}\nEPSS score: {}\nEPSS percentile: {}\nCVSS assessments: {}\nAdvisories: {}\n",
+            epss_score.map_or_else(|| "not available".to_string(), |v| v.to_string()),
+            epss_percentile.map_or_else(|| "not available".to_string(), |v| v.to_string()),
+            cvss_assessments.len(),
+            advisories.len(),
+        );
+        for assessment in &cvss_assessments {
+            body.push_str(&format!(
+                "CVSS {}: {} {} [{}; {}]\n",
+                assessment["version"].as_str().unwrap_or_default(),
+                assessment["score"].as_f64().unwrap_or_default(),
+                assessment["severity"].as_str().unwrap_or_default(),
+                assessment["source"].as_str().unwrap_or_default(),
+                assessment["assessment_type"].as_str().unwrap_or_default(),
+            ));
+        }
+        if let Some(nuclei) = nuclei_metadata {
+            body.push_str(&format!(
+                "PoC Index Nuclei metadata: severity={}, CVSS={}, CWE={}\n",
+                nuclei
+                    .get("severity")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown"),
+                nuclei
+                    .get("cvss")
+                    .map_or("not available".to_string(), |v| v.to_string()),
+                nuclei
+                    .get("cwe")
+                    .and_then(Value::as_str)
+                    .unwrap_or("not available"),
+            ));
+        }
+        let meta = json!({
+            "pocindex_record": {
+                "cve_id": cve_id,
+                "cisa_date_added": cisa_date_added,
+                "pocindex_kev_present": kev_present,
+                "pocindex_kev_value": kev_value,
+                "epss_score": epss_score,
+                "epss_percentile": epss_percentile,
+                "cvss_assessments": cvss_assessments,
+                "advisories": advisories,
+                "nuclei_metadata": nuclei_metadata,
+                "snapshot": snapshot,
+            }
+        });
+        let source_location = json!({"file": cfg.source_path, "snapshot": snapshot});
+        items.push(ExtendedItem {
+            kind: "catalog_entry".to_string(),
+            item_key: cve_id.to_string(),
+            title,
+            description: Some(
+                "CVSS/EPSS and advisory metadata aggregated by PoC Index; no PoC body included"
+                    .to_string(),
+            ),
+            body,
+            category_path: vec!["PoC Index".to_string(), "CISA KEV enrichment".to_string()],
+            canonical_url: Some("https://github.com/0xMarcio/pocindex".to_string()),
+            source_location,
+            meta: Some(meta),
+            license_status: snap.license_status.clone(),
+            rights_policy: cfg.license_policy.clone(),
+            source_type: "http_snapshot".to_string(),
+            source_url: "https://pocindex.io".to_string(),
+            source_path: cfg.source_path.clone(),
+            source_commit: Some(repo_commit.to_string()),
+        });
+    }
+    Ok((items, kp::FilterStats::default()))
+}
+
+fn is_cve_identifier(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("CVE-") else {
+        return false;
+    };
+    let Some((year, sequence)) = rest.split_once('-') else {
+        return false;
+    };
+    year.len() == 4
+        && year.bytes().all(|b| b.is_ascii_digit())
+        && (4..=19).contains(&sequence.len())
+        && sequence.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn is_cwe_identifier(value: &str) -> bool {
+    let Some(sequence) = value.strip_prefix("CWE-") else {
+        return false;
+    };
+    !sequence.is_empty() && sequence.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn is_iso_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| matches!(i, 4 | 7) || b.is_ascii_digit())
 }
 
 /// document_markdown：Markdown 文档正文（markdown_doc）。
@@ -1039,7 +1794,7 @@ fn parse_nuclei_template_items_from_root(
             "tags": template_tags,
             "source_license": {
                 "spdx_id": "MIT",
-                "evidence_url": "https://github.com/projectdiscovery/nuclei-templates/blob/ga346d8f/LICENSE.md",
+                "evidence_url": "https://github.com/projectdiscovery/nuclei-templates/blob/a346d8f00c61bf95bbd30365f12cf923be51ba3d/LICENSE.md",
                 "local_package": "nuclei-templates 1:v10.5.2.r748.ga346d8f-1",
             },
         });
@@ -1809,7 +2564,7 @@ mod tests {
             parser: "nuclei_yaml".to_string(),
             license_policy: "approved_only".to_string(),
             max_entries: Some(20_000),
-            source_commit: Some("ga346d8f".to_string()),
+            source_commit: Some("a346d8f00c61bf95bbd30365f12cf923be51ba3d".to_string()),
         };
         let snap = SnapshotCtx {
             license_status: "UNLICENSED".to_string(),
@@ -1909,7 +2664,7 @@ http:
             parser: "nuclei_yaml".to_string(),
             license_policy: "approved_only".to_string(),
             max_entries: None,
-            source_commit: Some("ga346d8f".to_string()),
+            source_commit: Some("a346d8f00c61bf95bbd30365f12cf923be51ba3d".to_string()),
         };
         let snap = SnapshotCtx {
             license_status: "UNLICENSED".to_string(),
@@ -1940,7 +2695,7 @@ http:
         );
         assert_eq!(
             item.source_commit.as_deref(),
-            Some("ga346d8f"),
+            Some("a346d8f00c61bf95bbd30365f12cf923be51ba3d"),
             "use the pinned Nuclei revision, not the RTIS commit"
         );
         assert_eq!(item.license_status, "MIT");
@@ -2282,6 +3037,262 @@ http:
         assert_eq!(meta["verification_result"], "historical_evidence_supported");
         assert_eq!(meta["independent_knowledge_status"], "independent");
         assert_eq!(meta["curation"]["evidence_level"], "K2");
+    }
+
+    #[test]
+    fn cisa_kev_parser_keeps_authoritative_metadata_without_claiming_poc_or_cvss() {
+        let dir = std::env::temp_dir().join(format!("cisa-kev-parser-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let feed = json!({
+            "title": "CISA Catalog of Known Exploited Vulnerabilities",
+            "catalogVersion": "2026.11.25",
+            "dateReleased": "2026-11-25T22:59:40.0000Z",
+            "count": 1,
+            "vulnerabilities": [{
+                "cveID": "CVE-2026-109618",
+                "vendorProject": "PHP Group",
+                "product": "PHP",
+                "vulnerabilityName": "PHP Use After Free",
+                "dateAdded": "2026-10-26",
+                "shortDescription": "Use after free can lead to remote code execution.",
+                "requiredAction": "Apply the vendor security update.",
+                "dueDate": "2026-11-16",
+                "knownRansomwareCampaignUse": "Known",
+                "forensicTriage": "Yes",
+                "notes": "Synthetic fixture only.",
+                "cwes": ["CWE-416"]
+            }]
+        });
+        std::fs::write(dir.join("kev.json"), serde_json::to_vec(&feed).unwrap()).unwrap();
+        let cfg = KindConfig {
+            source_path: "kev.json".to_string(),
+            parser: "cisa_kev_json".to_string(),
+            license_policy: "metadata_only".to_string(),
+            max_entries: Some(100),
+            source_commit: Some("51e0a777743fa06957afbaeb280f8735d292c1be".to_string()),
+        };
+        let snap = SnapshotCtx {
+            license_status: "CC0-1.0".to_string(),
+            source_type: "local_dir".to_string(),
+            source_url: "target/cisa-kev-package".to_string(),
+            source_commit: None,
+        };
+        let (items, stats) = parse_catalog_entry(&cfg, &dir, &snap).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, "catalog_entry");
+        assert_eq!(items[0].item_key, "CVE-2026-109618");
+        assert_eq!(items[0].license_status, "CC0-1.0");
+        assert_eq!(items[0].rights_policy, "metadata_only");
+        assert_eq!(
+            items[0].source_commit.as_deref(),
+            Some("51e0a777743fa06957afbaeb280f8735d292c1be")
+        );
+        assert_eq!(
+            items[0].meta.as_ref().unwrap()["cve_record"]["known_exploited"],
+            true
+        );
+        assert_eq!(
+            items[0].meta.as_ref().unwrap()["cve_record"]["known_ransomware_campaign_use"],
+            "Known"
+        );
+        assert_eq!(
+            items[0].meta.as_ref().unwrap()["cve_record"]["cvss_score"],
+            Value::Null
+        );
+        assert_eq!(
+            items[0].meta.as_ref().unwrap()["cve_record"]["epss_score"],
+            Value::Null
+        );
+        assert_eq!(
+            items[0].meta.as_ref().unwrap()["cve_record"]["poc_status"],
+            "not_assessed"
+        );
+        assert_eq!(
+            items[0].meta.as_ref().unwrap()["cve_record"]["current_target_status"],
+            "not_tested"
+        );
+        assert!(items[0].body.contains("CVSS: not supplied by the KEV feed"));
+        assert!(items[0].body.contains("PoC status: not assessed"));
+        assert_eq!(stats, kp::FilterStats::default());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pocindex_kev_parser_preserves_epss_cvss_and_source_provenance() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pocindex-{}-{nonce}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let commit = "e9076fea96095e014fc107c02dd23ee8dc21476d";
+        let files = json!({
+            "kev.json": {"url":"https://pocindex.io/kev.json","etag":"\"kev\"","last_modified":"2026-11-26T06:41:10Z","sha256":"a".repeat(64),"bytes":100},
+            "epss.json": {"url":"https://pocindex.io/epss.json","etag":"\"epss\"","last_modified":"2026-11-26T06:41:10Z","sha256":"b".repeat(64),"bytes":100},
+            "cve_metadata.json": {"url":"https://pocindex.io/cve_metadata.json","etag":"\"cvss\"","last_modified":"2026-11-26T06:41:10Z","sha256":"c".repeat(64),"bytes":100},
+            "nuclei.json": {"url":"https://pocindex.io/nuclei.json","etag":"\"nuclei\"","last_modified":"2026-11-26T06:41:10Z","sha256":"d".repeat(64),"bytes":100}
+        });
+        let payload = json!({
+            "schema":"pocindex-kev-enrichment-v1",
+            "count":1,
+            "snapshot":{
+                "repository":"https://github.com/0xMarcio/pocindex",
+                "repository_commit":commit,
+                "cdn":"https://pocindex.io",
+                "retrieved_at":"2026-11-26T06:41:10Z",
+                "cisa_catalog_version":"2026.11.25",
+                "files":files
+            },
+            "records":[{
+                "cve_id":"CVE-2099-12345",
+                "cisa_date_added":"2099-01-01",
+                "pocindex_kev_present":true,
+                "pocindex_kev_value":["2099-01-01",0],
+                "epss_score":0.9,
+                "epss_percentile":0.99,
+                "cvss_assessments":[{"version":"3.1","score":9.8,"severity":"CRITICAL","vector":"CVSS:3.1/AV:N","source":"nvd@nist.gov","assessment_type":"Primary"}],
+                "advisories":[{"url":"https://example.com/advisory","tags":["Vendor Advisory"]}],
+                "nuclei_metadata":{"severity":"critical","cvss":9.8,"cvss_vector":"CVSS:3.1/AV:N","cwe":"CWE-78"}
+            }]
+        });
+        std::fs::write(
+            dir.join("pocindex-kev.json"),
+            serde_json::to_vec(&payload).unwrap(),
+        )
+        .unwrap();
+        let cfg = KindConfig {
+            source_path: "pocindex-kev.json".to_string(),
+            parser: "pocindex_kev_json".to_string(),
+            license_policy: "metadata_only".to_string(),
+            max_entries: Some(2),
+            source_commit: Some(commit.to_string()),
+        };
+        let snap = SnapshotCtx {
+            source_type: "local_dir".to_string(),
+            source_url: "target/pocindex-kev-package".to_string(),
+            source_commit: None,
+            license_status: "MIT".to_string(),
+        };
+        let (items, _) = parse_catalog_entry(&cfg, &dir, &snap).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].item_key, "CVE-2099-12345");
+        assert_eq!(items[0].source_type, "http_snapshot");
+        assert_eq!(items[0].source_url, "https://pocindex.io");
+        assert_eq!(items[0].source_commit.as_deref(), Some(commit));
+        let meta = items[0].meta.as_ref().unwrap();
+        assert_eq!(meta["pocindex_record"]["epss_score"], 0.9);
+        assert_eq!(
+            meta["pocindex_record"]["cvss_assessments"][0]["source"],
+            "nvd@nist.gov"
+        );
+        assert_eq!(meta["pocindex_record"]["nuclei_metadata"]["cwe"], "CWE-78");
+        assert!(items[0].body.contains("EPSS score: 0.9"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pocindex_kev_parser_rejects_invalid_epss_and_duplicate_cves() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("pocindex-invalid-{}-{nonce}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let commit = "e9076fea96095e014fc107c02dd23ee8dc21476d";
+        let files = json!({
+            "kev.json":{"url":"https://pocindex.io/kev.json","sha256":"a".repeat(64),"bytes":1},
+            "epss.json":{"url":"https://pocindex.io/epss.json","sha256":"b".repeat(64),"bytes":1},
+            "cve_metadata.json":{"url":"https://pocindex.io/cve_metadata.json","sha256":"c".repeat(64),"bytes":1},
+            "nuclei.json":{"url":"https://pocindex.io/nuclei.json","sha256":"d".repeat(64),"bytes":1}
+        });
+        let record = json!({
+            "cve_id":"CVE-2099-12345","cisa_date_added":"2099-01-01",
+            "pocindex_kev_present":false,"pocindex_kev_value":null,
+            "epss_score":1.1,"epss_percentile":0.9,
+            "cvss_assessments":[],"advisories":[],"nuclei_metadata":null
+        });
+        let payload = json!({"schema":"pocindex-kev-enrichment-v1","count":1,
+            "snapshot":{"repository":"https://github.com/0xMarcio/pocindex","repository_commit":commit,"cdn":"https://pocindex.io","retrieved_at":"2026-11-26T06:41:10Z","files":files},
+            "records":[record]});
+        std::fs::write(
+            dir.join("pocindex-kev.json"),
+            serde_json::to_vec(&payload).unwrap(),
+        )
+        .unwrap();
+        let cfg = KindConfig {
+            source_path: "pocindex-kev.json".to_string(),
+            parser: "pocindex_kev_json".to_string(),
+            license_policy: "metadata_only".to_string(),
+            max_entries: Some(2),
+            source_commit: Some(commit.to_string()),
+        };
+        let snap = SnapshotCtx {
+            license_status: "MIT".to_string(),
+            source_type: "local_dir".to_string(),
+            source_url: "target/pocindex-kev-package".to_string(),
+            source_commit: None,
+        };
+        assert!(parse_catalog_entry(&cfg, &dir, &snap).is_err());
+        let mut duplicate = payload.clone();
+        let mut duplicate_record = payload["records"][0].clone();
+        duplicate_record["epss_score"] = json!(0.9);
+        duplicate_record["epss_percentile"] = json!(0.9);
+        duplicate["records"] = json!([duplicate_record.clone(), duplicate_record]);
+        duplicate["count"] = json!(2);
+        std::fs::write(
+            dir.join("pocindex-kev.json"),
+            serde_json::to_vec(&duplicate).unwrap(),
+        )
+        .unwrap();
+        assert!(parse_catalog_entry(&cfg, &dir, &snap).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cisa_kev_parser_rejects_count_mismatch_and_invalid_cve_ids() {
+        let dir = std::env::temp_dir().join(format!("cisa-kev-invalid-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = KindConfig {
+            source_path: "kev.json".to_string(),
+            parser: "cisa_kev_json".to_string(),
+            license_policy: "metadata_only".to_string(),
+            max_entries: Some(100),
+            source_commit: None,
+        };
+        let snap = SnapshotCtx {
+            license_status: "CC0-1.0".to_string(),
+            source_type: "git".to_string(),
+            source_url: "https://github.com/cisagov/kev-data".to_string(),
+            source_commit: None,
+        };
+        let mut feed = json!({
+            "catalogVersion": "2026.11.25",
+            "dateReleased": "2026-11-25T22:59:40Z",
+            "count": 2,
+            "vulnerabilities": []
+        });
+        std::fs::write(dir.join("kev.json"), serde_json::to_vec(&feed).unwrap()).unwrap();
+        assert!(parse_catalog_entry(&cfg, &dir, &snap).is_err());
+        feed["count"] = json!(1);
+        feed["vulnerabilities"] = json!([{
+            "cveID": "NOT-A-CVE", "vendorProject": "Vendor", "product": "Product",
+            "dateAdded": "2026-11-01", "knownRansomwareCampaignUse": "Unknown"
+        }]);
+        std::fs::write(dir.join("kev.json"), serde_json::to_vec(&feed).unwrap()).unwrap();
+        assert!(parse_catalog_entry(&cfg, &dir, &snap).is_err());
+        feed["vulnerabilities"] = json!([{
+            "cveID": "CVE-2099-12345", "vendorProject": "Vendor", "product": "Product",
+            "vulnerabilityName": "Synthetic", "dateAdded": "2099-01-01",
+            "shortDescription": "Synthetic fixture", "requiredAction": "Patch it",
+            "dueDate": "2099-02-01", "knownRansomwareCampaignUse": "Unknown",
+            "cwes": [416]
+        }]);
+        std::fs::write(dir.join("kev.json"), serde_json::to_vec(&feed).unwrap()).unwrap();
+        assert!(parse_catalog_entry(&cfg, &dir, &snap).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

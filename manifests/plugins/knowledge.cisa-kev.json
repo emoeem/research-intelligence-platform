@@ -1,0 +1,64 @@
+{
+  "schema_version": "1",
+  "id": "knowledge.cisa-kev",
+  "name": "CISA KEV 官方漏洞目录",
+  "version": "0.1.2",
+  "kind": "knowledge",
+  "description": "CISA 官方 Known Exploited Vulnerabilities 目录；只摄取 CVE 风险元数据，不摄取或执行 PoC。",
+  "authors": [
+    "Cybersecurity and Infrastructure Security Agency"
+  ],
+  "homepage": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+  "license": "CC0-1.0",
+  "source": {
+    "type": "local_dir",
+    "path": "target/cisa-kev-package"
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": [
+      "1"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "knowledge-source.cisa-kev.catalog",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "摄取官方 CISA KEV JSON 中的已知在野利用漏洞元数据；不抓取 CVE 外部页面、不运行任何 PoC。",
+      "provides": {
+        "corpus_id": "cisa-kev",
+        "content_kinds": [
+          "catalog_entry"
+        ],
+        "kinds": {
+          "catalog_entry": {
+            "source_path": "known_exploited_vulnerabilities.json",
+            "parser": "cisa_kev_json",
+            "license_policy": "metadata_only",
+            "max_entries": 5000,
+            "source_commit": "51e0a777743fa06957afbaeb280f8735d292c1be",
+            "description": "CISA KEV 官方 JSON：按 CVE ID 建立獨立目录条目，保存厂商、产品、加入日期、修复期限、勒索软件使用标记、CWE 与 requiredAction；CVSS/EPSS/PoC/当前目标状态不由该源推断。"
+          }
+        },
+        "index": {
+          "fts": true,
+          "vector": false
+        },
+        "parse_pipeline": "tool.rip.doc.parse"
+      }
+    }
+  ],
+  "dependencies": [],
+  "permissions": {
+    "data_access": "ingest_via_api"
+  },
+  "data_retention": {
+    "ingested_policy": "retain_with_provenance",
+    "persistent": []
+  },
+  "context": {
+    "summary": "CISA 官方在野利用漏洞目录，作为漏洞情报与修复优先级的权威来源；不代表具体目标当前仍受影响。",
+    "docs": "README.md"
+  }
+}

@@ -429,7 +429,45 @@ describe("Knowledge 页（P5-6）", () => {
               parse_status: "parsed",
               protocols: ["http"],
               tags: ["panel", "exposure"],
-              classification: { "cve-id": ["CVE-2026-12345"], "cwe-id": ["CWE-200"] },
+              classification: {
+                "cve-id": ["CVE-2026-12345"],
+                "cwe-id": ["CWE-200"],
+                "cvss-score": 9.8,
+                "epss-score": 0.90338,
+                "epss-percentile": 0.99802,
+              },
+            },
+            pocindex_record: {
+              cve_id: "CVE-2026-12345",
+              cisa_date_added: "2026-11-01",
+              pocindex_kev_present: true,
+              epss_score: 0.90338,
+              epss_percentile: 0.99802,
+              cvss_assessments: [{
+                version: "3.1", score: 9.8, severity: "CRITICAL",
+                vector: "CVSS:3.1/AV:N", source: "nvd@nist.gov", assessment_type: "Primary",
+              }],
+              advisories: [{ url: "https://example.com/advisory", tags: ["Vendor Advisory"] }],
+              nuclei_metadata: { severity: "critical", cvss: 9.8, cwe: "CWE-78" },
+              snapshot: { repository_commit: "e9076fea96095e014fc107c02dd23ee8dc21476d", retrieved_at: "2026-11-26T07:30:41Z" },
+            },
+            cve_record: {
+              schema: "cisa-kev-v1",
+              cve_id: "CVE-2026-12345",
+              source_authority: "CISA",
+              known_exploited: true,
+              vendor_project: "Synthetic Vendor",
+              product: "Synthetic Product",
+              date_added: "2026-11-01",
+              due_date: "2026-11-22",
+              known_ransomware_campaign_use: "Unknown",
+              forensic_triage: "Yes",
+              cwes: ["CWE-200"],
+              cvss_score: null,
+              epss_score: null,
+              poc_status: "not_assessed",
+              current_target_status: "not_tested",
+              required_action: "Apply the vendor update.",
             },
           }],
           review_history: reviewHistory,
@@ -444,6 +482,16 @@ describe("Knowledge 页（P5-6）", () => {
     expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("high");
     expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("CVE-2026-12345");
     expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("CWE-200");
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("Nuclei CVSS: 9.8");
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("Nuclei EPSS: 0.90338");
+    expect(screen.getByTestId("pocindex-record-metadata").textContent).toContain("0.90338");
+    expect(screen.getByTestId("pocindex-record-metadata").textContent).toContain("9.8 CRITICAL");
+    expect(screen.getByTestId("pocindex-record-metadata").textContent).toContain("Vendor Advisory");
+    expect(screen.getByTestId("cve-record-metadata").textContent).toContain("CVE-2026-12345");
+    expect(screen.getByTestId("cve-record-metadata").textContent).toContain("CISA KEV");
+    expect(screen.getByTestId("cve-record-metadata").textContent).toContain("CVSS/EPSS 未由 KEV 提供");
+    expect(screen.getByTestId("cve-record-metadata").textContent).toContain("PoC 未评估");
+    expect(screen.getByTestId("cve-record-metadata").textContent).toContain("取证分诊: Yes");
     expect(screen.getByTestId("source-item-key").textContent).toContain(itemKey);
 
     fireEvent.click(screen.getByRole("checkbox", { name: `选择条目 ${itemKey}` }));

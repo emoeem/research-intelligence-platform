@@ -446,6 +446,83 @@ function SourceEntriesView() {
                 <p className="mt-1 break-all font-mono text-[10px] text-muted" data-testid="source-item-key">
                   {item.item_key}
                 </p>
+                {item.cve_record ? (
+                  <div className="mt-2 space-y-1.5 text-[11px]" data-testid="cve-record-metadata">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {item.cve_record.known_exploited ? (
+                        <span className="badge badge-sm badge-error">CISA KEV · {translateUi("已知在野利用")}</span>
+                      ) : null}
+                      {item.cve_record.cve_id ? (
+                        <span className="font-mono">{item.cve_record.cve_id}</span>
+                      ) : null}
+                      {item.cve_record.vendor_project ? (
+                        <span className="text-muted">{translateUi("厂商")}: {item.cve_record.vendor_project}</span>
+                      ) : null}
+                      {item.cve_record.product ? (
+                        <span className="text-muted">{translateUi("产品")}: {item.cve_record.product}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
+                      {item.cve_record.date_added ? <span>{translateUi("CISA收录日期")}: {item.cve_record.date_added}</span> : null}
+                      {item.cve_record.due_date ? <span>{translateUi("修复期限")}: {item.cve_record.due_date}</span> : null}
+                      {item.cve_record.known_ransomware_campaign_use ? <span>{translateUi("勒索软件使用")}: {item.cve_record.known_ransomware_campaign_use}</span> : null}
+                      {item.cve_record.forensic_triage ? <span>{translateUi("取证分诊")}: {item.cve_record.forensic_triage}</span> : null}
+                      {item.cve_record.cwes?.length ? <span>CWE: {item.cve_record.cwes.join(", ")}</span> : null}
+                    </div>
+                    <p className="text-muted">{translateUi("CVSS/EPSS 未由 KEV 提供")} · {translateUi("PoC 未评估")} · {translateUi("当前目标未测试")}</p>
+                    {item.cve_record.required_action ? (
+                      <p className="text-muted"><span className="font-medium">{translateUi("所需操作")}:</span> {item.cve_record.required_action}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {item.pocindex_record ? (
+                  <div className="mt-2 space-y-1.5 text-[11px]" data-testid="pocindex-record-metadata">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="badge badge-sm badge-info">{translateUi("PoC Index 风险元数据")}</span>
+                      <span className="text-muted">{translateUi("PoC Index KEV 索引")}: {item.pocindex_record.pocindex_kev_present ? translateUi("已收录") : translateUi("未收录")}</span>
+                      {typeof item.pocindex_record.epss_score === "number" ? (
+                        <span className="font-medium">{translateUi("EPSS 分数")}: {item.pocindex_record.epss_score.toFixed(5)}</span>
+                      ) : null}
+                      {typeof item.pocindex_record.epss_percentile === "number" ? (
+                        <span className="text-muted">{translateUi("EPSS 百分位")}: {(item.pocindex_record.epss_percentile * 100).toFixed(1)}%</span>
+                      ) : null}
+                    </div>
+                    {item.pocindex_record.cvss_assessments.length ? (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
+                        <span className="font-medium">{translateUi("CVSS 评估")}:</span>
+                        {item.pocindex_record.cvss_assessments.slice(0, 4).map((assessment, index) => (
+                          <span key={`${assessment.version}-${assessment.source}-${index}`}>
+                            v{assessment.version} {assessment.score.toFixed(1)} {assessment.severity} · {assessment.source} · {assessment.assessment_type}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {item.pocindex_record.nuclei_metadata ? (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
+                        <span className="font-medium">{translateUi("Nuclei 元数据")}:</span>
+                        <span>{item.pocindex_record.nuclei_metadata.severity ?? "unknown"}</span>
+                        {typeof item.pocindex_record.nuclei_metadata.cvss === "number" ? <span>CVSS {item.pocindex_record.nuclei_metadata.cvss.toFixed(1)}</span> : null}
+                        {item.pocindex_record.nuclei_metadata.cwe ? <span>{item.pocindex_record.nuclei_metadata.cwe}</span> : null}
+                      </div>
+                    ) : null}
+                    {item.pocindex_record.advisories.length ? (
+                      <div className="flex flex-wrap gap-x-2 gap-y-1 text-muted">
+                        <span className="font-medium">{translateUi("公告链接")} ({item.pocindex_record.advisories.length}):</span>
+                        {item.pocindex_record.advisories.slice(0, 3).map((advisory, index) => (
+                          <a key={`${advisory.url}-${index}`} href={advisory.url} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+                            {advisory.tags[0] ?? new URL(advisory.url).hostname}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                    {item.pocindex_record.snapshot ? (
+                      <p className="text-muted">
+                        {translateUi("快照时间")}: {item.pocindex_record.snapshot.retrieved_at ?? "—"}
+                        {item.pocindex_record.snapshot.repository_commit ? ` · ${item.pocindex_record.snapshot.repository_commit.slice(0, 7)}` : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {item.nuclei_template ? (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]" data-testid="nuclei-template-metadata">
                     {item.nuclei_template.severity ? (
@@ -462,6 +539,15 @@ function SourceEntriesView() {
                     ) : null}
                     {stringList(item.nuclei_template.classification?.["cwe-id"]).length ? (
                       <span className="text-muted">CWE: {stringList(item.nuclei_template.classification?.["cwe-id"]).join(", ")}</span>
+                    ) : null}
+                    {item.nuclei_template.classification?.["cvss-score"] !== undefined ? (
+                      <span className="text-muted">Nuclei CVSS: {String(item.nuclei_template.classification["cvss-score"])}</span>
+                    ) : null}
+                    {item.nuclei_template.classification?.["epss-score"] !== undefined ? (
+                      <span className="text-muted">Nuclei EPSS: {String(item.nuclei_template.classification["epss-score"])}</span>
+                    ) : null}
+                    {item.nuclei_template.classification?.["epss-percentile"] !== undefined ? (
+                      <span className="text-muted">Nuclei EPSS percentile: {String(item.nuclei_template.classification["epss-percentile"])}</span>
                     ) : null}
                     {item.nuclei_template.tags?.length ? (
                       <span className="text-muted">{translateUi("标签")}: {item.nuclei_template.tags.slice(0, 10).join(", ")}</span>

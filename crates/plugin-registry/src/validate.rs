@@ -132,8 +132,10 @@ pub const EXTENDED_CONTENT_KINDS: [&str; 4] = [
 ];
 
 /// 每类新内容的必配内置解析器（per-kind parser 注册表键，一一对应）。
-pub const KIND_PARSER: [(&str, &str); 4] = [
+pub const KIND_PARSER: [(&str, &str); 6] = [
     ("catalog_entry", "markdown_links"),
+    ("catalog_entry", "cisa_kev_json"),
+    ("catalog_entry", "pocindex_kev_json"),
     ("document_markdown", "markdown_doc"),
     ("skill_candidate", "skill_frontmatter"),
     ("nuclei_template", "nuclei_yaml"),
@@ -531,17 +533,20 @@ fn check_knowledge_provides(cap_obj: &Map<String, Value>, cap_id: &str) -> RuleR
             }
         }
         let parser = str_field(decl, "parser").unwrap_or_default();
-        let expected = KIND_PARSER
-            .iter()
-            .find(|(k, _)| *k == kind.as_str())
-            .map(|(_, p)| *p)
-            .unwrap_or_default();
-        if parser != expected {
+        let parser_registered = KIND_PARSER.iter().any(|(registered_kind, expected)| {
+            *registered_kind == kind.as_str() && *expected == parser
+        });
+        if !parser_registered {
+            let expected = KIND_PARSER
+                .iter()
+                .filter(|(registered_kind, _)| *registered_kind == kind.as_str())
+                .map(|(_, parser)| *parser)
+                .collect::<Vec<_>>();
             return Err(issue(
                 3,
                 "knowledge_provides_invalid",
                 format!(
-                    "provides.kinds.{kind}.parser {parser:?} must be {expected:?} (per-kind parser pairing)"
+                    "provides.kinds.{kind}.parser {parser:?} must be one of {expected:?} (per-kind parser pairing)"
                 ),
             ));
         }

@@ -173,6 +173,13 @@ jobs:
         working-directory: workers/python
         run: python -m unittest discover -s tests -v
 
+      - name: Nuclei 元数据包只读投影测试
+        run: python3 scripts/security-intel/test_build_nuclei_metadata_package.py
+      - name: CISA KEV 固定快照包测试
+        run: python3 scripts/security-intel/test_build_cisa_kev_package.py
+      - name: PoC Index KEV 元数据包测试
+        run: python3 scripts/security-intel/test_build_pocindex_kev_package.py
+
   browser:
     name: Browser visual and accessibility gate
     runs-on: ubuntu-latest

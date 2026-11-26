@@ -22,7 +22,7 @@ The dedicated Nuclei content kind and YAML parser feed the reviewable knowledge_
 - The full disposable ingestion also reconciled 15,084 legacy RTIS rows.
 - Search index schema v3 exposes severity, protocol, CVE, CWE and tags as structured fields and exact filters.
 - Context Broker exposes the new Nuclei content only after explicit APPROVED review.
-- Source provenance pins the Nuclei snapshot to ga346d8f. License evidence is recorded from the installed package metadata and upstream license path; do not inherit RTIS kit licensing or verification.
+- Source provenance pins the Nuclei snapshot to a346d8f00c61bf95bbd30365f12cf923be51ba3d. License evidence is recorded from the installed package metadata and upstream license path; do not inherit RTIS kit licensing or verification.
 
 Migration 032 adds only the nuclei_template entry kind to knowledge_source_entry. The migration regression test verifies that existing rows, IDs, hashes and review states survive unchanged and unknown kinds remain rejected.
 
@@ -132,3 +132,6 @@ The worktree already contained extensive unrelated modifications. They were pres
 4. Separate the exact frontend-crypto evidence for ID 900047 from the plaintext-cookie case 900043.
 5. Review ID 79's existing K3 evidence chain and reuse boundaries without creating duplicate metadata.
 6. After development-copy migration and index rebuild, validate the plugin upgrade path before any production rollout.
+
+
+后续 CISA KEV、PoC Index CVSS/EPSS 与三源联合索引验证见 [CISA-KEV-AND-NUCLEI-INTAKE-2026-11-26.md](CISA-KEV-AND-NUCLEI-INTAKE-2026-11-26.md)。

@@ -382,6 +382,15 @@ export async function reviewKnowledgeSourceEntries(
 // ---------------------------------------------------------------------------
 
 /** Nuclei YAML 结构化元数据（不包含模板正文）。 */
+export interface KnowledgeSourceNucleiClassification {
+  "cve-id"?: string | string[];
+  "cwe-id"?: string | string[];
+  "cvss-score"?: number | string;
+  "cvss-metrics"?: string;
+  "epss-score"?: number | string;
+  "epss-percentile"?: number | string;
+}
+
 export interface KnowledgeSourceNucleiMetadata {
   template_id?: string;
   name?: string;
@@ -389,13 +398,75 @@ export interface KnowledgeSourceNucleiMetadata {
   parse_status?: string;
   protocols?: string[];
   tags?: string[];
-  classification?: Record<string, string | string[] | undefined> | null;
+  classification?: KnowledgeSourceNucleiClassification | null;
   author?: string[];
   references?: string[];
   request_block_count?: number;
   matcher_count?: number;
   extractor_count?: number;
   has_flow?: boolean;
+}
+
+export interface KnowledgeSourceCveMetadata {
+  schema?: string;
+  cve_id?: string;
+  source_authority?: string;
+  record_type?: string;
+  known_exploited?: boolean;
+  vendor_project?: string;
+  product?: string;
+  vulnerability_name?: string;
+  short_description?: string;
+  date_added?: string;
+  due_date?: string | null;
+  known_ransomware_campaign_use?: string;
+  forensic_triage?: string;
+  required_action?: string;
+  notes?: string | null;
+  cwes?: string[];
+  catalog_version?: string;
+  catalog_date_released?: string;
+  cvss_score?: number | null;
+  cvss_severity?: string;
+  epss_score?: number | null;
+  epss_percentile?: number | null;
+  poc_status?: string;
+  current_target_status?: string;
+}
+
+export interface KnowledgeSourcePocIndexCvssAssessment {
+  version: string;
+  score: number;
+  severity: string;
+  vector: string;
+  source: string;
+  assessment_type: string;
+}
+
+export interface KnowledgeSourcePocIndexAdvisory {
+  url: string;
+  tags: string[];
+}
+
+export interface KnowledgeSourcePocIndexMetadata {
+  cve_id: string;
+  cisa_date_added: string;
+  pocindex_kev_present: boolean;
+  pocindex_kev_value?: unknown[] | null;
+  epss_score?: number | null;
+  epss_percentile?: number | null;
+  cvss_assessments: KnowledgeSourcePocIndexCvssAssessment[];
+  advisories: KnowledgeSourcePocIndexAdvisory[];
+  nuclei_metadata?: {
+    severity?: string;
+    cvss?: number | null;
+    cvss_vector?: string | null;
+    cwe?: string | null;
+  } | null;
+  snapshot?: {
+    repository_commit?: string;
+    retrieved_at?: string;
+  };
 }
 
 export interface KnowledgeSourceReviewHistory {
@@ -426,6 +497,8 @@ export interface KnowledgeSourceEntry {
   source_url?: string | null;
   source_location?: Record<string, unknown>;
   nuclei_template?: KnowledgeSourceNucleiMetadata;
+  cve_record?: KnowledgeSourceCveMetadata;
+  pocindex_record?: KnowledgeSourcePocIndexMetadata;
   body_bytes?: number;
   first_seen_at?: string | null;
   last_seen_at?: string | null;

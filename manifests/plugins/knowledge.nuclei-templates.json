@@ -1,0 +1,65 @@
+{
+  "schema_version": "1",
+  "id": "knowledge.nuclei-templates",
+  "name": "Nuclei 官方检测模板",
+  "version": "0.1.1",
+  "kind": "knowledge",
+  "description": "ProjectDiscovery 官方 Nuclei 模板的结构化检测元数据与模板正文；仅静态解析，不执行模板。",
+  "authors": [
+    "ProjectDiscovery"
+  ],
+  "homepage": "https://github.com/projectdiscovery/nuclei-templates",
+  "documentation": "https://docs.projectdiscovery.io/templates/introduction",
+  "license": "MIT",
+  "source": {
+    "type": "local_dir",
+    "path": "target/nuclei-metadata-package"
+  },
+  "compatibility": {
+    "rip_core": ">=0.2.0, <1.0.0",
+    "manifest_schema": [
+      "1"
+    ]
+  },
+  "permissions": {
+    "data_access": "ingest_via_api"
+  },
+  "capabilities": [
+    {
+      "id": "knowledge-source.nuclei-templates.catalog",
+      "type": "knowledge_source",
+      "entry": "README.md",
+      "summary": "按官方 Nuclei 模板 ID 解析 severity、协议、CVE/CWE、标签、请求块、匹配器与 YAML 语法状态。",
+      "provides": {
+        "corpus_id": "nuclei-templates",
+        "content_kinds": [
+          "nuclei_template"
+        ],
+        "kinds": {
+          "nuclei_template": {
+            "source_path": "knowledge.db",
+            "parser": "nuclei_yaml",
+            "license_policy": "approved_only",
+            "max_entries": 20000,
+            "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+            "description": "只包含 RTIS Nuclei 元数据的最小 SQLite 投影；模板 YAML 从与固定版本匹配的 /usr/share/nuclei-templates 读取。"
+          }
+        },
+        "index": {
+          "fts": true,
+          "vector": false
+        },
+        "parse_pipeline": "tool.rip.doc.parse"
+      }
+    }
+  ],
+  "context": {
+    "summary": "官方 Nuclei 检测模板。条目初始 DISCOVERED；仅静态 YAML 解析，不代表目标可利用或模板已在目标上验证。",
+    "docs": "README.md"
+  },
+  "data_retention": {
+    "ingested_policy": "retain_with_provenance",
+    "persistent": []
+  },
+  "dependencies": []
+}
