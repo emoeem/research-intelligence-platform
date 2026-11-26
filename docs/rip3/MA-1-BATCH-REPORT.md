@@ -58,12 +58,13 @@
 | 7 | `cargo deny check licenses` | **0** | `licenses ok` |
 | 8 | `grep -c '^\[\[package\]\]' Cargo.lock` | **0** | `399`（红线 1 双点复核；git diff Cargo.lock 为空） |
 
-判据 8 计时证据（`cargo test -p rp-mcp-parity --test caller_auth -- --nocapture` 实测输出）：
+判据 8 计时证据（`cargo test --offline -p rp-mcp-parity --test caller_auth -- --nocapture` 实测输出）：
 
+```text
+MA-1 e2e auth latency：multi p50=3.07ms p95=3.78ms；paired incremental p95=+1.68ms（40 对，判据 8）
 ```
-MA-1 e2e 多 key 校验计时：p50=2.73ms p95=3.37ms（40 样本，判据 8）
-MA-1 e2e legacy 对照：p50=1.94ms（增量参考差 +0.79ms）
-```
+
+以多 key 与 legacy 单令牌交替配对采样，验收 `paired incremental p95 < 5ms`。HTTP 往返耗时仅作为测量载体，不再错误地等同于 SHA-256 + SQLite 主键查询的增量成本。
 
 ## 四、八判据对照
 
@@ -76,7 +77,7 @@ MA-1 e2e legacy 对照：p50=1.94ms（增量参考差 +0.79ms）
 | 5 | 吊销即时生效 | **PASS** | key-revoke 后下一请求 401（selftest + e2e 双面，server 每请求 mode=ro 直查零缓存，D4）；caller-add 即建即用（selftest 预置后立即可用） |
 | 6 | key 管理面完整 | **PASS** | 五子命令 JSON 输出 + 退出码口径（0 ok/help、2 参数与执行错误——沿用 rp-admin 既有形态，见坏消息 4）；key 明文 47 字符 `rp1_` 前缀仅 key-gen JSON `key` 字段一次 + stderr「仅此一次展示」警示（selftest 断言）；key-list 不回明文（selftest grep 反证 + 库中零明文）；重复 revoke exit 0 + already_revoked=true |
 | 7 | 零直连 SQL 写 | **PASS**（门禁同态） | rp_server.py 新增面 grep `INSERT INTO|UPDATE (caller|api_key|plugin)|DELETE FROM` 零命中；caller/api_key 写入仅 rp-admin 五子命令；phase6 唯一红为基线既有欠账（坏消息 1），非本批引入 |
-| 8 | 鉴权增量成本 | **PASS** | 多 key 校验 p95=3.37ms < 5ms（40 样本）；相对 legacy 增量 +0.79ms（sha256 + 主键单行查询直查面） |
+| 8 | 鉴权增量成本 | **PASS** | 多 key p95=3.78ms；相对 legacy 配对增量 p95=+1.68ms < 5ms（40 对；sha256 + 主键单行查询增量成本） |
 
 ## 五、红线八条复核
 

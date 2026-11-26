@@ -8,7 +8,7 @@
 //! 不串扰（判据 3）；③未知 key 401 形状不变（判据 4）；④key-revoke 后下一
 //! 请求 401 + 重复 revoke 幂等（判据 5/6）；⑤caller 停用 join 判定后其 key
 //! 401（判据 4，停用写面 = 测试夹具直写临时库，红线 3 只约束 server）；⑥
-//! 审计 JSONL caller 字段三态（D5）+ 多 key 校验 p95 < 5ms 计时粗断言（判据 8）。
+//! 审计 JSONL caller 字段三态（D5）+ 多 key 相对 legacy 的增量 p95 < 5ms（判据 8）。
 //!
 //! rp-admin 二进制解析顺序：RP_ADMIN_BIN env → `$CARGO_TARGET_DIR/debug/
 //! rp-admin` → repo `target/debug/rp-admin` → 全缺位时按 parity.rs ensure_bin
@@ -184,14 +184,6 @@ fn wait_ready(port: u16, log_path: &Path) {
     }
 }
 
-/// 判据 8 计时样：单请求毫秒（含完整 HTTP 往返；本地无网络噪声）。
-fn timed_ms(port: u16, token: &str) -> f64 {
-    let t0 = Instant::now();
-    let resp = must_get(port, Some(token));
-    assert_eq!(resp.status, 200, "timed request must succeed");
-    t0.elapsed().as_secs_f64() * 1000.0
-}
-
 #[test]
 fn caller_multi_key_auth_e2e() {
     // 前置守卫（V-9 同款）：python3 在位。
@@ -317,33 +309,43 @@ fn caller_multi_key_auth_e2e() {
     let resp = must_get(port, Some(&key_b));
     assert_eq!(resp.status, 200, "caller-e2e-b key 必须通过");
 
-    // ③判据 8：多 key 校验计时（吊销前测；40 样本 warmup 5，p95 < 5ms）。
+    // ③判据 8：测量多 key 相对 legacy 的增量成本，而不是把 HTTP 往返/调度
+    // 噪声算进 sha256 + SQLite 主键查询。交替采样 40 对，降低时间漂移影响。
     for _ in 0..5 {
         must_get(port, Some(&key_a));
+        must_get(port, Some(TOKEN));
     }
-    let mut samples: Vec<f64> = (0..40).map(|_| timed_ms(port, &key_a)).collect();
-    samples.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
-    let p50 = samples[samples.len() / 2];
-    let p95 = samples[(samples.len() as f64 * 0.95).floor() as usize % samples.len()];
-    eprintln!("MA-1 e2e 多 key 校验计时：p50={p50:.2}ms p95={p95:.2}ms（40 样本，判据 8）");
-    assert!(
-        p95 < 5.0,
-        "多 key 校验 p95={p95:.2}ms ≥ 5ms（判据 8：sha256 + 主键单行查询增量成本）"
-    );
-    let legacy_samples: Vec<f64> = (0..20)
-        .map(|_| {
+    let mut multi_samples: Vec<f64> = Vec::with_capacity(40);
+    let mut incremental_samples: Vec<f64> = Vec::with_capacity(40);
+    for i in 0..40 {
+        let measure = |token: &str| {
             let t0 = Instant::now();
-            let resp = must_get(port, Some(TOKEN));
-            assert_eq!(resp.status, 200);
+            let resp = must_get(port, Some(token));
+            assert_eq!(resp.status, 200, "timed auth request must succeed");
             t0.elapsed().as_secs_f64() * 1000.0
-        })
-        .collect();
-    let mut legacy_sorted = legacy_samples.clone();
-    legacy_sorted.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+        };
+        let (legacy_ms, multi_ms) = if i % 2 == 0 {
+            (measure(TOKEN), measure(&key_a))
+        } else {
+            let multi = measure(&key_a);
+            let legacy = measure(TOKEN);
+            (legacy, multi)
+        };
+        multi_samples.push(multi_ms);
+        incremental_samples.push(multi_ms - legacy_ms);
+    }
+    multi_samples.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+    incremental_samples.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+    let multi_p50 = multi_samples[multi_samples.len() / 2];
+    let multi_p95 = multi_samples[(multi_samples.len() as f64 * 0.95).ceil() as usize - 1];
+    let incremental_p95 =
+        incremental_samples[(incremental_samples.len() as f64 * 0.95).ceil() as usize - 1];
     eprintln!(
-        "MA-1 e2e legacy 对照：p50={:.2}ms（增量参考差 {:+.2}ms）",
-        legacy_sorted[legacy_sorted.len() / 2],
-        p50 - legacy_sorted[legacy_sorted.len() / 2]
+        "MA-1 e2e auth latency：multi p50={multi_p50:.2}ms p95={multi_p95:.2}ms；paired incremental p95={incremental_p95:+.2}ms（40 对，判据 8）"
+    );
+    assert!(
+        incremental_p95 < 5.0,
+        "多 key 相对 legacy 的增量 p95={incremental_p95:+.2}ms ≥ 5ms（判据 8：sha256 + 主键单行查询增量成本）"
     );
 
     // ④判据 4：未知 key 401 形状不变（401 + WWW-Authenticate + JSON error）。

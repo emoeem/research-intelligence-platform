@@ -124,7 +124,7 @@
 | GET | /api/knowledge | 知识库列表（keyword 过滤） | Bearer |
 | GET | /api/curated-pocs/search | RTIS + curation Overlay 自有 POC FTS 检索（关键词、K 级、Lifecycle、Severity、Category、CVE、来源完整性、核验结论、去重状态、缺失证据） | Bearer |
 
-`GET /api/knowledge_sources` 对 CISA KEV `catalog_entry` 返回 `cve_record` 结构化对象（CVE ID、vendor/product、CISA 收录日期、修复期限、ransomware/forensicTriage、CWE、requiredAction）；对 Nuclei 条目返回 `nuclei_template`（severity、协议、CVE/CWE、解析状态等）。三类对象均为元数据投影，不返回模板或 PoC 正文；CISA KEV 未提供的 `cvss_score` / `epss_score` 保持 `null`，`poc_status=not_assessed`、`current_target_status=not_tested`。PoC Index `pocindex_record` 保留 EPSS、CVSS assessments、advisory URL、Nuclei 元数据及 snapshot provenance。
+`GET /api/knowledge_sources` 对 CISA KEV `catalog_entry` 返回 `cve_record` 结构化对象（CVE ID、vendor/product、CISA 收录日期、修复期限、ransomware/forensicTriage、CWE、requiredAction）；对 Nuclei 条目返回 `nuclei_template`（severity、协议、CVE/CWE、解析状态等）。三类对象均为元数据投影，不返回模板或 PoC 正文；CISA KEV 未提供的 `cvss_score` / `epss_score` 保持 `null`，`poc_status=not_assessed`、`current_target_status=not_tested`。PoC Index `pocindex_record` 保留 EPSS、CVSS assessments、advisory URL、Nuclei 元数据及 snapshot provenance。知识来源读面使用 `RIP_PLUGIN_DB`（默认 `migrations/dev-p6.db`），与 core `RP_DB_PATH` 分离；插件安装、审核和同步必须针对同一个插件数据面。
 | GET | /api/curated-pocs/summary | 自有 POC curation Overlay 治理覆盖统计（只读元数据） | Bearer |
 | GET | /api/tools | 工具目录（Tool Center 同源投影） | Bearer |
 | GET | /api/mcp-catalog | MCP 目录同步状态（P9-4：目录条数 + 读时对账结果，Tool Center MCP 状态卡数据面） | Bearer |

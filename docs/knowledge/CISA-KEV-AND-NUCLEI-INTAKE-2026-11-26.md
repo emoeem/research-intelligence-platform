@@ -34,7 +34,7 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 - 所有条目均保留同一 CISA source commit 与 CC0-1.0。
 - 1,805 条通过审核写面分批审核，审计事件 19 条；全部仅是 CISA 元数据审核。
 - 临时 Search v6 索引构建：1,805 文档、1,805 FTS 行；查询 `CVE-2026-109618` 成功命中 CISA KEV 记录。
-- 初始导入与审核先在 disposable DB/package/index 完成；随后又在完整生产库副本上演练三插件同步、审核与索引重建。未修改 `migrations/platform.db`、RTIS 原始 `knowledge.db` 或生产插件目录。
+- 初始导入与审核先在 disposable DB/package/index 完成；随后又在 `migrations/dev-p6.db` 的 disposable clone 上演练三插件同步、审核与索引重建。原始 `migrations/dev-p6.db`、core `migrations/platform.db`、RTIS 原始 `knowledge.db` 与生产插件目录均未修改。插件 API 的 KSE 读取路径是 `RIP_PLUGIN_DB`（默认 `migrations/dev-p6.db`），因此生产切换目标应为该插件数据面，而不是 core `platform.db`。
 
 ## Nuclei 与 KEV 交叉导入与审核
 
@@ -60,9 +60,10 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 
 ## 三源联合索引验证
 
-- CISA KEV：1,805 条；Nuclei：14,111 条（552 条经 CISA CVE classification 精确交集审核）；PoC Index enrichment：1,296 条。
-- 在包含 RTIS curation Overlay 的 cutover clone 上，Search v6 重建为 3,783 文档 / 3,783 FTS 行。
-- `CVE-2014-6271` 搜索同时命中 CISA KEV、Nuclei 模板和 PoC Index enrichment；另命中关联的 `CVE-2014-7169` CISA 记录。
+- CISA KEV：1,805 条；Nuclei：14,111 条（552 条经 CISA CVE classification 精确交集审核）；PoC Index enrichment：1,296 条；保留既有插件 KSE 890 条。
+- 明确数据面后，完整 cutover clone 改为从应用实际使用的插件数据面 `migrations/dev-p6.db` 克隆（schema 31→32）；`migrations/platform.db` 是独立 core DB，不承载这批 KSE。三插件增量加入后保留原有 890 条 KSE 与原审核状态，总 KSE 18,102 条。
+- 在包含现有 Awesome-Hacking / SecSkills / Tongui 记录、CISA KEV、Nuclei、PoC Index 和 RTIS curation Overlay 的完整 clone 上，Search v6 重建为 3,708 文档 / 3,708 FTS 行。原有 Awesome-Hacking 24 条 APPROVED、301 条 DISCOVERED、12 条 REJECTED 未被覆盖；SecSkills 与 Tongui 的原审核状态也保持不变。
+- `CVE-2014-6271` 搜索同时命中 CISA KEV、Nuclei 模板和 PoC Index enrichment；`CVE-2025-55182` 同时命中三源；`CVE-2021-44228` 返回多条相关 Nuclei 模板及 CISA/PoC Index 记录。
 - 生成风险优先级报告：`docs/knowledge/KEV-POCINDEX-RISK-PRIORITY-2026-11-26.md`，按 EPSS、CVSS Primary assessment、CISA 收录日期排序；另保留近期 KEV × Nuclei shortlist。
 
 ## 后续数据补强
@@ -70,4 +71,4 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 1. 将 PoC Index 聚合评分与 NVD/FIRST 官方 API 做独立交叉校验，保留来源、采集时间、评分版本和缺失状态；不得用 CVSS 分数替代 KEV 在野利用状态。
 2. 继续评估 PoC Index `CVE_list.json` 与 Awesome-Hacking 下游 Trickest/CVE 的轻量 PoC-link 增量入口；不全量 clone 巨型仓库，不复制未经许可的 PoC 正文，也不自动执行公开 PoC。
 3. Awesome-Hacking 当前固定快照 `440486fd08b0a0d9ad9a041a0bb234dcdf65dee2` 已接入；后续只在上游有内容变化时增量同步。
-4. 生产部署前做数据库备份、插件版本冲突检查、索引重建与回滚演练；完整 cutover clone 已通过 schema 30→32、三插件同步/审核、索引重建与跨来源查询，本批尚未修改生产数据库。
+4. 生产部署前做数据库备份、插件版本冲突检查、索引重建与回滚演练；完整 cutover clone 已通过插件数据面 schema 31→32、三插件同步/审核、索引重建与跨来源查询，本批尚未修改生产数据库。

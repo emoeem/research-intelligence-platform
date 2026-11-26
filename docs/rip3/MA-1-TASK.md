@@ -64,8 +64,8 @@
 - **S1 门禁基线核验**：Cargo.lock 399；`git status --short` 干净（仅本批文档）；`apps/server/selftest_auth.sh` 现状全绿记录（判据 2 before 基线）；rp_server.py 三扩展点行号实勘（:142/:4255/:4297，漂移则按函数名重定位记录）；migrate.rs 幂等行为复读。
 - **S2 迁移 026**：`migrations/026_caller.sql` 落表（D1）；`migrate()` 对临时库实跑断言 user_version 升至 26 + 重跑幂等 + 单行 ALTER 守卫零触发（纯新增）。
 - **S3 rp_server 三扩展点**：按 D2-D5 落；行为不变式：legacy 单令牌路径逐字节不变（compare_digest 同函数同 sleep 同 401 形状）；多 key 路径 = sha256 → api_key 主键查询（JOIN caller 吊销判定）→ compare_digest 二道比对 → request.caller；审计行 `caller` 字段三态（caller_id / default / "-"）。
-- **S4 rp-admin 五子命令**：按 D6 落；`rp-admin usage` 输出更新；单测或 e2e 覆盖 key-gen 输出形状（key 明文 48 字符 `rp1_` 前缀、key_hash=sha256 全文 hex、JSON 可解析）与 key-revoke 幂等（重复 revoke 非致命）。
-- **S5 测试面**：selftest_auth.sh 追加多 key 用例块（既有零 diff）+ Rust e2e `caller_auth.rs`（临时库 → 026 迁移 → rp-admin 预置 → server 起服 → 六项断言：互不串扰/default 兼容/未知 401/吊销即时 401/审计 caller 字段/增量延迟 < 5ms 粗断言）。
+- **S4 rp-admin 五子命令**：按 D6 落；`rp-admin usage` 输出更新；单测或 e2e 覆盖 key-gen 输出形状（key 明文 47 字符 `rp1_` 前缀、key_hash=sha256 全文 hex、JSON 可解析）与 key-revoke 幂等（重复 revoke 非致命）。
+- **S5 测试面**：selftest_auth.sh 追加多 key 用例块（既有零 diff）+ Rust e2e `caller_auth.rs`（临时库 → 026 迁移 → rp-admin 预置 → server 起服 → 六项断言：互不串扰/default 兼容/未知 401/吊销即时 401/审计 caller 字段/相对 legacy 的配对增量 p95 < 5ms）。
 - **S6 收口**：§4 全部命令实跑（离线 + --test-threads=1 Rust 面）+ clippy -D warnings + deny 双检 + lock 399=399 + `git status` 复核只含 §2.1 落点 + 批次报告落盘 + docs/README.md 登记 + 显式 add → commit → push → CI watch 至绿。
 
 ## 4. 完成标准（八项判据）
@@ -79,7 +79,7 @@
 | 5 | 吊销即时生效 | key-revoke 后下一请求 401（无缓存，server 直查）；caller-add 后立即可用 |
 | 6 | key 管理面完整 | rp-admin 五子命令 JSON 输出 + 退出码口径；key 明文仅 key-gen 一次；key-list 不回明文；revoke 幂等 |
 | 7 | 零直连 SQL 写 | rp_server.py 对 caller/api_key 零写符号（grep 断言）；key 写入仅 rp-admin；selftest_phase6.sh 门禁语义保持 |
-| 8 | 鉴权增量成本 | 多 key 校验 = sha256 + 主键单行查询：e2e 计时断言 < 5ms/请求（p95 粗断言即可，本地无网络噪声） |
+| 8 | 鉴权增量成本 | 多 key 校验 = sha256 + 主键单行查询：与 legacy 单令牌请求交替配对采样，配对增量 p95 < 5ms；避免将 HTTP 往返与系统调度噪声计入鉴权增量 |
 
 ## 5. 测试面（收口命令）
 
