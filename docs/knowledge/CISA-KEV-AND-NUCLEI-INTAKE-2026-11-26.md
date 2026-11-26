@@ -72,3 +72,31 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 2. 继续评估 PoC Index `CVE_list.json` 与 Awesome-Hacking 下游 Trickest/CVE 的轻量 PoC-link 增量入口；不全量 clone 巨型仓库，不复制未经许可的 PoC 正文，也不自动执行公开 PoC。
 3. Awesome-Hacking 当前固定快照 `440486fd08b0a0d9ad9a041a0bb234dcdf65dee2` 已接入；后续只在上游有内容变化时增量同步。
 4. 生产部署前做数据库备份、插件版本冲突检查、索引重建与回滚演练；完整 cutover clone 已通过插件数据面 schema 31→32、三插件同步/审核、索引重建与跨来源查询，本批尚未修改生产数据库。
+
+
+## 最终 cutover readiness 复核（2026-11-26）
+
+### 正确数据面与差异边界
+
+- 应用知识来源读面默认使用 `migrations/dev-p6.db`（`RIP_PLUGIN_DB`），不是 `migrations/platform.db`。源插件库 SHA-256：`42a22d0fe896fe8e0a155b395b9ebe9aa09790ceef4e40fa4b3bc729f212c067`；schema 31。
+- 完整 cutover clone：`/tmp/rip-cisa-kev.qfBoNo/dev-p6-cutover.db`，SHA-256 `ded528333d347881f505e76879ce3f7fe0ee519ae0ad873374f88cd7c7ea64f3`；schema 32；SQLite `integrity_check=ok`，`foreign_key_check=0`。
+- 源库与 clone 的表集合完全相同，没有删除表或新增表。仅五个表有预期变化：`audit_event` 38→85（+47）、`knowledge_source_entry` 890→18,102（+17,212）、`plugin` 12→15（+3）、`plugin_capability` 13→16（+3）、`schema_version` 31→32（+1）。其余表行数完全一致。
+- 原始 `migrations/dev-p6.db`、core `migrations/platform.db`（SHA-256 `af26bb97f5586c12835457b7c4ddd71e3c4c97112ce58d255802b826eb656124`）和 RTIS `integrations/rtis/knowledge.db`（SHA-256 `7b6083f8e1e84c9aff60a3d4f429f29cfc436ef1aafa7221d4d3cd945df641a7`）均保持不变。
+
+### API 与检索真实读面
+
+- 使用真实 `apps/server/rp_server.py`，将 `RIP_PLUGIN_DB` 指向 cutover clone，启动隔离本地服务后通过 Bearer 认证调用 `GET /api/knowledge_sources`。CISA `cve_record`、Nuclei `nuclei_template`、PoC Index `pocindex_record` 三种结构化对象均按预期返回；未返回模板或 PoC 正文。
+- `CVE-2021-44228` 的 PoC Index API 记录返回 4 个 CVSS assessments 和 53 个 advisory；`epss_score` / `epss_percentile` 保留在结构化对象中。CISA 与 Nuclei 的 CVE 元数据也通过 API smoke。
+- Search v6 clone：3,708 documents / 3,708 FTS rows，索引库 SHA-256 `2da952cad715e179ee2626b79b55784ab014897e270d18c65c05d1587dd43d54`。
+- 对 clone 上真实执行 `rp-search-index query`：`CVE-2014-6271` 命中 CISA 2、Nuclei 1、PoC Index 1；`CVE-2025-55182` 命中三源各 1；`CVE-2021-44228` 命中 CISA 2、PoC Index 1、Nuclei 44。以上是情报/检测元数据命中，不代表目标已验证受影响。
+
+### 本地验收
+
+- `cargo fmt --all -- --check`、`cargo test --offline --workspace`、`cargo clippy --offline --workspace --all-targets -- -D warnings`：通过（workspace 有 4 个既有 ignored 测试，不计为失败）。
+- `cargo test --offline -p rp-mcp-parity`：通过；多 key 与 legacy 交替配对 40 组，增量 p95 为 +1.68 ms，小于 5 ms。
+- `apps/server/selftest_knowledge_review.sh`：通过；包含结构化元数据、显式审核、审计历史、非法批次/status 与 Bearer 鉴权。
+- Nuclei / CISA KEV / PoC Index 三个 metadata package 测试全部通过。
+
+### 切换状态
+
+本次已完成隔离 clone、API、搜索、数据库完整性与本地测试验收，但**尚未替换 `migrations/dev-p6.db` 或生产搜索索引**。原 GitHub Actions run `45778221802` 的 parity job 曾因旧的绝对 HTTP p95 5 ms 断言失败；新配对增量测试已在本地 workspace 与 parity job 命令中通过。修复 commit `6921a5b4` 已在本地创建，但 GitHub SSH/HTTPS 凭据当前不可用，尚未推送，因此还没有针对该 commit 的远程 CI 结果。为避免在远程 CI 未确认前切换，生产数据面保持原状；推送并确认 CI 全绿后再执行带备份与回滚点的切换。
