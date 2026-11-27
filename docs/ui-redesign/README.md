@@ -1,6 +1,6 @@
 # RIP UI Redesign 工作目录
 
-> 状态：M0-M6 完成；M7 自动化门禁通过、人工视觉签收待完成；M8 SPA 已在 7801 staged，默认入口未切换。
+> 状态：M0-M7 在已批准范围内完成；M8 SPA 按用户决定保持 staged，默认入口未切换。
 > 日期：2026-11-24
 
 本目录维护 UI 重构的基线、设计系统、页面规格、ADR、浏览器原型和验收证据。
@@ -30,7 +30,7 @@ python3 -m http.server 4178 --bind 127.0.0.1 --directory docs/ui-redesign/protot
 
 ## 当前阶段结论
 
-M0 基线门禁、M1 规格与原型已记录；M2 AppShell、M3 专业组件、M4 独立 Projects/Research Assets、M5 Web Security、M6 Agent/Workflow/Runs/Runtime 均已收口。M7 已通过 85 项 Playwright 门禁（含全路由五视口响应式 smoke）和 155 项单测，人工 Figma 像素核对与基线签收仍待完成。M8 已在 7801 建立隔离 SPA staged 入口，未切换默认根。不能把自动化门禁等同于人工视觉签收或生产部署验收。
+M0 基线门禁、M1 规格与原型已记录；M2 AppShell、M3 专业组件、M4 独立 Projects/Research Assets、M5 Web Security、M6 Agent/Workflow/Runs/Runtime 均已收口。M7 当前复跑通过 85 项 Playwright、360/360 全路由响应式 smoke、22 files / 158 Vitest、typecheck、Prettier 与 production build；用户已接受当前 UI。按 M7=reference、Figma=existing 决策，不要求像素级 Figma parity。M8 已在 7801 建立隔离 SPA staged 入口，按用户决定不切换默认根。
 
 **视觉基准说明**：用户于 2026-11-24 提供 Dashboard 参考图，已作为 M2-M7 的视觉方向和 Dashboard 截图验收基准，见 REFERENCE-001-DASHBOARD.md。Figma 文件此前仅读取过元数据；本轮 Figma MCP Starter 调用额度已触顶，get_metadata 被拒绝，无法读取 Frame/页面层级或完成像素级对照。四张用户截图已作为 reference；未修改 Figma。该限制不阻止按已提供截图和 RIP tokens 继续实施，但人工 Figma 签收仍待额度恢复。
 

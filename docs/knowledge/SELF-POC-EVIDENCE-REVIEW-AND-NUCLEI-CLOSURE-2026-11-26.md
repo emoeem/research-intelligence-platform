@@ -22,9 +22,11 @@ The dedicated Nuclei content kind and YAML parser feed the reviewable knowledge_
 - The full disposable ingestion also reconciled 15,084 legacy RTIS rows.
 - Search index schema v3 exposes severity, protocol, CVE, CWE and tags as structured fields and exact filters.
 - Context Broker exposes the new Nuclei content only after explicit APPROVED review.
-- Source provenance pins the Nuclei snapshot to a346d8f00c61bf95bbd30365f12cf923be51ba3d. License evidence is recorded from the installed package metadata and upstream license path; do not inherit RTIS kit licensing or verification.
+- Source provenance records the declared Nuclei pin a346d8f00c61bf95bbd30365f12cf923be51ba3d. The installed package suffix matches only its eight-character prefix and the template directory is not a Git checkout, so the complete installed tree is not independently verified against the pin. MIT package metadata and the upstream LICENSE.md URL remain source-license evidence; do not inherit RTIS kit licensing or verification.
 
 Migration 032 adds only the nuclei_template entry kind to knowledge_source_entry. The migration regression test verifies that existing rows, IDs, hashes and review states survive unchanged and unknown kinds remain rejected.
+
+This report's migration coverage reflects its M2 snapshot. M6 subsequently added SQLite migration 033 for the KSE review log; the current migration head and its disposable forward/restore verification are recorded in [M6 closeout](../knowledge-governance/M6-CLOSEOUT-AND-REMAINING-ISSUES.md).
 
 ## High-value self-owned POC review
 

@@ -583,6 +583,35 @@ fn sk2_rule3_counterexamples_rejected() {
     let _ = fs::remove_dir_all(&pkg3);
 }
 
+#[test]
+fn nuclei_template_manifest_requires_full_hex_source_commit() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../manifests/plugins/knowledge.nuclei-templates.yaml");
+    let source = fs::read_to_string(path).unwrap();
+    let mut manifest = parse_document(&source).unwrap();
+    manifest.as_object_mut().unwrap()["capabilities"][0]["provides"]["kinds"]["nuclei_template"]
+        ["source_commit"] = Value::from("a346d8f");
+
+    let report = validate_document(
+        &serde_json::to_string(&manifest).unwrap(),
+        None,
+        &existing(&[]),
+        &Default::default(),
+    );
+
+    assert!(
+        report.errors.iter().any(|error| {
+            error.rule == 3
+                && error.code == "knowledge_provides_invalid"
+                && error
+                    .message
+                    .contains("full 40-character hexadecimal commit")
+        }),
+        "short source revisions must not pass Nuclei manifest validation: {}",
+        render_report_text(&report)
+    );
+}
+
 // ---------------------------------------------------------------------------
 // rule 7 边界：缺包体时显式 deferred，不伪装成已检查
 // ---------------------------------------------------------------------------

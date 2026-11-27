@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -25,9 +26,43 @@ def main() -> int:
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
+    if len(args.source_commit) != 40 or any(
+        character not in "0123456789abcdefABCDEF" for character in args.source_commit
+    ):
+        raise SystemExit("--source-commit must be a full 40-character hexadecimal commit")
+
     source = args.source_db.expanduser().resolve(strict=True)
     output = args.output.expanduser().resolve()
     template_root = args.template_root.expanduser().resolve(strict=True)
+    source_revision_verification = "unverified_non_git_tree"
+    if (template_root / ".git").exists():
+        revision = subprocess.run(
+            ["git", "-C", str(template_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if revision.returncode != 0:
+            raise SystemExit(
+                f"cannot resolve template checkout revision: {revision.stderr.strip()}"
+            )
+        actual_commit = revision.stdout.strip()
+        if actual_commit.lower() != args.source_commit.lower():
+            raise SystemExit(
+                f"template checkout revision {actual_commit} does not match "
+                f"--source-commit {args.source_commit}"
+            )
+        status = subprocess.run(
+            ["git", "-C", str(template_root), "status", "--porcelain", "--untracked-files=all"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if status.returncode != 0:
+            raise SystemExit(f"cannot inspect template checkout status: {status.stderr.strip()}")
+        if status.stdout.strip():
+            raise SystemExit("template checkout has modified or untracked files")
+        source_revision_verification = "verified_git_commit"
     if source == output or source == output.resolve():
         raise SystemExit("refusing to use the source DB as output")
     if output.exists() and not args.force:
@@ -97,6 +132,7 @@ def main() -> int:
         "source_db": str(source),
         "source_url": OFFICIAL_SOURCE,
         "source_commit": args.source_commit,
+        "source_revision_verification": source_revision_verification,
         "template_root": str(template_root),
         "rows": len(rows),
         "missing_template_files": missing_templates,
@@ -109,9 +145,10 @@ def main() -> int:
     readme = (
         "# Nuclei template metadata package\n\n"
         "Minimal SQLite projection generated read-only from RTIS Nuclei metadata rows. "
-        "Only parser-required metadata columns are copied. Template YAML is read from the "
-        "matching installed `/usr/share/nuclei-templates` package and parsed statically; "
-        "no template is executed.\n\n"
+        "Only parser-required metadata columns are copied. Template YAML is read from the supplied "
+        "local root and parsed statically. Git checkouts are checked against the pinned commit; "
+        "non-Git package trees are explicitly unverified against that commit. "
+        "No template is executed.\n\n"
         f"Upstream: {OFFICIAL_SOURCE}\n"
         f"Pinned commit: `{args.source_commit}`\n"
         "License: MIT\n"

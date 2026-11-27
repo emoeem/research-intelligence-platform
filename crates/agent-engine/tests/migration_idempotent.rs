@@ -67,12 +67,12 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     // 024 为 WSW-2 wsw_intercept 拦截队列三表，025 为 WSW-3 wsw_exchange
     // 四表（exchange/tab/version/send），026 为 MA-1 caller/api_key 两表，
     // 027 为 MA-2 caller 归属四列 + caller_budget 配置表，028 为 WSW-4 fuzz 两表，
-    // 031 为 Projects/Research Assets，032 为 Nuclei 模板知识类型。
+    // 031 为 Projects/Research Assets，032 为 Nuclei 模板知识类型，033 为 KSE review history。
     assert_eq!(
         applied_first,
         vec![
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32
+            25, 26, 27, 28, 29, 30, 31, 32, 33
         ],
         "all migrations must apply once"
     );
@@ -88,7 +88,7 @@ fn migrations_copy_is_idempotent_with_no_schema_diff() {
     let user_version: i64 = pool
         .with_conn(|c| c.query_row("PRAGMA user_version", [], |r| r.get(0)))
         .unwrap();
-    assert_eq!(user_version, 32);
+    assert_eq!(user_version, 33);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }

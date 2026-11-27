@@ -34,6 +34,11 @@ fn skip_unless_pg() -> Option<(
             return None;
         }
     };
+    // Every test owns its migration precondition; test-harness execution order is not stable.
+    // The migration idempotency test below still performs two explicit no-op runs afterward.
+    let mut conn = pool.get().expect("PG connection for migration bootstrap");
+    run_migrations(&mut conn).expect("PG migrations must be applied before document tests");
+    drop(conn);
     let store_root = std::env::temp_dir().join(format!("rip-p1-it-{}", std::process::id()));
     std::fs::create_dir_all(&store_root).unwrap();
     Some((pool, LocalFsStore::new(&store_root), store_root))

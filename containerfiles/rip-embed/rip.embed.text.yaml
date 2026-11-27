@@ -10,7 +10,7 @@ kind: tool
 family: document
 runtime:
   type: podman_host
-  image: localhost/rip-embed:latest@sha256:013dc02b3e01afb997c16bb2b36fe966ffd74e5360a8407fa8179bb73e7428c8
+  image: localhost/rip-embed:latest@sha256:bca7d0b4343f35afe199a781dbf3794c1d1afdf5924b12105d55dc0fb2291788
   readonly_rootfs: true
   mounts:
   - role: input
@@ -55,7 +55,7 @@ provenance:
   - tokenizers==0.23.3 (Apache-2.0)
   - numpy==2.5.4 (BSD-3)
   - bge-small-zh-v1.5 模型（MIT，BAAI）
-  image_digest: sha256:013dc02b3e01afb997c16bb2b36fe966ffd74e5360a8407fa8179bb73e7428c8
+  image_digest: sha256:bca7d0b4343f35afe199a781dbf3794c1d1afdf5924b12105d55dc0fb2291788
   known_limits:
   - 无回退面：模型缺失即 -32006 显式报错（治理语义向量不静默降 hash）
   - 64 条/批、单条 64KiB 帽；512 维 L2 归一化；容器内保持 workers/python/ 相对布局（模块级 _REPO_ROOT parents[2] 依赖）

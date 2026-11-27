@@ -133,7 +133,7 @@ fn d5_contradicts_flags_and_demotes() {
     )
     .unwrap();
 
-    let detail = card_repo::get_card(&pool, "ws-a", &dst).unwrap();
+    let detail = card_repo::get_card(&pool, "ws-p3", &dst).unwrap();
     assert!(
         detail
             .summary
@@ -153,6 +153,15 @@ fn d5_contradicts_flags_and_demotes() {
             .any(|e| e["decision"] == "contradicted"),
         "日志留痕"
     );
+    let relation = detail
+        .relations
+        .iter()
+        .find(|relation| relation["relation_type"] == "CONTRADICTS")
+        .unwrap();
+    assert_eq!(relation["review_status"], "CANDIDATE");
+    assert_eq!(relation["src_entity_type"], "knowledge_card");
+    assert_eq!(relation["dst_entity_type"], "knowledge_card");
+    assert_eq!(relation["evidence_refs"], serde_json::json!([]));
     // 关系幂等：重复 relate 不产生新关系。
     let (_, created2) = card_repo::add_relation(
         &pool,
@@ -203,7 +212,7 @@ fn review_gate_blocks_hard_flag_and_unscored() {
         "test-reviewer",
     )
     .unwrap();
-    let detail = card_repo::get_card(&pool, "ws-a", &plain).unwrap();
+    let detail = card_repo::get_card(&pool, "ws-p3", &plain).unwrap();
     assert_eq!(detail.summary.review_status, "APPROVED");
     assert!(detail
         .review_log

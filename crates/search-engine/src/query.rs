@@ -241,6 +241,7 @@ impl SearchEngine {
                 poc_missing_evidence: d.poc_missing_evidence.clone(),
                 poc_evidence_refs: d.poc_evidence_refs.clone(),
                 poc_review_gate: d.poc_review_gate.clone(),
+                identity: d.identity.clone(),
                 score,
                 fts_score: fts_norm,
                 keyword_coverage: round4(coverage_val),
@@ -359,6 +360,14 @@ impl SearchEngine {
                 " AND json_array_length(poc_missing_evidence_json) = 0"
             });
         }
+        if let Some(value) = &filters.canonical_key {
+            where_clause.push_str(" AND json_extract(identity_json, '$.canonical_key') = ?");
+            params.push(value.clone());
+        }
+        if let Some(value) = &filters.vulnerability_id {
+            where_clause.push_str(" AND EXISTS (SELECT 1 FROM json_each(identity_json, '$.vulnerability_ids') WHERE upper(value) = upper(?))");
+            params.push(value.clone());
+        }
         let sql = format!(
             "SELECT rowid, resource_id, name, description, canonical_url, resource_type,
                     lifecycle, governance, quality_final_score, quality_grade,
@@ -369,7 +378,8 @@ impl SearchEngine {
                     poc_severity, poc_cve_id, source_path, source_commit, related_poc_ids_json,
                     related_entities_json, poc_source_integrity, poc_verification_result, poc_dedup_status,
                     poc_independent_knowledge_status, poc_missing_evidence_json,
-                    poc_evidence_refs_json, poc_review_gate, poc_source_urls_json
+                    poc_evidence_refs_json, poc_review_gate, poc_source_urls_json,
+                    identity_json
              FROM search_index_doc WHERE {where_clause} ORDER BY resource_id"
         );
         let rows = self
@@ -437,6 +447,16 @@ fn row_to_indexed(row: &rusqlite::Row<'_>) -> rusqlite::Result<IndexedRow> {
             poc_evidence_refs: parse_json(row.get(35)?)?,
             poc_review_gate: row.get(36)?,
             poc_source_urls: parse_json(row.get(37)?)?,
+            identity: serde_json::from_str::<Option<crate::model::SearchIdentity>>(
+                &row.get::<_, String>(38)?,
+            )
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    38,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
         },
     })
 }

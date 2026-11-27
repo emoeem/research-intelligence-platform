@@ -26,4 +26,4 @@ Date: 2026-11-24
 
 This is a local, warm-cache, headless-browser smoke measurement. It verifies that the staged build loads the 12 route shells without browser/API errors at one desktop and one mobile viewport. It is not a Lighthouse/Core Web Vitals report, does not model network latency or cold-cache devices, and does not replace real-device profiling or human interaction review.
 
-M7 remains open for the full five-viewport manual review, Figma pixel-level comparison, and human sign-off of the existing visual baseline diffs.
+This is not real-device profiling or a Lighthouse/Core Web Vitals report. Under the user's M7=reference and Figma=existing decision, pixel-level Figma parity is not a release gate. The user has accepted the current UI at product level and the automated visual gate is green; real-device profiling remains a non-blocking follow-up.

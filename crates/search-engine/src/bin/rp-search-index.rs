@@ -29,6 +29,7 @@ enum Mode {
 struct Args {
     mode: Mode,
     platform_db: Option<PathBuf>,
+    plugin_db: Option<PathBuf>,
     catalog_db: Option<PathBuf>,
     rtis_db: Option<PathBuf>,
     curation_overlay: Option<PathBuf>,
@@ -37,7 +38,7 @@ struct Args {
 }
 
 fn usage() -> &'static str {
-    "usage: rp-search-index build --platform-db P --catalog-db C --index-db I [--rtis-db R --curation-overlay O] [--rebuild]
+    "usage: rp-search-index build --platform-db P [--plugin-db P] --catalog-db C --index-db I [--rtis-db R --curation-overlay O] [--rebuild]
         rp-search-index query --index-db I --keywords k1,k2 [--limit N] [--offset N]
                               [--grade A] [--license-status S] [--maintenance-status S]
                               [--resource-type T] [--nuclei-severity S]
@@ -46,8 +47,9 @@ fn usage() -> &'static str {
                               [--poc-severity S] [--poc-category C] [--poc-cve-id CVE]
                               [--poc-source-integrity S] [--poc-verification-result R]
                               [--poc-dedup-status S] [--poc-missing-evidence true|false]
+                              [--canonical-key KEY] [--vulnerability-id CVE]
 
-build  从 platform/catalog 构建基础索引；可选 --rtis-db + --curation-overlay
+build  从 platform/catalog 构建基础索引；可选 --plugin-db 装载独立插件知识库；可选 --rtis-db + --curation-overlay
        将 Overlay 明确审核的自有 POC 元数据加入同一 FTS5 索引。RTIS 只读；
        不读取 POC 正文、description、usage 或 verified_note。--rebuild 重建派生索引
 query  对已构建索引库执行混合检索（bm25 50% / quality 30% / keyword 覆盖 20%）
@@ -74,6 +76,7 @@ fn parse_args() -> Result<Args, String> {
     }
     let mut rebuild = false;
     let mut platform_db = None;
+    let mut plugin_db = None;
     let mut catalog_db = None;
     let mut rtis_db = None;
     let mut curation_overlay = None;
@@ -94,6 +97,9 @@ fn parse_args() -> Result<Args, String> {
             "--rebuild" => rebuild = true,
             "--platform-db" => {
                 platform_db = Some(PathBuf::from(need_value(&argv, &mut i, "--platform-db")?))
+            }
+            "--plugin-db" => {
+                plugin_db = Some(PathBuf::from(need_value(&argv, &mut i, "--plugin-db")?))
             }
             "--catalog-db" => {
                 catalog_db = Some(PathBuf::from(need_value(&argv, &mut i, "--catalog-db")?))
@@ -146,6 +152,12 @@ fn parse_args() -> Result<Args, String> {
             }
             "--cve-id" => filters.cve_id = Some(need_value(&argv, &mut i, "--cve-id")?),
             "--cwe-id" => filters.cwe_id = Some(need_value(&argv, &mut i, "--cwe-id")?),
+            "--canonical-key" => {
+                filters.canonical_key = Some(need_value(&argv, &mut i, "--canonical-key")?)
+            }
+            "--vulnerability-id" => {
+                filters.vulnerability_id = Some(need_value(&argv, &mut i, "--vulnerability-id")?)
+            }
             "--evidence-level" => {
                 filters.evidence_level = Some(need_value(&argv, &mut i, "--evidence-level")?)
             }
@@ -205,6 +217,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         mode: m,
         platform_db,
+        plugin_db,
         catalog_db,
         rtis_db,
         curation_overlay,
@@ -239,34 +252,71 @@ fn run(args: Args) -> Result<(), String> {
     match args.mode {
         Mode::Build { rebuild } => {
             let platform = open_ro(args.platform_db.as_ref().expect("checked"), "platform db")?;
+            let plugin = args
+                .plugin_db
+                .as_ref()
+                .map(|path| open_ro(path, "plugin db"))
+                .transpose()?;
             let catalog = open_ro(args.catalog_db.as_ref().expect("checked"), "catalog db")?;
             let index = Pool::open(PoolConfig::writable_file(&args.index_db))
                 .map_err(|e| format!("open index db: {e}"))?;
-            let report: BuildReport = match (&args.rtis_db, &args.curation_overlay) {
-                (Some(rtis_path), Some(overlay_path)) => {
-                    let rtis = open_ro(rtis_path, "RTIS db")?;
-                    if rebuild {
-                        SearchIndex::rebuild_with_rtis_curation(
-                            &platform,
-                            &catalog,
-                            &rtis,
-                            overlay_path,
-                            &index,
-                        )
-                    } else {
-                        SearchIndex::build_with_rtis_curation(
-                            &platform,
-                            &catalog,
-                            &rtis,
-                            overlay_path,
-                            &index,
-                        )
+            let report: BuildReport =
+                match (plugin.as_ref(), &args.rtis_db, &args.curation_overlay) {
+                    (Some(plugin), Some(rtis_path), Some(overlay_path)) => {
+                        let rtis = open_ro(rtis_path, "RTIS db")?;
+                        if rebuild {
+                            SearchIndex::rebuild_with_rtis_curation_and_plugin_db(
+                                &platform,
+                                plugin,
+                                &catalog,
+                                &rtis,
+                                overlay_path,
+                                &index,
+                            )
+                        } else {
+                            SearchIndex::build_with_rtis_curation_and_plugin_db(
+                                &platform,
+                                plugin,
+                                &catalog,
+                                &rtis,
+                                overlay_path,
+                                &index,
+                            )
+                        }
                     }
+                    (Some(plugin), None, None) if rebuild => {
+                        SearchIndex::rebuild_with_plugin_db(&platform, plugin, &catalog, &index)
+                    }
+                    (Some(plugin), None, None) => {
+                        SearchIndex::build_with_plugin_db(&platform, plugin, &catalog, &index)
+                    }
+                    (None, Some(rtis_path), Some(overlay_path)) => {
+                        let rtis = open_ro(rtis_path, "RTIS db")?;
+                        if rebuild {
+                            SearchIndex::rebuild_with_rtis_curation(
+                                &platform,
+                                &catalog,
+                                &rtis,
+                                overlay_path,
+                                &index,
+                            )
+                        } else {
+                            SearchIndex::build_with_rtis_curation(
+                                &platform,
+                                &catalog,
+                                &rtis,
+                                overlay_path,
+                                &index,
+                            )
+                        }
+                    }
+                    (None, None, None) if rebuild => {
+                        SearchIndex::rebuild(&platform, &catalog, &index)
+                    }
+                    (None, None, None) => SearchIndex::build(&platform, &catalog, &index),
+                    _ => unreachable!("RTIS database and overlay are validated as a pair"),
                 }
-                _ if rebuild => SearchIndex::rebuild(&platform, &catalog, &index),
-                _ => SearchIndex::build(&platform, &catalog, &index),
-            }
-            .map_err(|e| format!("build: {e}"))?;
+                .map_err(|e| format!("build: {e}"))?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?

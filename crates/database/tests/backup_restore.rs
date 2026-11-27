@@ -6,7 +6,8 @@
 //! migrations/platform*.db 零接触。三个用例：
 //! 1. roundtrip + 受控破坏副本恢复（破坏 -> 恢复 -> 行数/内容/sha256 对账）；
 //! 2. 归档被篡改（成员字节翻转）必须拒绝（sha256 mismatch）；
-//! 3. 归档缺库快照成员必须拒绝（成员在场守卫）。
+//! 3. 归档缺库快照成员必须拒绝（成员在场守卫）；
+//! 4. 迁移 033 后恢复到迁移前备份，核验 schema 和原始审核状态。
 
 use database::{
     backup_to_archive, migrate, restore_from_archive, verify_archive, DbPath, Pool, PoolConfig,
@@ -48,8 +49,8 @@ fn build_db(path: &Path) {
     let applied = migrate(&pool, &migrations_dir()).unwrap();
     assert_eq!(
         applied.last().map(|m| m.version),
-        Some(32),
-        "真实迁移链 001..032 应全应用（026 = MA-1 caller/api_key 两表，027 = MA-2 caller 归属列与 caller_budget，029 = MA-3 协作协议两表，030 = WSW-5/6 ws_frame/passive_hit 两表，031 = Projects/Research Assets）"
+        Some(33),
+        "真实迁移链 001..033 应全应用（032 = Nuclei template kind，033 = KSE review history）"
     );
     pool.with_conn(|c| {
         c.execute_batch(
@@ -68,6 +69,118 @@ fn build_db(path: &Path) {
         )
     })
     .unwrap();
+}
+
+#[test]
+fn migration_033_backup_restore_returns_to_unreviewed_pre_migration_state() {
+    let dir = tmp_dir("m6-rollback");
+    let db = dir.join("platform.db");
+    let pre_033 = dir.join("migrations-032");
+    std::fs::create_dir_all(&pre_033).unwrap();
+    for entry in std::fs::read_dir(migrations_dir()).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        let Some(version) = name
+            .to_string_lossy()
+            .split('_')
+            .next()
+            .and_then(|prefix| prefix.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if version <= 32 {
+            std::fs::copy(entry.path(), pre_033.join(name)).unwrap();
+        }
+    }
+
+    let pool = writable(&db);
+    let applied = migrate(&pool, &pre_033).unwrap();
+    assert_eq!(applied.last().map(|migration| migration.version), Some(32));
+    pool.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO knowledge_source_entry (
+                 plugin_id, plugin_version, corpus_id, entry_kind, item_key, title,
+                 content_sha256, metadata_sha256, first_seen_at, last_seen_at
+             ) VALUES (
+                 'test.source', '1.0.0', 'rollback-fixture', 'poc', 'entry-1', 'Fixture',
+                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                 '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+             )",
+            [],
+        )
+    })
+    .unwrap();
+    drop(pool);
+
+    let archive = dir.join("pre-033.tar");
+    let backup = backup_to_archive(&db, &archive, &[]).unwrap();
+    assert_eq!(backup.user_version, 32);
+
+    let pool = writable(&db);
+    let applied = migrate(&pool, &migrations_dir()).unwrap();
+    assert_eq!(
+        applied
+            .iter()
+            .map(|migration| migration.version)
+            .collect::<Vec<_>>(),
+        vec![33]
+    );
+    assert_eq!(
+        pool.with_conn(|conn| conn.query_row(
+            "SELECT review_status FROM knowledge_source_entry WHERE item_key='entry-1'",
+            [],
+            |row| row.get::<_, String>(0),
+        ))
+        .unwrap(),
+        "DISCOVERED"
+    );
+    assert_eq!(
+        pool.with_conn(|conn| conn.query_row(
+            "SELECT COUNT(*) FROM knowledge_source_review_log",
+            [],
+            |row| row.get::<_, i64>(0),
+        ))
+        .unwrap(),
+        0
+    );
+    assert!(migrate(&pool, &migrations_dir()).unwrap().is_empty());
+    drop(pool);
+
+    let restored = dir.join("restored.db");
+    std::fs::copy(&db, &restored).unwrap();
+    let restore = restore_from_archive(&archive, &restored, None).unwrap();
+    assert_eq!(restore.user_version, 32);
+    assert_eq!(restore.integrity, "ok");
+    let restored_pool = readonly(&restored);
+    assert_eq!(
+        restored_pool
+            .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)))
+            .unwrap(),
+        32
+    );
+    assert_eq!(
+        restored_pool
+            .with_conn(|conn| conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='knowledge_source_review_log'",
+                [],
+                |row| row.get::<_, i64>(0),
+            ))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        restored_pool
+            .with_conn(|conn| conn.query_row(
+                "SELECT review_status FROM knowledge_source_entry WHERE item_key='entry-1'",
+                [],
+                |row| row.get::<_, String>(0),
+            ))
+            .unwrap(),
+        "DISCOVERED"
+    );
+    drop(restored_pool);
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 fn resource_count(pool: &Pool) -> i64 {

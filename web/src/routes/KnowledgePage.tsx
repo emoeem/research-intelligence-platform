@@ -248,7 +248,10 @@ function SourceEntriesView() {
   const [review, setReview] = useState("");
   const [rawQuery, setRawQuery] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [selectedEntries, setSelectedEntries] = useState<Array<{ plugin_id: string; item_key: string }>>([]);
+  const [selectedEntries, setSelectedEntries] = useState<
+    Array<{ plugin_id: string; plugin_version: string; item_key: string }>
+  >([]);
+  const [reviewReason, setReviewReason] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
@@ -273,25 +276,38 @@ function SourceEntriesView() {
   const total = list.data?.total ?? 0;
   const reviewHistory = list.data?.review_history ?? [];
   const selectedPluginId = selectedEntries[0]?.plugin_id ?? "";
+  const selectedVersion = selectedEntries[0]?.plugin_version ?? "";
   const selectedCount = selectedEntries.length;
 
   const toggleSelected = (item: KnowledgeSourceEntry) => {
     setSelectedEntries((current) => {
-      const exists = current.some((entry) =>
-        entry.plugin_id === item.plugin_id && entry.item_key === item.item_key,
+      const exists = current.some(
+        (entry) => entry.plugin_id === item.plugin_id && entry.item_key === item.item_key,
       );
       if (exists) {
-        return current.filter((entry) =>
-          entry.plugin_id !== item.plugin_id || entry.item_key !== item.item_key,
+        return current.filter(
+          (entry) => entry.plugin_id !== item.plugin_id || entry.item_key !== item.item_key,
         );
       }
-      if (current.length > 0 && current[0]?.plugin_id !== item.plugin_id) return current;
-      return [...current, { plugin_id: item.plugin_id, item_key: item.item_key }];
+      if (
+        current.length > 0 &&
+        (current[0]?.plugin_id !== item.plugin_id ||
+          current[0]?.plugin_version !== item.plugin_version)
+      )
+        return current;
+      return [
+        ...current,
+        { plugin_id: item.plugin_id, plugin_version: item.plugin_version, item_key: item.item_key },
+      ];
     });
   };
 
   const submitReview = async (status: "APPROVED" | "REJECTED") => {
-    if (!selectedPluginId || selectedCount === 0 || reviewSubmitting) return;
+    if (!selectedPluginId || !selectedVersion || selectedCount === 0 || reviewSubmitting) return;
+    if (!reviewReason.trim()) {
+      setReviewError(translateUi("审核理由为必填项"));
+      return;
+    }
     setReviewSubmitting(true);
     setReviewError(null);
     try {
@@ -299,8 +315,11 @@ function SourceEntriesView() {
         selectedPluginId,
         selectedEntries.map((entry) => entry.item_key),
         status,
+        selectedVersion,
+        reviewReason.trim(),
       );
       setSelectedEntries([]);
+      setReviewReason("");
       await list.retry();
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : translateUi("审核操作失败"));
@@ -352,15 +371,28 @@ function SourceEntriesView() {
           {translateUi("共")} {total} {translateUi("条（显示")} {items.length}）
         </span>
       </div>
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-surface border border-edge bg-base-100 p-2" data-testid="knowledge-source-review-actions">
+      <div
+        className="mb-3 flex flex-wrap items-center gap-2 rounded-surface border border-edge bg-base-100 p-2"
+        data-testid="knowledge-source-review-actions"
+      >
         <span className="text-xs text-muted">
           {translateUi("已选择")} {selectedCount} {translateUi("条")}
-          {selectedPluginId ? ` · ${selectedPluginId}` : ""}
+          {selectedPluginId ? ` · ${selectedPluginId}@${selectedVersion}` : ""}
         </span>
+        <input
+          className="input input-xs min-w-52 flex-1 rounded-control border border-edge bg-base-100"
+          aria-label={translateUi("审核理由")}
+          placeholder={translateUi("请输入审核理由（必填）")}
+          value={reviewReason}
+          onChange={(event) => setReviewReason(event.target.value)}
+          maxLength={1000}
+        />
         <button
           type="button"
           className="btn btn-xs btn-primary"
-          disabled={selectedCount === 0 || reviewSubmitting}
+          disabled={
+            selectedCount === 0 || !selectedVersion || !reviewReason.trim() || reviewSubmitting
+          }
           onClick={() => void submitReview("APPROVED")}
         >
           {reviewSubmitting ? translateUi("提交中…") : translateUi("批准所选")}
@@ -368,7 +400,9 @@ function SourceEntriesView() {
         <button
           type="button"
           className="btn btn-xs btn-outline btn-error"
-          disabled={selectedCount === 0 || reviewSubmitting}
+          disabled={
+            selectedCount === 0 || !selectedVersion || !reviewReason.trim() || reviewSubmitting
+          }
           onClick={() => void submitReview("REJECTED")}
         >
           {translateUi("驳回所选")}
@@ -385,7 +419,11 @@ function SourceEntriesView() {
           {translateUi("审核操作会写入审计历史；批准后才允许进入搜索与模型上下文。")}
           {translateUi("每次批量审核仅支持同一插件，最多 100 条。")}
         </span>
-        {reviewError ? <p className="w-full text-xs text-error" role="alert">{reviewError}</p> : null}
+        {reviewError ? (
+          <p className="w-full text-xs text-error" role="alert">
+            {reviewError}
+          </p>
+        ) : null}
       </div>
       {list.loading ? (
         <SkeletonPanel lines={6} />
@@ -409,107 +447,173 @@ function SourceEntriesView() {
                     type="checkbox"
                     className="checkbox checkbox-xs"
                     aria-label={`${translateUi("选择条目")} ${item.item_key}`}
-                    checked={selectedEntries.some((entry) =>
-                      entry.plugin_id === item.plugin_id && entry.item_key === item.item_key,
+                    checked={selectedEntries.some(
+                      (entry) =>
+                        entry.plugin_id === item.plugin_id && entry.item_key === item.item_key,
                     )}
                     onChange={() => toggleSelected(item)}
                   />
                   <div className="flex flex-wrap items-center gap-1">
-                  <span
-                    className={`badge badge-sm ${REVIEW_BADGE[item.review_status] ?? "badge-ghost"}`}
-                  >
-                    {item.review_status}
-                  </span>
-                  <span className="badge badge-sm badge-outline">
-                    {ENTRY_KIND_LABEL[item.entry_kind] ?? item.entry_kind}
-                  </span>
-                  <span className="badge badge-sm badge-info" data-testid="source-license">
-                    {item.license_status}
-                  </span>
-                  <span className="badge badge-sm badge-ghost">
-                    {RIGHTS_LABEL[item.rights_policy] ?? item.rights_policy}
-                  </span>
-                  {item.source_commit ? (
                     <span
-                      className="badge badge-sm badge-ghost font-mono"
-                      title={`快照 Commit: ${item.source_commit}`}
+                      className={`badge badge-sm ${REVIEW_BADGE[item.review_status] ?? "badge-ghost"}`}
                     >
-                      {item.source_commit.slice(0, 7)}
+                      {item.review_status}
                     </span>
-                  ) : null}
-                  <span className="text-[11px] text-muted">{item.plugin_id}</span>
+                    <span className="badge badge-sm badge-outline">
+                      {ENTRY_KIND_LABEL[item.entry_kind] ?? item.entry_kind}
+                    </span>
+                    <span className="badge badge-sm badge-info" data-testid="source-license">
+                      {item.license_status}
+                    </span>
+                    <span className="badge badge-sm badge-ghost">
+                      {RIGHTS_LABEL[item.rights_policy] ?? item.rights_policy}
+                    </span>
+                    {item.source_commit ? (
+                      <span
+                        className="badge badge-sm badge-ghost font-mono"
+                        title={`快照 Commit: ${item.source_commit}`}
+                      >
+                        {item.source_commit.slice(0, 7)}
+                      </span>
+                    ) : null}
+                    <span className="text-[11px] text-muted">{item.plugin_id}</span>
                   </div>
                 </div>
                 <p className="mt-1.5 text-sm font-medium leading-5" data-testid="source-title">
                   {item.title}
                 </p>
-                <p className="mt-1 break-all font-mono text-[10px] text-muted" data-testid="source-item-key">
+                <p
+                  className="mt-1 break-all font-mono text-[10px] text-muted"
+                  data-testid="source-item-key"
+                >
                   {item.item_key}
                 </p>
                 {item.cve_record ? (
                   <div className="mt-2 space-y-1.5 text-[11px]" data-testid="cve-record-metadata">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {item.cve_record.known_exploited ? (
-                        <span className="badge badge-sm badge-error">CISA KEV · {translateUi("已知在野利用")}</span>
+                        <span className="badge badge-sm badge-error">
+                          CISA KEV · {translateUi("已知在野利用")}
+                        </span>
                       ) : null}
                       {item.cve_record.cve_id ? (
                         <span className="font-mono">{item.cve_record.cve_id}</span>
                       ) : null}
                       {item.cve_record.vendor_project ? (
-                        <span className="text-muted">{translateUi("厂商")}: {item.cve_record.vendor_project}</span>
+                        <span className="text-muted">
+                          {translateUi("厂商")}: {item.cve_record.vendor_project}
+                        </span>
                       ) : null}
                       {item.cve_record.product ? (
-                        <span className="text-muted">{translateUi("产品")}: {item.cve_record.product}</span>
+                        <span className="text-muted">
+                          {translateUi("产品")}: {item.cve_record.product}
+                        </span>
                       ) : null}
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
-                      {item.cve_record.date_added ? <span>{translateUi("CISA收录日期")}: {item.cve_record.date_added}</span> : null}
-                      {item.cve_record.due_date ? <span>{translateUi("修复期限")}: {item.cve_record.due_date}</span> : null}
-                      {item.cve_record.known_ransomware_campaign_use ? <span>{translateUi("勒索软件使用")}: {item.cve_record.known_ransomware_campaign_use}</span> : null}
-                      {item.cve_record.forensic_triage ? <span>{translateUi("取证分诊")}: {item.cve_record.forensic_triage}</span> : null}
-                      {item.cve_record.cwes?.length ? <span>CWE: {item.cve_record.cwes.join(", ")}</span> : null}
+                      {item.cve_record.date_added ? (
+                        <span>
+                          {translateUi("CISA收录日期")}: {item.cve_record.date_added}
+                        </span>
+                      ) : null}
+                      {item.cve_record.due_date ? (
+                        <span>
+                          {translateUi("修复期限")}: {item.cve_record.due_date}
+                        </span>
+                      ) : null}
+                      {item.cve_record.known_ransomware_campaign_use ? (
+                        <span>
+                          {translateUi("勒索软件使用")}:{" "}
+                          {item.cve_record.known_ransomware_campaign_use}
+                        </span>
+                      ) : null}
+                      {item.cve_record.forensic_triage ? (
+                        <span>
+                          {translateUi("取证分诊")}: {item.cve_record.forensic_triage}
+                        </span>
+                      ) : null}
+                      {item.cve_record.cwes?.length ? (
+                        <span>CWE: {item.cve_record.cwes.join(", ")}</span>
+                      ) : null}
                     </div>
-                    <p className="text-muted">{translateUi("CVSS/EPSS 未由 KEV 提供")} · {translateUi("PoC 未评估")} · {translateUi("当前目标未测试")}</p>
+                    <p className="text-muted">
+                      {translateUi("CVSS/EPSS 未由 KEV 提供")} · {translateUi("PoC 未评估")} ·{" "}
+                      {translateUi("当前目标未测试")}
+                    </p>
                     {item.cve_record.required_action ? (
-                      <p className="text-muted"><span className="font-medium">{translateUi("所需操作")}:</span> {item.cve_record.required_action}</p>
+                      <p className="text-muted">
+                        <span className="font-medium">{translateUi("所需操作")}:</span>{" "}
+                        {item.cve_record.required_action}
+                      </p>
                     ) : null}
                   </div>
                 ) : null}
                 {item.pocindex_record ? (
-                  <div className="mt-2 space-y-1.5 text-[11px]" data-testid="pocindex-record-metadata">
+                  <div
+                    className="mt-2 space-y-1.5 text-[11px]"
+                    data-testid="pocindex-record-metadata"
+                  >
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="badge badge-sm badge-info">{translateUi("PoC Index 风险元数据")}</span>
-                      <span className="text-muted">{translateUi("PoC Index KEV 索引")}: {item.pocindex_record.pocindex_kev_present ? translateUi("已收录") : translateUi("未收录")}</span>
+                      <span className="badge badge-sm badge-info">
+                        {translateUi("PoC Index 风险元数据")}
+                      </span>
+                      <span className="text-muted">
+                        {translateUi("PoC Index KEV 索引")}:{" "}
+                        {item.pocindex_record.pocindex_kev_present
+                          ? translateUi("已收录")
+                          : translateUi("未收录")}
+                      </span>
                       {typeof item.pocindex_record.epss_score === "number" ? (
-                        <span className="font-medium">{translateUi("EPSS 分数")}: {item.pocindex_record.epss_score.toFixed(5)}</span>
+                        <span className="font-medium">
+                          {translateUi("EPSS 分数")}: {item.pocindex_record.epss_score.toFixed(5)}
+                        </span>
                       ) : null}
                       {typeof item.pocindex_record.epss_percentile === "number" ? (
-                        <span className="text-muted">{translateUi("EPSS 百分位")}: {(item.pocindex_record.epss_percentile * 100).toFixed(1)}%</span>
+                        <span className="text-muted">
+                          {translateUi("EPSS 百分位")}:{" "}
+                          {(item.pocindex_record.epss_percentile * 100).toFixed(1)}%
+                        </span>
                       ) : null}
                     </div>
                     {item.pocindex_record.cvss_assessments.length ? (
                       <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
                         <span className="font-medium">{translateUi("CVSS 评估")}:</span>
-                        {item.pocindex_record.cvss_assessments.slice(0, 4).map((assessment, index) => (
-                          <span key={`${assessment.version}-${assessment.source}-${index}`}>
-                            v{assessment.version} {assessment.score.toFixed(1)} {assessment.severity} · {assessment.source} · {assessment.assessment_type}
-                          </span>
-                        ))}
+                        {item.pocindex_record.cvss_assessments
+                          .slice(0, 4)
+                          .map((assessment, index) => (
+                            <span key={`${assessment.version}-${assessment.source}-${index}`}>
+                              v{assessment.version} {assessment.score.toFixed(1)}{" "}
+                              {assessment.severity} · {assessment.source} ·{" "}
+                              {assessment.assessment_type}
+                            </span>
+                          ))}
                       </div>
                     ) : null}
                     {item.pocindex_record.nuclei_metadata ? (
                       <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
                         <span className="font-medium">{translateUi("Nuclei 元数据")}:</span>
                         <span>{item.pocindex_record.nuclei_metadata.severity ?? "unknown"}</span>
-                        {typeof item.pocindex_record.nuclei_metadata.cvss === "number" ? <span>CVSS {item.pocindex_record.nuclei_metadata.cvss.toFixed(1)}</span> : null}
-                        {item.pocindex_record.nuclei_metadata.cwe ? <span>{item.pocindex_record.nuclei_metadata.cwe}</span> : null}
+                        {typeof item.pocindex_record.nuclei_metadata.cvss === "number" ? (
+                          <span>CVSS {item.pocindex_record.nuclei_metadata.cvss.toFixed(1)}</span>
+                        ) : null}
+                        {item.pocindex_record.nuclei_metadata.cwe ? (
+                          <span>{item.pocindex_record.nuclei_metadata.cwe}</span>
+                        ) : null}
                       </div>
                     ) : null}
                     {item.pocindex_record.advisories.length ? (
                       <div className="flex flex-wrap gap-x-2 gap-y-1 text-muted">
-                        <span className="font-medium">{translateUi("公告链接")} ({item.pocindex_record.advisories.length}):</span>
+                        <span className="font-medium">
+                          {translateUi("公告链接")} ({item.pocindex_record.advisories.length}):
+                        </span>
                         {item.pocindex_record.advisories.slice(0, 3).map((advisory, index) => (
-                          <a key={`${advisory.url}-${index}`} href={advisory.url} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+                          <a
+                            key={`${advisory.url}-${index}`}
+                            href={advisory.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
                             {advisory.tags[0] ?? new URL(advisory.url).hostname}
                           </a>
                         ))}
@@ -517,52 +621,87 @@ function SourceEntriesView() {
                     ) : null}
                     {item.pocindex_record.snapshot ? (
                       <p className="text-muted">
-                        {translateUi("快照时间")}: {item.pocindex_record.snapshot.retrieved_at ?? "—"}
-                        {item.pocindex_record.snapshot.repository_commit ? ` · ${item.pocindex_record.snapshot.repository_commit.slice(0, 7)}` : ""}
+                        {translateUi("快照时间")}:{" "}
+                        {item.pocindex_record.snapshot.retrieved_at ?? "—"}
+                        {item.pocindex_record.snapshot.repository_commit
+                          ? ` · ${item.pocindex_record.snapshot.repository_commit.slice(0, 7)}`
+                          : ""}
                       </p>
                     ) : null}
                   </div>
                 ) : null}
                 {item.nuclei_template ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]" data-testid="nuclei-template-metadata">
+                  <div
+                    className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]"
+                    data-testid="nuclei-template-metadata"
+                  >
                     {item.nuclei_template.severity ? (
-                      <span className="badge badge-sm badge-warning">{item.nuclei_template.severity}</span>
+                      <span className="badge badge-sm badge-warning">
+                        {item.nuclei_template.severity}
+                      </span>
                     ) : null}
                     {item.nuclei_template.parse_status ? (
-                      <span className="badge badge-sm badge-ghost">{item.nuclei_template.parse_status}</span>
+                      <span className="badge badge-sm badge-ghost">
+                        {item.nuclei_template.parse_status}
+                      </span>
                     ) : null}
                     {item.nuclei_template.protocols?.length ? (
-                      <span className="text-muted">{translateUi("协议")}: {item.nuclei_template.protocols.join(", ")}</span>
+                      <span className="text-muted">
+                        {translateUi("协议")}: {item.nuclei_template.protocols.join(", ")}
+                      </span>
                     ) : null}
                     {stringList(item.nuclei_template.classification?.["cve-id"]).length ? (
-                      <span className="text-muted">CVE: {stringList(item.nuclei_template.classification?.["cve-id"]).join(", ")}</span>
+                      <span className="text-muted">
+                        CVE:{" "}
+                        {stringList(item.nuclei_template.classification?.["cve-id"]).join(", ")}
+                      </span>
                     ) : null}
                     {stringList(item.nuclei_template.classification?.["cwe-id"]).length ? (
-                      <span className="text-muted">CWE: {stringList(item.nuclei_template.classification?.["cwe-id"]).join(", ")}</span>
+                      <span className="text-muted">
+                        CWE:{" "}
+                        {stringList(item.nuclei_template.classification?.["cwe-id"]).join(", ")}
+                      </span>
                     ) : null}
                     {item.nuclei_template.classification?.["cvss-score"] !== undefined ? (
-                      <span className="text-muted">Nuclei CVSS: {String(item.nuclei_template.classification["cvss-score"])}</span>
+                      <span className="text-muted">
+                        Nuclei CVSS: {String(item.nuclei_template.classification["cvss-score"])}
+                      </span>
                     ) : null}
                     {item.nuclei_template.classification?.["epss-score"] !== undefined ? (
-                      <span className="text-muted">Nuclei EPSS: {String(item.nuclei_template.classification["epss-score"])}</span>
+                      <span className="text-muted">
+                        Nuclei EPSS: {String(item.nuclei_template.classification["epss-score"])}
+                      </span>
                     ) : null}
                     {item.nuclei_template.classification?.["epss-percentile"] !== undefined ? (
-                      <span className="text-muted">Nuclei EPSS percentile: {String(item.nuclei_template.classification["epss-percentile"])}</span>
+                      <span className="text-muted">
+                        Nuclei EPSS percentile:{" "}
+                        {String(item.nuclei_template.classification["epss-percentile"])}
+                      </span>
                     ) : null}
                     {item.nuclei_template.tags?.length ? (
-                      <span className="text-muted">{translateUi("标签")}: {item.nuclei_template.tags.slice(0, 10).join(", ")}</span>
+                      <span className="text-muted">
+                        {translateUi("标签")}: {item.nuclei_template.tags.slice(0, 10).join(", ")}
+                      </span>
                     ) : null}
                     {item.nuclei_template.author?.length ? (
-                      <span className="text-muted">{translateUi("作者")}: {item.nuclei_template.author.join(", ")}</span>
+                      <span className="text-muted">
+                        {translateUi("作者")}: {item.nuclei_template.author.join(", ")}
+                      </span>
                     ) : null}
                     {item.nuclei_template.request_block_count !== undefined ? (
-                      <span className="text-muted">{translateUi("请求块")}: {item.nuclei_template.request_block_count}</span>
+                      <span className="text-muted">
+                        {translateUi("请求块")}: {item.nuclei_template.request_block_count}
+                      </span>
                     ) : null}
                     {item.nuclei_template.matcher_count !== undefined ? (
-                      <span className="text-muted">{translateUi("匹配器")}: {item.nuclei_template.matcher_count}</span>
+                      <span className="text-muted">
+                        {translateUi("匹配器")}: {item.nuclei_template.matcher_count}
+                      </span>
                     ) : null}
                     {item.nuclei_template.extractor_count !== undefined ? (
-                      <span className="text-muted">{translateUi("提取器")}: {item.nuclei_template.extractor_count}</span>
+                      <span className="text-muted">
+                        {translateUi("提取器")}: {item.nuclei_template.extractor_count}
+                      </span>
                     ) : null}
                     {item.nuclei_template.has_flow ? (
                       <span className="badge badge-sm badge-ghost">Flow</span>
@@ -597,17 +736,27 @@ function SourceEntriesView() {
         </ul>
       )}
       {reviewHistory.length > 0 ? (
-        <section className="mt-4 rounded-surface border border-edge bg-base-100 p-3" aria-label={translateUi("最近审核历史")} data-testid="knowledge-source-review-history">
+        <section
+          className="mt-4 rounded-surface border border-edge bg-base-100 p-3"
+          aria-label={translateUi("最近审核历史")}
+          data-testid="knowledge-source-review-history"
+        >
           <h3 className="text-xs font-semibold">{translateUi("最近审核历史")}</h3>
           <ul className="mt-2 space-y-2">
             {reviewHistory.map((event) => (
               <li key={event.event_id} className="flex flex-wrap items-center gap-2 text-[11px]">
                 <span className="font-mono text-muted">{formatDateTime(event.ts)}</span>
                 <span className="badge badge-sm badge-outline">{event.status ?? "-"}</span>
-                <span>{event.updated} {translateUi("条")}</span>
+                <span>
+                  {event.updated} {translateUi("条")}
+                </span>
                 <span className="text-muted">{event.actor}</span>
-                <span className="min-w-0 flex-1 truncate text-muted" title={event.item_keys.join(", ")}>
-                  {event.item_keys.slice(0, 3).join(", ")}{event.item_keys.length > 3 ? ` +${event.item_keys.length - 3}` : ""}
+                <span
+                  className="min-w-0 flex-1 truncate text-muted"
+                  title={event.item_keys.join(", ")}
+                >
+                  {event.item_keys.slice(0, 3).join(", ")}
+                  {event.item_keys.length > 3 ? ` +${event.item_keys.length - 3}` : ""}
                 </span>
               </li>
             ))}
@@ -1024,8 +1173,318 @@ function CuratedPocSearchView() {
   );
 }
 
+interface PocGovernanceItem {
+  poc_id: number;
+  title: string;
+  evidence_level?: string | null;
+  lifecycle?: string | null;
+  verification_result?: string | null;
+  review_gate?: string | null;
+  missing_evidence: string[];
+  evidence_refs: string[];
+  related_relations: Array<{
+    direction: "incoming" | "outgoing";
+    target: string;
+    target_title: string;
+    type?: string;
+    confidence?: number;
+    note?: string;
+  }>;
+  source_path?: string | null;
+  source_commit?: string | null;
+  assessment: {
+    evidence_completeness: string;
+    artifact_validity: string;
+    remediation_status: string;
+    license_status: string;
+    assessed_at?: string;
+    reviewer?: string;
+    review_status?: string;
+    review_reason?: string;
+  };
+}
+
+interface PocGovernanceList {
+  available: boolean;
+  summary: { total: number; assessed: number; not_assessed: number; evidence_gaps: number };
+  items: PocGovernanceItem[];
+}
+
+interface PocRetestAttempt {
+  item_id?: string;
+  provider?: string;
+  provider_version?: string;
+  result_status?: string;
+  error_category?: string | null;
+  run_id?: string | null;
+  trace_id?: string | null;
+  created_at?: string;
+  transitions?: Array<{ from_status?: string; to_status?: string; created_at?: string }>;
+  evidence?: Array<{
+    evidence_id?: string;
+    evidence_type?: string;
+    content_hash?: string;
+    created_at?: string;
+  }>;
+}
+
+interface PocGovernanceDetail {
+  available: boolean;
+  item: PocGovernanceItem;
+  retest_history: { rtis_poc_id: number; attempts: PocRetestAttempt[] };
+}
+
+function PocGovernanceView() {
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const list = useApi<PocGovernanceList>("/api/curated-pocs/governance");
+  const detail = useApi<PocGovernanceDetail>(
+    selectedId === null ? null : `/api/curated-pocs/governance?poc_id=${selectedId}`,
+  );
+  const items = list.data?.items ?? [];
+  const filtered = items.filter((item) =>
+    `${item.poc_id} ${item.title} ${item.assessment.artifact_validity} ${item.assessment.remediation_status}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
+  const selected = detail.data?.item;
+  const attempts = detail.data?.retest_history.attempts ?? [];
+
+  return (
+    <section aria-label={translateUi("POC 治理")} data-testid="poc-governance-view">
+      <div
+        className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4"
+        data-testid="poc-governance-m3-summary"
+      >
+        {[
+          [translateUi("已纳入 POC"), list.data?.summary.total],
+          [translateUi("已评估"), list.data?.summary.assessed],
+          [translateUi("尚未评估"), list.data?.summary.not_assessed],
+          [translateUi("缺失证据项"), list.data?.summary.evidence_gaps],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="rounded-surface border border-edge bg-base-100 p-3">
+            <p className="text-xs text-muted">{label}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{value ?? "—"}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mb-3">
+        <input
+          className="input input-sm w-full max-w-md rounded-control border border-edge bg-base-100"
+          aria-label={translateUi("检索 POC 治理记录")}
+          placeholder={translateUi("按 POC ID、标题或评估状态检索")}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      {list.loading ? (
+        <SkeletonPanel lines={5} />
+      ) : list.error !== null ? (
+        <ErrorPanel error={list.error} onRetry={list.retry} />
+      ) : (
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <ul className="space-y-2" data-testid="poc-governance-list">
+            {filtered.map((item) => (
+              <li key={item.poc_id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(item.poc_id)}
+                  aria-pressed={selectedId === item.poc_id}
+                  className={`w-full rounded-surface border p-3 text-left ${selectedId === item.poc_id ? "border-primary bg-primary/5" : "border-edge bg-base-100 hover:border-base-content/30"}`}
+                >
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="badge badge-sm badge-outline">POC {item.poc_id}</span>
+                    <span className="badge badge-sm badge-warning">
+                      {item.assessment.artifact_validity}
+                    </span>
+                    <span className="badge badge-sm badge-outline">
+                      {item.assessment.evidence_completeness}
+                    </span>
+                    <span className="badge badge-sm badge-ghost">
+                      {item.assessment.remediation_status}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm font-medium">{item.title}</p>
+                  <p className="mt-1 text-[11px] text-muted">
+                    {item.evidence_level ?? "—"} · {item.lifecycle ?? "—"} ·{" "}
+                    {translateUi("缺失证据")}: {item.missing_evidence.length}
+                  </p>
+                </button>
+              </li>
+            ))}
+            {filtered.length === 0 ? (
+              <li>
+                <EmptyPanel text={translateUi("没有匹配的 POC 治理记录。")} />
+              </li>
+            ) : null}
+          </ul>
+          <aside
+            className="min-w-0 rounded-surface border border-edge bg-base-100 p-3"
+            data-testid="poc-governance-detail"
+          >
+            {selectedId === null ? (
+              <EmptyPanel text={translateUi("选择一条 POC 查看评估与复测历史。")} />
+            ) : detail.loading ? (
+              <SkeletonPanel lines={5} />
+            ) : detail.error !== null ? (
+              <ErrorPanel error={detail.error} onRetry={detail.retry} />
+            ) : selected ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[11px] text-muted">POC {selected.poc_id}</p>
+                  <h3 className="mt-1 text-sm font-semibold">{selected.title}</h3>
+                </div>
+                <section>
+                  <h4 className="text-xs font-semibold text-muted">{translateUi("评估状态")}</h4>
+                  <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <dt className="text-muted">{translateUi("证据完整性")}</dt>
+                      <dd>{selected.assessment.evidence_completeness}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{translateUi("工件有效性")}</dt>
+                      <dd>{selected.assessment.artifact_validity}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{translateUi("修复状态")}</dt>
+                      <dd>{selected.assessment.remediation_status}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{translateUi("许可证")}</dt>
+                      <dd>{selected.assessment.license_status}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{translateUi("审核状态")}</dt>
+                      <dd>{selected.assessment.review_status ?? "candidate"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{translateUi("评估时间")}</dt>
+                      <dd>{selected.assessment.assessed_at ?? "—"}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section>
+                  <h4 className="text-xs font-semibold text-muted">{translateUi("证据与来源")}</h4>
+                  <p className="mt-1 text-xs">
+                    {translateUi("缺失证据")}: {selected.missing_evidence.join(" · ") || "—"}
+                  </p>
+                  <p className="mt-1 break-all text-[11px] text-muted">
+                    {selected.source_path ?? "—"}
+                  </p>
+                  <p className="mt-1 break-all font-mono text-[10px] text-muted">
+                    {selected.source_commit ?? "—"}
+                  </p>
+                  <p className="mt-2 text-xs">
+                    {translateUi("来源证据引用")}: {selected.evidence_refs.join(" · ") || "—"}
+                  </p>
+                  {selected.review_gate ? (
+                    <p className="mt-2 text-xs">
+                      {translateUi("下一步审核要求")}: {selected.review_gate}
+                    </p>
+                  ) : null}
+                </section>
+                <section>
+                  <h4 className="text-xs font-semibold text-muted">
+                    {translateUi("关联关系")} ({selected.related_relations.length})
+                  </h4>
+                  {selected.related_relations.length === 0 ? (
+                    <p className="mt-1 text-xs text-muted">{translateUi("暂无关联关系")}</p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {selected.related_relations.map((relation, index) => (
+                        <li
+                          key={`${relation.direction}-${relation.target}-${index}`}
+                          className="rounded-control bg-base-200 p-2 text-xs"
+                        >
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="badge badge-xs badge-outline">
+                              {relation.direction === "outgoing"
+                                ? translateUi("指向")
+                                : translateUi("被指向")}
+                            </span>
+                            <span className="badge badge-xs badge-info">
+                              {relation.type ?? "related"}
+                            </span>
+                            <span className="text-muted">
+                              {translateUi("置信度")}: {relation.confidence ?? "—"}
+                            </span>
+                          </div>
+                          <p className="mt-1 break-all font-medium">{relation.target_title}</p>
+                          <p className="mt-1 break-all text-[10px] text-muted">{relation.target}</p>
+                          {relation.note ? (
+                            <p className="mt-1 text-muted">{relation.note}</p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+                <section>
+                  <h4 className="text-xs font-semibold text-muted">
+                    {translateUi("复测历史")} ({attempts.length})
+                  </h4>
+                  {attempts.length === 0 ? (
+                    <p className="mt-1 text-xs text-muted">
+                      {translateUi("暂无复测记录；未执行不代表复测失败。")}
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {attempts.map((attempt, index) => (
+                        <li
+                          key={attempt.item_id ?? index}
+                          className="rounded-control bg-base-200 p-2 text-xs"
+                        >
+                          <div className="flex flex-wrap justify-between gap-1">
+                            <span className="font-medium">
+                              {attempt.result_status ?? "UNKNOWN"}
+                            </span>
+                            <span className="text-muted">{attempt.created_at ?? "—"}</span>
+                          </div>
+                          <p className="mt-1 text-muted">
+                            {attempt.provider ?? "—"} {attempt.provider_version ?? ""} ·{" "}
+                            {attempt.error_category ?? "—"}
+                          </p>
+                          {attempt.transitions?.length ? (
+                            <p className="mt-1 break-words text-[11px]">
+                              {attempt.transitions
+                                .map(
+                                  (transition) =>
+                                    `${transition.from_status ?? "—"} → ${transition.to_status ?? "—"}`,
+                                )
+                                .join(" · ")}
+                            </p>
+                          ) : null}
+                          {attempt.evidence?.length ? (
+                            <ul className="mt-1 space-y-1">
+                              {attempt.evidence.map((evidence) => (
+                                <li
+                                  key={evidence.evidence_id ?? evidence.content_hash}
+                                  className="break-all font-mono text-[10px] text-muted"
+                                >
+                                  {evidence.evidence_type ?? "evidence"} · SHA-256{" "}
+                                  {evidence.content_hash ?? "—"}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <EmptyPanel text={translateUi("POC 治理详情不可用。")} />
+            )}
+          </aside>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function KnowledgePage() {
-  const [view, setView] = useState<"platform" | "sources" | "pocs">("platform");
+  const [view, setView] = useState<"platform" | "sources" | "pocs" | "governance">("platform");
   return (
     <div>
       <PageHeader
@@ -1055,6 +1514,14 @@ export function KnowledgePage() {
               >
                 {translateUi("自有 POC")}
               </button>
+              <button
+                type="button"
+                className={`btn btn-xs ${view === "governance" ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setView("governance")}
+                data-testid="knowledge-poc-governance-tab"
+              >
+                {translateUi("POC 治理")}
+              </button>
             </div>
           </div>
         }
@@ -1063,6 +1530,8 @@ export function KnowledgePage() {
         <SourceEntriesView />
       ) : view === "pocs" ? (
         <CuratedPocSearchView />
+      ) : view === "governance" ? (
+        <PocGovernanceView />
       ) : (
         <PlatformKnowledgeView />
       )}

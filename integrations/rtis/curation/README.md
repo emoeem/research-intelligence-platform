@@ -68,7 +68,13 @@ The current Overlay contains 49 curated records, 2 explicitly declared external 
 
 The stricter validator checks these rules in addition to source IDs, evidence levels, lifecycle constraints and read-only database access. Run `python3 integrations/rtis/curation/validate_overlay.py` before rebuilding the search index.
 
-Current Overlay coverage: 41/49 records have a local source path; 38/49 have a resolvable source Commit; 9/49 have upstream source URLs. The 8 without a local path comprise seven upstream-only tool references and ID 16, whose historical source artifact is still missing. Three existing source files (IDs 900061–900063) have no Git history, so no Commit is invented. There are 33 records with explicit evidence gaps (95 missing-evidence items); all have review gates. Governance metadata completeness is 49/49. These counts do not imply that missing raw evidence has been recovered.
+Current Overlay coverage: 42/49 records have a local source path; 39/49 have a resolvable source Commit; 9/49 have upstream source URLs. The 7 without a local path are upstream-only tool references. Three existing source files (IDs 900061–900063) have no Git history, so no Commit is invented. There are 33 records with explicit evidence gaps (94 missing-evidence items); all have review gates. Governance metadata completeness is 49/49. These counts do not imply that missing raw evidence has been recovered.
+
+## POC evidence, validity, remediation and retest governance
+
+The Overlay declares conservative defaults in `poc_assessment_defaults`: evidence completeness and artifact validity are `not_assessed`; remediation and license are `unknown`. A per-record `poc_assessment` may override these only with typed evidence references, SHA-256-bound artifacts and the required product/version, reproduction, timestamp and reviewer context. A complete evidence assessment requires a declared checklist with hashed evidence for each present requirement. These assessment states are separate from K-level, lifecycle and the legacy RTIS `verified` flag. No existing POC has been assigned a positive M3 assessment by this schema addition.
+
+Retest attempts remain in the existing SQLite `research_plan_item`, append-only `research_plan_event` and `research_evidence` ledger. `rp-verify poc-history --poc-id <id>` provides a metadata-only query of linked attempts, five-state transitions, run/trace IDs and evidence hashes; it intentionally omits evidence payloads and does not write result/evidence rows. No PoC is executed by this command. A recorded result or process exit alone does not establish a current finding or remediation state.
 
 ## Search schema v6 and Web governance workbench
 

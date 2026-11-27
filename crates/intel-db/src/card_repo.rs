@@ -11,7 +11,7 @@
 //!（POSSIBLE_PROMPT_INJECTION，13 号冻结物第三节）命中即禁 APPROVED。
 //! D1 sha256 文件级去重复用 P1 content_objects 面（同文件多来源单对象已交付）。
 
-use crate::{new_entity_id, IntelError, IntelResult, PgPool};
+use crate::{knowledge_graph, new_entity_id, IntelError, IntelResult, PgPool};
 use domain::kcard::{
     quality_score, EvidenceLevel, KnowledgeCardId, KnowledgeRelationId, KnowledgeType,
     QualityInputs, QualityWeights, RelationType, ReviewStatus, RiskFlag, SourceTrust,
@@ -162,6 +162,21 @@ pub(crate) fn create_card_tx(
             &input.donor_channel,
         ],
     )?;
+    knowledge_graph::register_entity_ref_tx(
+        tx,
+        &knowledge_graph::EntityRefInput {
+            entity_type: domain::kcard::KnowledgeEntityType::KnowledgeCard,
+            canonical_key: id.as_str().to_string(),
+            source: knowledge_graph::EntitySourceInput {
+                source_system: "rip.intel-db".to_string(),
+                source_entity_id: id.as_str().to_string(),
+                source_version: String::new(),
+                canonical_uri: None,
+                source_commit: None,
+                content_sha256: None,
+            },
+        },
+    )?;
     Ok(id)
 }
 
@@ -208,44 +223,22 @@ pub fn add_relation(
     source: &str,
     confidence: f32,
 ) -> IntelResult<(KnowledgeRelationId, bool)> {
-    if !(0.0..=1.0).contains(&confidence) {
-        return Err(IntelError::Invalid(
-            "confidence must be within [0,1]".to_string(),
-        ));
-    }
-    if source.trim().is_empty() {
-        return Err(IntelError::Invalid(
-            "relation source must be non-empty (R2 3.1)".to_string(),
-        ));
-    }
     let mut conn = pool.get()?;
     let mut tx = conn.transaction()?;
-    let existing: Option<String> = tx
-        .query_opt(
-            "SELECT relation_id FROM knowledge_relations WHERE src_id=$1 AND dst_id=$2 AND relation_type=$3",
-            &[&src.as_str(), &dst.as_str(), &relation_type.as_str()],
-        )?
-        .map(|r| r.get(0));
-    if let Some(rid) = existing {
-        tx.commit()?;
-        return Ok((KnowledgeRelationId::try_new(rid)?, false));
-    }
-    let rid = KnowledgeRelationId::try_new(new_entity_id("krel-"))?;
-    tx.execute(
-        "INSERT INTO knowledge_relations (relation_id, src_id, dst_id, relation_type,
-             relation_evidence, relation_source, confidence)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)",
-        &[
-            &rid.as_str(),
-            &src.as_str(),
-            &dst.as_str(),
-            &relation_type.as_str(),
-            &evidence.cloned().unwrap_or(Value::Null),
-            &source,
-            &confidence,
-        ],
+    let (rid, created) = knowledge_graph::add_relation_tx(
+        &mut tx,
+        src.as_str(),
+        dst.as_str(),
+        knowledge_graph::RelationAssertion {
+            relation_type,
+            evidence,
+            source,
+            confidence,
+            valid_from: None,
+            valid_to: None,
+        },
     )?;
-    if relation_type == RelationType::Contradicts {
+    if created && relation_type == RelationType::Contradicts {
         // D5 硬性：命中 CONTRADICTS 即回退候选进审核（from 态先取后改，日志可追溯）。
         let from_status: String = tx
             .query_one(
@@ -272,7 +265,7 @@ pub fn add_relation(
         )?;
     }
     tx.commit()?;
-    Ok((rid, true))
+    Ok((rid, created))
 }
 
 /// 卡片摘要视图。
@@ -374,8 +367,37 @@ pub fn get_card(
         &[&card.as_str()],
     )?;
     let rels = conn.query(
-        "SELECT relation_id, src_id, dst_id, relation_type, relation_source, confidence
-         FROM knowledge_relations WHERE src_id = $1 OR dst_id = $1",
+        "SELECT r.relation_id, r.src_id, r.dst_id, r.relation_type, r.relation_source,
+                r.confidence, r.review_status, r.valid_from::text, r.valid_to::text,
+                src.entity_type, dst.entity_type,
+                COALESCE(
+                    jsonb_agg(jsonb_build_object(
+                        'evidence_entity_ref_id', re.evidence_entity_ref_id,
+                        'source_ref_id', s.source_ref_id,
+                        'source_system', s.source_system,
+                        'source_entity_id', s.source_entity_id,
+                        'source_version', s.source_version,
+                        'source_uri', s.canonical_uri,
+                        'source_commit', s.source_commit,
+                        'content_sha256', s.content_sha256,
+                        'source_review_status', a.review_status,
+                        'source_trust_class', a.trust_class,
+                        'license_expression', a.license_expression,
+                        'license_status', a.license_status,
+                        'role', re.evidence_role,
+                        'observed_at', s.observed_at
+                    ) ORDER BY s.observed_at)
+                    FILTER (WHERE re.relation_id IS NOT NULL),
+                    '[]'::jsonb
+                ) AS evidence_refs
+         FROM knowledge_relations r
+         JOIN knowledge_entity_refs src ON src.entity_ref_id=r.src_id
+         JOIN knowledge_entity_refs dst ON dst.entity_ref_id=r.dst_id
+         LEFT JOIN knowledge_relation_evidence re ON re.relation_id=r.relation_id
+         LEFT JOIN knowledge_entity_sources s ON s.source_ref_id=re.evidence_source_ref_id
+         LEFT JOIN knowledge_entity_source_assessments a ON a.source_ref_id=s.source_ref_id
+         WHERE r.src_id=$1 OR r.dst_id=$1
+         GROUP BY r.relation_id, src.entity_type, dst.entity_type",
         &[&card.as_str()],
     )?;
     let log = conn.query(
@@ -409,6 +431,12 @@ pub fn get_card(
                     "relation_type": r.get::<_, String>(3),
                     "relation_source": r.get::<_, String>(4),
                     "confidence": r.get::<_, Option<f32>>(5),
+                    "review_status": r.get::<_, String>(6),
+                    "valid_from": r.get::<_, Option<String>>(7),
+                    "valid_to": r.get::<_, Option<String>>(8),
+                    "src_entity_type": r.get::<_, String>(9),
+                    "dst_entity_type": r.get::<_, String>(10),
+                    "evidence_refs": r.get::<_, Value>(11),
                 })
             })
             .collect(),
@@ -469,7 +497,11 @@ pub(crate) fn decide_tx(
         if hard_hit {
             return Err(IntelError::Invalid(format!(
                 "approve blocked: hard risk flag present ({:?}); quarantine or remediate first (13-SECURITY 第三节)",
-                flags.iter().filter(|f| f.is_hard_block()).map(|f| f.as_str()).collect::<Vec<_>>()
+                flags
+                    .iter()
+                    .filter(|f| f.is_hard_block())
+                    .map(|f| f.as_str())
+                    .collect::<Vec<_>>()
             )));
         }
         if let Some(s) = score {

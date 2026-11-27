@@ -7,6 +7,11 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 from pathlib import Path
+from poc_assessment import (
+    validate_assessment_defaults,
+    validate_local_artifact_hash,
+    validate_poc_assessment,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKSPACE_ROOT = ROOT.parent
@@ -25,6 +30,10 @@ def fail(message: str) -> None:
 data = json.loads(OVERLAY.read_text(encoding='utf-8'))
 if data.get('schema_version') != 1:
     fail('schema_version must be 1')
+try:
+    validate_assessment_defaults(data.get('poc_assessment_defaults'))
+except ValueError as exc:
+    fail(str(exc))
 entries = data.get('entries')
 relations = data.get('relations')
 external_entities = data.get('external_entities', [])
@@ -101,6 +110,38 @@ for e in entries:
         fail(f'invalid independent_knowledge_status for {kid}: {e.get("independent_knowledge_status")!r}')
     if e.get('missing_evidence') and not e.get('review_gate'):
         fail(f'missing_evidence requires an actionable review_gate: {kid}')
+    assessment = e.get('poc_assessment')
+    if assessment is not None:
+        try:
+            validate_poc_assessment(
+                assessment,
+                has_missing_evidence=bool(e.get('missing_evidence')),
+            )
+        except ValueError as exc:
+            fail(f'POC assessment for {kid}: {exc}')
+        for ref in assessment.get('evidence_refs', []):
+            if ref.startswith(('http://', 'https://')):
+                parsed = urlparse(ref)
+                if parsed.scheme != 'https' or not parsed.netloc:
+                    fail(f'assessment evidence URL must be HTTPS: {kid}: {ref}')
+                continue
+            candidate = (ROOT / ref.split('#', 1)[0]).resolve()
+            if WORKSPACE_ROOT.resolve() not in candidate.parents or not candidate.is_file():
+                fail(f'assessment evidence ref does not resolve inside workspace: {kid}: {ref}')
+        for artifact in assessment.get('evidence_artifacts', []):
+            ref = artifact['ref']
+            if ref.startswith(('http://', 'https://')):
+                parsed = urlparse(ref)
+                if parsed.scheme != 'https' or not parsed.netloc:
+                    fail(f'evidence artifact URL must be HTTPS: {kid}: {ref}')
+                continue
+            candidate = (ROOT / ref.split('#', 1)[0]).resolve()
+            if WORKSPACE_ROOT.resolve() not in candidate.parents or not candidate.is_file():
+                fail(f'evidence artifact does not resolve inside workspace: {kid}: {ref}')
+            try:
+                validate_local_artifact_hash(candidate, artifact['sha256'])
+            except ValueError as exc:
+                fail(f'POC assessment for {kid}: {exc}')
     for ref in refs:
         local = ref.split('#', 1)[0]
         if local.startswith(('http://', 'https://')):

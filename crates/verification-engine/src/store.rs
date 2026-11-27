@@ -174,6 +174,43 @@ pub struct EvidenceRecord {
     pub created_at: String,
 }
 
+/// Metadata-only reference to a stored evidence payload.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PocEvidenceReference {
+    pub evidence_id: String,
+    pub evidence_type: String,
+    pub content_hash: String,
+    pub tool_run_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub created_at: String,
+}
+
+/// One result transition retained for a POC-linked research item.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PocRetestTransition {
+    pub from_status: Option<String>,
+    pub to_status: Option<String>,
+    pub created_at: String,
+}
+
+/// Existing research-ledger records associated with one RTIS POC ID.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PocRetestRecord {
+    pub rtis_poc_id: i64,
+    pub item_id: String,
+    pub plan_id: String,
+    pub provider_id: String,
+    pub provider_version: Option<String>,
+    pub result_status: Option<String>,
+    pub error_category: Option<String>,
+    pub tool_run_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub transitions: Vec<PocRetestTransition>,
+    pub evidence: Vec<PocEvidenceReference>,
+}
+
 /// 计划项新增入参（去重指纹与预算由 Planner/调用方给出；Serialize 供
 /// planner 预览出站）。
 #[derive(Debug, Clone, Serialize)]
@@ -611,6 +648,98 @@ impl PlanStore {
             .map(|id| {
                 self.get_item(id)?
                     .ok_or_else(|| PlanStoreError::NotFound(id.clone()))
+            })
+            .collect()
+    }
+
+    /// Read retest outcomes and evidence hashes linked to an RTIS POC.
+    /// Evidence payloads are deliberately excluded from this metadata view.
+    pub fn list_poc_retest_history(
+        &self,
+        rtis_poc_id: i64,
+    ) -> Result<Vec<PocRetestRecord>, PlanStoreError> {
+        if rtis_poc_id <= 0 {
+            return Err(PlanStoreError::GuardRejected(
+                "rtis_poc_id must be positive".to_owned(),
+            ));
+        }
+        let item_ids = self
+            .pool
+            .with_conn(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT item_id FROM research_plan_item
+                     WHERE rtis_poc_id = ?1
+                     ORDER BY created_at ASC, item_id ASC",
+                )?;
+                let rows = stmt.query_map([rtis_poc_id], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+
+        item_ids
+            .iter()
+            .map(|item_id| {
+                let item = self
+                    .get_item(item_id)?
+                    .ok_or_else(|| PlanStoreError::NotFound(item_id.clone()))?;
+                let transitions = self
+                    .pool
+                    .with_conn(|c| {
+                        let mut stmt = c.prepare(
+                            "SELECT json_extract(payload_json, '$.from'),
+                                    json_extract(payload_json, '$.to'), created_at
+                             FROM research_plan_event
+                             WHERE item_id = ?1 AND event_type = 'result_assigned'
+                             ORDER BY created_at ASC, event_id ASC",
+                        )?;
+                        let rows = stmt.query_map([item_id], |row| {
+                            Ok(PocRetestTransition {
+                                from_status: row.get(0)?,
+                                to_status: row.get(1)?,
+                                created_at: row.get(2)?,
+                            })
+                        })?;
+                        rows.collect::<Result<Vec<_>, _>>()
+                    })
+                    .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+                let evidence = self
+                    .pool
+                    .with_conn(|c| {
+                        let mut stmt = c.prepare(
+                            "SELECT evidence_id, evidence_type, content_hash,
+                                    tool_run_id, trace_id, created_at
+                             FROM research_evidence
+                             WHERE item_id = ?1
+                             ORDER BY created_at ASC, evidence_id ASC",
+                        )?;
+                        let rows = stmt.query_map([item_id], |row| {
+                            Ok(PocEvidenceReference {
+                                evidence_id: row.get(0)?,
+                                evidence_type: row.get(1)?,
+                                content_hash: row.get(2)?,
+                                tool_run_id: row.get(3)?,
+                                trace_id: row.get(4)?,
+                                created_at: row.get(5)?,
+                            })
+                        })?;
+                        rows.collect::<Result<Vec<_>, _>>()
+                    })
+                    .map_err(|e| PlanStoreError::Db(e.to_string()))?;
+                Ok(PocRetestRecord {
+                    rtis_poc_id,
+                    item_id: item.item_id,
+                    plan_id: item.plan_id,
+                    provider_id: item.provider_id,
+                    provider_version: item.provider_version,
+                    result_status: item.result_status,
+                    error_category: item.error_category,
+                    tool_run_id: item.tool_run_id,
+                    trace_id: item.trace_id,
+                    created_at: item.created_at,
+                    updated_at: item.updated_at,
+                    transitions,
+                    evidence,
+                })
             })
             .collect()
     }

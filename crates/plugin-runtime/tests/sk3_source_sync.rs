@@ -387,13 +387,27 @@ fn sk3_sync_candidate_mapping_review_gate_and_idempotence() {
 
     // 受控审核翻转 → 映射 2 条 CANDIDATE 资源。
     let keys = vec!["skills/alpha/SKILL.md", "skills/beta/SKILL.md"];
+    let plugin_version: String = pool
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT DISTINCT plugin_version FROM knowledge_source_entry
+                 WHERE plugin_id='knowledge.sk3-skill-pack'",
+                [],
+                |row| row.get(0),
+            )
+        })
+        .unwrap();
     plugin_runtime::knowledge_review::set_review_status(
         &pool,
         &audit,
-        "user:test",
         "knowledge.sk3-skill-pack",
+        &plugin_version,
         &keys,
         ReviewStatus::Approved,
+        plugin_runtime::knowledge_review::KnowledgeReviewContext {
+            reviewer: "user:test",
+            reason: "Reviewed the pinned source snapshot",
+        },
     )
     .unwrap();
     let m1 = repo
@@ -427,10 +441,14 @@ fn sk3_sync_candidate_mapping_review_gate_and_idempotence() {
     plugin_runtime::knowledge_review::set_review_status(
         &pool,
         &audit,
-        "user:test",
         "knowledge.sk3-skill-pack",
+        &plugin_version,
         &["skills/alpha/SKILL.md"],
         ReviewStatus::Rejected,
+        plugin_runtime::knowledge_review::KnowledgeReviewContext {
+            reviewer: "user:test",
+            reason: "Rejected the alpha candidate after review",
+        },
     )
     .unwrap();
     let m3 = repo

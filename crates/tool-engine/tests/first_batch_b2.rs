@@ -287,10 +287,18 @@ fn b2_protected_scripts_untouched_by_tests() {
         "test_rip3_source_monitor.py",
         "phase7_source_monitor_pg_smoke.py",
     ];
+    let audited_security_intel = [
+        "build_nuclei_metadata_package.py",
+        "test_build_nuclei_metadata_package.py",
+    ];
     for line in stdout.lines() {
         let code = line.chars().take(2).collect::<String>();
         let path = line.get(3..).unwrap_or_default().trim();
-        let audited = audited_rip3.iter().any(|name| path.ends_with(name));
+        let audited = audited_rip3.iter().any(|name| path.ends_with(name))
+            || (path.starts_with("scripts/security-intel/")
+                && audited_security_intel
+                    .iter()
+                    .any(|name| path.ends_with(name)));
         assert!(
             code == "??" || (code.contains('M') && audited),
             "scripts/ must carry no tracked modifications, got line: {line:?}"
@@ -302,7 +310,8 @@ fn b2_protected_scripts_untouched_by_tests() {
             );
         }
     }
-    // 三脚本在受保护清单内且文件在位（防测试空转）。
+    // 三脚本在受保护清单内且文件在位（防测试空转）；M4 security-intel
+    // ingestion metadata builder 的显式审计改动不属于这三项保护脚本。
     for protected in ["rip_kb_search.py", "rip_inventory.py", "rip_etl_status.py"] {
         assert!(
             repo_root().join("scripts").join(protected).is_file(),

@@ -570,6 +570,20 @@ fn check_knowledge_provides(cap_obj: &Map<String, Value>, cap_id: &str) -> RuleR
                 ),
             ));
         }
+        if kind.as_str() == "nuclei_template" {
+            let source_commit = str_field(decl, "source_commit").unwrap_or_default();
+            if source_commit.len() != 40
+                || !source_commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(issue(
+                    3,
+                    "knowledge_provides_invalid",
+                    format!(
+                        "provides.kinds.{kind}.source_commit must be a full 40-character hexadecimal commit"
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
 }

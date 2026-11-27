@@ -76,8 +76,9 @@ fn main() {
         }
     };
 
-    // SQLite 索引面（platform-search.db 既有 FTS 面；缺席降级空通道）。
-    let index_db = opt("index-db").unwrap_or_else(|| "migrations/platform-search.db".to_string());
+    // SQLite 索引面（server-managed schema v7 派生索引；缺席降级空通道）。
+    let index_db =
+        opt("index-db").unwrap_or_else(|| "rip-data/derived/curated-poc-search.db".to_string());
     let sqlite_pool = database::Pool::open(database::PoolConfig {
         path: database::DbPath::File(std::path::PathBuf::from(&index_db)),
         readonly: true,
@@ -113,7 +114,9 @@ fn main() {
         sqlite_pool: match &sqlite_pool {
             Some(p) => p,
             None => {
-                println!("{{\"error\":{{\"code\":\"index_db_unavailable\",\"message\":\"index-db 打不开（可重建派生面；跨库归并降级需显式提供）\"}}}}");
+                println!(
+                    "{{\"error\":{{\"code\":\"index_db_unavailable\",\"message\":\"index-db 打不开（可重建派生面；跨库归并降级需显式提供）\"}}}}"
+                );
                 std::process::exit(1);
             }
         },
@@ -164,6 +167,8 @@ fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilter
             "nuclei-protocol" => f.nuclei_protocol = Some(v.trim().to_string()),
             "cve-id" => f.cve_id = Some(v.trim().to_ascii_uppercase()),
             "cwe-id" => f.cwe_id = Some(v.trim().to_ascii_uppercase()),
+            "canonical-key" => f.canonical_key = Some(v.trim().to_string()),
+            "vulnerability-id" => f.vulnerability_id = Some(v.trim().to_ascii_uppercase()),
             "evidence-level" => f.evidence_level = Some(v.trim().to_ascii_uppercase()),
             "knowledge-lifecycle" => f.knowledge_lifecycle = Some(v.trim().to_string()),
             "poc-severity" => f.poc_severity = Some(v.trim().to_ascii_lowercase()),
@@ -186,7 +191,7 @@ fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilter
             }
             other => {
                 eprintln!(
-                    "sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type/nuclei-severity/nuclei-protocol/cve-id/cwe-id/evidence-level/knowledge-lifecycle/poc-severity/poc-category/poc-cve-id/poc-source-integrity/poc-verification-result/poc-dedup-status/poc-missing-evidence）"
+                    "sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type/nuclei-severity/nuclei-protocol/cve-id/cwe-id/canonical-key/vulnerability-id/evidence-level/knowledge-lifecycle/poc-severity/poc-category/poc-cve-id/poc-source-integrity/poc-verification-result/poc-dedup-status/poc-missing-evidence）"
                 );
                 std::process::exit(2);
             }
@@ -202,7 +207,7 @@ mod tests {
     #[test]
     fn sqlite_filters_parse_curated_poc_facets() {
         let filters = parse_sqlite_filters(Some(
-            "resource-type=rtis_poc,evidence-level=k2,knowledge-lifecycle=Researched,poc-severity=HIGH,poc-category=Unauthorized,poc-cve-id=cve-2025-1234,poc-source-integrity=partial,poc-verification-result=not_applicable,poc-dedup-status=related-family,poc-missing-evidence=true",
+            "resource-type=rtis_poc,evidence-level=k2,knowledge-lifecycle=Researched,poc-severity=HIGH,poc-category=Unauthorized,poc-cve-id=cve-2025-1234,poc-source-integrity=partial,poc-verification-result=not_applicable,poc-dedup-status=related-family,poc-missing-evidence=true,canonical-key=nuclei:example-1234,vulnerability-id=cve-2025-1234",
         ));
         assert_eq!(filters.resource_type.as_deref(), Some("rtis_poc"));
         assert_eq!(filters.evidence_level.as_deref(), Some("K2"));
@@ -217,5 +222,10 @@ mod tests {
         );
         assert_eq!(filters.poc_dedup_status.as_deref(), Some("related-family"));
         assert_eq!(filters.poc_missing_evidence, Some(true));
+        assert_eq!(
+            filters.canonical_key.as_deref(),
+            Some("nuclei:example-1234")
+        );
+        assert_eq!(filters.vulnerability_id.as_deref(), Some("CVE-2025-1234"));
     }
 }

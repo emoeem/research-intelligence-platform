@@ -22,10 +22,10 @@ cleanup() {
 trap cleanup EXIT
 
 cargo build --offline -q -p plugin-runtime --bin rp-plugin
-# Run one empty-key review to initialize the disposable DB's complete migration set.
+# Run the read-only list command to initialize the disposable DB migration set.
 "$PLUGIN_BIN" --migrations "$ROOT/migrations" --data-dir "$WORK/data" \
   --plugins-dir "$WORK/plugins" --data-root "$WORK/data-root" --db "$DB" \
-  review test-plugin --keys __bootstrap__ --status DISCOVERED >/dev/null
+  list >/dev/null
 python3 - "$DB" <<'PY'
 import hashlib, json, sqlite3, sys
 path = sys.argv[1]
@@ -141,7 +141,7 @@ print("PASS: Nuclei, CISA and PoC Index metadata are visible without claiming Po
 
 status, payload = request(
     f"/api/plugins/{plugin_id}/review", "POST",
-    {"item_keys": [item_key], "status": "APPROVED"},
+    {"item_keys": [item_key], "status": "APPROVED", "version": "0.0.1", "reason": "Synthetic fixture metadata and provenance are complete"},
 )
 assert status == 200 and payload["ok"], (status, payload)
 status, payload = request(path)
@@ -157,12 +157,12 @@ assert status == 400 and payload["error"]["code"] == "review_keys_invalid", payl
 print("PASS: empty review batch is rejected")
 
 status, payload = request(f"/api/plugins/{plugin_id}/review", "POST",
-                          {"item_keys": [item_key], "status": "INVALID"})
+                          {"item_keys": [item_key], "status": "INVALID", "version": "0.0.1", "reason": "Synthetic fixture negative test"})
 assert status == 400 and payload["error"]["code"] == "review_status_invalid", payload
 print("PASS: unsupported review status is rejected")
 
 status, payload = request(f"/api/plugins/{plugin_id}/review", "POST",
-                          {"item_keys": [item_key], "status": "REJECTED"}, auth=False)
+                          {"item_keys": [item_key], "status": "REJECTED", "version": "0.0.1", "reason": "Synthetic fixture auth negative test"}, auth=False)
 assert status == 401, (status, payload)
 print("PASS: review writes require Bearer authentication")
 PY

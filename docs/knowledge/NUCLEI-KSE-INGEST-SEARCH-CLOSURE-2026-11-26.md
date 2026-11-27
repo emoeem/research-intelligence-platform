@@ -33,6 +33,8 @@ No production RTIS database or production platform database was modified. The RT
 
 A migration regression test creates a version-31 database, inserts an approved legacy row, applies 032, verifies the old row unchanged, accepts `nuclei_template`, and rejects an unknown kind.
 
+This is the historical M2 migration scope. M6 later added SQLite migration 033 for the KSE review log; the current SQLite migration head is 033. That migration was exercised on disposable databases and is documented in [M6 closeout](../knowledge-governance/M6-CLOSEOUT-AND-REMAINING-ISSUES.md).
+
 ### 2. Dedicated parser and provenance
 
 The new `nuclei_yaml` parser:
@@ -114,7 +116,7 @@ The RTIS manifest examples now declare:
 - rights policy `approved_only`
 - maximum entries `20,000`
 
-The installed Arch/BlackArch package metadata identifies the template package as `nuclei-templates 1:v10.5.2.r748.a346d8f00c61bf95bbd30365f12cf923be51ba3d-1` and declares its license as MIT. The Nuclei source snapshot is therefore pinned to the package's upstream revision identifier `a346d8f00c61bf95bbd30365f12cf923be51ba3d`; the manifest's Nuclei kind config carries that `source_commit`. The parser records MIT for this source only and includes the upstream LICENSE.md evidence URL plus the local package identifier in structured metadata. It does not inherit the RTIS plugin's own license status or commit.
+The installed Arch/BlackArch package metadata reports `nuclei-templates 1:v10.5.2.r748.ga346d8f-1` and MIT. The package suffix agrees with the leading eight characters of the manifest's full `source_commit` (`a346d8f00c61bf95bbd30365f12cf923be51ba3d`), but `/usr/share/nuclei-templates` is not a Git checkout, so this does not prove that the local tree exactly matches the full commit. The metadata-package builder now verifies an exact revision for Git checkouts and reports non-Git trees as `unverified_non_git_tree`. The parser records MIT for this source only and derives the upstream LICENSE.md evidence URL from the declared commit; it no longer claims a local package identifier per template. It does not inherit the RTIS plugin's own license status or commit.
 
 This is package/revision-level evidence, not a blanket claim that every third-party template author contribution has independent provenance. Before production approval, retain the exact upstream snapshot/package provenance and re-check the applicable repository license at the pinned revision.
 

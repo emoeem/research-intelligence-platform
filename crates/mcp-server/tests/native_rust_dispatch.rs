@@ -326,6 +326,11 @@ fn native_rust_dispatch_ocr_request_bit_routes_ocr_channel() {
             }
         }
     }
+    // The host binary must match the catalog pin before this success-path test
+    // invokes it; a different package build is an environment-specific SKIP.
+    if !host_binary_pin_guard(test, "/usr/bin/tesseract", "44e4c41d9986e8b2") {
+        return;
+    }
     let fix = fixture("ocr");
     register_di1_manifests(&fix);
     let channel = fix.channel();

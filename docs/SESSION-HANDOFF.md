@@ -220,7 +220,7 @@ User decisions: Projects=independent; Research Assets=independent; M7=reference;
 
 - M4 CLOSED: migration 031, Rust Store/CLI, Projects and Research Assets REST APIs, workspace-scoped details/updates, Project↔Task/Asset relations, Asset Endpoint/append-only Observation/evidence-referenced Technology Profile, frontend management/details and zh-CN/en-US/ja-JP. The main platform.db remains user_version 30.
 - M5/M6 remain CLOSED as documented.
-- M7: Playwright 85/85, including 12 routes × 3 locales × 2 themes × 5 viewport widths responsive smoke (360/360); Vitest 22 files / 155 tests, typecheck/Prettier/build pass. Local production-build smoke covered 12 routes at desktop/mobile (24 navigations), 24/24 success, no API/console errors, warm-cache load median 24 ms / p95 28 ms. M7 remains OPEN for Figma pixel comparison, existing baseline human review and manual interaction sign-off.
+- M7: Playwright 85/85, including 12 routes × 3 locales × 2 themes × 5 viewport widths responsive smoke (360/360); Vitest 22 files / 155 tests, typecheck/Prettier/build pass. Local production-build smoke covered 12 routes at desktop/mobile (24 navigations), 24/24 success, no API/console errors, warm-cache load median 24 ms / p95 28 ms. M7 is CLOSED for the user-approved reference-based scope; Figma pixel parity is not required. Real-device profiling remains non-blocking.
 - M8: staged SPA is live at http://127.0.0.1:7801/ with an isolated DB clone and CSP/Origin/Bearer/SPA fallback/API 404 tests. The old 7800 service was not listening; default root remains unchanged and M8 is STAGED — NOT DEFAULT.
 - Gates: verification-engine 56 tests; selftest_projects_assets.sh PASS; selftest_phase9_rest.sh 33 PASS / 0 FAIL; selftest_spa_entry.py 5/5; web 155 tests; Playwright 85/85, including the 360-combination locale/theme/five-viewport route sweep.
 - No Git commit/push/reset/clean/stash/checkout/rebase was performed. Existing worktree changes were preserved.
@@ -268,3 +268,130 @@ User decisions: Projects=independent; Research Assets=independent; M7=reference;
 
 - 插件路径修复 commit `b9db4453` 已提交推送且 CI 8/8 通过。POC source recovery commit `8c7d6877` 已提交推送且 CI run `45807868916` 8/8 通过。ID 16 来源恢复、Overlay、POC selftest、Web summary fixture 与证据矩阵文档均已纳入该提交；本轮剩余仅为本次更新的历史统计文档与 handoff。
 - 不得 reset/clean/stash/checkout/rebase；不删除数据库备份；不改 `migrations/platform.db` 或原始 `integrations/rtis/knowledge.db`。
+
+
+### 2026-11-26 continuation: Awesome-Hacking version accounting and Trickest source snapshot
+
+- Read-only audit of `migrations/dev-p6.db` found `knowledge.awesome-hacking` has four retained plugin versions (0.1.0–0.1.3). Their KSE row totals are 85/84/84/84. Only 0.1.3 has `is_active=1`; it contains 84 unique directory entries: 6 APPROVED, 75 DISCOVERED, 3 REJECTED. The previous aggregate 24/301/12 counted historical version rows, not unique resources.
+- Fixed `apps/server/rp_server.py::knowledge_source_stats()` to group by `(plugin_id, plugin_version)` and map version-scoped stats in plugin list/detail. No historical KSE rows or review states were modified. Added `apps/server/test_knowledge_source_stats.py`; test and Python compile pass. `apps/server/selftest_knowledge_review.sh` passes.
+- Retrieved all 30 Trickest/CVE top-30 candidate metadata pages from pinned commit `0330ab928da94d1210b84fbe537bb328073f6114`; retried the single missing CVE-2017-10271 page successfully. Verified upstream MIT LICENSE. SHA-256 manifest is `docs/knowledge/TRICKEST-CVE-TOP30-SOURCE-SNAPSHOT-2026-11-26.md`; raw pages remain under ignored `target/`. No PoC executed and no target contacted.
+- Current CI for commit `0d83a685` was still running its Rust clippy job at last check; other seven jobs had succeeded. Recheck before declaring CI green.
+- Worktree modifications are intentionally local and uncommitted. Preserve existing untracked `scripts/security-intel/data/`, `scripts/security-intel/download_trickest_cve_pages.sh`, and `test-results/`; do not reset/clean/stash/checkout/rebase.
+- Validation complete: version-scope regression PASS; `py_compile` PASS; `apps/server/selftest_knowledge_review.sh` PASS; isolated real-server `/api/plugins` integration PASS for all four versions (0.1.0 = 6/76/3, 0.1.1–0.1.3 = 6/75/3). `git diff --check` PASS. The CI for prior pushed commit `0d83a685` completed SUCCESS (8/8 jobs); it does not include the current uncommitted API fix. Do not change plugin approval states or delete old version rows.
+
+
+## Security knowledge governance continuation — M0/M1/M6
+
+- M0 read-only audit is complete; report: `docs/knowledge-governance/M0-BASELINE-AND-GAP-REPORT.md`.
+- M1 unified entity/relation model is implemented and locally verified. ADR and closeout: `docs/knowledge-governance/M1-UNIFIED-ENTITY-RELATION-ADR.md` and `docs/knowledge-governance/M1-CLOSEOUT-AND-REMAINING-ISSUES.md`.
+- V0011 was exercised only on disposable PostgreSQL databases/schemas. The PostgreSQL regression suites passed 8/8 serially on a fresh database; `cargo test --offline -p domain` passed 82 tests; scoped Clippy passed with `-D warnings`.
+- A custom-format V10 database backup was made, V0011 was applied, and restoring the backup to a clean disposable database returned the schema to version 10 with the pre-migration relation intact and no V0011 registry. The temporary backup was not retained.
+- M6 source/evidence governance is complete for the persistence layer; decision and closeout: `docs/knowledge-governance/M6-SOURCE-EVIDENCE-GOVERNANCE-DECISION.md` and `docs/knowledge-governance/M6-CLOSEOUT-AND-REMAINING-ISSUES.md`.
+- PostgreSQL V0012 and SQLite 033 were tested on disposable databases only. PostgreSQL governance tests passed 8/8; KSE review/ingest tests passed 14/14; scoped Clippy passed. The SQLite backup/restore drill restored V032 with the original KSE row still `DISCOVERED` and no review-log table.
+- No production or persistent development databases were modified. No POC, Nuclei template or target request was executed.
+- M2 is complete for static ingestion, provenance and source-presence lifecycle. The closeout and remaining issues are in `docs/knowledge-governance/M2-CLOSEOUT-AND-REMAINING-ISSUES.md`; the original pre-implementation baseline remains in `docs/knowledge-governance/M2-BASELINE-AND-GAP-REPORT.md`.
+- M2 added raw-template SHA-256, structured matcher/extractor projection, independent syntax/shape/effectiveness states, full 40-hex source pin checks, exact clean-Git-checkout verification, transactional missing/reappearance reconciliation and Search exclusion for upstream-missing rows. Detection validation stays `NOT_TESTED`; the local Arch package revision suffix matches only the first eight pin characters and its non-Git tree remains unverified.
+- M2 validation: related Rust tests PASS (three manual static audits explicitly ignored by default and run individually); scoped Clippy PASS; package-builder Python tests 4/4 PASS; focused Web knowledge smoke tests 8/8 PASS; disposable full KSE projection PASS; `git diff --check` PASS. No CI result is claimed.
+- Historical Nuclei closeout documents now distinguish Migration 032's original M2 scope from M6's later SQLite 033 review-log migration; current SQLite migration head is 033, tested only on disposable copies.
+- **Next in required order: M3 POC evidence, remediation and retest governance.** M0, M1, M6 and M2 are complete. Continue preserving the existing modified and untracked worktree; no commit/push or destructive cleanup.
+
+
+## M3 closeout — POC evidence, validity, remediation and retest governance (2026-11-26)
+
+- M3 implementation and local acceptance are complete. Closeout: `docs/knowledge-governance/M3-CLOSEOUT-AND-REMAINING-ISSUES.md`; read-only baseline: `docs/knowledge-governance/M3-BASELINE-AND-GAP-REPORT.md`.
+- Overlay adds explicit per-POC assessment defaults (evidence completeness, artifact validity, remediation and license), strict state/review/evidence guards, local artifact SHA-256 verification and workspace path containment. HTTPS URLs remain provenance refs only; remote content cannot be labelled byte-hashed until materialized locally.
+- Review decisions APPROVED/REJECTED both require reviewer, reason and reviewed_at. Positive claims require evidence, timestamps and reviewer; complete evidence requires a gap-free checklist and hashed local artifacts.
+- Retest history reuses existing `research_plan_item`, `research_plan_event` and `research_evidence`; no migration or duplicate history table. Added `PlanStore::list_poc_retest_history` and `rp-verify poc-history --poc-id`. It returns five-state transitions and evidence hashes/metadata, never evidence payloads.
+- Validation: Python assessment tests 11/11 PASS; Overlay validator PASS (49 entries, 2 external entities, 25 relations, RTIS source DB read-only); Rust verification-engine tests 45 unit + 2 provider + 10 store PASS; scoped Clippy with `-D warnings` PASS; disposable SQLite CLI history smoke PASS including NOT_TESTED→INCONCLUSIVE transitions, run/trace metadata and non-positive-ID rejection; Python compile and `git diff --check` PASS.
+- Data boundary: new per-POC assessment metadata is 0/49. This is deliberate: no historical narrative, legacy verified bit or source presence was promoted to a current validity/remediation claim. The 49 curated entries retain their prior evidence levels, lifecycle, review gates and evidence refs. Existing 33 evidence-gap records / 94 missing items remain visible.
+- No PoC execution, target request, production DB write, or persistent dev DB migration occurred. No CI result is claimed for this uncommitted worktree.
+- **Next required phase: M4 search relevance and cross-source deduplication.** M5 governance UI follows M4; M7 full quality gates and final handoff remain outstanding.
+- Preserve all existing modified/untracked files. No commit/push/reset/clean/stash/checkout/rebase.
+
+
+## M4 baseline — search relevance and cross-source deduplication (2026-11-26)
+
+- M4 read-only baseline: `docs/knowledge-governance/M4-BASELINE-AND-GAP-REPORT.md`.
+- Search index v6 is healthy: 3,708 documents / 3,708 FTS rows (3,107 catalog_entry, 552 nuclei_template, 49 rtis_poc; all ACTIVE).
+- Critical identity finding: do not deduplicate by `canonical_url` or title. 1,296 PoC Index entries share a corpus homepage URL; 552 Nuclei entries share a plugin corpus URL. 15 repeated normalized title groups are Nuclei templates with different CVE/template paths. These are not confirmed duplicates.
+- Current FTS search is BM25 + quality + keyword coverage with CJK 2-gram, filters and explanations; no generic entity identity/hash/duplicate-group projection and no cross-source dedup grouping. `rp-search-unified` merges by `(store,id)`, so cross-store same-entity hits remain separate; no general unified search API route was found.
+- ⌘K global search loads at most 200 tools/knowledge/tasks from separate APIs and does client-side token matching; Knowledge POC tab searches only curated POC records through its dedicated endpoint.
+- Existing PostgreSQL KnowledgeCard exact-hash and MinHash duplicate workflows produce reviewable candidate edges; M1 typed entity/source refs and evidence-backed relation reviews should be reused. No auto-merge or delete.
+- M4 implementation order: typed canonical identity/provenance projection → unified search relevance and API → conservative cross-source duplicate candidate generation → 100+ judged-query benchmark. M5 UI follows M4; M7 remains final full quality gates.
+- Audit was read-only; no source DB writes or POC/template execution. Preserve the current uncommitted worktree; no commit/push/reset/clean/stash/checkout/rebase.
+- Reused the existing `rp-kc bench` / `crates/intel-db/src/bench.rs` evaluation harness: current qrel has 10 category/prefix-generated queries over 141 PG KnowledgeCards; it is not a human-judged cross-source benchmark. Historical PG-only hybrid Recall@10 0.5812 / P@10 0.4700 / MRR 0.9167 / NDCG@10 0.8212 (see `docs/rip3/batches/P4-4-BENCHMARK.md`).
+- Added `scripts/security-intel/evaluate_exact_cve_search.py` and saved `test-results/m4-exact-cve-search-baseline-2026-11-26.json`. Read-only 100-query exact-CVE regression against SQLite FTS: 100/100 queries; Recall@10 1.0; MRR 1.0; first relevant rank 1 in 100/100; all structured relevant template IDs in top 100; mean precision among returned hits 0.99; repeat order deterministic. Two queries include an additional same-product/different-CVE template and require human relevance judgement. This is same-index self-consistency, not human-labelled semantic benchmark.
+
+
+## M4-A implementation — typed identity and exact-ID search projection (2026-11-26)
+
+- M4-A complete; M4 overall in progress. Search engine schema v7 adds `identity_json` and `SearchIdentity` (typed entity/canonical key, source system/record/version, content/metadata hashes, vulnerability IDs). No source DB or PostgreSQL migration.
+- Mappings: Platform resources → `platform/<resource_id>`; KSE → plugin/item/version + source Commit/path/content and metadata hashes; Nuclei → `detection_template` canonical key from source template ID + CVE refs; PoC Index → `vulnerability` canonical key `cve:<ID>`; curated RTIS → `poc` canonical key `rtis:poc:<id>`. PoC Index risk records are not labelled exploit POCs; RTIS POC bodies are not read or hashed.
+- Added exact `canonical_key` and `vulnerability_id` filters to `rp-search-index` and `rp-search-unified --sqlite-filters`.
+- Real temporary v7 rebuild from read-only dev-p6 + RTIS source: 3,708/3,708 docs. Identity coverage 3,708; canonical entities 1,897; vulnerability IDs 1,849; source content/metadata hashes 3,659 each.
+- Dedup audit: 0 exact content-hash groups, 0 metadata-hash groups, 0 duplicate typed canonical-key groups; 15 repeated-title groups (Nuclei different paths/CVEs) and 2 corpus URL collisions. No automatic merge/delete. Audit scripts: `scripts/security-intel/audit_search_dedup.py`, `scripts/security-intel/evaluate_exact_cve_search.py`; reports under `test-results/m4-*-2026-11-26.json`.
+- v7 exact-CVE self-consistency: 100/100 structured CVE queries; Recall@10=1.0, MRR=1.0, first relevant rank=1 in 100/100, all structured relevant templates within top100, mean precision over returned hits=0.99, deterministic first 10. Not a human-judged semantic benchmark.
+- Validation: search-engine 24 unit + 2 rebuild integration; unified-search 2 library + 1 CLI parser = 29 tests PASS; cargo check PASS; scoped Clippy `-D warnings` PASS; rustfmt touched-file check PASS; `git diff --check` PASS.
+- Tracked `migrations/platform-search.db` remains schema v6 and unchanged; querying it with the v7 engine correctly reports rebuild required. M4-B must move unified runtime/API to a v7 derived index lifecycle, not overwrite the tracked DB.
+- Next: M4-B unified authenticated/workspace-scoped search API and cross-store typed-entity merge; M4-C conservative near-duplicate candidates; M4-D 100+ human-reviewed cross-source qrel. M5 after M4; M7 final gates still outstanding.
+
+
+## 2026-11-26 governance phases update
+
+- M3 POC assessment/retest governance: local acceptance passed (11 Python tests; overlay validator; verification-engine 45 unit + 2 provider + 10 store tests; scoped Clippy/rustfmt/diff checks). Curated 49 POCs remain explicitly unassessed; no historical POC was executed.
+- M4: schema-v7 typed identity projection and unified API/merge code are implemented and covered by local unit/API tests. Current PostgreSQL service is offline and REST caller-to-workspace ACL mapping is not available; API rejects non-default workspaces. Cross-source M1 relation roundtrip and human-reviewed 100+ qrel remain open. No automatic merge/delete occurred.
+- M5: added `/api/curated-pocs/governance` and Knowledge → POC Governance UI. Read-only projection shows M3 states and retest history metadata/hashes only. zh-CN/en-US/ja-JP strings added. Frontend typecheck/build and 22-file/158-test suite passed.
+- M7: local quality gates passed: `cargo build --workspace --offline`, `cargo test --workspace --offline` (exit 0; 3 manual Nuclei corpus tests + 1 Chromium big-page test explicitly ignored), workspace Clippy `-D warnings`, `cargo fmt --all -- --check`, Python/server tests and both server selftests, frontend typecheck/build and 22 files/158 tests, `git diff --check`. Fixed stale migration-tail 032 assertions to 033 and narrowed the B2 protected-script check to its actual three protected scripts plus two explicitly audited M4 security-intel files.
+- Git boundary: worktree changes are uncommitted and preserved. No push/commit/reset/clean/stash/checkout/rebase performed. GitHub Actions has not been triggered for this worktree.
+- M4 remains partial, not accepted: local PostgreSQL is inactive, current REST identity has no workspace ACL mapping (API fails closed to `default`), no live dual-store parity/relation roundtrip, and the 100+ cross-source relevance qrel still needs human judgement. Exact-CVE 100-query benchmark is a self-consistency test only.
+
+- M5 final refinement: POC detail now includes incoming/outgoing relation edges from the overlay (25 total), confidence, notes, external entity titles, and evidence references. The existing source-review UI/API was fixed to pass plugin version and a required audit reason through to the `rp-plugin review` CLI. Backend review API tests 3/3; source review selftest passes; full web suite remains 22 files / 158 tests after final relation UI change.
+
+
+## M4 acceptance continuation (2026-11-27)
+
+- User decision: workspace mode `personal` (default workspace only), PostgreSQL `podman`, qrel review `batch`. Do not add multi-tenant RBAC; the unified search API remains fail-closed to `default`.
+- Started isolated PostgreSQL 17 container `rip-m4-personal-pg` on loopback `127.0.0.1:55432`, DB `rip_m4_acceptance`, named volume `rip-m4-personal-pgdata`; migrations through V0012 and `vector`/`pg_search`/`pg_jieba` extensions. No system DB or source DB changes.
+- Fixed separate plugin DB indexing: `rp-search-index` has optional `--plugin-db`; server index freshness checks and rebuild command include `PLUGIN_DB_PATH`. Live v7 derived index: 3,789 docs / 3,789 FTS rows.
+- Fixed Podman local digest-pinned image resolution: verify the actual local manifest digest and run the immutable image ID. Rebuilt `rip-embed`; synchronized JSON/YAML manifest digest and `containerfiles/README.md`.
+- Live unified search smoke: SQL injection and CVE-2021-44228 both returned PostgreSQL + SQLite channels. PG used isolated acceptance-only fixtures; not production data.
+- Created 140-pair cross-source qrel review batch (14 queries × top-10) and LLM advisory suggestions. `human_grade` remains blank for all 140; evaluator correctly stays pending. See `docs/knowledge-governance/M4-QREL-REVIEW-BATCH-001.md` and `test-results/m4-cross-source-qrel-review-batch-001.csv`.
+- Fixed `document_domain` integration test migration bootstrap so fresh PostgreSQL test runs do not depend on test execution order.
+- M4 remains PARTIAL until user confirms 140 human grades. M4-C remains audit-only; no automatic duplicate merge/delete. No commit/push/reset/clean/stash/checkout/rebase.
+
+
+## M4 human qrel workflow update (2026-11-27)
+
+- Argilla 2.8.0 SDK API was inspected and installed in an isolated exploratory venv. Upstream README explicitly states feature development has stopped (only bug fixes/security patches); therefore Argilla was not deployed.
+- Chosen annotation UI: Label Studio 1.23.2 installed from PyPI in an isolated Python 3.13.15 uv venv because official Docker Hub image pulls repeatedly failed with EOF. It runs as enabled systemd user service rip-m4-label-studio, bound only to 127.0.0.1:8062, with data under ~/.local/share/rip-m4-label-studio/data. SSRF protection is enabled; startup version checks are disabled. A temporary API token was deleted after provisioning; legacy token auth is disabled.
+- Created build_m4_label_studio_batch.py, import_m4_label_studio_annotations.py, compare_m4_ranking_runs.py, requirements-m4-evaluation.txt, and test_m4_qrel_tools.py.
+- Generated Label Studio task bundle: 140 JSON tasks, 14 queries, source distribution 102 KEV / 29 Nuclei / 8 RTIS / 1 platform. AI suggestions are Label Studio predictions only; no human annotation is prefilled.
+- Replaced the evaluator with ir-measures 0.4.3 and added ranx 0.3.21 as an offline run-comparison/RRF experiment tool. Evaluator blocks incomplete qrels; importer rejects conflicts and preserves AI suggestions. Tool tests: 4/4 pass.
+- Review instructions: docs/knowledge-governance/M4-QREL-REVIEW-BATCH-001.md. Human review remains pending; no metric based on AI suggestions is valid.
+
+
+- Label Studio project ID 1 was created and populated. API readback confirmed 140 tasks, 140 advisory predictions, and zero human annotations. First task Q01-R01 has one prediction (grade 3) and no human annotation.
+- Local reviewer login is rip-m4-reviewer@example.com. Password is in ~/.local/share/rip-m4-label-studio/credentials.env (mode 0600; contains username/password only). Open http://127.0.0.1:8062 on CachyOS and review the preloaded project. The review UI is ready; M4 qrels remain pending until the user completes the human labels.
+- Added repository launcher scripts/security-intel/start_m4_label_studio.sh and pinned review UI requirements. Systemd user unit now calls the repository launcher.
+
+- Live M4 cross-store merge smoke now verified using an isolated PG acceptance fixture linked to exact approved CISA KEV source tuple. One merged result preserved pg-intel + sqlite-knowledge source records; both channels available, no SQLite error. Rust unit tests 6/6 pass including approved exact match, version mismatch, unreviewed guard, and source preservation.
+
+
+## 2026-11-27 M4 sampled user acceptance decision
+
+- User explicitly accepted the 140-pair M4 cross-source search batch after sample inspection and waived the cumbersome requirement to submit all 140 individual Label Studio annotations.
+- Recorded in docs/knowledge-governance/M4-USER-ACCEPTANCE-2026-11-27.md; M4 qrel and baseline docs now distinguish sampled acceptance from exhaustive relevance labels.
+- Label Studio annotations/drafts remain 0; CSV human grades remain 0/140; evaluator remains pending with metrics null. No AI prediction was converted into a human label.
+- Podman PostgreSQL acceptance container rip-m4-personal-pg is running and accepts connections on 127.0.0.1:55432. The system PostgreSQL service on 5432 is separate and intentionally inactive.
+
+
+## 2026-11-27 final validation and closeout
+
+- Project closeout report: docs/PROJECT-CLOSEOUT-2026-11-27.md.
+- Rust workspace: format PASS; 1,442 passed / 0 failed / 6 ignored across 198 test binaries; Clippy -D warnings PASS; offline build PASS.
+- PostgreSQL disposable DB gate: Phase 7 7/7 twice; source monitor PASS; backup/recovery PASS. Temporary role/database removed.
+- Python: workers 237 passed / 11 skipped; server 12/12; security builders 7/7; POC assessment 11/11; M4 qrel tools 5/5.
+- Web: 22 files / 158 Vitest; build/typecheck/Prettier PASS; Playwright 85/85; responsive matrix 360/360.
+- Security: repository scan PASS; cargo-deny full check PASS (duplicate dependency warnings); SQLite benchmark 1,000 docs / 10,000 chunks, backup/restore verified.
+- M4 batch 001 accepted by user sample review with individual labels waived. Zero saved human labels and null relevance metrics remain factual and unchanged.
+- M7 closed for reference-based scope after the user's UI acceptance. M8 remains staged per user decision.

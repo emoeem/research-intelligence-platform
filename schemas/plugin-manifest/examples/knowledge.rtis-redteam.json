@@ -43,7 +43,7 @@
             "parser": "nuclei_yaml",
             "license_policy": "approved_only",
             "max_entries": 20000,
-            "source_commit": "ga346d8f"
+            "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d"
           }
         },
         "index": {

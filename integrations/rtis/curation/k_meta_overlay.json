@@ -2,6 +2,13 @@
   "schema_version": 1,
   "created_at": "2026-11-26T00:00:00Z",
   "purpose": "Read-only, evidence-gated curation overlay for RTIS k_meta/k_relation; source database remains immutable. Sensitive verification notes are redacted only in the RIP projection when explicitly flagged.",
+  "poc_assessment_defaults": {
+    "schema_version": 1,
+    "evidence_completeness": "not_assessed",
+    "artifact_validity": "not_assessed",
+    "remediation_status": "unknown",
+    "license_status": "unknown"
+  },
   "entries": [
     {
       "knowledge_id": 4,

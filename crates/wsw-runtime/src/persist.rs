@@ -906,16 +906,16 @@ fn validate_send_state(state: &str) -> Result<(), DbError> {
 }
 
 impl PersistStore {
-    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，Nuclei 模板知识类型迁移后为 32）。
+    /// 链尾水位断言（迁移后调用面；user_version 必须 = 当前链尾，KSE review history 迁移后为 33）。
     /// 方法名去数字收口（原 assert_watermark_25 名 25 断言 27 双漂移既有债，
     /// WSW-4-TASK A13/S3 裁决改名；随链尾演进仅更新断言值）。
     pub fn assert_watermark(&self) -> DbResult<()> {
         let v: i64 = self
             .pool
             .with_conn(|conn| conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if v != 32 {
+        if v != 33 {
             return Err(DbError::Validation(format!(
-                "032 chain head expected user_version=32, got {v}"
+                "033 chain head expected user_version=33, got {v}"
             )));
         }
         Ok(())

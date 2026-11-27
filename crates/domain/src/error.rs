@@ -250,6 +250,13 @@ pub enum DomainError {
         /// 拒绝原因。
         reason: String,
     },
+    /// 跨来源知识实体引用 ID 非法。
+    InvalidKnowledgeEntityRefId {
+        /// 被拒绝的原始值。
+        value: String,
+        /// 拒绝原因。
+        reason: String,
+    },
     /// KnowledgeRelation 的 relation id 非法（同上口径，03-DOMAIN-MODEL 1.6）。
     InvalidKnowledgeRelationId {
         /// 被拒绝的原始值。
@@ -442,6 +449,12 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidKnowledgeCardId { value, reason } => {
                 write!(f, "invalid knowledge card id {value:?}: {reason}")
+            }
+            DomainError::InvalidKnowledgeEntityRefId { value, reason } => {
+                write!(
+                    f,
+                    "invalid knowledge entity reference id {value:?}: {reason}"
+                )
             }
             DomainError::InvalidKnowledgeRelationId { value, reason } => {
                 write!(f, "invalid knowledge relation id {value:?}: {reason}")

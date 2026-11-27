@@ -38,8 +38,8 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 
 ## Nuclei 与 KEV 交叉导入与审核
 
-- 新增插件：`knowledge.nuclei-templates@0.1.1`；本地生成包以 `local` 信任级别读取，模板内容仍按官方 Nuclei commit 与 MIT 许可追溯。上游固定 commit 为 `a346d8f00c61bf95bbd30365f12cf923be51ba3d`；本机模板包版本 `nuclei-templates 1:v10.5.2.r748.ga346d8f-1`，MIT。
-- `scripts/security-intel/build_nuclei_metadata_package.py` 只读 RTIS 原始数据库，生成 `target/nuclei-metadata-package/knowledge.db`；只复制解析所需的 12 个元数据列，不复制 `content`、`verified`、`verified_note`、engagement、target、used_on 或 agent 字段。模板 YAML 从与固定版本匹配的 `/usr/share/nuclei-templates` 读取并静态解析，不执行模板。
+- 新增插件：`knowledge.nuclei-templates@0.1.1`；本地生成包以 `local` 信任级别读取，模板元数据记录声明的上游 commit 与 MIT 许可证据。上游 pin 为 `a346d8f00c61bf95bbd30365f12cf923be51ba3d`；本机模板包版本 `nuclei-templates 1:v10.5.2.r748.ga346d8f-1` 的短修订后缀与 pin 前缀一致，但安装目录不是 Git checkout，不能据此宣称完整内容已匹配该 commit。
+- `scripts/security-intel/build_nuclei_metadata_package.py` 只读 RTIS 原始数据库，生成 `target/nuclei-metadata-package/knowledge.db`；只复制解析所需的 12 个元数据列，不复制 `content`、`verified`、`verified_note`、engagement、target、used_on 或 agent 字段。模板 YAML 从本机 `/usr/share/nuclei-templates` 静态读取、不执行；Git checkout 会核验完整 commit，非 Git 包目录会在报告中标记为 `unverified_non_git_tree`。
 - 隔离导入：14,111 条模板；`parsed` 14,109、`invalid_yaml` 1、`body_unavailable` 1；模板路径缺失 0。
 - 与 CISA KEV 的交集：505 个唯一 CVE、552 条模板。逐条核对 YAML 分类 CVE、RTIS 元数据 CVE、severity、模板路径、`parse_status`、MIT 许可和固定 commit：552/552 通过，0 个不一致。
 - 审核状态：552 条匹配模板 `APPROVED`，其余 13,559 条保持 `DISCOVERED`。已批准模板的 severity：Critical 406、High 119、Medium 27。此处 `APPROVED` 只表示静态来源/分类审核通过，不表示模板执行成功或目标存在漏洞。
@@ -62,7 +62,7 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 
 - CISA KEV：1,805 条；Nuclei：14,111 条（552 条经 CISA CVE classification 精确交集审核）；PoC Index enrichment：1,296 条；保留既有插件 KSE 890 条。
 - 明确数据面后，完整 cutover clone 改为从应用实际使用的插件数据面 `migrations/dev-p6.db` 克隆（schema 31→32）；`migrations/platform.db` 是独立 core DB，不承载这批 KSE。三插件增量加入后保留原有 890 条 KSE 与原审核状态，总 KSE 18,102 条。
-- 在包含现有 Awesome-Hacking / SecSkills / Tongui 记录、CISA KEV、Nuclei、PoC Index 和 RTIS curation Overlay 的完整 clone 上，Search v6 重建为 3,708 文档 / 3,708 FTS 行。原有 Awesome-Hacking 24 条 APPROVED、301 条 DISCOVERED、12 条 REJECTED 未被覆盖；SecSkills 与 Tongui 的原审核状态也保持不变。
+- 在包含现有 Awesome-Hacking / SecSkills / Tongui 记录、CISA KEV、Nuclei、PoC Index 和 RTIS curation Overlay 的完整 clone 上，Search v6 重建为 3,708 文档 / 3,708 FTS 行。原有 Awesome-Hacking 四个插件版本的历史 KSE 行合计为 24 APPROVED、301 DISCOVERED、12 REJECTED（337 行）；这不是独立资源数。当前 active 版本 0.1.3 为 84 条唯一目录项：6 APPROVED、75 DISCOVERED、3 REJECTED。SecSkills 与 Tongui 的原审核状态保持不变。
 - `CVE-2014-6271` 搜索同时命中 CISA KEV、Nuclei 模板和 PoC Index enrichment；`CVE-2025-55182` 同时命中三源；`CVE-2021-44228` 返回多条相关 Nuclei 模板及 CISA/PoC Index 记录。
 - 生成风险优先级报告：`docs/knowledge/KEV-POCINDEX-RISK-PRIORITY-2026-11-26.md`，按 EPSS、CVSS Primary assessment、CISA 收录日期排序；另保留近期 KEV × Nuclei shortlist。
 
@@ -118,7 +118,7 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 #### 切换后 API / 搜索验收
 
 - 使用真实 `apps/server/rp_server.py`，将 `RIP_PLUGIN_DB` 指向已切换的 `migrations/dev-p6.db`，在临时 core DB、临时端口和临时 Bearer token 下调用 `GET /api/knowledge_sources`：HTTP 200，`available=true`，总数 18,102。
-- API 汇总确认审核状态：CISA KEV 1,805 APPROVED；Nuclei 552 APPROVED、13,559 DISCOVERED；PoC Index 1,296 APPROVED；Awesome-Hacking 24 APPROVED、301 DISCOVERED、12 REJECTED；SecSkills 357 DISCOVERED、48 REJECTED；Tongui 148 DISCOVERED。
+- API 汇总确认审核状态：CISA KEV 1,805 APPROVED；Nuclei 552 APPROVED、13,559 DISCOVERED；PoC Index 1,296 APPROVED；Awesome-Hacking 历史版本合计 24 APPROVED、301 DISCOVERED、12 REJECTED；当前 active 0.1.3 为 6/75/3（84 条）；SecSkills 357 DISCOVERED、48 REJECTED；Tongui 148 DISCOVERED。
 - Nuclei 的 552 条 APPROVED 由 cutover clone 中明确的 `user:cli` 审核批次记录（audit_event 67–72）支持；本次切换没有批量自动批准模板。其余 13,559 条继续保持 DISCOVERED。APPROVED 仅表示静态来源/分类审核，不代表模板执行成功或目标存在漏洞。
 - 对 `knowledge.cisa-kev`、`knowledge.nuclei-templates`、`knowledge.pocindex-kev` 分别按 `CVE-2025-55182` 查询，三者各返回 1 条，并分别包含 `cve_record`、`nuclei_template`、`pocindex_record` 结构化字段。
 - API 响应未包含模板/PoC 正文、`body` 或 `verified_note`；只读数据面不执行模板、不访问真实目标。
@@ -130,3 +130,18 @@ CISA 数据固定在 `2026.11.25`，发布日期 `2026-11-25T19:48:12.4344Z`。
 ### 持久化插件安装路径修复（2026-11-26）
 
 正式开发库切换后复查发现，CISA KEV / Nuclei / PoC Index 三个 active plugin 的 `installed_dir` 仍指向已清理的临时 `/tmp` 目录。已先备份 `migrations/dev-p6.db`，再通过受控 `rp-plugin repair-path` 修复到 `rip-data/plugins/installed/`。三项 `ingest --dry-run` 均 `changed=0`，分别跳过已存在的 1,805 / 14,111 / 1,296 条记录；KSE 18,102 条、Nuclei 552 APPROVED / 13,559 DISCOVERED 和 Search v6 索引均未改变。修复实现、备份 SHA-256 与包锁定指纹见 [PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md](PLUGIN-INSTALL-PATH-REPAIR-2026-11-26.md)。
+
+
+### Awesome-Hacking 版本统计核对与 API 修复（2026-11-26）
+
+- `knowledge.awesome-hacking` 在 `migrations/dev-p6.db` 保留 0.1.0–0.1.3 四个版本的历史 KSE 行。历史行总计 337，但按版本分别是 85 / 84 / 84 / 84；当前 `plugin.is_active=1` 的版本为 0.1.3。
+- 当前 active 0.1.3：84 条目录项，APPROVED 6、DISCOVERED 75、REJECTED 3。历史四版本合计 24 / 301 / 12 是重复版本快照计数，不应描述为独立资源数。
+- 原 `/api/plugins` 的 `knowledge_source_stats()` 只按 `plugin_id` 聚合，并将同一统计附到每个版本卡片；`/api/plugins/<id>` 详情也未按 `row.version` 过滤。现改为 `plugin_id + plugin_version` 双维聚合，并分别映射到列表/详情对应版本。历史行保留，不做删除或审核状态改写。
+- 新增 `apps/server/test_knowledge_source_stats.py`，用两个插件版本、不同审核分布验证隔离。该测试、Python compile 与 `apps/server/selftest_knowledge_review.sh` 均通过。
+- 此修复目前仅在本地工作树，未提交/推送；需继续执行 API 实际响应验证与完整门禁。
+
+### Trickest/CVE 高风险候选来源快照（2026-11-26）
+
+- 从 Awesome-Hacking 下游 `trickest/cve` 固定 commit `0330ab928da94d1210b84fbe537bb328073f6114` 获取 KEV top-30 候选页，30/30 文件完整、非空、CVE 头部匹配且小于 2 MB；首次缺失的 CVE-2017-10271 已单页重试成功。
+- 上游固定 commit 的 LICENSE 已核对为 MIT（Copyright 2022 Trickest）。原始 Markdown 只保存在 Git 忽略的 `target/trickest-cve-source/`，仓库新增 SHA-256/bytes/来源 URL 清单 `docs/knowledge/TRICKEST-CVE-TOP30-SOURCE-SNAPSHOT-2026-11-26.md`，不复制 PoC 正文。
+- 这批材料仅为来源与完整性证据，不执行 PoC、不验证漏洞可利用性、不代表目标当前受影响。后续按 CVE + source commit 去重，并与 KEV/NVD/FIRST/Nuclei 的字段来源分开。

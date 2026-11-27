@@ -25,7 +25,7 @@ use std::time::Instant;
 
 /// 索引库 schema 版本（结构变更即升版，查询端拒绝旧版）。
 /// v6：在 v5 治理字段基础上纳入 Overlay 的上游来源 URL；旧索引必须整库重建。
-pub const INDEX_SCHEMA_VERSION: i64 = 6;
+pub const INDEX_SCHEMA_VERSION: i64 = 7;
 
 /// 索引库 DDL（头注声明可重建，MODULE_BOUNDARIES §8.2.3）。
 pub const INDEX_SCHEMA: &str = r#"
@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS search_index_doc (
   poc_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
   poc_review_gate TEXT,
   poc_source_urls_json TEXT NOT NULL DEFAULT '[]',
+  identity_json        TEXT NOT NULL DEFAULT 'null',
   built_at             TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_search_doc_governance ON search_index_doc(governance);
@@ -108,7 +109,27 @@ impl SearchIndex {
         catalog: &Pool,
         index: &Pool,
     ) -> Result<BuildReport, SearchError> {
-        Self::build_inner(platform, catalog, index, true, None)
+        Self::build_inner(platform, catalog, index, true, None, None)
+    }
+
+    /// Rebuild while loading approved plugin knowledge from its separate read-only database.
+    pub fn rebuild_with_plugin_db(
+        platform: &Pool,
+        plugin_db: &Pool,
+        catalog: &Pool,
+        index: &Pool,
+    ) -> Result<BuildReport, SearchError> {
+        Self::build_inner(platform, catalog, index, true, None, Some(plugin_db))
+    }
+
+    /// Build while loading approved plugin knowledge from its separate read-only database.
+    pub fn build_with_plugin_db(
+        platform: &Pool,
+        plugin_db: &Pool,
+        catalog: &Pool,
+        index: &Pool,
+    ) -> Result<BuildReport, SearchError> {
+        Self::build_inner(platform, catalog, index, false, None, Some(plugin_db))
     }
 
     /// Rebuild the standard index and append the RTIS POC records explicitly curated by RIP.
@@ -121,7 +142,52 @@ impl SearchIndex {
         overlay_path: &Path,
         index: &Pool,
     ) -> Result<BuildReport, SearchError> {
-        Self::build_inner(platform, catalog, index, true, Some((rtis, overlay_path)))
+        Self::build_inner(
+            platform,
+            catalog,
+            index,
+            true,
+            Some((rtis, overlay_path)),
+            None,
+        )
+    }
+
+    /// Rebuild platform resources, separate plugin knowledge and explicitly curated RTIS POCs.
+    pub fn rebuild_with_rtis_curation_and_plugin_db(
+        platform: &Pool,
+        plugin_db: &Pool,
+        catalog: &Pool,
+        rtis: &Pool,
+        overlay_path: &Path,
+        index: &Pool,
+    ) -> Result<BuildReport, SearchError> {
+        Self::build_inner(
+            platform,
+            catalog,
+            index,
+            true,
+            Some((rtis, overlay_path)),
+            Some(plugin_db),
+        )
+    }
+
+    /// Build platform resources, separate plugin knowledge and explicitly curated RTIS POCs.
+    pub fn build_with_rtis_curation_and_plugin_db(
+        platform: &Pool,
+        plugin_db: &Pool,
+        catalog: &Pool,
+        rtis: &Pool,
+        overlay_path: &Path,
+        index: &Pool,
+    ) -> Result<BuildReport, SearchError> {
+        Self::build_inner(
+            platform,
+            catalog,
+            index,
+            false,
+            Some((rtis, overlay_path)),
+            Some(plugin_db),
+        )
     }
 
     /// Build the standard index with explicitly curated RTIS POCs into a new index database.
@@ -132,7 +198,14 @@ impl SearchIndex {
         overlay_path: &Path,
         index: &Pool,
     ) -> Result<BuildReport, SearchError> {
-        Self::build_inner(platform, catalog, index, false, Some((rtis, overlay_path)))
+        Self::build_inner(
+            platform,
+            catalog,
+            index,
+            false,
+            Some((rtis, overlay_path)),
+            None,
+        )
     }
 
     /// 构建索引（目标库应为空库或从未建过索引；已有索引请走 [`SearchIndex::rebuild`]）。
@@ -141,7 +214,7 @@ impl SearchIndex {
         catalog: &Pool,
         index: &Pool,
     ) -> Result<BuildReport, SearchError> {
-        Self::build_inner(platform, catalog, index, false, None)
+        Self::build_inner(platform, catalog, index, false, None, None)
     }
 
     fn build_inner(
@@ -150,6 +223,7 @@ impl SearchIndex {
         index: &Pool,
         drop_existing: bool,
         rtis_curation: Option<(&Pool, &Path)>,
+        plugin_db: Option<&Pool>,
     ) -> Result<BuildReport, SearchError> {
         let t0 = Instant::now();
         // 删表重建：fts 虚表先删，再建 schema
@@ -164,7 +238,7 @@ impl SearchIndex {
         }
         Self::ensure_schema(index)?;
 
-        let docs = load_docs(platform, catalog, rtis_curation)?;
+        let docs = load_docs(platform, catalog, rtis_curation, plugin_db)?;
         let built_at = domain::time::now_iso();
         let mut fts_rows = 0usize;
         index.with_tx(|c| -> rusqlite::Result<()> {
@@ -180,8 +254,9 @@ impl SearchIndex {
                        source_path, source_commit, related_poc_ids_json, related_entities_json,
                        poc_source_integrity, poc_verification_result, poc_dedup_status,
                        poc_independent_knowledge_status, poc_missing_evidence_json,
-                       poc_evidence_refs_json, poc_review_gate, poc_source_urls_json, built_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       poc_evidence_refs_json, poc_review_gate, poc_source_urls_json,
+                       identity_json, built_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     rusqlite::params![
                         d.resource_id,
                         d.name,
@@ -231,6 +306,8 @@ impl SearchIndex {
                             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                         d.poc_review_gate,
                         serde_json::to_string(&d.poc_source_urls)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        serde_json::to_string(&d.identity)
                             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                         built_at,
                     ],
@@ -359,6 +436,7 @@ fn load_docs(
     platform: &Pool,
     catalog: &Pool,
     rtis_curation: Option<(&Pool, &Path)>,
+    plugin_db: Option<&Pool>,
 ) -> Result<Vec<IndexDoc>, SearchError> {
     // 1) platform resource 主行
     let mut docs: Vec<IndexDoc> = Vec::new();
@@ -379,6 +457,11 @@ fn load_docs(
                 governance: r.get(6)?,
                 quality_final_score: r.get(7)?,
                 quality_grade: r.get(8)?,
+                identity: Some(crate::model::SearchIdentity {
+                    source_system: Some("platform".to_string()),
+                    source_entity_id: Some(r.get(0)?),
+                    ..crate::model::SearchIdentity::default()
+                }),
                 // 缺 github_metadata 行的文档按缺证归一（与 eri 输出口径一致）
                 license_status: "UNKNOWN".to_string(),
                 maintenance_status: "UNKNOWN".to_string(),
@@ -463,7 +546,7 @@ fn load_docs(
     //    APPROVED）且来源插件处于可见状态（is_active=1 且 state 在
     //    ENABLED/LOADED/ACTIVE 且来源未卸载）；禁用即撤出匹配面（重建即刷新，
     //    索引为可整库重建派生物）。表缺失（旧库/内存夹具未迁移）按空源跳过。
-    load_plugin_entries(platform, &mut docs)?;
+    load_plugin_entries(plugin_db.unwrap_or(platform), &mut docs)?;
     if let Some((rtis, overlay_path)) = rtis_curation {
         load_rtis_curated_pocs(rtis, overlay_path, &mut docs)?;
     }
@@ -516,9 +599,11 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
         let mut stmt = c.prepare(
             "SELECT plugin_id, plugin_version, entry_kind, item_key, title, description,
                     body, canonical_url, category_path_json, license_status,
-                    source_location_json, meta_json
+                    source_location_json, meta_json, source_commit,
+                    content_sha256, metadata_sha256
              FROM knowledge_source_entry
              WHERE review_status = 'APPROVED'
+               AND upstream_missing = 0
              ORDER BY plugin_id, entry_kind, item_key",
         )?;
         let rows = stmt
@@ -536,6 +621,9 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
                     r.get::<_, String>(9)?,
                     r.get::<_, String>(10)?,
                     r.get::<_, Option<String>>(11)?,
+                    r.get::<_, Option<String>>(12)?,
+                    r.get::<_, Option<String>>(13)?,
+                    r.get::<_, Option<String>>(14)?,
                 ))
             })?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
@@ -552,6 +640,9 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
             license_status,
             source_location_json,
             meta_json,
+            source_commit,
+            content_sha256,
+            metadata_sha256,
         ) in rows {
             if visible_versions.get(&plugin_id).map(String::as_str) != Some(plugin_version.as_str()) {
                 continue;
@@ -572,6 +663,40 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
                 }
             }
             let snippet: String = body.chars().take(200).collect();
+            let meta: serde_json::Value = meta_json
+                .as_deref()
+                .and_then(|raw| serde_json::from_str(raw).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            let nuclei_cves = nuclei.cve_ids.clone();
+            let pocindex_cve = meta
+                .get("pocindex_record")
+                .and_then(|value| value.get("cve_id"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_ascii_uppercase);
+            let template_id = meta
+                .get("nuclei_template")
+                .and_then(|value| value.get("template_id"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let (entity_type, canonical_key, vulnerability_ids) = if entry_kind == "nuclei_template" {
+                (
+                    Some("detection_template".to_string()),
+                    template_id.map(|id| format!("nuclei:{id}")),
+                    nuclei_cves,
+                )
+            } else if plugin_id == "knowledge.pocindex-kev" {
+                (
+                    Some("vulnerability".to_string()),
+                    pocindex_cve.as_ref().map(|cve| format!("cve:{cve}")),
+                    pocindex_cve.into_iter().collect(),
+                )
+            } else {
+                (None, None, Vec::new())
+            };
             docs.push(IndexDoc {
                 resource_id: format!("kse:{plugin_id}@{plugin_version}:{entry_kind}:{item_key}"),
                 name: title,
@@ -596,8 +721,20 @@ fn load_plugin_entries(platform: &Pool, docs: &mut Vec<IndexDoc>) -> DbResult<()
                 maintenance_status: "UNKNOWN".to_string(),
                 topics: category_path,
                 language: None,
-                source_sections: source_file.into_iter().collect(),
+                source_sections: source_file.iter().cloned().collect(),
                 source_repositories: vec![format!("plugin:{plugin_id}")],
+                source_path: source_file,
+                source_commit,
+                identity: Some(crate::model::SearchIdentity {
+                    entity_type,
+                    canonical_key,
+                    source_system: Some(plugin_id.clone()),
+                    source_entity_id: Some(item_key.clone()),
+                    source_version: Some(plugin_version.clone()),
+                    content_sha256,
+                    metadata_sha256,
+                    vulnerability_ids,
+                }),
                 nuclei_severity: nuclei.severity,
                 nuclei_protocols: nuclei.protocols,
                 nuclei_cve_ids: nuclei.cve_ids,
@@ -870,9 +1007,18 @@ fn load_rtis_curated_pocs(
             knowledge_lifecycle: string_field("lifecycle"),
             poc_category: category,
             poc_severity: severity,
-            poc_cve_id: cve,
+            poc_cve_id: cve.clone(),
             source_path,
             source_commit,
+            identity: Some(crate::model::SearchIdentity {
+                entity_type: Some("poc".to_string()),
+                canonical_key: Some(format!("rtis:poc:{id}")),
+                source_system: Some("rtis".to_string()),
+                source_entity_id: Some(id.to_string()),
+                source_version: Some("curation-overlay-v1".to_string()),
+                vulnerability_ids: cve.iter().map(|value| value.to_ascii_uppercase()).collect(),
+                ..crate::model::SearchIdentity::default()
+            }),
             related_poc_ids: related_ids,
             related_entities,
             poc_source_integrity: string_field("source_integrity"),
@@ -1232,7 +1378,9 @@ mod tests {
                        category_path_json TEXT NOT NULL DEFAULT '[]',
                        license_status TEXT NOT NULL DEFAULT 'UNKNOWN',
                        source_location_json TEXT NOT NULL DEFAULT '{}', meta_json TEXT,
-                       review_status TEXT NOT NULL DEFAULT 'DISCOVERED');",
+                       source_commit TEXT, content_sha256 TEXT, metadata_sha256 TEXT,
+                       review_status TEXT NOT NULL DEFAULT 'DISCOVERED',
+                       upstream_missing INTEGER NOT NULL DEFAULT 0);",
                 )
             })
             .unwrap();
@@ -1263,6 +1411,43 @@ mod tests {
                 )
             })
             .unwrap();
+    }
+
+    #[test]
+    fn approved_upstream_missing_nuclei_template_is_excluded_from_search() {
+        let (platform, catalog, index) = fixture_pools();
+        with_plugin_tables(
+            &platform,
+            &[(
+                "knowledge.nuclei",
+                "0.2.0",
+                "nuclei_template",
+                "http/cves/2025/CVE-2025-12345.yaml",
+                "retired-template-marker",
+                Some("Old template"),
+                "APPROVED",
+            )],
+        );
+        insert_plugin_version(&platform, "knowledge.nuclei", "0.2.0", "ENABLED", 1);
+        platform
+            .with_conn(|c| {
+                c.execute(
+                    "UPDATE knowledge_source_entry SET upstream_missing = 1
+                     WHERE plugin_id = 'knowledge.nuclei'",
+                    [],
+                )
+            })
+            .unwrap();
+
+        SearchIndex::build(&platform, &catalog, &index).unwrap();
+        let engine = crate::query::SearchEngine::new(index);
+        let query = crate::model::SearchQuery::new(vec!["retired-template-marker".to_string()]);
+
+        assert_eq!(
+            engine.search(&query).unwrap().total_matched,
+            0,
+            "approved rows removed from the current upstream snapshot must not be searchable"
+        );
     }
 
     #[test]
@@ -1399,6 +1584,12 @@ mod tests {
             Some("integrations/rtis/pocs/gateway-openapi")
         );
         assert_eq!(hit.source_commit.as_deref(), Some("abc123"));
+        let identity = hit.identity.as_ref().unwrap();
+        assert_eq!(identity.entity_type.as_deref(), Some("poc"));
+        assert_eq!(identity.canonical_key.as_deref(), Some("rtis:poc:19"));
+        assert_eq!(identity.source_system.as_deref(), Some("rtis"));
+        assert_eq!(identity.source_entity_id.as_deref(), Some("19"));
+        assert_eq!(identity.vulnerability_ids, vec!["CVE-2025-9999"]);
         assert_eq!(hit.related_poc_ids, vec!["supports:31"]);
         assert_eq!(hit.related_entities, vec!["has_case:case-gateway-audit"]);
 
@@ -1469,6 +1660,53 @@ mod tests {
         assert!(!ids
             .iter()
             .any(|id| id.contains("@0.1.0:catalog_entry:https://a/old")));
+    }
+
+    #[test]
+    fn third_source_can_be_loaded_from_a_separate_plugin_database() {
+        use database::{DbPath, PoolConfig};
+        use std::time::Duration;
+
+        let (platform, catalog, index) = fixture_pools();
+        let plugin = Pool::open(PoolConfig {
+            path: DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: Duration::from_secs(1),
+        })
+        .unwrap();
+        with_plugin_tables(
+            &plugin,
+            &[(
+                "knowledge.separate",
+                "0.3.0",
+                "catalog_entry",
+                "https://example.test/separate",
+                "Separate plugin source",
+                Some("separate database content"),
+                "APPROVED",
+            )],
+        );
+        insert_plugin_version(&plugin, "knowledge.separate", "0.3.0", "ENABLED", 1);
+
+        let report =
+            SearchIndex::rebuild_with_plugin_db(&platform, &plugin, &catalog, &index).unwrap();
+        assert_eq!(
+            report.doc_count, 4,
+            "three platform resources + one plugin row"
+        );
+        let ids = doc_ids(&index);
+        assert!(ids.iter().any(|id| {
+            id == "kse:knowledge.separate@0.3.0:catalog_entry:https://example.test/separate"
+        }));
+        let engine = crate::query::SearchEngine::new(index);
+        let hits = engine
+            .search(&crate::model::SearchQuery::new(
+                vec!["separate".to_string()],
+            ))
+            .unwrap();
+        assert_eq!(hits.total_matched, 1);
+        assert_eq!(hits.hits[0].resource_type, "catalog_entry");
     }
 
     #[test]
@@ -1569,5 +1807,122 @@ mod tests {
         let (p, cat, idx) = fixture_pools();
         let report = SearchIndex::build(&p, &cat, &idx).unwrap();
         assert_eq!(report.doc_count, 3);
+    }
+
+    #[test]
+    fn kse_source_identity_and_vulnerability_ids_are_projected() {
+        let (platform, catalog, index) = fixture_pools();
+        with_plugin_tables(
+            &platform,
+            &[
+                (
+                    "knowledge.nuclei-templates",
+                    "0.1.1",
+                    "nuclei_template",
+                    "http/cves/2025/CVE-2025-12345.yaml",
+                    "Example Nuclei detection template",
+                    Some("Detects Example Product vulnerability"),
+                    "APPROVED",
+                ),
+                (
+                    "knowledge.pocindex-kev",
+                    "0.1.0",
+                    "catalog_entry",
+                    "CVE-2025-12346",
+                    "CVE-2025-12346 — PoC Index risk enrichment",
+                    Some("Risk enrichment record"),
+                    "APPROVED",
+                ),
+            ],
+        );
+        insert_plugin_version(
+            &platform,
+            "knowledge.nuclei-templates",
+            "0.1.1",
+            "ENABLED",
+            1,
+        );
+        insert_plugin_version(&platform, "knowledge.pocindex-kev", "0.1.0", "ENABLED", 1);
+        platform
+            .with_conn(|c| -> rusqlite::Result<()> {
+                c.execute(
+                    "UPDATE knowledge_source_entry
+                     SET source_commit=?1, content_sha256=?2, metadata_sha256=?3,
+                         source_location_json=?4, meta_json=?5
+                     WHERE plugin_id='knowledge.nuclei-templates'",
+                    rusqlite::params![
+                        "a".repeat(40),
+                        "b".repeat(64),
+                        "c".repeat(64),
+                        r#"{"file":"http/cves/2025/CVE-2025-12345.yaml"}"#,
+                        r#"{"nuclei_template":{"template_id":"example-cve-2025-12345","classification":{"cve-id":"CVE-2025-12345"}}}"#,
+                    ],
+                )?;
+                c.execute(
+                    "UPDATE knowledge_source_entry
+                     SET source_commit=?1, content_sha256=?2, metadata_sha256=?3,
+                         source_location_json=?4, meta_json=?5
+                     WHERE plugin_id='knowledge.pocindex-kev'",
+                    rusqlite::params![
+                        "d".repeat(40),
+                        "e".repeat(64),
+                        "f".repeat(64),
+                        r#"{"file":"pocindex-kev.json"}"#,
+                        r#"{"pocindex_record":{"cve_id":"CVE-2025-12346"}}"#,
+                    ],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+
+        SearchIndex::build(&platform, &catalog, &index).unwrap();
+        let engine = crate::query::SearchEngine::new(index);
+
+        let mut nuclei_query = crate::model::SearchQuery::new(Vec::new());
+        nuclei_query.filters.vulnerability_id = Some("cve-2025-12345".to_string());
+        let nuclei = engine.search(&nuclei_query).unwrap();
+        assert_eq!(nuclei.total_matched, 1);
+        let nuclei_hit = &nuclei.hits[0];
+        assert_eq!(nuclei_hit.resource_type, "nuclei_template");
+        assert_eq!(
+            nuclei_hit.source_commit.as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        let identity = nuclei_hit.identity.as_ref().unwrap();
+        assert_eq!(identity.entity_type.as_deref(), Some("detection_template"));
+        assert_eq!(
+            identity.canonical_key.as_deref(),
+            Some("nuclei:example-cve-2025-12345")
+        );
+        assert_eq!(
+            identity.source_system.as_deref(),
+            Some("knowledge.nuclei-templates")
+        );
+        assert_eq!(
+            identity.source_entity_id.as_deref(),
+            Some("http/cves/2025/CVE-2025-12345.yaml")
+        );
+        assert_eq!(identity.source_version.as_deref(), Some("0.1.1"));
+        assert_eq!(identity.content_sha256.as_ref(), Some(&"b".repeat(64)));
+        assert_eq!(identity.metadata_sha256.as_ref(), Some(&"c".repeat(64)));
+        assert_eq!(
+            identity.vulnerability_ids,
+            vec!["CVE-2025-12345".to_string()]
+        );
+
+        let mut key_query = crate::model::SearchQuery::new(Vec::new());
+        key_query.filters.canonical_key = Some("nuclei:example-cve-2025-12345".to_string());
+        assert_eq!(engine.search(&key_query).unwrap().total_matched, 1);
+
+        let mut pocindex_query = crate::model::SearchQuery::new(Vec::new());
+        pocindex_query.filters.vulnerability_id = Some("CVE-2025-12346".to_string());
+        let pocindex = engine.search(&pocindex_query).unwrap();
+        assert_eq!(pocindex.total_matched, 1);
+        let identity = pocindex.hits[0].identity.as_ref().unwrap();
+        assert_eq!(identity.entity_type.as_deref(), Some("vulnerability"));
+        assert_eq!(
+            identity.canonical_key.as_deref(),
+            Some("cve:CVE-2025-12346")
+        );
     }
 }

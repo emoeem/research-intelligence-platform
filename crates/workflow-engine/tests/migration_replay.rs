@@ -144,9 +144,9 @@ fn migration_017_replay_twice_is_idempotent() {
         !second.iter().any(|m| m.version == 18),
         "重放不应重复应用: {second:?}"
     );
-    // 当前迁移链尾为 032_research_projects_assets；workflow schema 仍保持幂等。
-    assert_eq!(version_1, 32);
-    assert_eq!(version_2, 32);
+    // 当前迁移链尾为 033_knowledge_source_review_log；workflow schema 仍保持幂等。
+    assert_eq!(version_1, 33);
+    assert_eq!(version_2, 33);
     assert_eq!(tables_1, tables_2, "两次重放表清单一致（幂等）");
     assert!(tables_1.contains(&"workflow_definition".to_string()));
     assert!(tables_1.contains(&"workflow_run".to_string()));

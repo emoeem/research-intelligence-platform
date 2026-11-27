@@ -170,6 +170,112 @@ fn guard_rejects_failure_classified_as_not_reproduced() {
 }
 
 #[test]
+fn poc_retest_history_keeps_result_transitions_and_only_exposes_evidence_hashes() {
+    let store = store();
+    let plan = store
+        .create_plan(None, "default", None, None, None)
+        .unwrap();
+    let item = store.add_item(&plan.plan_id, sample_item()).unwrap();
+    let second_plan = store
+        .create_plan(None, "default", None, None, None)
+        .unwrap();
+    let mut second_attempt = sample_item();
+    second_attempt.provider_version = Some("0.2.0".to_owned());
+    second_attempt.dedup_fingerprint = dedup_fingerprint(
+        "https://target.example:443/",
+        "/K3Cloud/",
+        "rtis-poc:900008",
+        "rtis-poc@0.2.0",
+        "{}",
+        "-",
+    );
+    let second_item = store
+        .add_item(&second_plan.plan_id, second_attempt)
+        .unwrap();
+
+    store
+        .set_result(
+            &item.item_id,
+            "NOT_TESTED",
+            Some("No authorized lab run recorded"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    store
+        .set_result(
+            &second_item.item_id,
+            "NOT_TESTED",
+            Some("No separately authorized retest was run"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    store
+        .set_result(
+            &item.item_id,
+            "INCONCLUSIVE",
+            Some("Execution timed out before an observation"),
+            Some("timeout"),
+            Some("run-history-test"),
+            Some("trace-history-test"),
+        )
+        .unwrap();
+    let (evidence, duplicate) = store
+        .record_evidence(
+            &item.item_id,
+            &plan.plan_id,
+            Some("run-history-test"),
+            Some("trace-history-test"),
+            "log_excerpt",
+            &serde_json::json!({"fixture": "non-sensitive test payload"}),
+        )
+        .unwrap();
+    assert!(!duplicate);
+
+    let history = store.list_poc_retest_history(900008).unwrap();
+    assert_eq!(history.len(), 2);
+    let first_attempt = history
+        .iter()
+        .find(|record| record.item_id == item.item_id)
+        .expect("first POC attempt");
+    let second_attempt = history
+        .iter()
+        .find(|record| record.item_id == second_item.item_id)
+        .expect("second POC attempt");
+    assert_eq!(first_attempt.result_status.as_deref(), Some("INCONCLUSIVE"));
+    assert_eq!(
+        first_attempt
+            .transitions
+            .iter()
+            .map(|event| event.to_status.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("NOT_TESTED"), Some("INCONCLUSIVE")]
+    );
+    assert_eq!(first_attempt.transitions[0].from_status, None);
+    assert_eq!(
+        first_attempt.transitions[1].from_status.as_deref(),
+        Some("NOT_TESTED")
+    );
+    assert_eq!(first_attempt.evidence.len(), 1);
+    assert_eq!(first_attempt.evidence[0].evidence_id, evidence.evidence_id);
+    assert_eq!(
+        first_attempt.evidence[0].content_hash,
+        evidence.content_hash
+    );
+    assert_eq!(first_attempt.evidence[0].content_hash.len(), 64);
+    let evidence_metadata =
+        serde_json::to_value(&first_attempt.evidence[0]).expect("serialize evidence metadata");
+    assert!(evidence_metadata.get("payload").is_none());
+    assert_eq!(second_attempt.result_status.as_deref(), Some("NOT_TESTED"));
+    assert!(second_attempt.evidence.is_empty());
+    assert!(store.list_poc_retest_history(999999).unwrap().is_empty());
+    assert!(store.list_poc_retest_history(0).is_err());
+}
+
+#[test]
 fn excluded_item_requires_reason_and_terminal_plan_frozen() {
     let store = store();
     let plan = store

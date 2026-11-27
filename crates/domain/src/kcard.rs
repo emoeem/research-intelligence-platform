@@ -89,6 +89,68 @@ kcard_id_type!(
     InvalidKnowledgeRelationId,
     "knowledge relation"
 );
+kcard_id_type!(
+    /// 跨来源知识实体引用 ID（ker- 前缀）。
+    KnowledgeEntityRefId,
+    InvalidKnowledgeEntityRefId,
+    "knowledge entity reference"
+);
+
+/// 跨来源实体类别。仅标识实体身份；事实仍由其权威来源保存。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KnowledgeEntityType {
+    /// RIP KnowledgeCard。
+    KnowledgeCard,
+    /// CVE、GHSA 等漏洞身份。
+    Vulnerability,
+    /// Nuclei 或其他检测模板身份。
+    DetectionTemplate,
+    /// RTIS 权威 POC 身份。
+    Poc,
+    /// Tool Registry 安全工具身份。
+    SecurityTool,
+    /// 带来源版本的技术文档身份。
+    TechnicalDocument,
+    /// 不可变 Evidence 身份。
+    Evidence,
+}
+
+impl KnowledgeEntityType {
+    /// All stable entity type values.
+    pub const ALL: [Self; 7] = [
+        Self::KnowledgeCard,
+        Self::Vulnerability,
+        Self::DetectionTemplate,
+        Self::Poc,
+        Self::SecurityTool,
+        Self::TechnicalDocument,
+        Self::Evidence,
+    ];
+
+    /// Persisted vocabulary value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::KnowledgeCard => "knowledge_card",
+            Self::Vulnerability => "vulnerability",
+            Self::DetectionTemplate => "detection_template",
+            Self::Poc => "poc",
+            Self::SecurityTool => "security_tool",
+            Self::TechnicalDocument => "technical_document",
+            Self::Evidence => "evidence",
+        }
+    }
+
+    /// Parse a persisted vocabulary value.
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        Self::ALL
+            .into_iter()
+            .find(|kind| kind.as_str() == value)
+            .ok_or_else(|| DomainError::UnknownContextVariant {
+                field: "knowledge_entity_type".to_string(),
+                value: value.to_string(),
+            })
+    }
+}
 
 /// 知识类型词表（03-DOMAIN-MODEL 1.5；方法论知识，漏洞条目/POC 属 RTIS）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -255,11 +317,46 @@ pub enum RelationType {
     DerivedFrom,
     /// 引用。
     References,
+    /// 利用漏洞。
+    Exploits,
+    /// 影响。
+    Affects,
+    /// 被修复。
+    FixedBy,
+    /// 分析。
+    Analyzes,
+    /// 被缓解。
+    MitigatedBy,
+    /// 使用工具。
+    UsesTool,
+    /// 验证。
+    Validates,
 }
 
 impl RelationType {
+    /// All persisted relation types.
+    pub const ALL: [Self; 17] = [
+        Self::SameContent,
+        Self::NearDuplicate,
+        Self::RelatedTo,
+        Self::Supports,
+        Self::Contradicts,
+        Self::Supersedes,
+        Self::Fixes,
+        Self::Detects,
+        Self::DerivedFrom,
+        Self::References,
+        Self::Exploits,
+        Self::Affects,
+        Self::FixedBy,
+        Self::Analyzes,
+        Self::MitigatedBy,
+        Self::UsesTool,
+        Self::Validates,
+    ];
+
     /// 存储词形（V0004 CHECK 域同词值）。
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::SameContent => "SAME_CONTENT",
             Self::NearDuplicate => "NEAR_DUPLICATE",
@@ -271,28 +368,67 @@ impl RelationType {
             Self::Detects => "DETECTS",
             Self::DerivedFrom => "DERIVED_FROM",
             Self::References => "REFERENCES",
+            Self::Exploits => "EXPLOITS",
+            Self::Affects => "AFFECTS",
+            Self::FixedBy => "FIXED_BY",
+            Self::Analyzes => "ANALYZES",
+            Self::MitigatedBy => "MITIGATED_BY",
+            Self::UsesTool => "USES_TOOL",
+            Self::Validates => "VALIDATES",
         }
     }
 
     /// 词表解析。
     pub fn parse(value: &str) -> Result<Self, DomainError> {
-        let words: [(&str, Self); 10] = [
-            ("SAME_CONTENT", Self::SameContent),
-            ("NEAR_DUPLICATE", Self::NearDuplicate),
-            ("RELATED_TO", Self::RelatedTo),
-            ("SUPPORTS", Self::Supports),
-            ("CONTRADICTS", Self::Contradicts),
-            ("SUPERSEDES", Self::Supersedes),
-            ("FIXES", Self::Fixes),
-            ("DETECTS", Self::Detects),
-            ("DERIVED_FROM", Self::DerivedFrom),
-            ("REFERENCES", Self::References),
-        ];
-        words
-            .iter()
-            .find(|(w, _)| *w == value)
-            .map(|(_, v)| *v)
+        Self::ALL
+            .into_iter()
+            .find(|kind| kind.as_str() == value)
             .ok_or_else(|| DomainError::InvalidRelationType(value.to_string()))
+    }
+}
+
+/// 关系自身的审核状态，不与端点实体审核状态或置信度混用。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum RelationReviewStatus {
+    /// 新关系候选，未经审核。
+    #[default]
+    Candidate,
+    /// 有充分来源证据且经显式审核。
+    Approved,
+    /// 审核拒绝，保留历史。
+    Rejected,
+    /// 已失效或上游撤回，保留历史。
+    Deprecated,
+}
+
+impl RelationReviewStatus {
+    /// All persisted relation review statuses.
+    pub const ALL: [Self; 4] = [
+        Self::Candidate,
+        Self::Approved,
+        Self::Rejected,
+        Self::Deprecated,
+    ];
+
+    /// Persisted vocabulary value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Candidate => "CANDIDATE",
+            Self::Approved => "APPROVED",
+            Self::Rejected => "REJECTED",
+            Self::Deprecated => "DEPRECATED",
+        }
+    }
+
+    /// Parse a persisted relation review status.
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        Self::ALL
+            .into_iter()
+            .find(|status| status.as_str() == value)
+            .ok_or_else(|| DomainError::UnknownContextVariant {
+                field: "relation_review_status".to_string(),
+                value: value.to_string(),
+            })
     }
 }
 
@@ -429,6 +565,157 @@ impl SourceTrust {
     }
 }
 
+/// Reviewer-assessed provenance class; separate from record origin and verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SourceTrustClass {
+    /// No source assessment has been made.
+    #[default]
+    Unassessed,
+    /// First-party official publisher.
+    OfficialPrimary,
+    /// Project maintainer or vendor advisory.
+    MaintainerPrimary,
+    /// Curated secondary source with editorial controls.
+    CuratedSecondary,
+    /// Community-maintained source without primary authority.
+    Community,
+    /// Reviewed, but no stronger class can be established.
+    Unknown,
+}
+
+impl SourceTrustClass {
+    /// All persisted source trust classes.
+    pub const ALL: [Self; 6] = [
+        Self::Unassessed,
+        Self::OfficialPrimary,
+        Self::MaintainerPrimary,
+        Self::CuratedSecondary,
+        Self::Community,
+        Self::Unknown,
+    ];
+
+    /// Persisted vocabulary value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unassessed => "UNASSESSED",
+            Self::OfficialPrimary => "OFFICIAL_PRIMARY",
+            Self::MaintainerPrimary => "MAINTAINER_PRIMARY",
+            Self::CuratedSecondary => "CURATED_SECONDARY",
+            Self::Community => "COMMUNITY",
+            Self::Unknown => "UNKNOWN",
+        }
+    }
+
+    /// Parse a persisted source trust class.
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        Self::ALL
+            .into_iter()
+            .find(|class| class.as_str() == value)
+            .ok_or_else(|| DomainError::UnknownContextVariant {
+                field: "source_trust_class".to_string(),
+                value: value.to_string(),
+            })
+    }
+}
+
+/// Assessment of a source's declared license; not a legal grant or reuse permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SourceLicenseStatus {
+    /// No license declaration has been reviewed.
+    #[default]
+    Unknown,
+    /// The source declares a license, but it has not been independently checked.
+    Declared,
+    /// The declared license identifier was reviewed.
+    Verified,
+    /// A restriction or rights concern requires limited handling.
+    Restricted,
+    /// The source explicitly declares no license.
+    Unlicensed,
+}
+
+impl SourceLicenseStatus {
+    /// All persisted license assessment states.
+    pub const ALL: [Self; 5] = [
+        Self::Unknown,
+        Self::Declared,
+        Self::Verified,
+        Self::Restricted,
+        Self::Unlicensed,
+    ];
+
+    /// Persisted vocabulary value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::Declared => "DECLARED",
+            Self::Verified => "VERIFIED",
+            Self::Restricted => "RESTRICTED",
+            Self::Unlicensed => "UNLICENSED",
+        }
+    }
+
+    /// Parse a persisted license assessment state.
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        Self::ALL
+            .into_iter()
+            .find(|status| status.as_str() == value)
+            .ok_or_else(|| DomainError::UnknownContextVariant {
+                field: "source_license_status".to_string(),
+                value: value.to_string(),
+            })
+    }
+}
+
+/// Human review state for a versioned source snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum EntitySourceReviewStatus {
+    /// Newly registered; not yet reviewed.
+    #[default]
+    Unreviewed,
+    /// Provenance assessment was explicitly accepted.
+    Approved,
+    /// Source provenance was rejected and retained for history.
+    Rejected,
+    /// Source requires restricted handling pending investigation.
+    Quarantined,
+    /// Source is no longer current but remains auditable.
+    Deprecated,
+}
+
+impl EntitySourceReviewStatus {
+    /// All persisted source review states.
+    pub const ALL: [Self; 5] = [
+        Self::Unreviewed,
+        Self::Approved,
+        Self::Rejected,
+        Self::Quarantined,
+        Self::Deprecated,
+    ];
+
+    /// Persisted vocabulary value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unreviewed => "UNREVIEWED",
+            Self::Approved => "APPROVED",
+            Self::Rejected => "REJECTED",
+            Self::Quarantined => "QUARANTINED",
+            Self::Deprecated => "DEPRECATED",
+        }
+    }
+
+    /// Parse a persisted source review state.
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        Self::ALL
+            .into_iter()
+            .find(|status| status.as_str() == value)
+            .ok_or_else(|| DomainError::UnknownContextVariant {
+                field: "entity_source_review_status".to_string(),
+                value: value.to_string(),
+            })
+    }
+}
+
 /// 质量分六权重（R2 5.3 初始权重，可配置；独立风险标记不进总分）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QualityWeights {
@@ -557,10 +844,40 @@ mod tests {
             RelationType::Detects,
             RelationType::DerivedFrom,
             RelationType::References,
+            RelationType::Exploits,
+            RelationType::Affects,
+            RelationType::FixedBy,
+            RelationType::Analyzes,
+            RelationType::MitigatedBy,
+            RelationType::UsesTool,
+            RelationType::Validates,
         ] {
             assert_eq!(RelationType::parse(w.as_str()).unwrap(), w);
         }
         assert!(RelationType::parse("SAME").is_err());
+        for w in KnowledgeEntityType::ALL {
+            assert_eq!(KnowledgeEntityType::parse(w.as_str()).unwrap(), w);
+        }
+        assert!(KnowledgeEntityType::parse("unknown").is_err());
+        for w in RelationReviewStatus::ALL {
+            assert_eq!(RelationReviewStatus::parse(w.as_str()).unwrap(), w);
+        }
+        assert!(RelationReviewStatus::parse("UNKNOWN").is_err());
+        for class in SourceTrustClass::ALL {
+            assert_eq!(SourceTrustClass::parse(class.as_str()).unwrap(), class);
+        }
+        assert!(SourceTrustClass::parse("UNVERIFIED").is_err());
+        for status in SourceLicenseStatus::ALL {
+            assert_eq!(SourceLicenseStatus::parse(status.as_str()).unwrap(), status);
+        }
+        assert!(SourceLicenseStatus::parse("OPEN_SOURCE").is_err());
+        for status in EntitySourceReviewStatus::ALL {
+            assert_eq!(
+                EntitySourceReviewStatus::parse(status.as_str()).unwrap(),
+                status
+            );
+        }
+        assert!(EntitySourceReviewStatus::parse("PENDING").is_err());
     }
 
     #[test]

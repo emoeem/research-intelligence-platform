@@ -42,7 +42,7 @@
             "license_policy": "approved_only",
             "max_entries": 20000,
             "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
-            "description": "只包含 RTIS Nuclei 元数据的最小 SQLite 投影；模板 YAML 从与固定版本匹配的 /usr/share/nuclei-templates 读取。"
+            "description": "只包含 RTIS Nuclei 元数据的最小 SQLite 投影；模板 YAML 从本机模板根目录静态读取。Git checkout 会核对完整 commit，非 Git 包目录会明确标记为未独立核验。"
           }
         },
         "index": {

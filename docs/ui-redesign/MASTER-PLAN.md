@@ -1,6 +1,6 @@
 # RIP Unified Workbench UI Redesign
 
-> 状态：M0-M6 CLOSED；M7 自动化验收通过、人工视觉签收 OPEN；M8 SPA staged 于 7801、默认根未切换。用户已明确 Projects/Research Assets independent、M7 reference、M8 staged、Figma existing。
+> 状态：M0-M7 在用户批准范围内 CLOSED；M8 SPA 按用户决定 staged 于 7801、默认根未切换。用户已明确 Projects/Research Assets independent、M7 reference、M8 staged、Figma existing。
 > 日期：2026-11-24
 > 适用仓库：`/media/emo/code/pensting/research-platform`
 > 前置规范：`AGENTS.md`、`docs/DOC-STANDARD.md`、`docs/ui-ux/AI-IMPLEMENTATION-GUIDE.md`、`docs/SESSION-HANDOFF.md`
@@ -206,7 +206,7 @@ M2 前端实现已完成：Inspector 接入 Run/Tool/Plugin/Task/Knowledge 真�
 - **M4 CLOSED**：新增 additive migration 031；Rust Store/CLI；Project/Asset HTTP APIs；Project↔Task/Asset 关系；Asset Endpoint、append-only Observation、evidence-referenced Technology Profile；Projects/Research Assets 前端 CRUD/详情；zh-CN/en-US/ja-JP。真实 HTTP 自测和工作区隔离通过，primary platform.db 保持 user_version 30。详见 M4-REPORT.md。
 - **M5 CLOSED**：History/Repeater/Proxy/CA/Fuzzer/WebSocket/Decoder/Comparer/Passive 工作台复用既有 API 与安全边界，详见 M5-REPORT.md。
 - **M6 CLOSED**：Agent/Workflow/Runs/Trace/Runtime 真实 API 和执行状态机，详见 M6-REPORT.md。
-- **M7 AUTOMATED PASS / HUMAN REVIEW OPEN**：Vitest 22 files / 155 tests；Playwright 85/85；新增 12 路由 × 3 语言 × 2 主题 × 5 视口 360/360 响应式 smoke；TypeScript/Prettier/build 通过。Projects 与 Assets 已纳入 Dark/Light、desktop/mobile 截图矩阵。Figma 像素级核对、42 张既有基线人工审阅和人工交互签收仍待完成。详见 M7-REPORT.md。
+- **M7 CLOSED — USER ACCEPTED / AUTOMATED PASS**：最新复跑 Vitest 22 files / 158 tests；Playwright 85/85；12 路由 × 3 语言 × 2 主题 × 5 视口 360/360 响应式 smoke；TypeScript/Prettier/build 通过。用户确认当前 UI 无问题；M7=reference、Figma=existing，不要求像素级 Figma parity。真实设备性能剖析为非阻塞后续项。详见 M7-REPORT.md。
 - **M8 STAGED — NOT DEFAULT**：apps/server/stage_spa.sh 在 127.0.0.1:7801 提供 SPA；隔离 DB 副本；deep link fallback、API JSON 404、missing static 404、Bearer/Origin、CSP/cache/security headers 验证通过。旧 7800 目前未监听，真实部署 reverse proxy/TLS 与回滚演练仍待确认。不得提前切换默认根。详见 M8-STAGED-ENTRY.md 与 M8-ENTRY-MIGRATION-READINESS.md。
 - **跨阶段门禁**：selftest_phase9_rest.sh 33 PASS / 0 FAIL；selftest_projects_assets.sh PASS；selftest_spa_entry.py 5/5 PASS；verification-engine 56 tests PASS。
 - 没有 commit/push/reset/clean/stash/checkout/rebase；现有 worktree 改动保留。

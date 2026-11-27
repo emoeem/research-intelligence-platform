@@ -63,7 +63,7 @@ fn usage_text() -> &'static str {
      \x20 ingest [--dry-run] [--idempotency-key K] [--max-files N] [--max-bytes N]\n\
      \x20   [--max-seconds S] [--retries N]\n\
      \x20 sync <id> [--dry-run] [--idempotency-key K] [--map-candidates]\n\
-     \x20 review <id> --keys k1,k2 --status APPROVED\n\
+     \x20 review <id> --version X.Y.Z --keys k1,k2 --status APPROVED --reason TEXT\n\
      \n\
      no-db commands（不需要 --db，只读注册表面）：\n\
      \x20 trust-policy\n\
@@ -678,8 +678,10 @@ fn main() {
         "review" => {
             // SK-1：审核状态翻转（Search/Context 只收 APPROVED，受控写面 + 审计）。
             let id = positional_arg(&args.rest, 0).unwrap_or_else(|| usage());
+            let version = flag_value(&args.rest, "--version").unwrap_or_else(|| usage());
             let keys_raw = flag_value(&args.rest, "--keys").unwrap_or_else(|| usage());
             let status_raw = flag_value(&args.rest, "--status").unwrap_or_else(|| usage());
+            let reason = flag_value(&args.rest, "--reason").unwrap_or_else(|| usage());
             let to = domain::knowledge::ReviewStatus::parse(&status_raw).unwrap_or_else(|e| {
                 die(plugin_runtime::RuntimeError {
                     code: "review_status_invalid".into(),
@@ -694,13 +696,22 @@ fn main() {
                 .collect();
             let audit = audit_engine::AuditEngine::new(ctx.pool.clone());
             let updated = plugin_runtime::knowledge_review::set_review_status(
-                &ctx.pool, &audit, "user:cli", &id, &keys, to,
+                &ctx.pool,
+                &audit,
+                &id,
+                &version,
+                &keys,
+                to,
+                plugin_runtime::knowledge_review::KnowledgeReviewContext {
+                    reviewer: "user:cli",
+                    reason: &reason,
+                },
             )
             .unwrap_or_else(|e| die(e));
-            let counts = plugin_runtime::knowledge_review::review_counts(&ctx.pool, &id)
+            let counts = plugin_runtime::knowledge_review::review_counts(&ctx.pool, &id, &version)
                 .unwrap_or_else(|e| die(e));
             let state = ctx.sync_state(&[]);
-            json!({"command": "review", "plugin_id": id, "to": to.as_str(), "updated": updated, "counts": counts, "state_files": state})
+            json!({"command": "review", "plugin_id": id, "plugin_version": version, "to": to.as_str(), "updated": updated, "counts": counts, "state_files": state})
         }
         "sync" => {
             // SK-3（P6-11 第 2 步）：rip.knowledge.source.sync 受控入口

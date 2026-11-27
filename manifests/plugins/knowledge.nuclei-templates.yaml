@@ -29,7 +29,7 @@
       "id": "knowledge-source.nuclei-templates.catalog",
       "type": "knowledge_source",
       "entry": "README.md",
-      "summary": "按官方 Nuclei 模板 ID 解析 severity、协议、CVE/CWE、标签、请求块、匹配器与 YAML 语法状态。",
+      "summary": "按固定来源版本解析 Template ID、severity、协议、CVE/CWE、标签、匹配器/提取器结构与 YAML 状态；检测有效性保持 NOT_TESTED。",
       "provides": {
         "corpus_id": "nuclei-templates",
         "content_kinds": [
@@ -42,7 +42,7 @@
             "license_policy": "approved_only",
             "max_entries": 20000,
             "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
-            "description": "只包含 RTIS Nuclei 元数据的最小 SQLite 投影；模板 YAML 从与固定版本匹配的 /usr/share/nuclei-templates 读取。"
+            "description": "只包含 RTIS Nuclei 元数据的最小 SQLite 投影；模板 YAML 从本机模板根目录静态读取。Git checkout 会核对完整 commit，非 Git 包目录会明确标记为未独立核验。"
           }
         },
         "index": {

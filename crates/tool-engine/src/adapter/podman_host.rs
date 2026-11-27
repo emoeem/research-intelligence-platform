@@ -477,12 +477,50 @@ impl PodmanHostAdapter {
             .map_err(|e| AdapterFailure::new(format!("inspect json parse failed: {e}")))
     }
 
-    fn image_exists(&self, image: &str) -> Result<bool, AdapterFailure> {
-        let out = Command::new(&self.config.podman_bin)
-            .args(["image", "exists", image])
-            .output()
-            .map_err(|e| AdapterFailure::new(format!("podman image exists spawn failed: {e}")))?;
-        Ok(out.status.success())
+    /// Resolve a digest-pinned manifest reference to a locally available Podman image.
+    /// Locally built images are addressable by tag, while `podman image exists` does not
+    /// resolve the same tag when an `@sha256:` suffix is appended. Inspect the tag, verify
+    /// its manifest digest, and run the immutable local image ID; pulled digest-only
+    /// references remain supported as a fallback.
+    fn resolve_local_image_ref(&self, image: &str) -> Result<Option<String>, AdapterFailure> {
+        let Some((name, digest)) = image.rsplit_once("@sha256:") else {
+            return Ok(None);
+        };
+        if !Self::digest_ok(digest) {
+            return Ok(None);
+        }
+        let expected = format!("sha256:{digest}");
+        let last_component = name.rsplit('/').next().unwrap_or(name);
+        let mut candidates = Vec::with_capacity(2);
+        if last_component.contains(':') {
+            candidates.push(name);
+        }
+        candidates.push(image);
+
+        for candidate in candidates {
+            let out = Command::new(&self.config.podman_bin)
+                .args([
+                    "image",
+                    "inspect",
+                    "--format",
+                    "{{.Digest}}|{{.Id}}",
+                    candidate,
+                ])
+                .output()
+                .map_err(|e| {
+                    AdapterFailure::new(format!("podman image inspect spawn failed: {e}"))
+                })?;
+            if out.status.success() {
+                let inspected = String::from_utf8_lossy(&out.stdout);
+                let mut fields = inspected.trim().split('|');
+                let actual_digest = fields.next().unwrap_or_default();
+                let image_id = fields.next().unwrap_or_default();
+                if actual_digest == expected && Self::digest_ok(image_id) {
+                    return Ok(Some(image_id.to_string()));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// §5.4 约束清单逐条注入的容器命令（计划 §5.4:304-317 + PHASE2-DESIGN
@@ -502,6 +540,7 @@ impl PodmanHostAdapter {
         call: &ContainerCall,
         name: &str,
         egress_port: Option<u16>,
+        image_ref: &str,
     ) -> Command {
         let mut cmd = Command::new(&self.config.podman_bin);
         cmd.args([
@@ -561,7 +600,7 @@ impl PodmanHostAdapter {
             // 非 privileged：不传 --privileged 即默认关闭（inspect 复核）。
         ]);
         cmd.arg("--");
-        cmd.arg(call.image);
+        cmd.arg(image_ref);
         for arg in call.entrypoint {
             cmd.arg(arg);
         }
@@ -578,6 +617,7 @@ impl PodmanHostAdapter {
         ws: &WorkspacePaths,
         timeout: Duration,
         egress_port: Option<u16>,
+        image_ref: &str,
     ) -> Result<AdapterOutcome, AdapterFailure> {
         let name = self.container_name(call.run_id);
         let input = call
@@ -587,7 +627,7 @@ impl PodmanHostAdapter {
             .input_sanitized;
         let budget_frame = self.budget_frame(call.engine, call.run_id)?;
         let mut child = self
-            .run_command(ws, call, &name, egress_port)
+            .run_command(ws, call, &name, egress_port, image_ref)
             .spawn()
             .map_err(|e| AdapterFailure::new(format!("podman run spawn failed: {e}")))?;
 
@@ -880,11 +920,11 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
             &call.adapter.config.node_id,
         );
     }
-    if !call
+    let Some(local_image_ref) = call
         .adapter
-        .image_exists(call.image)
+        .resolve_local_image_ref(call.image)
         .map_err(|f| EngineError::Storage(f.message))?
-    {
+    else {
         return preparing_failed(
             engine,
             call.run_id,
@@ -892,10 +932,13 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
             started,
             transcript,
             "DEPENDENCY",
-            format!("image {:?} not present in local podman store", call.image),
+            format!(
+                "image {:?} not present locally at the declared digest",
+                call.image
+            ),
             &call.adapter.config.node_id,
         );
-    }
+    };
     let ws = call
         .adapter
         .prepare_workspace(call.run_id, &row.input_sanitized)
@@ -1011,7 +1054,9 @@ pub fn execute_container_via_engine(call: ContainerCall<'_>) -> Result<DriveOutc
             .clamp(1, 600_000),
     );
 
-    let outcome = call.adapter.execute(&call, &ws, timeout, egress_port);
+    let outcome = call
+        .adapter
+        .execute(&call, &ws, timeout, egress_port, &local_image_ref);
 
     // 容器回收与 tmp 清理（四路径统一；ADR §6 超时取消回收容器并清理 tmp）。
     let partial = !matches!(outcome, Ok(AdapterOutcome::Succeeded { .. }));

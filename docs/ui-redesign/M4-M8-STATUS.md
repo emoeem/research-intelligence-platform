@@ -1,6 +1,6 @@
 # M4–M8 自主推进状态与最终边界
 
-日期：2026-11-24
+日期：2026-11-27
 
 ## 阶段判定
 
@@ -9,7 +9,7 @@
 | M4 Projects / Research Assets | **CLOSED** | 两个领域均独立建模；031 迁移、Rust Store/CLI、HTTP API、关系管理、前端 CRUD/详情、三语言、端到端测试完成。`M4-REPORT.md`、`selftest_projects_assets.sh`。 |
 | M5 Web Security 工作台 | **CLOSED** | History、Repeater、Proxy/CA、Fuzzer（复用 Rust FuzzSpec）、WebSocket、Decoder、Comparer、Passive Audit 路由与真实 API 已存在；Scope、Body 按需加载、脱敏与信任确认保持不变。 |
 | M6 Agent/Workflow/Runs/Runtime | **CLOSED** | Agent Studio、Workflow Studio、Runs、Run Detail、Trace、Runtime 页面与真实 API 已存在；补强了 /api/runs 对 WorkflowRun / WorkflowRunNode 真实持久化记录的兼容投影，phase9 REST 自测恢复 33/33。 |
-| M7 全站视觉/响应式收口 | **AUTOMATED PASS / HUMAN REVIEW OPEN** | 85/85 Playwright 通过；12 路由 × 3 语言 × 2 主题 × 5 视口 360/360 响应式 smoke；Projects/Assets 双主题截图矩阵；22 files / 155 Vitest。仍需人工审阅既有视觉基线、Figma 像素级对照及人工交互签收。 |
+| M7 全站视觉/响应式收口 | **CLOSED — USER ACCEPTED / AUTOMATED PASS** | 当前复跑 85/85 Playwright、360/360 全路由响应式组合、22 files / 158 Vitest、typecheck/build/Prettier 全部通过。用户已接受当前 UI；M7=reference、Figma=existing，不要求像素级复刻。真实设备性能剖析仍为非阻塞后续项。 |
 | M8 单一入口迁移 | **STAGED — NOT DEFAULT** | 新 SPA 并行入口 `http://127.0.0.1:7801/` 已运行；隔离 DB 副本；SPA 深链接、API 404 透传、缺失静态资源 404、Origin/Bearer 与静态安全头已验证。未切换默认根。旧 7800 服务当前未监听；部署反向代理/TLS 与实际回滚演练仍待确认。 |
 
 ## 最终自动化门禁（2026-11-24）
@@ -28,7 +28,7 @@
 
 用户决策：M7=reference、Figma=existing。四张用户提供的桌面深色参考图用于共同视觉语言（Tools & Agents、Report Studio、Research Investigation、Workflow Builder）。Projects/Assets 使用现有 RIP tokens 与产品域规格补足；它们没有在四张图中直接展示。
 
-Figma canonical source：https://www.figma.com/design/aqB4Y2xjlTva50C6k2eSQn/RIP-%E2%80%94-Research-Intelligence-Platform?m=auto&t=Rqfew6Udowb4Zx9m-1。当前 Figma MCP Starter 调用额度已触顶，本轮 get_metadata 请求被额度限制拒绝，未能读取页面/Frame 节点；没有声称完成像素级 Figma 对照。用户提供的四张截图已作为本轮 reference。当前 85 项 Playwright 自动化门禁不等于人工视觉签收。下一轮在 Figma 调用额度可用时逐页核对，审阅现有基线差异，并完成 5 个 viewport 的全站人工检查。
+Figma canonical source：https://www.figma.com/design/aqB4Y2xjlTva50C6k2eSQn/RIP-%E2%80%94-Research-Intelligence-Platform?m=auto&t=Rqfew6Udowb4Zx9m-1。当前 Figma MCP Starter 调用额度已触顶，本轮 get_metadata 请求被额度限制拒绝，未能读取页面/Frame 节点；没有声称完成像素级 Figma 对照。用户提供的四张截图已作为本轮 reference。用户已确认当前 UI 没有问题，并按 reference 方案接受本轮实现。Figma 仍是既有参考文件，不做像素级复刻承诺，也没有修改 Figma。85 项 Playwright 门禁与 360 组响应式 smoke 已复跑通过。
 
 ## M8 staged 拓扑与安全
 
@@ -41,7 +41,7 @@ Figma canonical source：https://www.figma.com/design/aqB4Y2xjlTva50C6k2eSQn/RIP
 
 ## 仍然需要人工/部署环境确认的边界
 
-1. M7：Figma 文件像素级核对、变更基线人工签收、五视口完整人工检查和真实浏览器交互验收。
+1. M7 非阻塞后续：真实设备性能剖析和逐张视觉基线审阅；不阻止 reference-based M7 关闭，也不声称像素级 Figma parity。
 2. M8：旧 7800 入口在真实部署拓扑中的启动/回滚路径、反向代理与 TLS、安全头在边缘层的最终值、备份恢复演练。用户验收前不切换默认根。
 3. 真实发现 Provider/外部 Feed 目前尚未自动填充 Research Assets；当前已交付的是手动导入与同一 Observation/Endpoint/Technology API 契约，Provider 适配可继续接入。
-4. 本轮没有 commit/push/reset/clean/stash/checkout/rebase；原有工作区改动继续保留。
+4. 本轮尚未提交/推送当前工作区；提交前保留 test-results 与 security-intel 原始数据目录。

@@ -130,6 +130,10 @@ def _repo_path(value: str) -> str:
 
 CURATED_SEARCH_BIN = _repo_path((os.environ.get("RP_SEARCH_INDEX_BIN") or
                                   "target/debug/rp-search-index").strip())
+CURATED_SEARCH_UNIFIED_BIN = _repo_path((os.environ.get("RP_SEARCH_UNIFIED_BIN") or
+                                         "target/debug/rp-search-unified").strip())
+CURATED_SEARCH_INDEX_SCHEMA_VERSION = 7
+UNIFIED_SEARCH_QUERY_TIMEOUT_S = 45
 CURATED_SEARCH_INDEX_DB = _repo_path(os.environ.get("RP_CURATED_SEARCH_INDEX_DB") or
                                      "rip-data/derived/curated-poc-search.db")
 CURATED_SEARCH_CATALOG_DB = _repo_path(os.environ.get("RP_SEARCH_CATALOG_DB") or
@@ -922,8 +926,8 @@ def handle_overview(conn: sqlite3.Connection, params: dict) -> dict:
 
 def _ensure_curated_search_index() -> None:
     """Build/rebuild the disposable FTS index when any read-only source is newer."""
-    sources = [DB_PATH, CURATED_SEARCH_CATALOG_DB, CURATED_SEARCH_RTIS_DB,
-               CURATED_SEARCH_OVERLAY]
+    sources = [DB_PATH, PLUGIN_DB_PATH, CURATED_SEARCH_CATALOG_DB,
+               CURATED_SEARCH_RTIS_DB, CURATED_SEARCH_OVERLAY]
     missing = [path for path in sources if not os.path.isfile(path)]
     if missing:
         raise ApiError(503, "poc_search_sources_unavailable",
@@ -934,7 +938,22 @@ def _ensure_curated_search_index() -> None:
         raise ApiError(503, "poc_search_sources_unavailable", str(exc)) from exc
 
     with CURATED_SEARCH_LOCK:
-        if (os.path.isfile(CURATED_SEARCH_INDEX_DB) and
+        index_schema_version = None
+        if os.path.isfile(CURATED_SEARCH_INDEX_DB):
+            try:
+                index_uri = "file:" + os.path.abspath(CURATED_SEARCH_INDEX_DB) + "?mode=ro"
+                index_conn = sqlite3.connect(index_uri, uri=True)
+                try:
+                    row = index_conn.execute(
+                        "SELECT value FROM search_index_meta WHERE key='schema_version'"
+                    ).fetchone()
+                    index_schema_version = int(row[0]) if row else None
+                finally:
+                    index_conn.close()
+            except (sqlite3.Error, TypeError, ValueError, OSError):
+                index_schema_version = None
+        if (index_schema_version == CURATED_SEARCH_INDEX_SCHEMA_VERSION and
+                os.path.isfile(CURATED_SEARCH_INDEX_DB) and
                 os.path.getmtime(CURATED_SEARCH_INDEX_DB) >= newest_source):
             return
         if not os.path.isfile(CURATED_SEARCH_BIN) or not os.access(CURATED_SEARCH_BIN, os.X_OK):
@@ -942,6 +961,7 @@ def _ensure_curated_search_index() -> None:
                            f"rp-search-index 不可执行：{CURATED_SEARCH_BIN}")
         os.makedirs(os.path.dirname(CURATED_SEARCH_INDEX_DB) or ".", exist_ok=True)
         command = [CURATED_SEARCH_BIN, "build", "--platform-db", DB_PATH,
+                   "--plugin-db", PLUGIN_DB_PATH,
                    "--catalog-db", CURATED_SEARCH_CATALOG_DB,
                    "--rtis-db", CURATED_SEARCH_RTIS_DB,
                    "--curation-overlay", CURATED_SEARCH_OVERLAY,
@@ -1042,6 +1062,229 @@ def handle_curated_poc_search(_conn: sqlite3.Connection, params: dict) -> dict:
             "hits": result.get("hits") or [],
             "search_status": result.get("search_status", "ok"),
             "elapsed_ms": result.get("elapsed_ms")}
+
+
+def handle_unified_search(_conn: sqlite3.Connection, params: dict) -> dict:
+    """Authenticated unified metadata search; never returns source bodies."""
+    query = ((params.get("q") or params.get("query") or params.get("keywords") or [""])[0] or "").strip()
+    if not query:
+        raise ApiError(400, "search_query_required", "请提供搜索关键词")
+    if len(query) > 200:
+        raise ApiError(400, "bad_query", "搜索关键词最多 200 个字符")
+
+    raw_limit = (params.get("limit") or ["30"])[0]
+    try:
+        limit = max(1, min(int(raw_limit), 100))
+    except ValueError as exc:
+        raise ApiError(400, "bad_pagination", "limit 必须为整数") from exc
+
+    # The current REST token is shared rather than mapped to per-user workspace ACLs.
+    # Fail closed to the default workspace until that authorization mapping exists.
+    workspace = ((params.get("workspace_id") or ["default"])[0] or "default").strip()
+    if workspace != "default":
+        raise ApiError(403, "search_workspace_forbidden",
+                       "当前统一搜索 API 仅允许 default workspace")
+
+    filter_map = {
+        "grade": "grade",
+        "license_status": "license",
+        "maintenance_status": "maintenance",
+        "resource_type": "resource-type",
+        "nuclei_severity": "nuclei-severity",
+        "nuclei_protocol": "nuclei-protocol",
+        "cve_id": "cve-id",
+        "cwe_id": "cwe-id",
+        "canonical_key": "canonical-key",
+        "vulnerability_id": "vulnerability-id",
+        "evidence_level": "evidence-level",
+        "knowledge_lifecycle": "knowledge-lifecycle",
+        "poc_severity": "poc-severity",
+        "poc_category": "poc-category",
+        "poc_cve_id": "poc-cve-id",
+        "poc_source_integrity": "poc-source-integrity",
+        "poc_verification_result": "poc-verification-result",
+        "poc_dedup_status": "poc-dedup-status",
+        "poc_missing_evidence": "poc-missing-evidence",
+    }
+    filters = []
+    applied = {}
+    for param_name, cli_name in filter_map.items():
+        value = (params.get(param_name) or [""])[0].strip()
+        if not value:
+            continue
+        if len(value) > 128 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/+@-]*", value):
+            raise ApiError(400, "bad_search_filter", f"{param_name} 格式非法")
+        if param_name in {"cve_id", "poc_cve_id", "vulnerability_id"}:
+            value = value.upper()
+            if not re.fullmatch(r"CVE-[0-9]{4}-[0-9]{4,}", value):
+                raise ApiError(400, "bad_search_filter", f"{param_name} 不是有效 CVE ID")
+        elif param_name == "cwe_id":
+            value = value.upper()
+            if not re.fullmatch(r"CWE-[0-9]{1,6}", value):
+                raise ApiError(400, "bad_search_filter", f"{param_name} 不是有效 CWE ID")
+        elif param_name == "poc_missing_evidence":
+            value = value.lower()
+            if value not in {"true", "false"}:
+                raise ApiError(400, "bad_search_filter", "poc_missing_evidence 仅支持 true/false")
+        filters.append(f"{cli_name}={value}")
+        applied[param_name] = value
+
+    _ensure_curated_search_index()
+    if not os.path.isfile(CURATED_SEARCH_UNIFIED_BIN) or not os.access(CURATED_SEARCH_UNIFIED_BIN, os.X_OK):
+        raise ApiError(503, "unified_search_binary_unavailable",
+                       f"rp-search-unified 不可执行：{CURATED_SEARCH_UNIFIED_BIN}")
+
+    command = [
+        CURATED_SEARCH_UNIFIED_BIN,
+        "--query", query,
+        "--workspace", workspace,
+        "--limit", str(limit),
+        "--index-db", CURATED_SEARCH_INDEX_DB,
+    ]
+    if filters:
+        command.extend(["--sqlite-filters", ",".join(filters)])
+    try:
+        proc = subprocess.run(
+            command, capture_output=True, text=True,
+            timeout=UNIFIED_SEARCH_QUERY_TIMEOUT_S, cwd=REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "unified_search_timeout", "统一搜索超时") from exc
+    except OSError as exc:
+        raise ApiError(502, "unified_search_spawn_failed", str(exc)) from exc
+    try:
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "unified_search_bad_output", "rp-search-unified 返回非 JSON") from exc
+
+    if proc.returncode != 0 or payload.get("error"):
+        error = payload.get("error") or {}
+        code = error.get("code")
+        if code in {"pg_unavailable", "index_db_unavailable"}:
+            raise ApiError(503, "unified_search_backend_unavailable",
+                           str(error.get("message") or code))
+        detail = (proc.stderr or error.get("message") or proc.stdout or "unknown search error").strip()[-1200:]
+        raise ApiError(502, "unified_search_failed", detail)
+
+    hits = payload.get("hits") or []
+    return {
+        "available": True,
+        "source": "unified-search",
+        "query": query,
+        "workspace": workspace,
+        "sqlite_filters": applied,
+        "channel_counts": payload.get("channels") or {},
+        "returned": len(hits),
+        "hits": hits,
+    }
+
+
+
+def handle_curated_poc_governance(_conn: sqlite3.Connection, params: dict) -> dict:
+    """Read-only M3 assessment projection and per-POC retest history metadata."""
+    try:
+        with open(CURATED_SEARCH_OVERLAY, "r", encoding="utf-8") as handle:
+            overlay = json.load(handle)
+    except FileNotFoundError as exc:
+        raise ApiError(503, "poc_curation_unavailable", "POC curation Overlay 不可用") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ApiError(503, "poc_curation_invalid", f"POC curation Overlay 无法读取：{exc}") from exc
+
+    entries = overlay.get("entries")
+    relations = overlay.get("relations") or []
+    external_entities = overlay.get("external_entities") or []
+    defaults = overlay.get("poc_assessment_defaults")
+    if not isinstance(entries, list) or not isinstance(defaults, dict) or not isinstance(relations, list):
+        raise ApiError(503, "poc_curation_invalid", "POC curation Overlay 缺少 entries/assessment defaults")
+    required_defaults = {
+        "evidence_completeness": "not_assessed",
+        "artifact_validity": "not_assessed",
+        "remediation_status": "unknown",
+        "license_status": "unknown",
+    }
+    if any(defaults.get(key) != value for key, value in required_defaults.items()):
+        raise ApiError(503, "poc_curation_invalid", "POC assessment defaults 不符合 fail-closed 契约")
+
+    external_titles = {
+        row.get("code"): row.get("title")
+        for row in external_entities if isinstance(row, dict) and row.get("code")
+    }
+
+    def project(entry: dict) -> dict:
+        assessment = entry.get("poc_assessment") or {}
+        if not isinstance(assessment, dict):
+            assessment = {}
+        state = {**required_defaults, **assessment}
+        code = entry.get("code")
+        related = []
+        for relation in relations:
+            if not isinstance(relation, dict):
+                continue
+            if relation.get("src") == code:
+                target = relation.get("dst")
+                related.append({"direction": "outgoing", "target": target,
+                                "target_title": external_titles.get(target, target),
+                                "type": relation.get("type"), "confidence": relation.get("confidence"),
+                                "note": relation.get("note")})
+            if relation.get("dst") == code:
+                source = relation.get("src")
+                related.append({"direction": "incoming", "target": source,
+                                "target_title": external_titles.get(source, source),
+                                "type": relation.get("type"), "confidence": relation.get("confidence"),
+                                "note": relation.get("note")})
+        return {
+            "poc_id": entry.get("knowledge_id"),
+            "title": entry.get("code") or entry.get("title") or f"RTIS POC {entry.get('knowledge_id')}",
+            "evidence_level": entry.get("evidence_level"),
+            "lifecycle": entry.get("lifecycle"),
+            "verification_result": entry.get("verification_result"),
+            "review_gate": entry.get("review_gate"),
+            "missing_evidence": entry.get("missing_evidence") or [],
+            "evidence_refs": entry.get("evidence_refs") or [],
+            "related_relations": related,
+            "source_path": entry.get("source_path"),
+            "source_commit": entry.get("source_commit"),
+            "assessment": state,
+        }
+
+    raw_poc_id = (params.get("poc_id") or [""])[0].strip()
+    if raw_poc_id:
+        if not raw_poc_id.isdigit() or int(raw_poc_id) <= 0:
+            raise ApiError(400, "bad_poc_id", "poc_id 必须为正整数")
+        poc_id = int(raw_poc_id)
+        entry = next((row for row in entries if row.get("knowledge_id") == poc_id), None)
+        if entry is None:
+            raise ApiError(404, "poc_not_curated", f"POC {poc_id} 不在当前 curated overlay")
+        if not os.path.isfile(VERIFY_BIN) or not os.access(VERIFY_BIN, os.X_OK):
+            raise ApiError(503, "verify_binary_unavailable", f"rp-verify 不可执行：{VERIFY_BIN}")
+        env = os.environ.copy()
+        env["RP_DB_PATH"] = DB_PATH
+        try:
+            proc = subprocess.run(
+                [VERIFY_BIN, "poc-history", "--poc-id", str(poc_id)],
+                capture_output=True, text=True, timeout=30, cwd=REPO_ROOT, env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ApiError(504, "poc_history_timeout", "POC 复测历史查询超时") from exc
+        except OSError as exc:
+            raise ApiError(502, "poc_history_spawn_failed", str(exc)) from exc
+        try:
+            history = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        except json.JSONDecodeError as exc:
+            raise ApiError(502, "poc_history_bad_output", "rp-verify 返回非 JSON") from exc
+        if proc.returncode != 0 or history.get("error"):
+            raise ApiError(502, "poc_history_failed", (proc.stderr or proc.stdout or "history query failed")[-1000:])
+        return {"available": True, "item": project(entry), "retest_history": history}
+
+    items = [project(entry) for entry in entries if isinstance(entry, dict)]
+    summary = {
+        "total": len(items),
+        "assessed": sum(1 for item in items if item["assessment"].get("assessed_at")),
+        "not_assessed": sum(1 for item in items if item["assessment"].get("artifact_validity") == "not_assessed"),
+        "evidence_gaps": sum(len(item["missing_evidence"]) for item in items),
+        "relation_count": len(relations),
+    }
+    return {"available": True, "source": "curation-overlay+research-ledger", "summary": summary, "items": items}
 
 
 def handle_curated_poc_summary(_conn: sqlite3.Connection, _params: dict) -> dict:
@@ -1655,30 +1898,35 @@ def knowledge_source_stats(conn: sqlite3.Connection) -> dict:
     )
     if table is None:
         return {"available": False, "reason": "knowledge_source_entry_missing"}
+    # Plugin versions are immutable ingestion snapshots. Keep their statistics
+    # separate so a plugin card/detail for one version never displays totals
+    # accumulated across historical versions.
     by_review = query_all(
         conn,
-        "SELECT plugin_id, review_status, COUNT(*) AS n FROM knowledge_source_entry"
-        " GROUP BY plugin_id, review_status",
+        "SELECT plugin_id, plugin_version, review_status, COUNT(*) AS n"
+        " FROM knowledge_source_entry GROUP BY plugin_id, plugin_version, review_status",
     )
     by_kind = query_all(
         conn,
-        "SELECT plugin_id, entry_kind, COUNT(*) AS n FROM knowledge_source_entry"
-        " GROUP BY plugin_id, entry_kind",
+        "SELECT plugin_id, plugin_version, entry_kind, COUNT(*) AS n"
+        " FROM knowledge_source_entry GROUP BY plugin_id, plugin_version, entry_kind",
     )
     last_seen = query_all(
         conn,
-        "SELECT plugin_id, MAX(last_seen_at) AS last_seen_at FROM knowledge_source_entry"
-        " GROUP BY plugin_id",
+        "SELECT plugin_id, plugin_version, MAX(last_seen_at) AS last_seen_at"
+        " FROM knowledge_source_entry GROUP BY plugin_id, plugin_version",
     )
     stats: dict[str, dict] = {}
     for row in by_review:
-        slot = stats.setdefault(row["plugin_id"], {})
+        slot = stats.setdefault(row["plugin_id"], {}).setdefault(row["plugin_version"], {})
         slot.setdefault("review", {})[row["review_status"]] = row["n"]
     for row in by_kind:
-        slot = stats.setdefault(row["plugin_id"], {})
+        slot = stats.setdefault(row["plugin_id"], {}).setdefault(row["plugin_version"], {})
         slot.setdefault("entry_kinds", {})[row["entry_kind"]] = row["n"]
     for row in last_seen:
-        stats.setdefault(row["plugin_id"], {})["last_seen_at"] = row["last_seen_at"]
+        stats.setdefault(row["plugin_id"], {}).setdefault(row["plugin_version"], {})[
+            "last_seen_at"
+        ] = row["last_seen_at"]
     return {"available": True, "stats": stats}
 
 
@@ -1722,7 +1970,7 @@ def handle_plugins_list(conn: sqlite3.Connection, params: dict) -> dict:  # noqa
                 item["pinned"] = None
         else:
             item["pinned"] = None
-        item["knowledge_stats"] = stats_map.get(row["plugin_id"])
+        item["knowledge_stats"] = stats_map.get(row["plugin_id"], {}).get(row["version"])
         items.append(item)
     # 分类（计划 §10.4 E）：已安装 / 可更新 / 已禁用 / 其他（含已卸载）。
     categories = {
@@ -1834,7 +2082,8 @@ def _plugin_detail(conn: sqlite3.Connection, plugin_id: str, level: int) -> dict
         detail["knowledge_provides"] = knowledge_provides
         kse_stats = knowledge_source_stats(conn)
         detail["knowledge_stats"] = (
-            kse_stats.get("stats", {}).get(row["plugin_id"]) if kse_stats.get("available") else None
+            kse_stats.get("stats", {}).get(row["plugin_id"], {}).get(row["version"])
+            if kse_stats.get("available") else None
         )
     if level >= 3:
         detail["manifest"] = manifest
@@ -2061,10 +2310,17 @@ def plugin_write(action: str, plugin_id: str, body: dict) -> dict:
             normalized_keys.append(key.strip())
         if len(set(normalized_keys)) != len(normalized_keys):
             raise ApiError(400, "review_keys_duplicate", "item_keys 不允许重复")
+        version = str(body.get("version") or "").strip()
+        if not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version):
+            raise ApiError(400, "review_version_invalid", "review 需要有效的 plugin semver version")
+        reason = str(body.get("reason") or "").strip()
+        if not reason or len(reason) > 1000 or "\x00" in reason:
+            raise ApiError(400, "review_reason_invalid", "reason 必须为 1–1000 字符的非空审核理由")
         status = str(body.get("status") or "").strip().upper()
         if status not in {"APPROVED", "REJECTED", "DEPRECATED", "UNREVIEWED", "DISCOVERED"}:
             raise ApiError(400, "review_status_invalid", "status 必须是受支持的审核状态")
-        args += ["review", plugin_id, "--keys", ",".join(normalized_keys), "--status", status]
+        args += ["review", plugin_id, "--version", version, "--keys", ",".join(normalized_keys),
+                 "--status", status, "--reason", reason]
     elif action == "cleanup-rollback":
         # P10-2 D6：回滚窗口清理（§5.3 第 5 步，用户确认后清理）。
         args += ["cleanup-rollback", plugin_id]
@@ -6158,7 +6414,9 @@ API_ROUTES = {
     "/api/overview": handle_overview,
     "/api/knowledge": handle_knowledge,
     "/api/curated-pocs/search": handle_curated_poc_search,
+    "/api/search": handle_unified_search,
     "/api/curated-pocs/summary": handle_curated_poc_summary,
+    "/api/curated-pocs/governance": handle_curated_poc_governance,
     "/api/tools": handle_tools,
     "/api/mcp-catalog": handle_mcp_catalog,
     "/api/runs": handle_runs,

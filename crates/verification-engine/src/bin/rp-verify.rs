@@ -13,6 +13,7 @@
 //!   [--requests N] [--timeout-s N] [--order N] [--expected '<text>']
 //! cargo run --offline -p verification-engine --bin rp-verify -- item-get --item <id>
 //! cargo run --offline -p verification-engine --bin rp-verify -- item-list --plan <id>
+//! cargo run --offline -p verification-engine --bin rp-verify -- poc-history --poc-id 900008
 //! cargo run --offline -p verification-engine --bin rp-verify -- result-set --item <id> \
 //!   --status CONFIRMED --reason '<依据>' [--error-category timeout] [--run-id <id>] [--trace-id <id>]
 //! cargo run --offline -p verification-engine --bin rp-verify -- event-list --plan <id>
@@ -66,6 +67,7 @@ fn usage_text() -> &'static str {
      \x20   [--dimension assets|api_endpoints|identity_permissions|input_points|business_flows|file_processing|data_flows]\n\
      \x20 item-get --item <id>\n\
      \x20 item-list --plan <id>\n\
+     \x20 poc-history --poc-id <positive RTIS POC ID> (results + evidence hashes; no payloads)\n\
      \x20 result-set --item <id> --status <五态> --reason '<r>' [--error-category <c>]\n\
      \x20   [--run-id <id>] [--trace-id <id>]\n\
      \x20 event-list --plan <id>\n\
@@ -619,6 +621,43 @@ fn run() -> i32 {
             },
             Err(code) => code,
         },
+        "poc-history" => {
+            let poc_id = match args
+                .required("poc-id")
+                .and_then(|value| value.parse::<i64>().map_err(|_| usage()))
+            {
+                Ok(value) => value,
+                Err(code) => return code,
+            };
+            match store.list_poc_retest_history(poc_id) {
+                Ok(records) => {
+                    let attempts: Vec<serde_json::Value> = records
+                        .into_iter()
+                        .map(|record| {
+                            serde_json::json!({
+                                "item_id": record.item_id,
+                                "plan_id": record.plan_id,
+                                "provider_id": record.provider_id,
+                                "provider_version": record.provider_version,
+                                "result_status": record.result_status,
+                                "error_category": record.error_category,
+                                "tool_run_id": record.tool_run_id,
+                                "trace_id": record.trace_id,
+                                "last_result_at": record.transitions.last().map(|event| &event.created_at),
+                                "transitions": record.transitions,
+                                "evidence": record.evidence,
+                            })
+                        })
+                        .collect();
+                    emit(&serde_json::json!({
+                        "rtis_poc_id": poc_id,
+                        "attempts": attempts,
+                    }));
+                    0
+                }
+                Err(e) => emit_error("poc_history", &e.to_string()),
+            }
+        }
         "result-set" => {
             let item = match args.required("item") {
                 Ok(v) => v,
@@ -1097,7 +1136,9 @@ fn run() -> i32 {
             let Some(poc_id) = item.rtis_poc_id else {
                 return emit_error(
                     "finding_link_requires_rtis_poc",
-                    &format!("item {item_id} has no rtis_poc_id reference (finding anchor lives in RTIS)"),
+                    &format!(
+                        "item {item_id} has no rtis_poc_id reference (finding anchor lives in RTIS)"
+                    ),
                 );
             };
             let note = args.get("note").map(str::to_owned).unwrap_or_else(|| {

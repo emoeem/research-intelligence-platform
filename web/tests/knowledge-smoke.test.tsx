@@ -95,6 +95,87 @@ afterEach(() => {
 });
 
 describe("Knowledge 页（P5-6）", () => {
+  it("POC 治理视图展示 M3 独立状态与只读复测历史", async () => {
+    const governanceItem = {
+      poc_id: 42,
+      title: "Fixture POC governance",
+      evidence_level: "K0",
+      lifecycle: "Candidate",
+      verification_result: "candidate_not_verified",
+      review_gate: "Recover raw request/response evidence",
+      missing_evidence: ["raw_request_response"],
+      evidence_refs: ["local://evidence/fixture"],
+      related_relations: [
+        {
+          direction: "outgoing" as const,
+          target: "fixture-case",
+          target_title: "Fixture case group",
+          type: "supports",
+          confidence: 0.8,
+          note: "review-only relationship fixture",
+        },
+      ],
+      assessment: {
+        evidence_completeness: "not_assessed",
+        artifact_validity: "not_assessed",
+        remediation_status: "unknown",
+        license_status: "unknown",
+        review_status: "candidate",
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("/api/curated-pocs/governance?poc_id=42")
+        ? {
+            available: true,
+            item: governanceItem,
+            retest_history: {
+              rtis_poc_id: 42,
+              attempts: [
+                {
+                  item_id: "plan-item-42",
+                  provider: "nuclei",
+                  provider_version: "3.4.0",
+                  result_status: "NOT_TESTED",
+                  error_category: "tool_unavailable",
+                  transitions: [{ from_status: "PENDING", to_status: "NOT_TESTED" }],
+                  evidence: [
+                    {
+                      evidence_id: "evidence-1",
+                      evidence_type: "note",
+                      content_hash: "a".repeat(64),
+                    },
+                  ],
+                },
+              ],
+            },
+          }
+        : url.includes("/api/curated-pocs/governance")
+          ? {
+              available: true,
+              summary: { total: 1, assessed: 0, not_assessed: 1, evidence_gaps: 1 },
+              items: [governanceItem],
+            }
+          : LIST_STUB;
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("knowledge-poc-governance-tab"));
+    expect(await screen.findByText("Fixture POC governance")).toBeTruthy();
+    expect(screen.getByTestId("poc-governance-m3-summary").textContent).toContain("1");
+    fireEvent.click(screen.getByRole("button", { name: /Fixture POC governance/ }));
+    expect(await screen.findByText("NOT_TESTED")).toBeTruthy();
+    expect(screen.getByTestId("poc-governance-detail").textContent).toContain("not_assessed");
+    expect(screen.getByTestId("poc-governance-detail").textContent).toContain("unknown");
+    expect(screen.getByTestId("poc-governance-detail").textContent).toContain("Fixture case group");
+    expect(screen.getByTestId("poc-governance-detail").textContent).toContain(
+      "review-only relationship fixture",
+    );
+    expect(screen.getByTestId("poc-governance-detail").textContent).toContain("a".repeat(64));
+    expect(screen.getByTestId("poc-governance-detail").textContent).not.toContain("payload");
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("poc_id=42"))).toBe(true);
+  });
   it("自有 POC 证据工作台：默认待补证队列、治理元数据与结构化搜索", async () => {
     const queueHit = {
       resource_id: "rtis:poc:900033",
@@ -137,7 +218,11 @@ describe("Knowledge 页（P5-6）", () => {
       by_evidence_level: { K0: 29, K1: 9, K2: 10, K3: 1 },
       by_lifecycle: { Candidate: 29, Researched: 19, "Lab-validated": 1 },
       by_source_integrity: { missing: 21, partial: 28 },
-      by_verification_result: { candidate_not_verified: 30, historical_evidence_supported: 11, not_applicable: 8 },
+      by_verification_result: {
+        candidate_not_verified: 30,
+        historical_evidence_supported: 11,
+        not_applicable: 8,
+      },
       missing_evidence_entries: 33,
       missing_evidence_items: 94,
       entries_with_source_path: 42,
@@ -385,93 +470,134 @@ describe("Knowledge 页（P5-6）", () => {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/api/plugins/") && url.endsWith("/review") && method === "POST") {
-        const body = JSON.parse(String(init?.body ?? "{}")) as { status: string; item_keys: string[] };
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          status: string;
+          item_keys: string[];
+        };
         reviewStatus = body.status;
-        reviewHistory = [{
-          event_id: 1,
-          ts: "2026-11-26T12:00:00Z",
-          actor: "test-reviewer",
-          plugin_id: pluginId,
-          status: body.status,
-          item_keys: body.item_keys,
-          updated: body.item_keys.length,
-        }];
-        return new Response(JSON.stringify({ ok: true, action: "review", plugin_id: pluginId,
-          result: { updated: body.item_keys.length } }), { status: 200 });
+        reviewHistory = [
+          {
+            event_id: 1,
+            ts: "2026-11-26T12:00:00Z",
+            actor: "test-reviewer",
+            plugin_id: pluginId,
+            status: body.status,
+            item_keys: body.item_keys,
+            updated: body.item_keys.length,
+          },
+        ];
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            action: "review",
+            plugin_id: pluginId,
+            result: { updated: body.item_keys.length },
+          }),
+          { status: 200 },
+        );
       }
       if (url.includes("/api/knowledge_sources")) {
-        return new Response(JSON.stringify({
-          available: true,
-          total: 1,
-          returned: 1,
-          plugins: [{ plugin_id: pluginId, name: "RTIS Red Team", version: "0.2.6", state: "ENABLED", license: "MIT" }],
-          summary: [{ plugin_id: pluginId, entry_kind: "nuclei_template", review_status: reviewStatus, n: 1 }],
-          items: [{
-            plugin_id: pluginId,
-            plugin_version: "0.2.6",
-            corpus_id: "nuclei-templates",
-            entry_kind: "nuclei_template",
-            item_key: itemKey,
-            title: "Test exposed panel",
-            description: "Metadata-only review fixture",
-            category_path: ["http", "exposed-panels"],
-            license_status: "MIT",
-            rights_policy: "approved_only",
-            review_status: reviewStatus,
-            source_commit: "ga346d8f",
-            source_url: "https://github.com/projectdiscovery/nuclei-templates",
-            source_location: { path: itemKey },
-            body_bytes: 128,
-            last_seen_at: "2026-11-26T12:00:00Z",
-            nuclei_template: {
-              template_id: "test-exposed-panel",
-              severity: "high",
-              parse_status: "parsed",
-              protocols: ["http"],
-              tags: ["panel", "exposure"],
-              classification: {
-                "cve-id": ["CVE-2026-12345"],
-                "cwe-id": ["CWE-200"],
-                "cvss-score": 9.8,
-                "epss-score": 0.90338,
-                "epss-percentile": 0.99802,
+        return new Response(
+          JSON.stringify({
+            available: true,
+            total: 1,
+            returned: 1,
+            plugins: [
+              {
+                plugin_id: pluginId,
+                name: "RTIS Red Team",
+                version: "0.2.6",
+                state: "ENABLED",
+                license: "MIT",
               },
-            },
-            pocindex_record: {
-              cve_id: "CVE-2026-12345",
-              cisa_date_added: "2026-11-01",
-              pocindex_kev_present: true,
-              epss_score: 0.90338,
-              epss_percentile: 0.99802,
-              cvss_assessments: [{
-                version: "3.1", score: 9.8, severity: "CRITICAL",
-                vector: "CVSS:3.1/AV:N", source: "nvd@nist.gov", assessment_type: "Primary",
-              }],
-              advisories: [{ url: "https://example.com/advisory", tags: ["Vendor Advisory"] }],
-              nuclei_metadata: { severity: "critical", cvss: 9.8, cwe: "CWE-78" },
-              snapshot: { repository_commit: "e9076fea96095e014fc107c02dd23ee8dc21476d", retrieved_at: "2026-11-26T07:30:41Z" },
-            },
-            cve_record: {
-              schema: "cisa-kev-v1",
-              cve_id: "CVE-2026-12345",
-              source_authority: "CISA",
-              known_exploited: true,
-              vendor_project: "Synthetic Vendor",
-              product: "Synthetic Product",
-              date_added: "2026-11-01",
-              due_date: "2026-11-22",
-              known_ransomware_campaign_use: "Unknown",
-              forensic_triage: "Yes",
-              cwes: ["CWE-200"],
-              cvss_score: null,
-              epss_score: null,
-              poc_status: "not_assessed",
-              current_target_status: "not_tested",
-              required_action: "Apply the vendor update.",
-            },
-          }],
-          review_history: reviewHistory,
-        }), { status: 200 });
+            ],
+            summary: [
+              {
+                plugin_id: pluginId,
+                entry_kind: "nuclei_template",
+                review_status: reviewStatus,
+                n: 1,
+              },
+            ],
+            items: [
+              {
+                plugin_id: pluginId,
+                plugin_version: "0.2.6",
+                corpus_id: "nuclei-templates",
+                entry_kind: "nuclei_template",
+                item_key: itemKey,
+                title: "Test exposed panel",
+                description: "Metadata-only review fixture",
+                category_path: ["http", "exposed-panels"],
+                license_status: "MIT",
+                rights_policy: "approved_only",
+                review_status: reviewStatus,
+                source_commit: "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+                source_url: "https://github.com/projectdiscovery/nuclei-templates",
+                source_location: { path: itemKey },
+                body_bytes: 128,
+                last_seen_at: "2026-11-26T12:00:00Z",
+                nuclei_template: {
+                  template_id: "test-exposed-panel",
+                  severity: "high",
+                  parse_status: "parsed",
+                  protocols: ["http"],
+                  tags: ["panel", "exposure"],
+                  classification: {
+                    "cve-id": ["CVE-2026-12345"],
+                    "cwe-id": ["CWE-200"],
+                    "cvss-score": 9.8,
+                    "epss-score": 0.90338,
+                    "epss-percentile": 0.99802,
+                  },
+                },
+                pocindex_record: {
+                  cve_id: "CVE-2026-12345",
+                  cisa_date_added: "2026-11-01",
+                  pocindex_kev_present: true,
+                  epss_score: 0.90338,
+                  epss_percentile: 0.99802,
+                  cvss_assessments: [
+                    {
+                      version: "3.1",
+                      score: 9.8,
+                      severity: "CRITICAL",
+                      vector: "CVSS:3.1/AV:N",
+                      source: "nvd@nist.gov",
+                      assessment_type: "Primary",
+                    },
+                  ],
+                  advisories: [{ url: "https://example.com/advisory", tags: ["Vendor Advisory"] }],
+                  nuclei_metadata: { severity: "critical", cvss: 9.8, cwe: "CWE-78" },
+                  snapshot: {
+                    repository_commit: "e9076fea96095e014fc107c02dd23ee8dc21476d",
+                    retrieved_at: "2026-11-26T07:30:41Z",
+                  },
+                },
+                cve_record: {
+                  schema: "cisa-kev-v1",
+                  cve_id: "CVE-2026-12345",
+                  source_authority: "CISA",
+                  known_exploited: true,
+                  vendor_project: "Synthetic Vendor",
+                  product: "Synthetic Product",
+                  date_added: "2026-11-01",
+                  due_date: "2026-11-22",
+                  known_ransomware_campaign_use: "Unknown",
+                  forensic_triage: "Yes",
+                  cwes: ["CWE-200"],
+                  cvss_score: null,
+                  epss_score: null,
+                  poc_status: "not_assessed",
+                  current_target_status: "not_tested",
+                  required_action: "Apply the vendor update.",
+                },
+              },
+            ],
+            review_history: reviewHistory,
+          }),
+          { status: 200 },
+        );
       }
       return new Response(JSON.stringify({}), { status: 200 });
     });
@@ -482,27 +608,44 @@ describe("Knowledge 页（P5-6）", () => {
     expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("high");
     expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("CVE-2026-12345");
     expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("CWE-200");
-    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("Nuclei CVSS: 9.8");
-    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain("Nuclei EPSS: 0.90338");
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain(
+      "Nuclei CVSS: 9.8",
+    );
+    expect(screen.getByTestId("nuclei-template-metadata").textContent).toContain(
+      "Nuclei EPSS: 0.90338",
+    );
     expect(screen.getByTestId("pocindex-record-metadata").textContent).toContain("0.90338");
     expect(screen.getByTestId("pocindex-record-metadata").textContent).toContain("9.8 CRITICAL");
     expect(screen.getByTestId("pocindex-record-metadata").textContent).toContain("Vendor Advisory");
     expect(screen.getByTestId("cve-record-metadata").textContent).toContain("CVE-2026-12345");
     expect(screen.getByTestId("cve-record-metadata").textContent).toContain("CISA KEV");
-    expect(screen.getByTestId("cve-record-metadata").textContent).toContain("CVSS/EPSS 未由 KEV 提供");
+    expect(screen.getByTestId("cve-record-metadata").textContent).toContain(
+      "CVSS/EPSS 未由 KEV 提供",
+    );
     expect(screen.getByTestId("cve-record-metadata").textContent).toContain("PoC 未评估");
     expect(screen.getByTestId("cve-record-metadata").textContent).toContain("取证分诊: Yes");
     expect(screen.getByTestId("source-item-key").textContent).toContain(itemKey);
 
     fireEvent.click(screen.getByRole("checkbox", { name: `选择条目 ${itemKey}` }));
+    fireEvent.change(screen.getByRole("textbox", { name: "审核理由" }), {
+      target: { value: "Fixture metadata and source provenance reviewed" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "批准所选" }));
     await waitFor(() => expect(reviewStatus).toBe("APPROVED"));
     expect(await screen.findByTestId("knowledge-source-review-history")).toBeTruthy();
-    expect(screen.getByTestId("knowledge-source-review-history").textContent).toContain("test-reviewer");
+    expect(screen.getByTestId("knowledge-source-review-history").textContent).toContain(
+      "test-reviewer",
+    );
     expect(screen.getByTestId("knowledge-source-review-history").textContent).toContain("APPROVED");
-    expect(fetchMock.mock.calls.some((call) =>
-      String(call[0]).endsWith("/api/plugins/knowledge.rtis-redteam/review") && call[1]?.method === "POST",
-    )).toBe(true);
+    const reviewCall = fetchMock.mock.calls.find(
+      (call) =>
+        String(call[0]).includes("/api/plugins/knowledge.rtis-redteam/review") &&
+        call[1]?.method === "POST",
+    );
+    expect(reviewCall).toBeTruthy();
+    expect(String(reviewCall?.[1]?.body)).toContain('"version":"0.2.6"');
+    expect(String(reviewCall?.[1]?.body)).toContain(
+      '"reason":"Fixture metadata and source provenance reviewed"',
+    );
   });
-
 });

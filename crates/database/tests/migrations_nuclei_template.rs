@@ -13,18 +13,29 @@ fn migrations_dir() -> PathBuf {
 fn migration_032_preserves_existing_rows_and_adds_only_nuclei_template_kind() {
     let source = migrations_dir();
     let old_dir = std::env::temp_dir().join(format!("rip-migrations-031-{}", std::process::id()));
+    let target_dir =
+        std::env::temp_dir().join(format!("rip-migrations-032-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&old_dir);
+    let _ = std::fs::remove_dir_all(&target_dir);
     std::fs::create_dir_all(&old_dir).unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
     for entry in std::fs::read_dir(&source).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("sql") {
             continue;
         }
         let name = path.file_name().unwrap().to_string_lossy();
-        if name.starts_with("032_") {
-            continue;
+        if let Some(version) = name
+            .split('_')
+            .next()
+            .and_then(|prefix| prefix.parse::<u32>().ok())
+        {
+            if version <= 31 {
+                std::fs::copy(&path, old_dir.join(name.as_ref())).unwrap();
+            } else if version == 32 {
+                std::fs::copy(&path, target_dir.join(name.as_ref())).unwrap();
+            }
         }
-        std::fs::copy(&path, old_dir.join(name.as_ref())).unwrap();
     }
 
     let pool = Pool::open(PoolConfig {
@@ -52,7 +63,7 @@ fn migration_032_preserves_existing_rows_and_adds_only_nuclei_template_kind() {
     })
     .unwrap();
 
-    let applied = migrate(&pool, &source).unwrap();
+    let applied = migrate(&pool, &target_dir).unwrap();
     assert_eq!(applied.len(), 1);
     assert_eq!(applied[0].version, 32);
     let legacy: (String, String, String) = pool
@@ -106,4 +117,5 @@ fn migration_032_preserves_existing_rows_and_adds_only_nuclei_template_kind() {
         .unwrap();
     assert_eq!(version, 32);
     let _ = std::fs::remove_dir_all(&old_dir);
+    let _ = std::fs::remove_dir_all(&target_dir);
 }

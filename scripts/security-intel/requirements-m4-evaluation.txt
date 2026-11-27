@@ -1,0 +1,4 @@
+# Optional, isolated M4 qrel review/evaluation toolchain
+# Argilla was evaluated but is not deployed: its upstream project is in maintenance mode.
+ir-measures==0.4.3
+ranx==0.3.21

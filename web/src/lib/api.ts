@@ -369,12 +369,15 @@ export async function reviewKnowledgeSourceEntries(
   pluginId: string,
   itemKeys: string[],
   status: "APPROVED" | "REJECTED" | "DEPRECATED" | "UNREVIEWED" | "DISCOVERED",
+  version: string,
+  reason: string,
 ): Promise<PluginWriteResult> {
-  return apiSend<PluginWriteResult>(
-    "POST",
-    `/api/plugins/${encodeURIComponent(pluginId)}/review`,
-    { item_keys: itemKeys, status },
-  );
+  return apiSend<PluginWriteResult>("POST", `/api/plugins/${encodeURIComponent(pluginId)}/review`, {
+    item_keys: itemKeys,
+    status,
+    version,
+    reason,
+  });
 }
 
 // ---------------------------------------------------------------------------

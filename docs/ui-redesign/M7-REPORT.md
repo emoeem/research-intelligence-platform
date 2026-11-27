@@ -1,7 +1,7 @@
 # M7 Report — 全站视觉、多语言、响应式与无障碍
 
-日期：2026-11-24
-状态：**自动化门禁部分完成；人工视觉/Figma 与全路由三语矩阵待签收**
+日期：2026-11-27
+状态：**CLOSED — 自动化视觉/无障碍门禁通过，用户已进行产品级 UI 验收；Figma 按 reference 保留，不要求像素级复刻**
 
 ## 已有实现和证据
 
@@ -53,3 +53,25 @@ User explicitly chose M7=reference and Figma=existing, and supplied four desktop
 A production-build browser smoke on the staged entry covered 12 routes at desktop 1440×900 and mobile 390×844 (24 navigations): 24/24 HTTP 200, zero API errors, zero browser console errors after pinning the theme bootstrap script hash in CSP. Warm-cache navigation loadEventEnd median 24 ms / p95 28 ms. This is local loopback/headless smoke only, not Lighthouse/Core Web Vitals or cold-network profiling. Details: M7-PERFORMANCE-REPORT.md.
 
 Figma access note: a new Figma session was created for the existing file, but the subsequent get_metadata request was explicitly rejected because the Figma MCP Starter tool-call limit had been reached. No node/page IDs were available, and no Figma content was modified. The four screenshots supplied directly in this conversation remain the only inspectable Figma reference material for this pass.
+
+## 2026-11-27 final acceptance — supersedes the provisional OPEN status above
+
+### Verified in the current worktree
+
+- Production build and TypeScript check: PASS.
+- Vitest: 22 files / 158 tests PASS.
+- Prettier check: PASS.
+- Playwright visual/accessibility gate: 85/85 PASS.
+- All-route responsive smoke: 12 routes × 3 locales × 2 themes × 5 viewport widths = 360/360 PASS.
+- Route/theme visual screenshots and axe AA checks passed for the configured 48 visual/axe combinations.
+- Local staged-entry performance smoke remains 24/24 successful navigations, no API/console errors, warm-cache loadEventEnd median 24 ms / p95 28 ms.
+
+### User decision and acceptance boundary
+
+The user previously confirmed that the current UI had no issue and approved proceeding with the project. The explicit M7=reference and Figma=existing decisions mean the supplied Figma screenshots are visual direction, not a requirement to reproduce every frame pixel-for-pixel or modify the existing Figma file. M7 is therefore accepted at product level.
+
+This acceptance does not claim that every historical screenshot baseline was individually signed off, that Figma frame metadata was read, or that the UI passed real-device/Lighthouse/Core Web Vitals profiling. Those remain non-blocking follow-up evidence, not blockers for the selected reference-based acceptance.
+
+### Final status
+
+M7 is **CLOSED for the agreed reference-based scope**. Do not claim pixel-perfect Figma parity. M8 remains staged and is not promoted to the default entry, consistent with the user's explicit M8=staged decision.

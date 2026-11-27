@@ -1,6 +1,28 @@
 //! 检索查询模型与命中形状（MODULE_BOUNDARIES §8.4：`Query(q, filters) -> Hits`）。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// Source identity and immutable provenance projected into the disposable search index.
+/// Missing values remain absent; the index never invents source hashes or canonical IDs.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SearchIdentity {
+    /// Typed entity family, e.g. vulnerability, detection_template or poc.
+    pub entity_type: Option<String>,
+    /// Source-independent key within the typed entity family.
+    pub canonical_key: Option<String>,
+    /// Authority/plugin that supplied this source record.
+    pub source_system: Option<String>,
+    /// Stable record identifier within the source system.
+    pub source_entity_id: Option<String>,
+    /// Immutable source/plugin version for this snapshot.
+    pub source_version: Option<String>,
+    /// SHA-256 of source content when the source actually provides it.
+    pub content_sha256: Option<String>,
+    /// SHA-256 of source metadata when the source actually provides it.
+    pub metadata_sha256: Option<String>,
+    /// Exact vulnerability/CVE identifiers referenced by this record.
+    pub vulnerability_ids: Vec<String>,
+}
 
 /// 检索查询。
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +90,11 @@ pub struct SearchFilters {
     pub poc_independent_knowledge_status: Option<String>,
     /// POC 尚缺证据项标识。
     pub poc_missing_evidence: Option<bool>,
+    /// Exact typed entity key filter (not a fuzzy title/URL match).
+    /// Exact typed entity key filter (not a fuzzy title/URL match).
+    pub canonical_key: Option<String>,
+    /// Exact CVE/vulnerability identifier filter across indexed source types.
+    pub vulnerability_id: Option<String>,
 }
 
 /// 检索权重快照（混合排序三轴，见 weights.rs）。
@@ -148,6 +175,8 @@ pub struct SearchHit {
     pub poc_evidence_refs: Vec<String>,
     /// 下一步审核门槛说明。
     pub poc_review_gate: Option<String>,
+    /// Generic cross-source identity/provenance; absent when source mapping is unknown.
+    pub identity: Option<SearchIdentity>,
     /// 混合总分（0..1，4 位小数；缺证轴归一后输出）。
     pub score: f64,
     /// 归一化 bm25 分（0..1；浏览模式无关键词时为 None）。
@@ -242,6 +271,8 @@ pub struct IndexDoc {
     pub related_entities: Vec<String>,
     /// Upstream source URLs declared by the curation Overlay.
     pub poc_source_urls: Vec<String>,
+    /// Generic typed source identity and provenance snapshot.
+    pub identity: Option<SearchIdentity>,
     /// Overlay source integrity; never inferred from the legacy verified flag.
     pub poc_source_integrity: Option<String>,
     /// Historical evidence verification result.

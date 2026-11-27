@@ -459,6 +459,15 @@ fn sk2_review_gate_search_visibility_and_disable() {
 
     // review --status APPROVED（三源全量翻转，模拟治理通过）。
     for (id, _) in &cases {
+        let version: String = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT DISTINCT plugin_version FROM knowledge_source_entry WHERE plugin_id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+            })
+            .unwrap();
         let keys: Vec<String> = pool
             .with_conn(|c| {
                 let mut stmt = c
@@ -476,10 +485,14 @@ fn sk2_review_gate_search_visibility_and_disable() {
         let updated = plugin_runtime::knowledge_review::set_review_status(
             &pool,
             &audit,
-            "user:test",
             id,
+            &version,
             &key_refs,
             ReviewStatus::Approved,
+            plugin_runtime::knowledge_review::KnowledgeReviewContext {
+                reviewer: "user:test",
+                reason: "Reviewed pinned source snapshot for ingestion test",
+            },
         )
         .unwrap();
         assert!(updated > 0, "{id}: 审核翻转生效");

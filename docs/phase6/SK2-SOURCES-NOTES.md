@@ -63,7 +63,7 @@
 | ingest 实跑 | 同上去 --dry-run | 与 dry-run 计数逐数一致 |
 | 幂等二跑 | 同上 | ah skipped=85、secs skipped=103、tg skipped=75，changed 全 0 |
 | enable | rp-plugin --db /tmp/sk2.db enable <id>（三源） | REGISTERED → ENABLED（检索双闸之可见闸） |
-| review | rp-plugin --db /tmp/sk2.db review <id> --keys <全量键 CSV> --status APPROVED | updated=85/102/75 |
+| review | rp-plugin --db /tmp/sk2.db review <id> --version <plugin-version> --keys <全量键 CSV> --status APPROVED --reason "..." | updated=85/102/75; decision is version-scoped and durable |
 | 索引重建 | rp-search-index build --platform-db /tmp/sk2.db --catalog-db /tmp/sk2.db --index-db /tmp/sk2-index.db --rebuild | doc_count=262=85+102+75（三源全量入检索面） |
 | 检索命中 | rp-search-index query --keywords Nmap / 越权 / strix | 三源条目均命中（kse:plugin@version:catalog_entry:<url> 词形） |
 | 禁用撤出 | rp-plugin disable knowledge.secskills → rebuild | doc_count=160=85+75，strix 命中 0；复 enable 恢复 262 |

@@ -30,6 +30,7 @@ pub mod weights;
 pub use error::SearchError;
 pub use index::{SearchIndex, INDEX_SCHEMA_VERSION};
 pub use model::{
-    BuildReport, Hits, IndexDoc, SearchFilters, SearchHit, SearchQuery, WeightsSnapshot,
+    BuildReport, Hits, IndexDoc, SearchFilters, SearchHit, SearchIdentity, SearchQuery,
+    WeightsSnapshot,
 };
 pub use query::SearchEngine;

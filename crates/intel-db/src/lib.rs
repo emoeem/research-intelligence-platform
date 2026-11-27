@@ -24,6 +24,7 @@ pub mod document_repo;
 pub mod embed_worker;
 pub mod gov_worker;
 pub mod ir;
+pub mod knowledge_graph;
 pub mod maintenance;
 pub mod object_store;
 pub mod parser;

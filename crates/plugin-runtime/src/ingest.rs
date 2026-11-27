@@ -203,6 +203,22 @@ pub fn ingest_knowledge_source_with_opts(
     package_dir: &Path,
     opts: &IngestOptions,
 ) -> Result<IngestReport, RuntimeError> {
+    ingest_knowledge_source_with_template_root(
+        pool,
+        manifest,
+        package_dir,
+        opts,
+        Path::new(NUCLEI_TEMPLATE_SOURCE_ROOT),
+    )
+}
+
+fn ingest_knowledge_source_with_template_root(
+    pool: &Pool,
+    manifest: &Value,
+    package_dir: &Path,
+    opts: &IngestOptions,
+    nuclei_template_root: &Path,
+) -> Result<IngestReport, RuntimeError> {
     let obj = manifest
         .as_object()
         .ok_or_else(|| RuntimeError::new("manifest_invalid", "manifest must be a JSON object"))?;
@@ -281,6 +297,7 @@ pub fn ingest_knowledge_source_with_opts(
         .collect();
     let mut extended_items: Vec<ExtendedItem> = Vec::new();
     let mut filtered: BTreeMap<String, u64> = BTreeMap::new();
+    let mut nuclei_snapshot_complete = false;
     for kind in &extended_declared {
         let cfg = kind_config(obj, kind)?;
         let parser_registered = KIND_PARSER.iter().any(|(registered_kind, parser)| {
@@ -323,7 +340,12 @@ pub fn ingest_knowledge_source_with_opts(
             "catalog_entry" => parse_catalog_entry(&cfg, package_dir, &snap)?,
             "document_markdown" => parse_document_markdown(&cfg, package_dir, &snap)?,
             "skill_candidate" => parse_skill_candidate(&cfg, package_dir, &snap)?,
-            "nuclei_template" => parse_nuclei_template_items(&cfg, package_dir, &snap)?,
+            "nuclei_template" => parse_nuclei_template_items_from_root(
+                &cfg,
+                package_dir,
+                nuclei_template_root,
+                &snap,
+            )?,
             other => {
                 return Err(RuntimeError::new(
                     "ingest_kind_unknown",
@@ -332,6 +354,7 @@ pub fn ingest_knowledge_source_with_opts(
             }
         };
         // max_entries 截断（计划 §6.2A 超量条目截断报告）。
+        let mut complete_snapshot = true;
         if let Some(cap) = cfg.max_entries {
             if items.len() as u64 > cap {
                 let dropped = items.len() as u64 - cap;
@@ -339,7 +362,18 @@ pub fn ingest_knowledge_source_with_opts(
                     .entry(format!("{kind}:max_entries_truncated"))
                     .or_insert(0) += dropped;
                 items.truncate(cap as usize);
+                complete_snapshot = false;
             }
+        }
+        if kind == "nuclei_template" {
+            if items.is_empty() {
+                filtered.insert(
+                    "nuclei_template:empty_snapshot_not_reconciled".to_string(),
+                    1,
+                );
+                complete_snapshot = false;
+            }
+            nuclei_snapshot_complete = complete_snapshot;
         }
         if stats.scheme_rejected > 0 {
             *filtered.entry("scheme_rejected".to_string()).or_insert(0) += stats.scheme_rejected;
@@ -355,15 +389,26 @@ pub fn ingest_knowledge_source_with_opts(
     let (counts, skipped_by_kind, skipped, total_bytes, changed) = if opts.dry_run {
         pool.with_conn(|c| -> Result<_, database::rusqlite::Error> {
             c.execute_batch("SAVEPOINT ingest_dry_run")?;
-            let outcome = write_all(
-                c,
-                &plugin_id,
-                &plugin_version,
-                &corpus_id,
-                &rtis_items,
-                &extended_items,
-                &now,
-            );
+            let outcome = (|| {
+                let result = write_all(
+                    c,
+                    &plugin_id,
+                    &plugin_version,
+                    &corpus_id,
+                    &rtis_items,
+                    &extended_items,
+                    &now,
+                )?;
+                if nuclei_snapshot_complete {
+                    reconcile_nuclei_source_snapshot(
+                        c,
+                        &plugin_id,
+                        &plugin_version,
+                        &extended_items,
+                    )?;
+                }
+                Ok(result)
+            })();
             // 无论写步成败都回滚（dry-run 零落盘）。
             let _ = c.execute_batch(
                 "ROLLBACK TO SAVEPOINT ingest_dry_run; RELEASE SAVEPOINT ingest_dry_run;",
@@ -372,8 +417,8 @@ pub fn ingest_knowledge_source_with_opts(
         })
         .map_err(RuntimeError::from)?
     } else {
-        pool.with_tx(|tx| {
-            write_all(
+        pool.with_tx(|tx| -> Result<_, database::rusqlite::Error> {
+            let result = write_all(
                 tx,
                 &plugin_id,
                 &plugin_version,
@@ -381,7 +426,11 @@ pub fn ingest_knowledge_source_with_opts(
                 &rtis_items,
                 &extended_items,
                 &now,
-            )
+            )?;
+            if nuclei_snapshot_complete {
+                reconcile_nuclei_source_snapshot(tx, &plugin_id, &plugin_version, &extended_items)?;
+            }
+            Ok(result)
         })
         .map_err(RuntimeError::from)?
     };
@@ -398,6 +447,63 @@ pub fn ingest_knowledge_source_with_opts(
         filtered,
         dry_run: opts.dry_run,
     })
+}
+
+fn reconcile_nuclei_source_snapshot(
+    c: &database::rusqlite::Connection,
+    plugin_id: &str,
+    plugin_version: &str,
+    items: &[ExtendedItem],
+) -> Result<(), database::rusqlite::Error> {
+    let plugin_table_exists: bool = c.query_row(
+        "SELECT EXISTS (
+            SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin'
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if !plugin_table_exists {
+        return Ok(());
+    }
+    let active_version: bool = c.query_row(
+        "SELECT EXISTS (
+            SELECT 1 FROM plugin
+            WHERE plugin_id = ?1 AND version = ?2 AND is_active = 1
+              AND source_uninstalled = 0
+              AND state IN ('ENABLED','LOADED','ACTIVE')
+         )",
+        database::rusqlite::params![plugin_id, plugin_version],
+        |row| row.get(0),
+    )?;
+    if !active_version {
+        return Ok(());
+    }
+
+    let mut snapshots = BTreeMap::<(String, String), Vec<String>>::new();
+    for item in items.iter().filter(|item| item.kind == "nuclei_template") {
+        snapshots
+            .entry((item.source_url.clone(), item.source_path.clone()))
+            .or_default()
+            .push(item.item_key.clone());
+    }
+    for ((source_url, source_path), mut item_keys) in snapshots {
+        item_keys.sort();
+        item_keys.dedup();
+        if item_keys.is_empty() {
+            continue;
+        }
+        let current_keys = serde_json::to_string(&item_keys)
+            .map_err(|error| database::rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        c.execute(
+            "UPDATE knowledge_source_entry
+             SET upstream_missing = CASE
+                 WHEN item_key IN (SELECT value FROM json_each(?4)) THEN 0 ELSE 1 END
+             WHERE plugin_id = ?1 AND entry_kind = 'nuclei_template'
+               AND source_url = ?2 AND source_path = ?3",
+            database::rusqlite::params![plugin_id, source_url, source_path, current_keys],
+        )?;
+    }
+    Ok(())
 }
 
 /// 写步（RTIS 与 SK-1 两写面在同一连接/事务内；dry-run 由调用方 SAVEPOINT 回滚）。
@@ -1630,29 +1736,25 @@ pub fn parse_skill_candidate(
     Ok((items, kp::FilterStats::default()))
 }
 
-/// Nuclei 模板专用解析器：只读取 RTIS poc 表中有明确官方来源标记的行，
-/// 再从受信任的模板根目录恢复原始 YAML。该类型独立进入 knowledge_source_entry，
-/// 初始 DISCOVERED；绝不把模板 metadata.verified 映射为 RIP 验证状态。
-fn parse_nuclei_template_items(
-    cfg: &KindConfig,
-    package_dir: &Path,
-    snap: &SnapshotCtx,
-) -> Result<(Vec<ExtendedItem>, kp::FilterStats), RuntimeError> {
-    parse_nuclei_template_items_from_root(
-        cfg,
-        package_dir,
-        Path::new(NUCLEI_TEMPLATE_SOURCE_ROOT),
-        snap,
-    )
-}
-
 fn parse_nuclei_template_items_from_root(
     cfg: &KindConfig,
     package_dir: &Path,
     template_root: &Path,
-    _snap: &SnapshotCtx,
+    snap: &SnapshotCtx,
 ) -> Result<(Vec<ExtendedItem>, kp::FilterStats), RuntimeError> {
     const OFFICIAL_SOURCE_URL: &str = "https://github.com/projectdiscovery/nuclei-templates";
+    let source_commit = cfg
+        .source_commit
+        .as_deref()
+        .or(snap.source_commit.as_deref())
+        .filter(|commit| commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "nuclei_source_commit_invalid",
+                "Nuclei source requires a full 40-character hexadecimal commit pin",
+            )
+        })?;
     let db_path = package_dir.join(&cfg.source_path);
     let conn = database::rusqlite::Connection::open_with_flags(
         &db_path,
@@ -1719,7 +1821,7 @@ fn parse_nuclei_template_items_from_root(
         let template_meta = yaml_body
             .as_deref()
             .map(nuclei_template_metadata)
-            .unwrap_or_else(|| json!({"parse_status": "body_unavailable"}));
+            .unwrap_or_else(nuclei_template_metadata_unavailable);
         let title = template_meta
             .get("name")
             .and_then(Value::as_str)
@@ -1774,6 +1876,7 @@ fn parse_nuclei_template_items_from_root(
         let category_path = std::iter::once("Nuclei".to_string())
             .chain(severity.clone())
             .collect::<Vec<_>>();
+        let license_evidence_url = format!("{OFFICIAL_SOURCE_URL}/blob/{source_commit}/LICENSE.md");
         let source_location = json!({
             "file": relative_path,
             "line": 1,
@@ -1794,8 +1897,7 @@ fn parse_nuclei_template_items_from_root(
             "tags": template_tags,
             "source_license": {
                 "spdx_id": "MIT",
-                "evidence_url": "https://github.com/projectdiscovery/nuclei-templates/blob/a346d8f00c61bf95bbd30365f12cf923be51ba3d/LICENSE.md",
-                "local_package": "nuclei-templates 1:v10.5.2.r748.ga346d8f-1",
+                "evidence_url": license_evidence_url,
             },
         });
         items.push(ExtendedItem {
@@ -1808,14 +1910,13 @@ fn parse_nuclei_template_items_from_root(
             canonical_url: None,
             source_location,
             meta: Some(meta),
-            // Nuclei templates are a separate upstream source; use the local package's
-            // verified MIT license and pinned abbreviated upstream revision.
+            // Nuclei templates are a separate upstream source with a pinned commit.
             license_status: "MIT".to_string(),
             rights_policy: cfg.license_policy.clone(),
             source_type: "git".to_string(),
             source_url: OFFICIAL_SOURCE_URL.to_string(),
             source_path: cfg.source_path.clone(),
-            source_commit: cfg.source_commit.clone(),
+            source_commit: Some(source_commit.clone()),
         });
     }
     Ok((items, kp::FilterStats::default()))
@@ -2018,10 +2119,8 @@ fn collect_rtis_items(
                 if body_source == "nuclei_template_file" {
                     meta["nuclei_template"] = nuclei_template_metadata(&body);
                 } else {
-                    meta["nuclei_template"] = json!({
-                        "parse_status": "body_unavailable",
-                        "template_path": source_path,
-                    });
+                    meta["nuclei_template"] = nuclei_template_metadata_unavailable();
+                    meta["nuclei_template"]["template_path"] = json!(source_path);
                 }
             }
             if let Some(curated) = curated_meta.get(&id) {
@@ -2106,16 +2205,43 @@ fn collect_rtis_items(
 /// The original YAML remains the document body; this projection is additive and
 /// deliberately does not infer exploitability or verification from template fields.
 fn nuclei_template_metadata(body: &str) -> Value {
+    let template_content_sha256 = sha256_hex(body.as_bytes());
+    let status = |parse_status: &str, yaml_syntax_status: &str, shape_status: &str| {
+        json!({
+            "parse_status": parse_status,
+            "yaml_syntax_status": yaml_syntax_status,
+            "template_shape_status": shape_status,
+            "detection_validation_status": "NOT_TESTED",
+            "template_content_sha256": template_content_sha256,
+        })
+    };
     let yaml: serde_yaml_ng::Value = match serde_yaml_ng::from_str(body) {
         Ok(value) => value,
-        Err(_) => return json!({"parse_status": "invalid_yaml"}),
+        Err(_) => return status("invalid_yaml", "invalid", "invalid_yaml"),
     };
     let root = match serde_json::to_value(yaml) {
         Ok(Value::Object(value)) => Value::Object(value),
-        _ => return json!({"parse_status": "invalid_yaml"}),
+        Ok(_) => return status("invalid_template", "valid", "root_not_mapping"),
+        Err(_) => return status("invalid_template", "valid", "not_json_compatible"),
     };
     let Some(info) = root.get("info").and_then(Value::as_object) else {
-        return json!({"parse_status": "missing_info"});
+        let has_id = root.get("id").and_then(Value::as_str).is_some();
+        return status(
+            if has_id {
+                "missing_info"
+            } else {
+                "not_template"
+            },
+            "valid",
+            if has_id {
+                "missing_info"
+            } else {
+                "not_template"
+            },
+        );
+    };
+    let Some(template_id) = root.get("id").and_then(Value::as_str) else {
+        return status("missing_template_id", "valid", "missing_template_id");
     };
 
     fn values(value: Option<&Value>, split_commas: bool) -> Vec<String> {
@@ -2147,21 +2273,26 @@ fn nuclei_template_metadata(body: &str) -> Value {
         out
     }
 
-    fn count_named(value: &Value, key: &str) -> usize {
+    fn collect_named(value: &Value, key: &str, out: &mut Vec<Value>) {
         match value {
-            Value::Object(object) => object
-                .iter()
-                .map(|(name, child)| {
-                    let own = if name == key {
-                        child.as_array().map_or(1, Vec::len)
-                    } else {
-                        0
-                    };
-                    own + count_named(child, key)
-                })
-                .sum(),
-            Value::Array(items) => items.iter().map(|item| count_named(item, key)).sum(),
-            _ => 0,
+            Value::Object(object) => {
+                for (name, child) in object {
+                    if name == key {
+                        match child {
+                            Value::Array(items) => out.extend(items.iter().cloned()),
+                            Value::Null => {}
+                            value => out.push(value.clone()),
+                        }
+                    }
+                    collect_named(child, key, out);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    collect_named(item, key, out);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -2196,9 +2327,13 @@ fn nuclei_template_metadata(body: &str) -> Value {
 
     let classification = info.get("classification").cloned().unwrap_or(Value::Null);
     let template_metadata = info.get("metadata").cloned().unwrap_or(Value::Null);
-    json!({
-        "parse_status": "parsed",
-        "template_id": root.get("id").and_then(Value::as_str),
+    let mut matchers = Vec::new();
+    collect_named(&root, "matchers", &mut matchers);
+    let mut extractors = Vec::new();
+    collect_named(&root, "extractors", &mut extractors);
+    let mut projected = status("parsed", "valid", "metadata_projected");
+    let fields = json!({
+        "template_id": template_id,
         "name": info.get("name").and_then(Value::as_str),
         "author": values(info.get("author"), false),
         "severity": info.get("severity").and_then(Value::as_str)
@@ -2210,9 +2345,31 @@ fn nuclei_template_metadata(body: &str) -> Value {
         "template_metadata": template_metadata,
         "protocols": protocols,
         "request_block_count": request_count,
-        "matcher_count": count_named(&root, "matchers"),
-        "extractor_count": count_named(&root, "extractors"),
+        "matcher_count": matchers.len(),
+        "extractor_count": extractors.len(),
+        "matchers": matchers,
+        "extractors": extractors,
         "has_flow": root.get("flow").is_some(),
+    });
+    projected
+        .as_object_mut()
+        .expect("Nuclei metadata status is a JSON object")
+        .extend(
+            fields
+                .as_object()
+                .expect("Nuclei metadata fields are a JSON object")
+                .clone(),
+        );
+    projected
+}
+
+fn nuclei_template_metadata_unavailable() -> Value {
+    json!({
+        "parse_status": "body_unavailable",
+        "yaml_syntax_status": "unavailable",
+        "template_shape_status": "unavailable",
+        "detection_validation_status": "NOT_TESTED",
+        "template_content_sha256": Value::Null,
     })
 }
 
@@ -2572,8 +2729,13 @@ mod tests {
             source_url: "local://rtis".to_string(),
             source_commit: None,
         };
-        let (items, _) = parse_nuclei_template_items(&cfg, &package, &snap)
-            .expect("read-only Nuclei projection");
+        let (items, _) = parse_nuclei_template_items_from_root(
+            &cfg,
+            &package,
+            Path::new(NUCLEI_TEMPLATE_SOURCE_ROOT),
+            &snap,
+        )
+        .expect("read-only Nuclei projection");
         let statuses = items
             .iter()
             .fold(BTreeMap::<String, usize>::new(), |mut counts, item| {
@@ -2657,6 +2819,14 @@ http:
             [],
         )
         .unwrap();
+        db.execute(
+            "INSERT INTO poc VALUES (3,'missing-file','missing body','fallback description',
+                'fallback usage','medium','','',
+                '/usr/share/nuclei-templates/cloud/test/missing.yaml','nuclei','nuclei',
+                'https://github.com/projectdiscovery/nuclei-templates')",
+            [],
+        )
+        .unwrap();
         drop(db);
 
         let cfg = KindConfig {
@@ -2676,7 +2846,7 @@ http:
             parse_nuclei_template_items_from_root(&cfg, &package, &templates, &snap).unwrap();
         assert_eq!(
             items.len(),
-            1,
+            2,
             "only rows with the official source tuple are accepted"
         );
         let item = &items[0];
@@ -2698,6 +2868,14 @@ http:
             Some("a346d8f00c61bf95bbd30365f12cf923be51ba3d"),
             "use the pinned Nuclei revision, not the RTIS commit"
         );
+        let invalid_cfg = KindConfig {
+            source_commit: Some("a346d8f".to_string()),
+            ..cfg.clone()
+        };
+        let invalid_pin =
+            parse_nuclei_template_items_from_root(&invalid_cfg, &package, &templates, &snap)
+                .unwrap_err();
+        assert_eq!(invalid_pin.code, "nuclei_source_commit_invalid");
         assert_eq!(item.license_status, "MIT");
         assert_eq!(item.rights_policy, "approved_only");
         assert_eq!(
@@ -2708,9 +2886,26 @@ http:
             item.meta.as_ref().unwrap()["nuclei_template"]["severity"],
             "high"
         );
+        assert_eq!(
+            item.meta.as_ref().unwrap()["source_license"]["evidence_url"],
+            "https://github.com/projectdiscovery/nuclei-templates/blob/a346d8f00c61bf95bbd30365f12cf923be51ba3d/LICENSE.md"
+        );
+        assert!(item.meta.as_ref().unwrap()["source_license"]
+            .get("local_package")
+            .is_none());
         assert!(item.meta.as_ref().unwrap()["nuclei_template"]
             .get("verified")
             .is_none());
+        let unavailable = &items[1];
+        let unavailable_meta = &unavailable.meta.as_ref().unwrap()["nuclei_template"];
+        assert_eq!(unavailable.body, "fallback usage");
+        assert_eq!(unavailable_meta["parse_status"], "body_unavailable");
+        assert_eq!(unavailable_meta["yaml_syntax_status"], "unavailable");
+        assert_eq!(
+            unavailable_meta["detection_validation_status"],
+            "NOT_TESTED"
+        );
+        assert!(unavailable_meta["template_content_sha256"].is_null());
 
         // Exercise the real KSE writer and migration: parsed templates remain
         // DISCOVERED until a reviewer explicitly approves them.
@@ -2737,12 +2932,14 @@ http:
                 .map(|(counts, _, _, _, _)| counts)
             })
             .unwrap();
-        assert_eq!(write_counts.get("nuclei_template"), Some(&1));
+        assert_eq!(write_counts.get("nuclei_template"), Some(&2));
         let stored: (String, String, String, String) = pool
             .with_conn(|c| {
                 c.query_row(
                     "SELECT entry_kind, review_status, body, meta_json
-                     FROM knowledge_source_entry WHERE plugin_id='knowledge.rtis-redteam'",
+                     FROM knowledge_source_entry
+                     WHERE plugin_id='knowledge.rtis-redteam'
+                       AND item_key='cloud/test/example.yaml'",
                     [],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
                 )
@@ -2791,6 +2988,314 @@ http:
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    fn nuclei_test_manifest(version: &str, source_commit: &str, max_entries: Option<u64>) -> Value {
+        let mut kind = json!({
+            "source_path": "knowledge.db",
+            "parser": "nuclei_yaml",
+            "license_policy": "approved_only",
+            "source_commit": source_commit,
+        });
+        if let Some(max_entries) = max_entries {
+            kind["max_entries"] = json!(max_entries);
+        }
+        json!({
+            "id": "knowledge.nuclei-lifecycle",
+            "version": version,
+            "license": "MIT",
+            "permissions": {"data_access": INGEST_PERMISSION_REQUIRED},
+            "capabilities": [{
+                "type": "knowledge_source",
+                "provides": {
+                    "corpus_id": "nuclei-lifecycle",
+                    "content_kinds": ["nuclei_template"],
+                    "kinds": {"nuclei_template": kind},
+                }
+            }]
+        })
+    }
+
+    fn write_nuclei_test_package(
+        package_dir: &Path,
+        template_root: &Path,
+        templates: &[(&str, &str)],
+    ) {
+        std::fs::create_dir_all(package_dir).unwrap();
+        let conn = database::rusqlite::Connection::open(package_dir.join("knowledge.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE poc (
+                id INTEGER PRIMARY KEY, code TEXT, title TEXT, description TEXT,
+                usage TEXT, severity TEXT, cve TEXT, tags TEXT, path TEXT,
+                category TEXT, source TEXT, source_url TEXT
+             );",
+        )
+        .unwrap();
+        for (index, (relative_path, yaml)) in templates.iter().enumerate() {
+            let source_path = format!("{NUCLEI_TEMPLATE_SOURCE_ROOT}/{relative_path}");
+            let template_path = template_root.join(relative_path);
+            std::fs::create_dir_all(template_path.parent().unwrap()).unwrap();
+            std::fs::write(template_path, yaml).unwrap();
+            conn.execute(
+                "INSERT INTO poc VALUES (?1,?2,?3,'fixture description','fixture usage',
+                    'low','','',?4,'nuclei','nuclei',
+                    'https://github.com/projectdiscovery/nuclei-templates')",
+                database::rusqlite::params![
+                    index as i64 + 1,
+                    relative_path,
+                    relative_path,
+                    source_path
+                ],
+            )
+            .unwrap();
+        }
+    }
+
+    fn activate_nuclei_test_version(pool: &Pool, manifest: &Value) {
+        let plugin_id = manifest["id"].as_str().unwrap();
+        let version = manifest["version"].as_str().unwrap();
+        pool.with_conn(|c| -> Result<(), database::rusqlite::Error> {
+            c.execute(
+                "UPDATE plugin SET is_active = 0 WHERE plugin_id = ?1",
+                [plugin_id],
+            )?;
+            c.execute(
+                "INSERT INTO plugin (
+                    plugin_id, version, name, kind, description, license, trust_level,
+                    state, is_active, source_type, source_ref, manifest_json,
+                    created_at, updated_at
+                 ) VALUES (?1,?2,?3,'knowledge','Nuclei lifecycle fixture','MIT','official',
+                    'ENABLED',1,'git',
+                    'https://github.com/projectdiscovery/nuclei-templates',?4,
+                    '2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+                database::rusqlite::params![
+                    plugin_id,
+                    version,
+                    format!("Nuclei fixture {version}"),
+                    manifest.to_string()
+                ],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    fn nuclei_test_yaml(id: &str, name: &str, description: &str) -> String {
+        format!(
+            "id: {id}\ninfo:\n  name: {name}\n  severity: low\n  description: {description}\nhttp:\n  - method: GET\n    path:\n      - /health\n    matchers:\n      - type: word\n        words: [ok]\n"
+        )
+    }
+
+    #[test]
+    fn active_nuclei_snapshots_reconcile_removals_without_erasing_history() {
+        let root =
+            std::env::temp_dir().join(format!("rip-nuclei-lifecycle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let templates = root.join("templates");
+        let pool = database::Pool::open(database::PoolConfig {
+            path: database::DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: std::time::Duration::from_secs(2),
+        })
+        .unwrap();
+        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+        database::migrate(&pool, &migrations).unwrap();
+        let plugin_id = "knowledge.nuclei-lifecycle";
+        let path_a = "http/test/template-a.yaml";
+        let path_b = "http/test/template-b.yaml";
+        let yaml_a = nuclei_test_yaml("template-a", "Template A", "Version one");
+        let yaml_b_v1 = nuclei_test_yaml("template-b", "Template B", "Version one");
+        let yaml_b_v2 = nuclei_test_yaml("template-b", "Template B", "Version two");
+
+        let manifest_v1 = nuclei_test_manifest("1.0.0", &"1".repeat(40), None);
+        let package_v1 = root.join("package-v1");
+        write_nuclei_test_package(
+            &package_v1,
+            &templates,
+            &[(path_a, &yaml_a), (path_b, &yaml_b_v1)],
+        );
+        activate_nuclei_test_version(&pool, &manifest_v1);
+        ingest_knowledge_source_with_template_root(
+            &pool,
+            &manifest_v1,
+            &package_v1,
+            &IngestOptions::default(),
+            &templates,
+        )
+        .unwrap();
+        pool.with_conn(|c| {
+            c.execute(
+                "UPDATE knowledge_source_entry SET review_status = 'APPROVED'
+                 WHERE plugin_id = ?1 AND plugin_version = '1.0.0' AND item_key = ?2",
+                database::rusqlite::params![plugin_id, path_a],
+            )
+        })
+        .unwrap();
+
+        let manifest_v2 = nuclei_test_manifest("2.0.0", &"2".repeat(40), None);
+        let package_v2 = root.join("package-v2");
+        write_nuclei_test_package(&package_v2, &templates, &[(path_b, &yaml_b_v2)]);
+        activate_nuclei_test_version(&pool, &manifest_v2);
+        ingest_knowledge_source_with_template_root(
+            &pool,
+            &manifest_v2,
+            &package_v2,
+            &IngestOptions::default(),
+            &templates,
+        )
+        .unwrap();
+
+        let removed_a: (String, String, i64, String) = pool
+            .with_conn(
+                |c| -> Result<(String, String, i64, String), database::rusqlite::Error> {
+                    c.query_row(
+                        "SELECT body, review_status, upstream_missing, source_commit
+                     FROM knowledge_source_entry
+                     WHERE plugin_id = ?1 AND plugin_version = '1.0.0' AND item_key = ?2",
+                        database::rusqlite::params![plugin_id, path_a],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    )
+                },
+            )
+            .unwrap();
+        assert_eq!(removed_a.0, yaml_a);
+        assert_eq!(removed_a.1, "APPROVED");
+        assert_eq!(removed_a.2, 1);
+        assert_eq!(removed_a.3, "1".repeat(40));
+
+        let versioned_b: Vec<(String, String, i64)> = pool
+            .with_conn(
+                |c| -> Result<Vec<(String, String, i64)>, database::rusqlite::Error> {
+                    let mut stmt = c.prepare(
+                        "SELECT plugin_version, body, upstream_missing
+                     FROM knowledge_source_entry
+                     WHERE plugin_id = ?1 AND item_key = ?2
+                     ORDER BY plugin_version",
+                    )?;
+                    let rows = stmt
+                        .query_map(database::rusqlite::params![plugin_id, path_b], |row| {
+                            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                        })?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(rows)
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            versioned_b,
+            vec![
+                ("1.0.0".to_string(), yaml_b_v1, 0),
+                ("2.0.0".to_string(), yaml_b_v2.clone(), 0),
+            ],
+            "new pinned versions retain changed bodies without overwriting prior rows"
+        );
+
+        let manifest_v3 = nuclei_test_manifest("3.0.0", &"3".repeat(40), None);
+        let package_v3 = root.join("package-v3");
+        write_nuclei_test_package(
+            &package_v3,
+            &templates,
+            &[(path_a, &yaml_a), (path_b, &yaml_b_v2)],
+        );
+        activate_nuclei_test_version(&pool, &manifest_v3);
+        ingest_knowledge_source_with_template_root(
+            &pool,
+            &manifest_v3,
+            &package_v3,
+            &IngestOptions::default(),
+            &templates,
+        )
+        .unwrap();
+        let restored_missing: i64 = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT upstream_missing FROM knowledge_source_entry
+                     WHERE plugin_id = ?1 AND plugin_version = '1.0.0' AND item_key = ?2",
+                    database::rusqlite::params![plugin_id, path_a],
+                    |row| row.get(0),
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            restored_missing, 0,
+            "reappearing templates clear the removal flag"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn truncated_nuclei_snapshot_does_not_mark_omitted_rows_missing() {
+        let root =
+            std::env::temp_dir().join(format!("rip-nuclei-truncated-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let templates = root.join("templates");
+        let pool = database::Pool::open(database::PoolConfig {
+            path: database::DbPath::Memory,
+            readonly: false,
+            max_connections: 1,
+            busy_timeout: std::time::Duration::from_secs(2),
+        })
+        .unwrap();
+        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+        database::migrate(&pool, &migrations).unwrap();
+        let plugin_id = "knowledge.nuclei-lifecycle";
+        let path_a = "http/test/template-a.yaml";
+        let path_b = "http/test/template-b.yaml";
+        let yaml_a = nuclei_test_yaml("template-a", "Template A", "Version one");
+        let yaml_b = nuclei_test_yaml("template-b", "Template B", "Version one");
+        let manifest_v1 = nuclei_test_manifest("1.0.0", &"1".repeat(40), None);
+        let package_v1 = root.join("package-v1");
+        write_nuclei_test_package(
+            &package_v1,
+            &templates,
+            &[(path_a, &yaml_a), (path_b, &yaml_b)],
+        );
+        activate_nuclei_test_version(&pool, &manifest_v1);
+        ingest_knowledge_source_with_template_root(
+            &pool,
+            &manifest_v1,
+            &package_v1,
+            &IngestOptions::default(),
+            &templates,
+        )
+        .unwrap();
+
+        let manifest_v2 = nuclei_test_manifest("2.0.0", &"2".repeat(40), Some(1));
+        let package_v2 = root.join("package-v2");
+        write_nuclei_test_package(
+            &package_v2,
+            &templates,
+            &[(path_a, &yaml_a), (path_b, &yaml_b)],
+        );
+        activate_nuclei_test_version(&pool, &manifest_v2);
+        let report = ingest_knowledge_source_with_template_root(
+            &pool,
+            &manifest_v2,
+            &package_v2,
+            &IngestOptions::default(),
+            &templates,
+        )
+        .unwrap();
+        assert_eq!(
+            report.filtered.get("nuclei_template:max_entries_truncated"),
+            Some(&1)
+        );
+        let missing: i64 = pool
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT upstream_missing FROM knowledge_source_entry
+                     WHERE plugin_id = ?1 AND plugin_version = '1.0.0' AND item_key = ?2",
+                    database::rusqlite::params![plugin_id, path_b],
+                    |row| row.get(0),
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            missing, 0,
+            "truncated input is not evidence of upstream removal"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn nuclei_template_metadata_extracts_searchable_fields_without_claiming_verification() {
         let yaml = r#"id: cve-2025-12345
@@ -2836,11 +3341,49 @@ http:
         assert_eq!(meta["request_block_count"], 1);
         assert_eq!(meta["matcher_count"], 1);
         assert_eq!(meta["extractor_count"], 1);
+        assert_eq!(
+            meta["matchers"],
+            json!([{"type": "word", "words": ["sql error"]}])
+        );
+        assert_eq!(
+            meta["extractors"],
+            json!([{"type": "regex", "regex": ["version"]}])
+        );
+        assert_eq!(meta["yaml_syntax_status"], "valid");
+        assert_eq!(meta["template_shape_status"], "metadata_projected");
+        assert_eq!(meta["detection_validation_status"], "NOT_TESTED");
         assert_eq!(meta["has_flow"], false);
         assert!(
             meta.get("verified").is_none(),
             "Nuclei metadata must not be interpreted as RIP verification"
         );
+    }
+
+    #[test]
+    fn nuclei_template_metadata_hashes_exact_yaml_bytes_and_separates_validation_states() {
+        let yaml = "id: t\ninfo:\n  name: T\nhttp:\n  - matchers:\n      - type: word\n        words: [ok]\n    extractors:\n      - type: regex\n        regex: [v1]\n";
+        let meta = nuclei_template_metadata(yaml);
+
+        assert_eq!(
+            meta["template_content_sha256"],
+            "92a845058e5657343ad6330f80b58ff086d7f1d364025568bd6a10ae9bcb5ea7"
+        );
+        assert_eq!(meta["detection_validation_status"], "NOT_TESTED");
+        assert_eq!(meta["yaml_syntax_status"], "valid");
+        assert_eq!(meta["template_shape_status"], "metadata_projected");
+        assert_eq!(meta["matchers"], json!([{"type": "word", "words": ["ok"]}]));
+        assert_eq!(
+            meta["extractors"],
+            json!([{"type": "regex", "regex": ["v1"]}])
+        );
+
+        let invalid_yaml = nuclei_template_metadata("id: [broken\n");
+        assert_eq!(invalid_yaml["yaml_syntax_status"], "invalid");
+        assert_eq!(invalid_yaml["detection_validation_status"], "NOT_TESTED");
+        let missing_info = nuclei_template_metadata("id: valid\ninfo: null\n");
+        assert_eq!(missing_info["yaml_syntax_status"], "valid");
+        assert_eq!(missing_info["template_shape_status"], "missing_info");
+        assert_eq!(missing_info["detection_validation_status"], "NOT_TESTED");
     }
 
     #[test]
@@ -2903,44 +3446,44 @@ http:
         let mut files = Vec::new();
         collect_yaml_files(root, &mut files);
         files.sort();
-        let mut parsed = 0usize;
-        let mut invalid = 0usize;
-        let mut missing_info = 0usize;
+        let mut statuses = BTreeMap::<String, usize>::new();
         let mut oversized = 0usize;
+        let mut unreadable = 0usize;
         for path in &files {
             let Ok(metadata) = path.metadata() else {
+                unreadable += 1;
                 continue;
             };
             if metadata.len() > MAX_NUCLEI_TEMPLATE_BYTES {
                 oversized += 1;
+                println!("oversized: {}", path.display());
                 continue;
             }
             let Ok(body) = std::fs::read_to_string(path) else {
-                invalid += 1;
+                unreadable += 1;
                 continue;
             };
             let status = nuclei_template_metadata(&body);
-            match status["parse_status"].as_str() {
-                Some("parsed") => parsed += 1,
-                Some("missing_info") => {
-                    missing_info += 1;
-                    println!("missing_info: {}", path.display());
-                }
-                _ => {
-                    invalid += 1;
-                    println!("invalid_yaml: {}", path.display());
-                }
+            let label = status["parse_status"]
+                .as_str()
+                .unwrap_or("missing_status")
+                .to_string();
+            if label != "parsed" && label != "not_template" {
+                println!("{label}: {}", path.display());
             }
+            *statuses.entry(label).or_default() += 1;
         }
         println!(
-            "Nuclei YAML audit: total={} parsed={} invalid={} missing_info={} oversized={}",
+            "Nuclei YAML audit: total={} statuses={:?} oversized={} unreadable={}",
             files.len(),
-            parsed,
-            invalid,
-            missing_info,
-            oversized
+            statuses,
+            oversized,
+            unreadable,
         );
-        assert!(parsed > 0, "no installed Nuclei templates parsed");
+        assert!(
+            statuses.get("parsed").copied().unwrap_or_default() > 0,
+            "no installed Nuclei templates parsed"
+        );
     }
 
     #[test]

@@ -308,16 +308,104 @@ fn approve_visible_disable_hidden_evidence_readable() {
         "docs/guide.md",
         "docs/sub/notes.md",
     ];
+    let duplicate_version_rows = pool
+        .with_conn(|c| {
+            c.execute(
+                "INSERT INTO knowledge_source_entry (
+                     plugin_id,plugin_version,corpus_id,entry_kind,item_key,title,
+                     content_sha256,metadata_sha256,first_seen_at,last_seen_at
+                 )
+                 SELECT plugin_id,'0.2.0',corpus_id,entry_kind,item_key,title,
+                        content_sha256,metadata_sha256,first_seen_at,last_seen_at
+                 FROM knowledge_source_entry
+                 WHERE plugin_id='knowledge.sk1.extended' AND plugin_version='0.1.0'
+                   AND item_key=?1",
+                [keys[0]],
+            )
+        })
+        .unwrap();
+    assert_eq!(duplicate_version_rows, 1);
     let updated = plugin_runtime::knowledge_review::set_review_status(
         &pool,
         &audit,
-        "user:test",
         "knowledge.sk1.extended",
+        "0.1.0",
         &keys,
         ReviewStatus::Approved,
+        plugin_runtime::knowledge_review::KnowledgeReviewContext {
+            reviewer: "user:test",
+            reason: "Reviewed source snapshot and its declared license policy",
+        },
     )
     .unwrap();
     assert_eq!(updated, 4);
+    let history = plugin_runtime::knowledge_review::review_history(
+        &pool,
+        "knowledge.sk1.extended",
+        "0.1.0",
+        keys[0],
+    )
+    .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].from_status, "DISCOVERED");
+    assert_eq!(history[0].to_status, "APPROVED");
+    assert_eq!(history[0].reviewer, "user:test");
+    assert_eq!(
+        history[0].reason,
+        "Reviewed source snapshot and its declared license policy"
+    );
+    let prior_version: (String, i64) = pool
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT e.review_status, COUNT(l.review_id)
+                 FROM knowledge_source_entry e
+                 LEFT JOIN knowledge_source_review_log l ON l.entry_id=e.entry_id
+                 WHERE e.plugin_id='knowledge.sk1.extended' AND e.plugin_version='0.2.0'
+                   AND e.item_key=?1
+                 GROUP BY e.entry_id,e.review_status",
+                [keys[0]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+        })
+        .unwrap();
+    assert_eq!(prior_version, ("DISCOVERED".to_string(), 0));
+    assert!(pool
+        .with_conn(|c| {
+            c.execute(
+                "UPDATE knowledge_source_review_log SET reason='rewritten' WHERE entry_id=(
+                     SELECT entry_id FROM knowledge_source_entry
+                     WHERE plugin_id='knowledge.sk1.extended'
+                       AND plugin_version='0.1.0' AND item_key=?1
+                 )",
+                [keys[0]],
+            )
+        })
+        .is_err());
+
+    let failed_batch = plugin_runtime::knowledge_review::set_review_status(
+        &pool,
+        &audit,
+        "knowledge.sk1.extended",
+        "0.1.0",
+        &[keys[0], "missing-source-entry"],
+        ReviewStatus::Rejected,
+        plugin_runtime::knowledge_review::KnowledgeReviewContext {
+            reviewer: "user:test",
+            reason: "Batch rejection must be atomic",
+        },
+    );
+    assert_eq!(failed_batch.unwrap_err().code, "review_target_not_found");
+    assert_eq!(
+        plugin_runtime::knowledge_review::review_history(
+            &pool,
+            "knowledge.sk1.extended",
+            "0.1.0",
+            keys[0],
+        )
+        .unwrap(),
+        history,
+        "a missing member must roll back prior updates and review events"
+    );
 
     // 候选可见（L2 摘要形态，kind=Plugin）。
     let hits = source.candidates(&q, 10).unwrap();
