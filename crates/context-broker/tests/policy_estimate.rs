@@ -6,7 +6,7 @@
 //! / memory=1140 / reserve_output=1140）。
 
 use context_broker::{
-    borrow_allowed, count_chars, est_tokens, BudgetComponent, BudgetPolicy, CharCounts,
+    borrow_allowed, count_chars, est_tokens_formula, BudgetComponent, BudgetPolicy, CharCounts,
 };
 
 // ---------------------------------------------------------------------------
@@ -15,27 +15,27 @@ use context_broker::{
 
 #[test]
 fn estimator_ascii_is_about_one_token_per_four_chars() {
-    assert_eq!(est_tokens(""), 0, "empty text costs nothing");
-    assert_eq!(est_tokens("abcd"), 1, "4 ascii = 1 token");
-    assert_eq!(est_tokens("abc"), 1, "3 ascii rounds up to 1 token");
-    assert_eq!(est_tokens("abcdefgh"), 2, "8 ascii = 2 tokens");
+    assert_eq!(est_tokens_formula(""), 0, "empty text costs nothing");
+    assert_eq!(est_tokens_formula("abcd"), 1, "4 ascii = 1 token");
+    assert_eq!(est_tokens_formula("abc"), 1, "3 ascii rounds up to 1 token");
+    assert_eq!(est_tokens_formula("abcdefgh"), 2, "8 ascii = 2 tokens");
 }
 
 #[test]
 fn estimator_cjk_is_about_one_token_per_char() {
-    assert_eq!(est_tokens("中文字"), 3, "3 cjk chars = 3 tokens");
-    assert_eq!(est_tokens("工具目录"), 4, "4 cjk chars = 4 tokens");
+    assert_eq!(est_tokens_formula("中文字"), 3, "3 cjk chars = 3 tokens");
+    assert_eq!(est_tokens_formula("工具目录"), 4, "4 cjk chars = 4 tokens");
 }
 
 #[test]
 fn estimator_mixed_and_other_classes() {
     // 4 ascii / 4 + 2 cjk = 1.0 + 2.0 = 3.0。
-    assert_eq!(est_tokens("abcd中文"), 3, "4 ascii + 2 cjk");
+    assert_eq!(est_tokens_formula("abcd中文"), 3, "4 ascii + 2 cjk");
     // other 类（é）按 2 字符 1 token：1 字符向上取整为 1。
-    assert_eq!(est_tokens("é"), 1);
-    assert_eq!(est_tokens("éé"), 1, "2 other chars = 1 token");
+    assert_eq!(est_tokens_formula("é"), 1);
+    assert_eq!(est_tokens_formula("éé"), 1, "2 other chars = 1 token");
     // 混合三类：ascii 1 / 4 + cjk 1 + other 1 / 2 = 0.25 + 1 + 0.5 = 1.75 -> 2。
-    assert_eq!(est_tokens("a中\u{e9}"), 2);
+    assert_eq!(est_tokens_formula("a中\u{e9}"), 2);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn char_counts_breakdown_matches_formula() {
     // est_tokens 与 counts 公式一致（不重复扫文本的口径由单一实现保证）。
     let manual =
         (counts.ascii as f64 / 4.0 + counts.cjk as f64 + counts.other as f64 / 2.0).ceil() as u64;
-    assert_eq!(est_tokens("a中\u{e9}"), manual);
+    assert_eq!(est_tokens_formula("a中\u{e9}"), manual);
 }
 
 // ---------------------------------------------------------------------------

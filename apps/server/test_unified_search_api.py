@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for the authenticated unified search API and v7 index lifecycle."""
+"""Regression tests for the authenticated unified search API and v8 index lifecycle."""
 from __future__ import annotations
 
 import importlib.util
@@ -32,7 +32,7 @@ class UnifiedSearchApiTests(unittest.TestCase):
             with (
                 patch.object(module, "_ensure_curated_search_index"),
                 patch.object(module, "CURATED_SEARCH_UNIFIED_BIN", str(binary)),
-                patch.object(module, "CURATED_SEARCH_INDEX_DB", str(Path(temp) / "search-v7.db")),
+                patch.object(module, "CURATED_SEARCH_INDEX_DB", str(Path(temp) / "search-v8.db")),
                 patch.object(module, "REPO_ROOT", temp),
                 patch.object(
                     module.subprocess,
@@ -48,6 +48,7 @@ class UnifiedSearchApiTests(unittest.TestCase):
                         "resource_type": ["nuclei_template"],
                         "vulnerability_id": ["cve-2025-12345"],
                         "canonical_key": ["nuclei:CVE-2025-12345"],
+                        "include_candidates": ["true"],
                     },
                 )
 
@@ -66,6 +67,15 @@ class UnifiedSearchApiTests(unittest.TestCase):
             self.assertIn("resource-type=nuclei_template", filters)
             self.assertIn("vulnerability-id=CVE-2025-12345", filters)
             self.assertIn("canonical-key=nuclei:CVE-2025-12345", filters)
+            self.assertIn("include-candidates=true", filters)
+
+    def test_unified_search_rejects_invalid_include_candidates_value(self) -> None:
+        with patch.object(module, "_ensure_curated_search_index"), patch.object(
+            module.subprocess, "run"
+        ) as run:
+            with self.assertRaises(module.ApiError):
+                module.handle_unified_search(None, {"q": ["test"], "include_candidates": ["yes"]})
+        run.assert_not_called()
 
     def test_unified_search_rejects_non_default_workspace_until_acl_mapping_exists(self) -> None:
         with self.assertRaises(module.ApiError):
@@ -87,7 +97,7 @@ class UnifiedSearchApiTests(unittest.TestCase):
         with self.assertRaises(module.ApiError):
             module.handle_unified_search(None, {"q": ["x" * 201]})
 
-    def test_v6_index_is_rebuilt_even_when_source_mtimes_are_older(self) -> None:
+    def test_v7_index_is_rebuilt_even_when_source_mtimes_are_older(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             sources = [root / name for name in ("platform.db", "plugin.db", "catalog.db", "rtis.db", "overlay.json")]
@@ -97,7 +107,7 @@ class UnifiedSearchApiTests(unittest.TestCase):
             index.parent.mkdir()
             conn = sqlite3.connect(index)
             conn.execute("CREATE TABLE search_index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            conn.execute("INSERT INTO search_index_meta VALUES ('schema_version', '6')")
+            conn.execute("INSERT INTO search_index_meta VALUES ('schema_version', '7')")
             conn.commit()
             conn.close()
             binary = root / "rp-search-index"
@@ -128,7 +138,7 @@ class UnifiedSearchApiTests(unittest.TestCase):
             self.assertEqual(command[command.index("--plugin-db") + 1], str(sources[1]))
             self.assertIn("--rebuild", command)
 
-    def test_fresh_v7_index_is_reused(self) -> None:
+    def test_fresh_v8_index_is_reused(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             sources = [root / name for name in ("platform.db", "plugin.db", "catalog.db", "rtis.db", "overlay.json")]
@@ -137,7 +147,7 @@ class UnifiedSearchApiTests(unittest.TestCase):
             index = root / "search.db"
             conn = sqlite3.connect(index)
             conn.execute("CREATE TABLE search_index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            conn.execute("INSERT INTO search_index_meta VALUES ('schema_version', '7')")
+            conn.execute("INSERT INTO search_index_meta VALUES ('schema_version', '8')")
             conn.commit()
             conn.close()
             future = max(path.stat().st_mtime for path in sources) + 10

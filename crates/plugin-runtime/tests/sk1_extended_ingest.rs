@@ -427,8 +427,13 @@ fn approve_visible_disable_hidden_evidence_readable() {
         .ref_id
         .clone();
 
-    // L3 按需正文展开（全文）。
-    let content = source.load(&hits[0].reference).unwrap();
+    // L3 按需正文展开（全文）：按上面已选中的 catalog entry 引用加载，
+    // 不依赖候选排序恰好把 catalog entry 放在 hits[0]。
+    let selected = hits
+        .iter()
+        .find(|hit| hit.reference.ref_id == ref_id)
+        .expect("selected catalog entry remains in candidate set");
+    let content = source.load(&selected.reference).unwrap();
     assert!(
         content.body.contains("NmapLike"),
         "L3 返回条目正文：{}",
@@ -440,8 +445,9 @@ fn approve_visible_disable_hidden_evidence_readable() {
     let index_pool = memory_pool();
     let report = search_engine::SearchIndex::build(&pool, &catalog, &index_pool).unwrap();
     // nmap-like + fuzz-like 两 catalog 条目；docs/guide.md 与 docs/sub/notes.md
-    // 也是 APPROVED（resource 表空，无 gh: 行）→ 恰 4。
-    assert_eq!(report.doc_count, 4);
+    // 两条 APPROVED 文档，以及两条 DISCOVERED 文档候选均进入派生索引；
+    // 候选是否可见由查询的 include_candidates 治理过滤控制。
+    assert_eq!(report.doc_count, 6);
 
     // assemble 产出插件条目 + Evidence 固化。
     let rulepack_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rulepacks/rip-rules");

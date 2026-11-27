@@ -4,8 +4,8 @@
 //! 八步流程落面（计划 §9 原文流程图）：
 //! 1. 理解目标：[`broker_link::BrokerLink::assemble_confirmed`]（意图分类 +
 //!    ambiguous 确认回路 + L0 到 L3 全层装配，expand 记账进 context_ref_log）；
-//! 2. 制定计划：[`agent_loop::Planner`] 端口（内置确定性最小规划器，模型
-//!    在环属后续批次，ROADMAP §8.5 风险 3）；
+//! 2. 制定计划：[`agent_loop::Planner`] 端口（LLM Planner 通过 OpenAI-compatible
+//!    Provider 接入；关键词规划器保留作 deterministic fallback）；
 //! 3. 选择工具：capability_refs 绑定 ∩ Broker L2 tool_briefs（每轮上下文
 //!    来自 Broker，Agent 禁自查库，P7-3 判据同源）；
 //! 4. 调用 Tool Engine：[`tool_link::ToolLink`]（D-TC-05 受理 + 状态机 +
@@ -39,6 +39,7 @@ pub mod broker_link;
 pub mod control;
 pub mod error;
 pub mod evidence;
+pub mod llm_planner;
 pub mod memory;
 pub mod state;
 pub mod store;
@@ -55,6 +56,7 @@ pub use control::{
     RunControlConfig,
 };
 pub use error::AgentError;
+pub use llm_planner::{build_planner, planner_from_env, LlmPlanner};
 pub use state::{RunStateStore, StoredStep};
 pub use store::{AgentStore, StoredDefinition, StoredRun};
 pub use tool_link::{

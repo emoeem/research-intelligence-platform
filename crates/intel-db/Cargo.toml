@@ -29,3 +29,15 @@ report-engine = { path = "../report-engine" }
 [[bin]]
 name = "rp-kc"
 path = "src/bin/rp-kc.rs"
+
+[[bin]]
+name = "rp-skill-map"
+path = "src/bin/rp-skill-map.rs"
+
+[[bin]]
+name = "rp-skill-ref-map"
+path = "src/bin/rp-skill-ref-map.rs"
+
+[[bin]]
+name = "rp-db-migrate"
+path = "src/bin/rp-db-migrate.rs"

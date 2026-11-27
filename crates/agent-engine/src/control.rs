@@ -353,11 +353,26 @@ impl RunControl {
 
 /// 重复调用检测键：(tool_id, 规范化 input) 的 sha256。
 ///
-/// 规范化依赖 serde_json Value 的默认 BTreeMap 对象键序（workspace 未开
-/// preserve_order 特性），同语义输入必得同键；tool_id 进哈希材料，同工具
-/// 不同输入不判重。
+/// 递归规范化对象键序，不能依赖 serde_json Map 的默认顺序：任一依赖启用
+/// `preserve_order` 都会全局改变 Map 实现；同语义输入必须稳定得到同一调用键。
 pub fn canonical_call_key(tool_id: &str, input: &Value) -> String {
-    let canonical = serde_json::to_string(input).unwrap_or_else(|_| "null".to_string());
+    fn canonicalize(value: &Value) -> Value {
+        match value {
+            Value::Object(map) => {
+                let mut entries: Vec<_> = map.iter().collect();
+                entries.sort_unstable_by_key(|(left, _)| *left);
+                let mut sorted = serde_json::Map::new();
+                for (key, nested) in entries {
+                    sorted.insert(key.clone(), canonicalize(nested));
+                }
+                Value::Object(sorted)
+            }
+            Value::Array(items) => Value::Array(items.iter().map(canonicalize).collect()),
+            scalar => scalar.clone(),
+        }
+    }
+    let canonical =
+        serde_json::to_string(&canonicalize(input)).unwrap_or_else(|_| "null".to_string());
     let material = format!("{tool_id}|{canonical}");
     sha256_hex(material.as_bytes())
 }

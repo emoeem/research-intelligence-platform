@@ -81,8 +81,8 @@ fn acceptance_artifact_ref_only_reference_and_hash_in_context() {
             [],
         )?;
         c.execute(
-            "INSERT INTO tool_run (run_id, tool_id, workspace_id, status, created_at, updated_at)
-             VALUES ('rn-acc-3', 'tool:mock-http', 'ws-acc', 'SUCCEEDED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            "INSERT INTO tool_run (run_id, tool_id, workspace_id, task_id, status, created_at, updated_at)
+             VALUES ('rn-acc-3', 'tool:mock-http', 'ws-acc', 't-acceptance-3', 'SUCCEEDED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
             [],
         )?;
         c.execute(

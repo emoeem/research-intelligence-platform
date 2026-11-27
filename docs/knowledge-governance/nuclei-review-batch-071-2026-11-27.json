@@ -1,0 +1,5677 @@
+{
+  "schema_version": "1.0.0",
+  "batch_id": "nuclei-review-071-2026-11-27",
+  "status": "READY_FOR_HUMAN_REVIEW",
+  "offset": 14000,
+  "limit": 200,
+  "total_candidates": 14111,
+  "task_count": 111,
+  "next_offset": null,
+  "tasks": [
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/mautic-workflow.yaml",
+      "priority_rank": 14001,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/mautic-workflow.yaml",
+        "title": "Mautic CRM Security Checks",
+        "template_id": "mautic-workflow",
+        "content_sha256": "61bfce2f8143590984fbcfbb2919c2e619795e36db0c298837a9dd8ca37ad96a",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 329,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/metabase-workflow.yaml",
+      "priority_rank": 14002,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/metabase-workflow.yaml",
+        "title": "Metabase Security Checks",
+        "template_id": "metabase-workflow",
+        "content_sha256": "52efa3af20da5707985286d91c68a54bd919e7ed442420d27a8bb335851a056d",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 297,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/metinfo-workflow.yaml",
+      "priority_rank": 14003,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/metinfo-workflow.yaml",
+        "title": "MetInfo Security Checks",
+        "template_id": "metinfo-workflow",
+        "content_sha256": "7ce2064ff1e879e8f65953f5dbab21a498573bc3902bad94aef01f650c1b655f",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 343,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/micro-focus-workflow.yaml",
+      "priority_rank": 14004,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/micro-focus-workflow.yaml",
+        "title": "Micro Focus Checks",
+        "template_id": "micro-focus-workflow",
+        "content_sha256": "3399fdf9609fd71ac4602cdec1057bbcc9a8452767c5d2db67a6ccabea768349",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 336,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 3,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/microsoft-exchange-workflow.yaml",
+      "priority_rank": 14005,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/microsoft-exchange-workflow.yaml",
+        "title": "Microsoft Exchange Security Checks",
+        "template_id": "microsoft-exchange-workflow",
+        "content_sha256": "f8caceff6c2a775c0c153a5e34e061ff5c8fe460e69275692642d6fb52a70c0e",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 330,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/microstrategy-workflow.yaml",
+      "priority_rank": 14006,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/microstrategy-workflow.yaml",
+        "title": "MicroStrategy Security Checks",
+        "template_id": "microstrategy-workflow",
+        "content_sha256": "f71e555c20ca2a389341b195cc10aca3499c89f719917512714a9a33bdc008b2",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 312,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/mida-eframework-workflow.yaml",
+      "priority_rank": 14007,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/mida-eframework-workflow.yaml",
+        "title": "Mida eFramework Security Checks",
+        "template_id": "mida-eframework-workflow",
+        "content_sha256": "cdba1f6de59ae00f52a99703d781ec8d60da730d7af3ff773df1194d9f733329",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 402,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/mobileiron-workflow.yaml",
+      "priority_rank": 14008,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/mobileiron-workflow.yaml",
+        "title": "MobileIron Security Checks",
+        "template_id": "mobileiron-workflow",
+        "content_sha256": "c1ae693649af65237e8af5abc2bb017f760a70f6a7973e9f0d360d6d0402c59d",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 298,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/mongodb-workflow.yaml",
+      "priority_rank": 14009,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/mongodb-workflow.yaml",
+        "title": "MongoDb Security Checks",
+        "template_id": "mongodb-workflow",
+        "content_sha256": "1ad7ff56bd45915e6e4182b9cfc48f26ff672fb0b8d7147ad06aecbcfed4fbba",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 282,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/moodle-workflow.yaml",
+      "priority_rank": 14010,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/moodle-workflow.yaml",
+        "title": "Moodle Security Checks",
+        "template_id": "moodle-workflow",
+        "content_sha256": "6089c8b42b0db6ef50baa552c9abeaace80effffe2c130ad6dff9460a8c30552",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 318,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/movable-workflow.yaml",
+      "priority_rank": 14011,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/movable-workflow.yaml",
+        "title": "Movable Type Security Checks",
+        "template_id": "movable-workflow",
+        "content_sha256": "d0df7f19fa9d1a64888127339df32752fbd5fd44f784a05fefd6c14bb2003ed1",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 456,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 2,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/mysql-workflow.yaml",
+      "priority_rank": 14012,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/mysql-workflow.yaml",
+        "title": "MySQL Security Checks",
+        "template_id": "mysql-workflow",
+        "content_sha256": "e70ecbb179484a77a5025cbf4568f9395472405273cdb5eb052e17179218f80f",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 272,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/nacos-workflow.yaml",
+      "priority_rank": 14013,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/nacos-workflow.yaml",
+        "title": "Nacos Security Checks",
+        "template_id": "nacos-workflow",
+        "content_sha256": "a17f27cb266cc96be4af8a7b120aa2d8d8a42c80135a1d4d2b0c7aa4b10b47fb",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 277,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/netgear-workflow.yaml",
+      "priority_rank": 14014,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/netgear-workflow.yaml",
+        "title": "NETGEAR Security Checks",
+        "template_id": "netgear-workflow",
+        "content_sha256": "953178605bbca2f7fca574c2575bff96f18402810970d9c6b96d7984f661a8e9",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 294,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/netsweeper-workflow.yaml",
+      "priority_rank": 14015,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/netsweeper-workflow.yaml",
+        "title": "Netsweeper Security Checks",
+        "template_id": "netsweeper-workflow",
+        "content_sha256": "25283ee957e5042c22871a530deeb517dfe64436374069555669b9643b64d7f2",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 318,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/nette-workflow.yaml",
+      "priority_rank": 14016,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/nette-workflow.yaml",
+        "title": "Nette Framework Security Checks",
+        "template_id": "nette-workflow",
+        "content_sha256": "f9ad17e64dfabeb35830c906d04f8da805a6750bd3ec4c5b61dbf8891818256b",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 333,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/node-red-workflow.yaml",
+      "priority_rank": 14017,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/node-red-workflow.yaml",
+        "title": "Node-RED-Dashboard Security Checks",
+        "template_id": "node-red-workflow",
+        "content_sha256": "5d4a1bced1728ba6f1b43a16b7cd718d5147a393ec53a31087aad72fd3906a24",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 317,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/novnc-workflow.yaml",
+      "priority_rank": 14018,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/novnc-workflow.yaml",
+        "title": "noVNC Security Checks",
+        "template_id": "novnc-workflow",
+        "content_sha256": "ddc1b9de8de8501d4d28e61eaf1f1ef12581b55f7095625d359570450f577a10",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 313,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/ofbiz-workflow.yaml",
+      "priority_rank": 14019,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/ofbiz-workflow.yaml",
+        "title": "OFBiz Security Checks",
+        "template_id": "ofbiz-workflow",
+        "content_sha256": "7d8bd3e45d0724e59244f3da40edf56cdc9831cd8c81d14f3039e0773f5176d1",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 340,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/openam-workflow.yaml",
+      "priority_rank": 14020,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/openam-workflow.yaml",
+        "title": "OpenAM Security Checks",
+        "template_id": "openam-workflow",
+        "content_sha256": "fb8037401f6db89cdf26434e09d3f9bfa171a8ac69fd54029ff981f000c3bd68",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 278,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/openemr-workflow.yaml",
+      "priority_rank": 14021,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/openemr-workflow.yaml",
+        "title": "OpenEMR Security Checks",
+        "template_id": "openemr-workflow",
+        "content_sha256": "d58c1dd363bf82b3cdb9409e60b5a317a76a1d16498b91c9e632c6ccf115c80d",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 284,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/opensis-workflow.yaml",
+      "priority_rank": 14022,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/opensis-workflow.yaml",
+        "title": "OpenSIS Security Checks",
+        "template_id": "opensis-workflow",
+        "content_sha256": "17b89ecb02a1143f95f196b80d4cb94ef5d8c78b3dc0a6b387c72e6f0c20b9c2",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 283,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/opensns-workflow.yaml",
+      "priority_rank": 14023,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/opensns-workflow.yaml",
+        "title": "OpenSNS Security Checks",
+        "template_id": "opensns-workflow",
+        "content_sha256": "f24470a477034d1483c54af50541622c7cb9d7da33da7158e980c23ad2629efe",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 326,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/oracle-peoplesoft-workflow.yaml",
+      "priority_rank": 14024,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/oracle-peoplesoft-workflow.yaml",
+        "title": "oracle-peoplesoft Security Checks",
+        "template_id": "oracle-peoplesoft-workflow",
+        "content_sha256": "c05db75a40e5fa122ec007c97c22e3c1d209b6927b794b843f8e6b87f6f0ad38",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 326,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/oscommerce-workflow.yaml",
+      "priority_rank": 14025,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/oscommerce-workflow.yaml",
+        "title": "osCommerce Security Checks",
+        "template_id": "oscommerce-workflow",
+        "content_sha256": "82c0e45a16d233837af3d9476058450b9fc17656ec28fa30efe6572e7c0b334f",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/pandora-workflow.yaml",
+      "priority_rank": 14026,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/pandora-workflow.yaml",
+        "title": "Pandora FMS Security Checks",
+        "template_id": "pandora-workflow",
+        "content_sha256": "4611e522166c7ba5bba1bab16ac58de5fffbba86fc6e339eac02ef7cf95976fc",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 297,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/pega-workflow.yaml",
+      "priority_rank": 14027,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/pega-workflow.yaml",
+        "title": "Pega Security Checks",
+        "template_id": "pega-workflow",
+        "content_sha256": "5ce4cd885b2617033e6e9e74ac275b28c9f310ed8ccb1fc9b01293aab54c42aa",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 267,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/pentaho-workflow.yaml",
+      "priority_rank": 14028,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/pentaho-workflow.yaml",
+        "title": "Pentaho Security Checks",
+        "template_id": "pentaho-workflow",
+        "content_sha256": "beca78909995ac747f6ab8da3b34fdfa6801ee97f092e4c8b3d973b2c6e82064",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 283,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/pgsql-workflow.yaml",
+      "priority_rank": 14029,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/pgsql-workflow.yaml",
+        "title": "PgSQL Security Checks",
+        "template_id": "pgsql-workflow",
+        "content_sha256": "3ffcaa04f713dd66db197c5792ca3e7e634905fc030b5a9b10399f569e824444",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 273,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/phoenix-contact-workflow.yaml",
+      "priority_rank": 14030,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/phoenix-contact-workflow.yaml",
+        "title": "Phoenix Contact Security Checks",
+        "template_id": "phoenix-contact-workflow",
+        "content_sha256": "2c139d6da22940df9c74dda141899021e6cb45670bbab692e219e7f618ac91d4",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 327,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/phpcollab-workflow.yaml",
+      "priority_rank": 14031,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/phpcollab-workflow.yaml",
+        "title": "PhpCollab Security Checks",
+        "template_id": "phpcollab-workflow",
+        "content_sha256": "2fcb9ffabed0815912034c2396c6f60ca7302d50e717f6d66d87e023df3be80a",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 293,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/phpldapadmin-workflow.yaml",
+      "priority_rank": 14032,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/phpldapadmin-workflow.yaml",
+        "title": "phpLDAPadmin Secutiry Checks",
+        "template_id": "phpldapadmin-workflow",
+        "content_sha256": "f0977389c379f2c13f41ef43e83933560b29d47dad05a9699e3ffebe6c2e2d43",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 302,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/phpmyadmin-workflow.yaml",
+      "priority_rank": 14033,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/phpmyadmin-workflow.yaml",
+        "title": "phpmyadmin-workflow",
+        "template_id": "phpmyadmin-workflow",
+        "content_sha256": "3addee9031330e38547999ccc4a17db84007275de44e0bacd8b02a1f1c053c0e",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 289,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/phppgadmin-workflow.yaml",
+      "priority_rank": 14034,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/phppgadmin-workflow.yaml",
+        "title": "phpPgAdmin Security Checks",
+        "template_id": "phppgadmin-workflow",
+        "content_sha256": "ff1950b2c63be1c44a92ca640f111f99c3d8b04af5023a878f957a1f60dc5ace",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/phpwiki-workflow.yaml",
+      "priority_rank": 14035,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/phpwiki-workflow.yaml",
+        "title": "phpwiki Security Checks",
+        "template_id": "phpwiki-workflow",
+        "content_sha256": "82d11cd14d87ed47d5016607fa3594c43da9f9ca4ccc29afffd5944423498d0a",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 343,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/pop3-workflow.yaml",
+      "priority_rank": 14036,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/pop3-workflow.yaml",
+        "title": "POP3 Security Checks",
+        "template_id": "pop3-workflow",
+        "content_sha256": "24874eecb5378364a9df204e90344026656853017b73d5032157684e86339c66",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 267,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/powercreator-workflow.yaml",
+      "priority_rank": 14037,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/powercreator-workflow.yaml",
+        "title": "PowerCreator CMS Security Checks",
+        "template_id": "powercreator-workflow",
+        "content_sha256": "807e2eb0553800ba4095a0a037d459aebca39087ae8c6e1f248cc4c2b8b926fa",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 376,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/processmaker-workflow.yaml",
+      "priority_rank": 14038,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/processmaker-workflow.yaml",
+        "title": "ProcessMaker Security Checks",
+        "template_id": "processmaker-workflow",
+        "content_sha256": "8b35cd290df730ef9b8913b34735b0287109431f7e155f9f3520873eb2582cd2",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 368,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/prometheus-workflow.yaml",
+      "priority_rank": 14039,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/prometheus-workflow.yaml",
+        "title": "Prometheus Security Checks",
+        "template_id": "prometheus-workflow",
+        "content_sha256": "f326a1ffefbf6d394365ddcc3a82f10f7dca07a0520d635e7e566cc07cdbc0fb",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 306,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/prtg-workflow.yaml",
+      "priority_rank": 14040,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/prtg-workflow.yaml",
+        "title": "PRTG Security Checks",
+        "template_id": "prtg-workflow",
+        "content_sha256": "c1f9b57e3db56bfd1d16a73b16eb7b9d4e0bd6a928d555728813b00af3f274a5",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 267,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/pulsesecure-workflow.yaml",
+      "priority_rank": 14041,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/pulsesecure-workflow.yaml",
+        "title": "Pulse Connect Secure Security Checks",
+        "template_id": "pulsesecure-workflow",
+        "content_sha256": "dae686733165cbf1c2ddc06870fb2790ff7579c10da818153417879cd310a408",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 381,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/qcubed-workflow.yaml",
+      "priority_rank": 14042,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/qcubed-workflow.yaml",
+        "title": "Qcubed Security Checks",
+        "template_id": "qcubed-workflow",
+        "content_sha256": "78ff13157bf831b8664790dabf3c77741bcd3d5aad05b9eb062d3e9a7eca6a63",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/r-seenet-workflow.yaml",
+      "priority_rank": 14043,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/r-seenet-workflow.yaml",
+        "title": "R-SeeNet Security Checks",
+        "template_id": "r-seenet-workflow",
+        "content_sha256": "53e11db4a82e019eee43de67b46f5b548e48e51f636be7eb2d301677eae38d16",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 285,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/rabbitmq-workflow.yaml",
+      "priority_rank": 14044,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/rabbitmq-workflow.yaml",
+        "title": "RabbitMQ Security Checks",
+        "template_id": "rabbitmq-workflow",
+        "content_sha256": "7cdffa518f474cd8851838041676f48bfbc51bd151c7bdff0fafab3c0ae919f7",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 315,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/rancher-workflow.yaml",
+      "priority_rank": 14045,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/rancher-workflow.yaml",
+        "title": "Rancher Security Checks",
+        "template_id": "rancher-workflow",
+        "content_sha256": "20c47e842d84a6e8b63c74f2ba91d4f4d33fbd2b165f994f4a473752893d943d",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 283,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/rconfig-workflow.yaml",
+      "priority_rank": 14046,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/rconfig-workflow.yaml",
+        "title": "rConfig Security Checks",
+        "template_id": "rconfig-workflow",
+        "content_sha256": "dfae51d667b9e3d138922bc2c7335579181e60b6aedea8206579f52bacc6a31b",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 343,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/rdp-workflow.yaml",
+      "priority_rank": 14047,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/rdp-workflow.yaml",
+        "title": "RDP Security Checks",
+        "template_id": "rdp-workflow",
+        "content_sha256": "2e1fa56092ab8ace62ee5a926e2aff71a68ef8cdc1b05d52dbca9d78ead74025",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 266,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/redis-workflow.yaml",
+      "priority_rank": 14048,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/redis-workflow.yaml",
+        "title": "Redis Security Checks",
+        "template_id": "redis-workflow",
+        "content_sha256": "fcc05a62b83e6f95b3947b62283f0e0b2b03219dbec88394d15f6bd1586504d0",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 281,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/ricoh-workflow.yaml",
+      "priority_rank": 14049,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/ricoh-workflow.yaml",
+        "title": "Ricoh Security Checks",
+        "template_id": "ricoh-workflow",
+        "content_sha256": "aa42c88ae44adbd06e881247c8154e6d5b9ccf5eda7d1a8ee2c4181ff485a8ed",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 316,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/rosariosis-workflow.yaml",
+      "priority_rank": 14050,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/rosariosis-workflow.yaml",
+        "title": "Rosario Student Information System (rosariosis) Security Checks",
+        "template_id": "rosariosis-workflow",
+        "content_sha256": "2b665ba3c2dc67b3539fd82e8bc82357a3b2d70525e6954bb894d43743338922",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 371,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/rstudio-workflow.yaml",
+      "priority_rank": 14051,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/rstudio-workflow.yaml",
+        "title": "RStudio Security Checks",
+        "template_id": "rstudio-workflow",
+        "content_sha256": "4728e615c615f6b1ad748c5056f3835c1ea9348a9d379402e243d5048f80a8d8",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 284,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/ruijie-workflow.yaml",
+      "priority_rank": 14052,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/ruijie-workflow.yaml",
+        "title": "Ruijie Checks",
+        "template_id": "ruijie-workflow",
+        "content_sha256": "2a50f7227acde8a40eceacbd001ba962093f4849af15254a0c88c2e5f3d2659f",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 194,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/saltstack-workflow.yaml",
+      "priority_rank": 14053,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/saltstack-workflow.yaml",
+        "title": "SaltStack Security Checks",
+        "template_id": "saltstack-workflow",
+        "content_sha256": "4a54d50564f971aba2b37b625248edcf5301b0b530c7535431729e174699bd44",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 353,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/samsung-wlan-ap-workflow.yaml",
+      "priority_rank": 14054,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/samsung-wlan-ap-workflow.yaml",
+        "title": "Samsung Wlan AP (WEA453e) Checks",
+        "template_id": "samsung-wlan-ap-workflow",
+        "content_sha256": "cbc566b5be06dad9d9f01e286cb8821b40f4037a491610af4267fbfbdca24a1a",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 301,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 2,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sap-netweaver-workflow.yaml",
+      "priority_rank": 14055,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sap-netweaver-workflow.yaml",
+        "title": "SAP NetWaver Security Checks",
+        "template_id": "sap-netweaver-workflow",
+        "content_sha256": "eb76068042d7db42ab26b122a79420e1b15879e1eab59e8ea0740fc53f78ca44",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 901,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 2,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sarg-workflow.yaml",
+      "priority_rank": 14056,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sarg-workflow.yaml",
+        "title": "SARG Security Checks",
+        "template_id": "sarg-workflow",
+        "content_sha256": "83c6b243167dfaf64efb31f6c0d66d13e4666c4851dd758fad1dce355a6e7a14",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 328,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sco-workflow.yaml",
+      "priority_rank": 14057,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sco-workflow.yaml",
+        "title": "SCO Security Checks",
+        "template_id": "sco-workflow",
+        "content_sha256": "2ad28e0926677098a98f91e0b8e7722935f54252bdf099b438729b2479bedd47",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 323,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sequoiadb-workflow.yaml",
+      "priority_rank": 14058,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sequoiadb-workflow.yaml",
+        "title": "SequoiaDB Security Checks",
+        "template_id": "sequoiadb-workflow",
+        "content_sha256": "d3c76538d20885b1ff6b2c5b236870db9812375c796d04adf505f6f095cbacc1",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 346,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sharepoint-workflow.yaml",
+      "priority_rank": 14059,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sharepoint-workflow.yaml",
+        "title": "Microsoft Sharepoint Security Checks",
+        "template_id": "sharepoint-workflow",
+        "content_sha256": "010119772005edfb988de75f6c380e712ba7b76c7d882b3b6273e3080c8783de",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 358,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/shopxo-workflow.yaml",
+      "priority_rank": 14060,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/shopxo-workflow.yaml",
+        "title": "ShopXO Security Checks",
+        "template_id": "shopxo-workflow",
+        "content_sha256": "79b19dc455b263c39088438dde1daddbd38fcb1b39b2ddf27e720a4760b92cb6",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sidekiq-workflow.yaml",
+      "priority_rank": 14061,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sidekiq-workflow.yaml",
+        "title": "Sidekiq Security Checks",
+        "template_id": "sidekiq-workflow",
+        "content_sha256": "47fc9cfc09a11d75dbc80eff04818a66af980559e0b81756f4c84a1410aaedaf",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 287,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sitecore-workflow.yaml",
+      "priority_rank": 14062,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sitecore-workflow.yaml",
+        "title": "SiteCore Security Checks",
+        "template_id": "sitecore-workflow",
+        "content_sha256": "e976df331b1c025e9eb88aa175efa4a39e48f8409dee76de33c7f7d2bc77dbf6",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 290,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/skywalking-workflow.yaml",
+      "priority_rank": 14063,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/skywalking-workflow.yaml",
+        "title": "Apache SkyWalking Security Checks",
+        "template_id": "skywalking-workflow",
+        "content_sha256": "934086ff85b911ec3956679c22f0f9ad6fb8ff51bf90cee1070091be3a19902e",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 372,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/smb-workflow.yaml",
+      "priority_rank": 14064,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/smb-workflow.yaml",
+        "title": "SMB Security Checks",
+        "template_id": "smb-workflow",
+        "content_sha256": "e5263df794e5f30ec6f777e4369e6e6107f6ee5528b90c2ed0df2e872ffafa84",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 279,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/smtp-workflow.yaml",
+      "priority_rank": 14065,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/smtp-workflow.yaml",
+        "title": "SMTP Security Checks",
+        "template_id": "smtp-workflow",
+        "content_sha256": "7eb558c6abcdb2b1df140760ba6d8257254fa6a88ddce31c8ea68cf5a5adf5e4",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 267,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/solarwinds-orion-workflow.yaml",
+      "priority_rank": 14066,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/solarwinds-orion-workflow.yaml",
+        "title": "SolarWinds Orion Security Checks",
+        "template_id": "solarwinds-orion-workflow",
+        "content_sha256": "06cf488c99efb4c22bd1bdf2eae7ad595c08eac0332c869e1d57cdb006de2e43",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 451,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/solr-workflow.yaml",
+      "priority_rank": 14067,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/solr-workflow.yaml",
+        "title": "Apache Solr Security Checks",
+        "template_id": "solr-workflow",
+        "content_sha256": "c730d73c33ce9ee30a4b97e417e77a02b458ce5a8f8fc2976a89b410cb22f52a",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 291,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sonarqube-workflow.yaml",
+      "priority_rank": 14068,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sonarqube-workflow.yaml",
+        "title": "SonarQube Security Checks",
+        "template_id": "sonarqube-workflow",
+        "content_sha256": "99e3df520618db13634a25114340de1c33db78f3d336559ac25edd76efb73c0c",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 293,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sourcebans-workflow.yaml",
+      "priority_rank": 14069,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sourcebans-workflow.yaml",
+        "title": "SourceBans Security Checks",
+        "template_id": "sourcebans-workflow",
+        "content_sha256": "e253b2a79dd7294aeeb2111c195ef157c9c478550789bd626777438a1739bbee",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 358,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/splunk-workflow.yaml",
+      "priority_rank": 14070,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/splunk-workflow.yaml",
+        "title": "Splunk Security Checks",
+        "template_id": "splunk-workflow",
+        "content_sha256": "ff015715dcdf065987b509d1b606322f3e9133e127724b84e9fe7059a34857e9",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 318,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/springboot-workflow.yaml",
+      "priority_rank": 14071,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/springboot-workflow.yaml",
+        "title": "Spring Boot Security Checks",
+        "template_id": "springboot-workflow",
+        "content_sha256": "708bcdc063887dee0b08391525a9d55bace2a497a711a27bf55542cb37400c69",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 303,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/squirrelmail-workflow.yaml",
+      "priority_rank": 14072,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/squirrelmail-workflow.yaml",
+        "title": "SquirrelMail Security Checks",
+        "template_id": "squirrelmail-workflow",
+        "content_sha256": "7b4c25f0cf41bc23cb7a016462e4ad93c29407fd2ce6b07aacd318a2c30a05cd",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 308,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/ssh-workflow.yaml",
+      "priority_rank": 14073,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/ssh-workflow.yaml",
+        "title": "SSH Security Checks",
+        "template_id": "ssh-workflow",
+        "content_sha256": "188acff2f2c21eb90799413c40bcb40c33d547a603d399ebf77c3ee73e41be0d",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 266,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/subrion-workflow.yaml",
+      "priority_rank": 14074,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/subrion-workflow.yaml",
+        "title": "Subrion CMS Security Checks",
+        "template_id": "subrion-workflow",
+        "content_sha256": "619ec118e4cfec529eadf7cdb6337286f5a933dc17e2e967c8c9c75707b53956",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 351,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sugarcrm-workflow.yaml",
+      "priority_rank": 14075,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sugarcrm-workflow.yaml",
+        "title": "SugarCRM Security Checks",
+        "template_id": "sugarcrm-workflow",
+        "content_sha256": "dc639417275617fcb07a64a54f084d10e1a6e7f3c4cabd22a148d931d6e61756",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 348,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/symfony-workflow.yaml",
+      "priority_rank": 14076,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/symfony-workflow.yaml",
+        "title": "Symfony Security Checks",
+        "template_id": "symfony-workflow",
+        "content_sha256": "09b3b394581cadb0fc3842b9dda03381afb70ba3c986d4ccee28a5ee7d2ac7d6",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 323,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/sysaid-workflow.yaml",
+      "priority_rank": 14077,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/sysaid-workflow.yaml",
+        "title": "SysAid Security Checks",
+        "template_id": "sysaid-workflow",
+        "content_sha256": "f679fecf76d25d05bff050c5cdd69a294e374884ca1b3d58765cc57223c79c0f",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 275,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/tapestry-workflow.yaml",
+      "priority_rank": 14078,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/tapestry-workflow.yaml",
+        "title": "Apache Tapestry Security Checks",
+        "template_id": "tapestry-workflow",
+        "content_sha256": "f1d2c3808fff601eff817bb6a9c2ddc7b5bc50f8c424b73db42105aca098bc9a",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 315,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/terramaster-workflow.yaml",
+      "priority_rank": 14079,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/terramaster-workflow.yaml",
+        "title": "TerraMaster Security Checks",
+        "template_id": "terramaster-workflow",
+        "content_sha256": "e20598e6a2504229a086e98981131d1dc4d03fff1f8a96583b9ea1c71c6698da",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 303,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/thinfinity-workflow.yaml",
+      "priority_rank": 14080,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/thinfinity-workflow.yaml",
+        "title": "Thinfinity VirtualUI Security Checks",
+        "template_id": "thinfinity-workflow",
+        "content_sha256": "a90ad87bc57843adbd223ac5dd64d83cbd520bbedfc847458a0b4e1b7253a657",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 328,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/thinkadmin-workflow.yaml",
+      "priority_rank": 14081,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/thinkadmin-workflow.yaml",
+        "title": "ThinkAdmin Security Checks",
+        "template_id": "thinkadmin-workflow",
+        "content_sha256": "2ba82e01180145928ebd0e3d928e72ece40017f8aacba9e6a0656c9c2a0d2b13",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 358,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/thinkcmf-workflow.yaml",
+      "priority_rank": 14082,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/thinkcmf-workflow.yaml",
+        "title": "ThinkCMF Security Checks",
+        "template_id": "thinkcmf-workflow",
+        "content_sha256": "437813284026e81d56f2cbcef1b2f3940bb3b23074ed8530dea75d53580e7098",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 284,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/thinkphp-workflow.yaml",
+      "priority_rank": 14083,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/thinkphp-workflow.yaml",
+        "title": "ThinkPHP Security Checks",
+        "template_id": "thinkphp-workflow",
+        "content_sha256": "632099de9e02fb70d875a2a41e2c9852bae833d8e66b171f698219e8c9618319",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 325,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/thruk-workflow.yaml",
+      "priority_rank": 14084,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/thruk-workflow.yaml",
+        "title": "Thruk Security Checks",
+        "template_id": "thruk-workflow",
+        "content_sha256": "c13ae3fa08d7c60ea95def140858c78944d2283ab53943a6df339320116f2286",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 273,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/tikiwiki-workflow.yaml",
+      "priority_rank": 14085,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/tikiwiki-workflow.yaml",
+        "title": "Tiki Wiki Security Checks",
+        "template_id": "tikiwiki-workflow",
+        "content_sha256": "14fca896e79cc54d7a060a102e1d298fd3207944f44b3cf52183d4bf20f6a140",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 288,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/tomcat-workflow.yaml",
+      "priority_rank": 14086,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/tomcat-workflow.yaml",
+        "title": "Tomcat Security Checks",
+        "template_id": "tomcat-workflow",
+        "content_sha256": "29b30844f64b087faad0c79109391f9dde5af7c5a7532da1b483c0e5ad9b0d07",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 283,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/tongda-workflow.yaml",
+      "priority_rank": 14087,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/tongda-workflow.yaml",
+        "title": "TongDa Security Checks",
+        "template_id": "tongda-workflow",
+        "content_sha256": "ead9ca68701c0bccc37e70815e45320107a4a48a6053485eddd2f3151c98dec8",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/tpshop-workflow.yaml",
+      "priority_rank": 14088,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/tpshop-workflow.yaml",
+        "title": "TPshop Security Checks",
+        "template_id": "tpshop-workflow",
+        "content_sha256": "a8b504cb6b9fcfe321c9322b5087e51915170eb000e23f781274d808267a5f0e",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/traefik-workflow.yaml",
+      "priority_rank": 14089,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/traefik-workflow.yaml",
+        "title": "Traefik Security Checks",
+        "template_id": "traefik-workflow",
+        "content_sha256": "53e43e987de098d31b46d7d0650367330b6e62d6326427e132619f73896e75e8",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 287,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/umbraco-workflow.yaml",
+      "priority_rank": 14090,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/umbraco-workflow.yaml",
+        "title": "Umbraco Security Checks",
+        "template_id": "umbraco-workflow",
+        "content_sha256": "d08538eea0cfb892f7d76f5b83af6769d950f45ee1db44eae2975f657064b2fa",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 323,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/vbulletin-workflow.yaml",
+      "priority_rank": 14091,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/vbulletin-workflow.yaml",
+        "title": "vBulletin Security Checks",
+        "template_id": "vbulletin-workflow",
+        "content_sha256": "ea7988222574991922491b3432e6677f4ac7a7dc8ab6516cc9f077d90fdf880e",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 330,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/vmware-workflow.yaml",
+      "priority_rank": 14092,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/vmware-workflow.yaml",
+        "title": "VMware Security Checks",
+        "template_id": "vmware-workflow",
+        "content_sha256": "440cf1c118bd2eeaf8f9367ba25d62cdd91edf7af46049a05b8dac714c84c176",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 293,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/vnc-workflow.yaml",
+      "priority_rank": 14093,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/vnc-workflow.yaml",
+        "title": "VNC Security Checks",
+        "template_id": "vnc-workflow",
+        "content_sha256": "c44c9136d128fef7099e528681f8a68ed82d6007fc240c6cf9cf33651ba4f63e",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 467,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/voipmonitor-workflow.yaml",
+      "priority_rank": 14094,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/voipmonitor-workflow.yaml",
+        "title": "VoipMonitor Security Checks",
+        "template_id": "voipmonitor-workflow",
+        "content_sha256": "fdde02941c59a0e177c278371f3e927f789d061a9253452ffd00aa7d8984ede7",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 303,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/weblogic-workflow.yaml",
+      "priority_rank": 14095,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/weblogic-workflow.yaml",
+        "title": "WebLogic Security Checks",
+        "template_id": "weblogic-workflow",
+        "content_sha256": "01435f93fc471cb1d437650d4e29910b555b050feeaef1093a570b905c6e2ee9",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 284,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/webmin-workflow.yaml",
+      "priority_rank": 14096,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/webmin-workflow.yaml",
+        "title": "Webmin Security Checks",
+        "template_id": "webmin-workflow",
+        "content_sha256": "63ef74e5eaf28f14035d8d1b44305a1e284ee7e2bd9ee44e093623967839d181",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 278,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/websvn-workflow.yaml",
+      "priority_rank": 14097,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/websvn-workflow.yaml",
+        "title": "Websvn Security Checks",
+        "template_id": "websvn-workflow",
+        "content_sha256": "2682f28f9d312261f9a354f63ef3a6805c709b674239c596f1e9a3c162e1eafd",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/wordpress-workflow.yaml",
+      "priority_rank": 14098,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/wordpress-workflow.yaml",
+        "title": "Wordpress Security Checks",
+        "template_id": "wordpress-workflow",
+        "content_sha256": "ca57c0393955b74e93162a98c869294ac3734b5c49ca25fdc7bcff191489f2d7",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 300,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/worksite-takeover-workflow.yaml",
+      "priority_rank": 14099,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/worksite-takeover-workflow.yaml",
+        "title": "Worksite Takeover Workflow",
+        "template_id": "worksite-takeover-workflow",
+        "content_sha256": "48b495e7bbc09e85316714bec82653bbecd1c8bdb07ee6bc949b639914ed7f68",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 463,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/wuzhicms-workflow.yaml",
+      "priority_rank": 14100,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/wuzhicms-workflow.yaml",
+        "title": "Wuzhicms Security Checks",
+        "template_id": "wuzhicms-workflow",
+        "content_sha256": "0dcd103723b3342de95657fae4464b2a0d8fd212c2d8fd4673173ef5a99e623b",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 287,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/xdcms-workflow.yaml",
+      "priority_rank": 14101,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/xdcms-workflow.yaml",
+        "title": "XdCMS Security Checks",
+        "template_id": "xdcms-workflow",
+        "content_sha256": "57c297b9757f7c81b7158af9af6e55fc63425c3ae94b584910cb57d6d9a9821f",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 333,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/xiuno-workflow.yaml",
+      "priority_rank": 14102,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/xiuno-workflow.yaml",
+        "title": "Xiuno Security Checks",
+        "template_id": "xiuno-workflow",
+        "content_sha256": "e323cac4e6186a818f829ed653651a06415ec8dd8fbe487a21c11ff30d6a99b2",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 333,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/xxljob-workflow.yaml",
+      "priority_rank": 14103,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/xxljob-workflow.yaml",
+        "title": "XXL-JOB Security Checks",
+        "template_id": "xxljob-workflow",
+        "content_sha256": "b2dbea06a893500c5450a95d40b30fabaf25d2a66f7e9447aa99b9d31c469627",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 330,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/yapi-workflow.yaml",
+      "priority_rank": 14104,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/yapi-workflow.yaml",
+        "title": "YApi Security Checks",
+        "template_id": "yapi-workflow",
+        "content_sha256": "fa20517bae3a6c896f7af1dce1281d48e612d6bfd45c16294a1cf792439c17b5",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 328,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/yii-workflow.yaml",
+      "priority_rank": 14105,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/yii-workflow.yaml",
+        "title": "Yii Security Checks",
+        "template_id": "yii-workflow",
+        "content_sha256": "9c1222129d21cf937e985700072ec46ddd05249ecbeccb7f7e8ab5b7d9c6c7b7",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 303,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/yonyou-nc-workflow.yaml",
+      "priority_rank": 14106,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/yonyou-nc-workflow.yaml",
+        "title": "Yonyou Ufida NC Security Checks",
+        "template_id": "yonyou-ufida-nc-workflow",
+        "content_sha256": "abdf0c8db7dbab36ad7745d85f23cf889d0e17e5a41e5bf07b0fddae8c7c3273",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 393,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/zabbix-workflow.yaml",
+      "priority_rank": 14107,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/zabbix-workflow.yaml",
+        "title": "Zabbix Security Checks",
+        "template_id": "zabbix-workflow",
+        "content_sha256": "dde21e0973d2fa9f4f8fb52e4e8f1e8d090d3742fee448eb5b82eca5cf4d2228",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 318,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/zcms-workflow.yaml",
+      "priority_rank": 14108,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/zcms-workflow.yaml",
+        "title": "ZCMS Security Checks",
+        "template_id": "zcms-workflow",
+        "content_sha256": "c5e7bf868dd44188251381e2bc9c73950b1a6589e09fa31790fbb512a193e7a9",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 328,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/zeroshell-workflow.yaml",
+      "priority_rank": 14109,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/zeroshell-workflow.yaml",
+        "title": "ZeroShell Security Checks",
+        "template_id": "zeroshell-workflow",
+        "content_sha256": "068b01a1e497df4ec67f094ee025e6bbd3696f1bb25265f5dd503247c07e0120",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 293,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/zimbra-workflow.yaml",
+      "priority_rank": 14110,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/zimbra-workflow.yaml",
+        "title": "Zimbra Security Checks",
+        "template_id": "zimbra-workflow",
+        "content_sha256": "7e6213630a7f1b8880231a4b9779f5042d180a5cd51de620f996972e9ec96509",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 283,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 0,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    },
+    {
+      "batch_id": "nuclei-review-071-2026-11-27",
+      "candidate_id": "nuclei:0.1.1:workflows/zzzcms-workflow.yaml",
+      "priority_rank": 14111,
+      "priority_band": "P5",
+      "template": {
+        "item_key": "workflows/zzzcms-workflow.yaml",
+        "title": "ZZZCMS Security Checks",
+        "template_id": "zzzcms-workflow",
+        "content_sha256": "ba2d19bc5f8b55d01ecd176692d4cccd9ca371e67fb1883289afb357ba5d3f8b",
+        "source_commit": "a346d8f00c61bf95bbd30365f12cf923be51ba3d",
+        "source_url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license_status": "MIT",
+        "source_review_status": "DISCOVERED",
+        "parse_status": "parsed",
+        "body_bytes": 338,
+        "severity": "unknown",
+        "protocols": [
+          "workflows"
+        ],
+        "cve_ids": [],
+        "cwe_ids": [],
+        "cvss_score": null,
+        "epss_score": null,
+        "matcher_count": 1,
+        "request_block_count": 1,
+        "has_flow": false,
+        "upstream_verified_claim": false,
+        "cisa_kev_cve_ids": [],
+        "review_flags": [
+          "classification_missing"
+        ]
+      },
+      "review": {
+        "source_provenance": "PENDING",
+        "license": "PENDING",
+        "yaml_engine_validation": "NOT_RUN",
+        "request_safety": "PENDING",
+        "scope_safety": "PENDING",
+        "final_status": "CANDIDATE",
+        "reviewer": null,
+        "reviewed_at": null,
+        "notes": null
+      },
+      "guardrails": {
+        "template_body_included": false,
+        "template_executed": false,
+        "target_contacted": false,
+        "auto_approved": false
+      }
+    }
+  ],
+  "source_report": "docs/knowledge-governance/vulnerability-nuclei-governance-2026-11-27.json",
+  "raw_template_bodies_exported": false,
+  "engine_validation_performed": false,
+  "auto_approval": false
+}

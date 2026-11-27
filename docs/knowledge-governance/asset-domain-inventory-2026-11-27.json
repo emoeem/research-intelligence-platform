@@ -1,0 +1,681 @@
+{
+  "as_of": "2026-11-27",
+  "mode": "read-only",
+  "scope": {
+    "active_plugins": [
+      "knowledge.awesome-hacking",
+      "knowledge.cisa-kev",
+      "knowledge.nuclei-templates",
+      "knowledge.pocindex-kev",
+      "knowledge.rtis-redteam",
+      "knowledge.secskills",
+      "knowledge.tongui-course-notes"
+    ],
+    "historical_plugin_rows": 18102,
+    "active_source_rows": 17471,
+    "search_projection_rows": 3789
+  },
+  "domains": {
+    "knowledge": {
+      "platform_cards": {
+        "total": 46,
+        "verified": 37,
+        "candidate": 7,
+        "discovered": 2
+      },
+      "cards_by_kind_lifecycle": [
+        {
+          "record_kind": "negative",
+          "lifecycle": "CANDIDATE",
+          "n": 2
+        },
+        {
+          "record_kind": "negative",
+          "lifecycle": "DISCOVERED",
+          "n": 1
+        },
+        {
+          "record_kind": "negative",
+          "lifecycle": "VERIFIED",
+          "n": 14
+        },
+        {
+          "record_kind": "own",
+          "lifecycle": "CANDIDATE",
+          "n": 5
+        },
+        {
+          "record_kind": "own",
+          "lifecycle": "DISCOVERED",
+          "n": 1
+        },
+        {
+          "record_kind": "own",
+          "lifecycle": "VERIFIED",
+          "n": 23
+        }
+      ],
+      "resource_catalog": [
+        {
+          "quality_grade": "A",
+          "n": 4
+        },
+        {
+          "quality_grade": "B",
+          "n": 28
+        },
+        {
+          "quality_grade": "C",
+          "n": 44
+        },
+        {
+          "quality_grade": "D",
+          "n": 5
+        }
+      ],
+      "resource_provenance": {
+        "total": 81,
+        "canonical_url": 81,
+        "source_status": 81
+      },
+      "resource_source_links": {
+        "links": 81,
+        "resources": 81,
+        "source_url": 81,
+        "source_commit": 81
+      },
+      "active_sources": [
+        {
+          "plugin_id": "knowledge.awesome-hacking",
+          "version": "0.1.3",
+          "license": "CC0-1.0",
+          "source_type": "git",
+          "source_ref": "https://github.com/Hack-with-Github/Awesome-Hacking",
+          "total": 84,
+          "approved": 6,
+          "discovered": 75,
+          "rejected": 3,
+          "body": 84,
+          "description": 82,
+          "canonical_url": 84,
+          "source_url": 84,
+          "source_commit": 84,
+          "license_pinned": 84,
+          "unique_keys": 84,
+          "unique_content": 84
+        },
+        {
+          "plugin_id": "knowledge.cisa-kev",
+          "version": "0.1.2",
+          "license": "CC0-1.0",
+          "source_type": "local_dir",
+          "source_ref": "target/cisa-kev-package",
+          "total": 1805,
+          "approved": 1805,
+          "discovered": 0,
+          "rejected": 0,
+          "body": 1805,
+          "description": 1805,
+          "canonical_url": 1805,
+          "source_url": 1805,
+          "source_commit": 1805,
+          "license_pinned": 1805,
+          "unique_keys": 1805,
+          "unique_content": 1805
+        },
+        {
+          "plugin_id": "knowledge.nuclei-templates",
+          "version": "0.1.1",
+          "license": "MIT",
+          "source_type": "local_dir",
+          "source_ref": "target/nuclei-metadata-package",
+          "total": 14111,
+          "approved": 552,
+          "discovered": 13559,
+          "rejected": 0,
+          "body": 14111,
+          "description": 12543,
+          "canonical_url": null,
+          "source_url": 14111,
+          "source_commit": 14111,
+          "license_pinned": 14111,
+          "unique_keys": 14111,
+          "unique_content": 14111
+        },
+        {
+          "plugin_id": "knowledge.pocindex-kev",
+          "version": "0.1.0",
+          "license": "MIT",
+          "source_type": "local_dir",
+          "source_ref": "target/pocindex-kev-package",
+          "total": 1296,
+          "approved": 1296,
+          "discovered": 0,
+          "rejected": 0,
+          "body": 1296,
+          "description": 1296,
+          "canonical_url": 1296,
+          "source_url": 1296,
+          "source_commit": 1296,
+          "license_pinned": 1296,
+          "unique_keys": 1296,
+          "unique_content": 1296
+        },
+        {
+          "plugin_id": "knowledge.secskills",
+          "version": "0.1.3",
+          "license": "Apache-2.0",
+          "source_type": "git",
+          "source_ref": "https://github.com/DaoYiSec/SecSkills",
+          "total": 101,
+          "approved": 0,
+          "discovered": 89,
+          "rejected": 12,
+          "body": 101,
+          "description": 101,
+          "canonical_url": 101,
+          "source_url": 101,
+          "source_commit": 101,
+          "license_pinned": 101,
+          "unique_keys": 101,
+          "unique_content": 100
+        },
+        {
+          "plugin_id": "knowledge.tongui-course-notes",
+          "version": "0.1.2",
+          "license": "UNLICENSED",
+          "source_type": "git",
+          "source_ref": "https://github.com/tongui66/Cyber-Security-Course-Notes",
+          "total": 74,
+          "approved": 0,
+          "discovered": 74,
+          "rejected": 0,
+          "body": 74,
+          "description": 74,
+          "canonical_url": 74,
+          "source_url": 74,
+          "source_commit": 74,
+          "license_pinned": 74,
+          "unique_keys": 74,
+          "unique_content": 74
+        }
+      ],
+      "search_projection": [
+        {
+          "resource_type": "catalog_entry",
+          "n": 3107
+        },
+        {
+          "resource_type": "nuclei_template",
+          "n": 552
+        },
+        {
+          "resource_type": "github_repo",
+          "n": 79
+        },
+        {
+          "resource_type": "rtis_poc",
+          "n": 49
+        },
+        {
+          "resource_type": "github_page",
+          "n": 2
+        }
+      ]
+    },
+    "vulnerabilities": {
+      "source_catalogs": [
+        {
+          "plugin_id": "knowledge.cisa-kev",
+          "records": 1805,
+          "unique_keys": 1805,
+          "unique_content": 1805
+        },
+        {
+          "plugin_id": "knowledge.pocindex-kev",
+          "records": 1296,
+          "unique_keys": 1296,
+          "unique_content": 1296
+        }
+      ],
+      "rtis_cve_coverage": {
+        "weapon_rows": 14721,
+        "rows_with_cve": 4413,
+        "distinct_cves": 4359,
+        "malformed_cve": 1
+      },
+      "rtis_cve_source": [
+        {
+          "source": "nuclei",
+          "records": 14111,
+          "distinct_cves": 4358
+        },
+        {
+          "source": "web",
+          "records": 451,
+          "distinct_cves": 0
+        },
+        {
+          "source": "self",
+          "records": 139,
+          "distinct_cves": 1
+        },
+        {
+          "source": "manual",
+          "records": 12,
+          "distinct_cves": 0
+        },
+        {
+          "source": "kb",
+          "records": 7,
+          "distinct_cves": 0
+        },
+        {
+          "source": "(null)",
+          "records": 1,
+          "distinct_cves": 0
+        }
+      ],
+      "cve_duplicate_groups": {
+        "groups": 10
+      },
+      "severity_distribution": [
+        {
+          "severity": "info",
+          "n": 5419
+        },
+        {
+          "severity": "high",
+          "n": 3091
+        },
+        {
+          "severity": "medium",
+          "n": 2900
+        },
+        {
+          "severity": "critical",
+          "n": 2031
+        },
+        {
+          "severity": "(missing)",
+          "n": 686
+        },
+        {
+          "severity": "low",
+          "n": 535
+        },
+        {
+          "severity": "unknown",
+          "n": 59
+        }
+      ]
+    },
+    "pocs": {
+      "non_nuclei_total": {
+        "total": 610,
+        "distinct_codes": 610,
+        "legacy_verified_flag": 134,
+        "missing_source": 1,
+        "missing_source_url": 149,
+        "missing_description": 6,
+        "missing_content": 5,
+        "missing_versions": 571
+      },
+      "by_kind": [
+        {
+          "kind": "payload",
+          "n": 444,
+          "with_url": 443,
+          "with_description": 444,
+          "with_content": 444,
+          "with_versions": 1,
+          "legacy_verified": 1
+        },
+        {
+          "kind": "script",
+          "n": 74,
+          "with_url": 3,
+          "with_description": 69,
+          "with_content": 74,
+          "with_versions": 11,
+          "legacy_verified": 66
+        },
+        {
+          "kind": "poc",
+          "n": 41,
+          "with_url": 6,
+          "with_description": 40,
+          "with_content": 37,
+          "with_versions": 15,
+          "legacy_verified": 33
+        },
+        {
+          "kind": "rule",
+          "n": 17,
+          "with_url": 0,
+          "with_description": 17,
+          "with_content": 17,
+          "with_versions": 0,
+          "legacy_verified": 10
+        },
+        {
+          "kind": "template",
+          "n": 14,
+          "with_url": 8,
+          "with_description": 14,
+          "with_content": 14,
+          "with_versions": 9,
+          "legacy_verified": 5
+        },
+        {
+          "kind": "exp",
+          "n": 10,
+          "with_url": 1,
+          "with_description": 10,
+          "with_content": 10,
+          "with_versions": 3,
+          "legacy_verified": 9
+        },
+        {
+          "kind": "(missing)",
+          "n": 4,
+          "with_url": 0,
+          "with_description": 4,
+          "with_content": 3,
+          "with_versions": 0,
+          "legacy_verified": 4
+        },
+        {
+          "kind": "case",
+          "n": 4,
+          "with_url": 0,
+          "with_description": 4,
+          "with_content": 4,
+          "with_versions": 0,
+          "legacy_verified": 4
+        },
+        {
+          "kind": "method",
+          "n": 2,
+          "with_url": 0,
+          "with_description": 2,
+          "with_content": 2,
+          "with_versions": 0,
+          "legacy_verified": 2
+        }
+      ],
+      "by_source": [
+        {
+          "source": "web",
+          "n": 451
+        },
+        {
+          "source": "self",
+          "n": 139
+        },
+        {
+          "source": "manual",
+          "n": 12
+        },
+        {
+          "source": "kb",
+          "n": 7
+        },
+        {
+          "source": "(missing)",
+          "n": 1
+        }
+      ],
+      "governance_coverage": {
+        "total": 610,
+        "with_metadata": 28,
+        "with_verification_basis": 28
+      }
+    },
+    "nuclei_templates": {
+      "inventory": {
+        "total": 14111,
+        "unique_keys": 14111,
+        "unique_content": 14111,
+        "approved": 552,
+        "discovered": 13559,
+        "rejected": 0,
+        "body_available": 14111,
+        "pinned_commit": 14111,
+        "license_status": 14111,
+        "source_url": 14111,
+        "canonical_url": null
+      },
+      "parser_status": [
+        {
+          "status": "body_unavailable",
+          "n": 1
+        },
+        {
+          "status": "invalid_yaml",
+          "n": 1
+        },
+        {
+          "status": "parsed",
+          "n": 14109
+        }
+      ],
+      "severity": [
+        {
+          "severity": "info",
+          "n": 5388
+        },
+        {
+          "severity": "high",
+          "n": 3046
+        },
+        {
+          "severity": "medium",
+          "n": 2870
+        },
+        {
+          "severity": "critical",
+          "n": 2020
+        },
+        {
+          "severity": "low",
+          "n": 519
+        },
+        {
+          "severity": "missing",
+          "n": 209
+        },
+        {
+          "severity": "unknown",
+          "n": 59
+        }
+      ],
+      "protocols": [
+        {
+          "protocol": "http",
+          "n": 11995
+        },
+        {
+          "protocol": "code",
+          "n": 960
+        },
+        {
+          "protocol": "file",
+          "n": 447
+        },
+        {
+          "protocol": "tcp",
+          "n": 294
+        },
+        {
+          "protocol": "headless",
+          "n": 222
+        },
+        {
+          "protocol": "workflows",
+          "n": 207
+        },
+        {
+          "protocol": "javascript",
+          "n": 194
+        },
+        {
+          "protocol": "ssl",
+          "n": 40
+        },
+        {
+          "protocol": "dns",
+          "n": 34
+        }
+      ],
+      "metadata_coverage": {
+        "total": 14111,
+        "template_id": 14109,
+        "author": 14109,
+        "description": 12541,
+        "matcher_count": 14109,
+        "references_count": 14109,
+        "classification": 8288
+      },
+      "cve_coverage": {
+        "total": 14111,
+        "with_cve": 4412,
+        "with_affected_versions": 0,
+        "with_description": 7834
+      }
+    },
+    "tools": {
+      "inventory": {
+        "total": 20,
+        "installed_ok": 16,
+        "installed_degraded": 3,
+        "missing": 1,
+        "source_system": 20,
+        "source_pk": 20,
+        "provenance_ref": 20
+      },
+      "by_permission": [
+        {
+          "permission_level": "T0",
+          "n": 17
+        },
+        {
+          "permission_level": "T1",
+          "n": 3
+        }
+      ],
+      "versions": [
+        {
+          "status": "current",
+          "health": "degraded",
+          "n": 3
+        },
+        {
+          "status": "current",
+          "health": "ok",
+          "n": 16
+        },
+        {
+          "status": "current",
+          "health": "unknown",
+          "n": 1
+        }
+      ]
+    },
+    "skills": {
+      "inventory": {
+        "total": 125,
+        "enabled": 119,
+        "body_ref": 125,
+        "required_tools": 0,
+        "knowledge_refs": 0,
+        "source_system": 125,
+        "source_pk": 125
+      },
+      "source_distribution": [
+        {
+          "source_system": "rtis-skills",
+          "n": 125
+        }
+      ],
+      "candidate_pipeline": {
+        "candidate_pairs": 146,
+        "skills_covered": 67,
+        "negative_mentions_excluded": 6,
+        "eligible_after_static_checks": 120,
+        "approved_mappings": 0,
+        "note": "Candidate generator output from the 2026-11-27 read-only batch; all remain candidates pending human review."
+      }
+    }
+  },
+  "integrity": {
+    "platform": "ok",
+    "plugin": "ok",
+    "rtis": "ok",
+    "search": "ok"
+  },
+  "cross_domain": {
+    "review_queue": [
+      {
+        "target_type": "d5",
+        "decision": "NEEDS_MORE_EVIDENCE",
+        "n": 63
+      },
+      {
+        "target_type": "d5",
+        "decision": "RELATED_KEEP_BOTH",
+        "n": 5
+      },
+      {
+        "target_type": "license",
+        "decision": "NEEDS_HUMAN_REVIEW",
+        "n": 8
+      },
+      {
+        "target_type": "license",
+        "decision": "OK_COPYLEFT_NOTE",
+        "n": 2
+      },
+      {
+        "target_type": "license",
+        "decision": "OK_PERMISSIVE",
+        "n": 52
+      },
+      {
+        "target_type": "license",
+        "decision": "OK_REVIEW_SPDX",
+        "n": 2
+      },
+      {
+        "target_type": "license",
+        "decision": "RISK_NO_LICENSE",
+        "n": 15
+      },
+      {
+        "target_type": "mapping",
+        "decision": "APPROVED_REFERENCE",
+        "n": 16
+      },
+      {
+        "target_type": "mapping",
+        "decision": "COMPLEMENTARY",
+        "n": 1
+      },
+      {
+        "target_type": "mapping",
+        "decision": "NEEDS_MORE_EVIDENCE",
+        "n": 1
+      }
+    ],
+    "agent_registry": {
+      "agent_definitions": 0,
+      "agent_runs": 0,
+      "workflow_definitions": 0,
+      "legacy_workflows": 13
+    },
+    "search_index": {
+      "documents": 3789,
+      "fts_rows": 3789
+    }
+  }
+}

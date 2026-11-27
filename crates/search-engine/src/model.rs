@@ -95,6 +95,8 @@ pub struct SearchFilters {
     pub canonical_key: Option<String>,
     /// Exact CVE/vulnerability identifier filter across indexed source types.
     pub vulnerability_id: Option<String>,
+    /// Explicitly include CANDIDATE/DISCOVERED source rows; default remains approved-only.
+    pub include_candidates: bool,
 }
 
 /// 检索权重快照（混合排序三轴，见 weights.rs）。
@@ -121,6 +123,10 @@ pub struct SearchHit {
     pub description: Option<String>,
     /// 资源类型。
     pub resource_type: String,
+    /// Source lifecycle from the derived index (e.g. INDEXED / DISCOVERED / CURATED).
+    pub lifecycle_status: String,
+    /// Governance state from the source (ACTIVE / CANDIDATE / QUARANTINED ...).
+    pub governance_status: String,
     /// 质量终分（platform resource.quality_final_score）。
     pub quality_final_score: Option<f64>,
     /// 质量等级。

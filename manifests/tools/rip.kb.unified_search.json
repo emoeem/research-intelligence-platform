@@ -1,0 +1,158 @@
+{
+  "schema_version": "1",
+  "id": "rip.kb.unified_search",
+  "name": "Unified Knowledge Search",
+  "version": "0.2.0",
+  "kind": "tool",
+  "family": "knowledge",
+  "description": "跨 PostgreSQL 与 SQLite 统一检索知识卡片、漏洞、来源目录、Nuclei 模板、精选 POC 和待审核候选；默认仅返回已批准数据，显式 include_candidates 才返回候选且标明治理状态。",
+  "runtime": {
+    "type": "python_worker",
+    "protocol_version": "1",
+    "worker_name": "rip-cli-worker",
+    "command": [
+      "python3",
+      "-I",
+      "scripts/rip_cli_worker.py",
+      "scripts/rip_unified_search.py"
+    ],
+    "working_dir": "repo://research-platform",
+    "restart": "pooled",
+    "venv": {
+      "path": "workers/python/.venv",
+      "direct_deps": [
+        "pip"
+      ]
+    }
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 10
+      },
+      "include_candidates": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否显式检索尚未审核的候选资料。默认 false；候选结果会标注 governance_status=CANDIDATE，不代表可信或可执行。"
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "研究问题或关键词；不会执行命中的 POC/模板"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "keyword",
+      "limit",
+      "total_hits",
+      "channels",
+      "groups",
+      "hits"
+    ],
+    "properties": {
+      "keyword": {
+        "type": "string"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+      },
+      "total_hits": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "channels": {
+        "type": "object"
+      },
+      "groups": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "hits": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "timeout_seconds": 75,
+    "max_output_bytes": 4194304
+  },
+  "network": {
+    "mode": "none"
+  },
+  "secrets": [],
+  "permission_level": "T0",
+  "idempotent": false,
+  "health": {
+    "probe": {
+      "type": "worker_ping",
+      "timeout_ms": 2000,
+      "interval_seconds": 300,
+      "degraded_after": 1,
+      "broken_after": 3
+    },
+    "on_run_recover": true
+  },
+  "provenance": {
+    "origin": "rip-native",
+    "source_path": "scripts/rip_unified_search.py + crates/unified-search/src/bin/rp-search-unified.rs",
+    "license": "repo-internal",
+    "dependencies": [
+      "rp-search-unified binary built from this repository",
+      "RP_PG_DSN configured by the trusted runtime",
+      "server-managed schema-v8 derived search index + containerfiles/rip-embed/rip.embed.text.json"
+    ],
+    "tested": "2026-11-27: schema-v8 index rebuilt with 18,147 docs; default/opt-in candidate retrieval verified across CISA KEV, PoCIndex, Nuclei and RTIS",
+    "known_limits": [
+      "retrieval only; never executes returned POC, EXP or Nuclei template",
+      "candidate sources are excluded by default; include_candidates=true returns them with explicit CANDIDATE/DISCOVERED status",
+      "PostgreSQL workspace access remains fail-closed to the configured personal/default workspace",
+      "source approval is not proof of current exploitability or detector effectiveness"
+    ]
+  },
+  "context": {
+    "summary": "AI 研究使用的跨库统一知识检索入口；默认已批准数据，可显式查看候选资料并保留审核状态、来源与证据元数据。",
+    "docs": "docs/knowledge-governance/AI-KNOWLEDGE-ARSENAL-READINESS-2026-11-27.md",
+    "tags": [
+      "knowledge",
+      "unified-search",
+      "readonly",
+      "provenance"
+    ]
+  },
+  "examples": [
+    {
+      "input": {
+        "query": "CVE-2021-44228",
+        "limit": 5
+      }
+    },
+    {
+      "input": {
+        "query": "Log4Shell",
+        "limit": 10,
+        "include_candidates": true
+      }
+    }
+  ]
+}

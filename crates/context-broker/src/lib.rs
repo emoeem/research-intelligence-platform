@@ -73,5 +73,6 @@ pub use sources::registry::{
 pub use sources::rtis::{RtisSource, RtisStatus, RTIS_SOURCE_ID, RTIS_TIMEOUT};
 pub use sources::rulepack::{RuleEntry, RulePack, RulepackSource};
 pub use tokenizer::{
-    available as tokenizer_available, count_tokens as tokenizer_count, TokenizerAdapter,
+    available as tokenizer_available, count_tokens as tokenizer_count, mode as tokenizer_mode,
+    source as tokenizer_source, TokenizerAdapter,
 };

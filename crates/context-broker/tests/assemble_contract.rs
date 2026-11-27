@@ -428,26 +428,34 @@ fn dup_source(source_id: &str) -> MockSource {
     MockSource {
         source_id: source_id.to_string(),
         items: vec![
-            candidate(
-                source_id,
-                "kb:dup-a",
-                ContextItemKind::Knowledge,
-                ContextLayer::L2,
-                "first copy",
-                Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
-                None,
-                None,
-            ),
-            candidate(
-                source_id,
-                "kb:dup-b",
-                ContextItemKind::Knowledge,
-                ContextLayer::L2,
-                "second copy same hash",
-                Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
-                None,
-                None,
-            ),
+            {
+                let mut item = candidate(
+                    source_id,
+                    "kb:dup-a",
+                    ContextItemKind::Knowledge,
+                    ContextLayer::L2,
+                    "first copy",
+                    Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
+                    None,
+                    None,
+                );
+                item.title = "Kingdee first duplicate".to_string();
+                item
+            },
+            {
+                let mut item = candidate(
+                    source_id,
+                    "kb:dup-b",
+                    ContextItemKind::Knowledge,
+                    ContextLayer::L2,
+                    "second copy same hash",
+                    Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
+                    None,
+                    None,
+                );
+                item.title = "Kingdee second duplicate".to_string();
+                item
+            },
         ],
         bodies: std::collections::HashMap::new(),
     }
@@ -465,7 +473,7 @@ fn big_candidates_source(source_id: &str) -> MockSource {
                     &format!("kb:big-{i}"),
                     ContextItemKind::Knowledge,
                     ContextLayer::L2,
-                    &"长".repeat(800),
+                    &format!("Kingdee {}", "长".repeat(800)),
                     None,
                     None,
                     None,
@@ -791,8 +799,8 @@ fn p4_4_artifact_source_cites_without_inlining_body() {
             [],
         )?;
         c.execute(
-            "INSERT INTO tool_run (run_id, tool_id, workspace_id, status, created_at, updated_at)
-             VALUES ('rn-p44-art', 'tool:p44-art', 'ws-p44', 'SUCCEEDED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            "INSERT INTO tool_run (run_id, tool_id, workspace_id, task_id, status, created_at, updated_at)
+             VALUES ('rn-p44-art', 'tool:p44-art', 'ws-p44', 't-p44-art', 'SUCCEEDED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
             [],
         )?;
         c.execute(

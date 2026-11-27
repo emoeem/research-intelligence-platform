@@ -244,9 +244,12 @@ const ENTRY_KIND_LABEL: Record<string, string> = {
 };
 
 function SourceEntriesView() {
+  const location = useLocation();
   const [pluginId, setPluginId] = useState("");
   const [review, setReview] = useState("");
-  const [rawQuery, setRawQuery] = useState("");
+  const [rawQuery, setRawQuery] = useState(
+    () => new URLSearchParams(location.search).get("q") ?? "",
+  );
   const [keyword, setKeyword] = useState("");
   const [selectedEntries, setSelectedEntries] = useState<
     Array<{ plugin_id: string; plugin_version: string; item_key: string }>
@@ -822,7 +825,10 @@ interface CuratedPocSearchResult {
 }
 
 function CuratedPocSearchView() {
-  const [rawQuery, setRawQuery] = useState("");
+  const location = useLocation();
+  const [rawQuery, setRawQuery] = useState(
+    () => new URLSearchParams(location.search).get("q") ?? "",
+  );
   const [keyword, setKeyword] = useState("");
   const [evidence, setEvidence] = useState("");
   const [lifecycle, setLifecycle] = useState("");
@@ -832,7 +838,9 @@ function CuratedPocSearchView() {
   const [sourceIntegrity, setSourceIntegrity] = useState("");
   const [verificationResult, setVerificationResult] = useState("");
   const [dedupStatus, setDedupStatus] = useState("");
-  const [missingEvidence, setMissingEvidence] = useState("true");
+  const [missingEvidence, setMissingEvidence] = useState(() =>
+    new URLSearchParams(location.search).has("q") ? "" : "true",
+  );
   const summary = useApi<CuratedPocSummary>("/api/curated-pocs/summary");
 
   useEffect(() => {
@@ -1484,7 +1492,17 @@ function PocGovernanceView() {
 }
 
 export function KnowledgePage() {
-  const [view, setView] = useState<"platform" | "sources" | "pocs" | "governance">("platform");
+  const location = useLocation();
+  const requestedView = new URLSearchParams(location.search).get("view");
+  const [view, setView] = useState<"platform" | "sources" | "pocs" | "governance">(() =>
+    requestedView === "sources" || requestedView === "pocs" || requestedView === "governance"
+      ? requestedView
+      : "platform",
+  );
+  useEffect(() => {
+    const next = new URLSearchParams(location.search).get("view");
+    if (next === "sources" || next === "pocs" || next === "governance") setView(next);
+  }, [location.search]);
   return (
     <div>
       <PageHeader
@@ -1542,7 +1560,9 @@ export function KnowledgePage() {
 function PlatformKnowledgeView() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [rawQuery, setRawQuery] = useState("");
+  const [rawQuery, setRawQuery] = useState(
+    () => new URLSearchParams(location.search).get("q") ?? "",
+  );
   const [keyword, setKeyword] = useState("");
   // 深链契约：?knowledge_id= 初始化选中态（⌘K 面板与外部链接的落点），
   // 选中变化同步回 URL（replace，不产生历史噪音），对齐 ProjectsPage 的

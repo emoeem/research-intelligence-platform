@@ -113,11 +113,13 @@ pub enum KnowledgeEntityType {
     TechnicalDocument,
     /// 不可变 Evidence 身份。
     Evidence,
+    /// Versioned Skill definition; the Skill body remains in its owning registry.
+    Skill,
 }
 
 impl KnowledgeEntityType {
     /// All stable entity type values.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::KnowledgeCard,
         Self::Vulnerability,
         Self::DetectionTemplate,
@@ -125,6 +127,7 @@ impl KnowledgeEntityType {
         Self::SecurityTool,
         Self::TechnicalDocument,
         Self::Evidence,
+        Self::Skill,
     ];
 
     /// Persisted vocabulary value.
@@ -137,6 +140,7 @@ impl KnowledgeEntityType {
             Self::SecurityTool => "security_tool",
             Self::TechnicalDocument => "technical_document",
             Self::Evidence => "evidence",
+            Self::Skill => "skill",
         }
     }
 

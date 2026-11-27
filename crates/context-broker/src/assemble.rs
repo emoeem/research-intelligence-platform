@@ -150,9 +150,11 @@ impl Broker {
 
         // ---- 候选收集与打分（源错误降级 warning）----
         let mut warnings: Vec<String> = Vec::new();
+        let mut irrelevant_count = 0usize;
+        let mut irrelevant_samples: Vec<String> = Vec::new();
         let mut scored: Vec<ScoredCandidate> = Vec::new();
         for source in &self.sources {
-            match source.candidates(&intent.query, SOURCE_CANDIDATE_CAP) {
+            match source.candidates_for_task(&intent.query, &req.task_id, SOURCE_CANDIDATE_CAP) {
                 Ok(candidates) => {
                     for candidate in candidates {
                         let metrics = crate::score::CandidateMetrics {
@@ -176,9 +178,27 @@ impl Broker {
                             ));
                             continue;
                         }
+                        if !crate::score::relevance_terms(&intent.query.text_normalized).is_empty()
+                            && result.relevance == 0
+                            && candidate.layer == ContextLayer::L2
+                            && matches!(
+                                candidate.kind,
+                                ContextItemKind::Knowledge
+                                    | ContextItemKind::Plugin
+                                    | ContextItemKind::Doc
+                                    | ContextItemKind::Schema
+                            )
+                        {
+                            irrelevant_count += 1;
+                            if irrelevant_samples.len() < 5 {
+                                irrelevant_samples.push(candidate.item_id.clone());
+                            }
+                            continue;
+                        }
                         scored.push(ScoredCandidate {
                             candidate,
                             score: result.score,
+                            relevance: result.relevance,
                             signals: result.matched_signals,
                         });
                     }
@@ -186,11 +206,22 @@ impl Broker {
                 Err(e) => warnings.push(format!("source:{} unavailable: {e}", source.id())),
             }
         }
+        if irrelevant_count > 0 {
+            warnings.push(format!(
+                "irrelevant candidates filtered: {irrelevant_count}; examples: {}",
+                irrelevant_samples.join(", ")
+            ));
+        }
+
         // 分桶排序：分数降序，同分按 item_id 稳定序。
         scored.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            b.relevance
+                .cmp(&a.relevance)
+                .then_with(|| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| a.candidate.item_id.cmp(&b.candidate.item_id))
         });
 
@@ -295,7 +326,7 @@ impl Broker {
             }
         }
 
-        // 知识桶：score 降序装入，同 content_hash 只装一次，装不下降级
+        // 知识桶：score 降序装入，同 content_hash 只装一次，不下降级
         // ref-only，仍不够才驱逐（设计稿 §5.3 第 3/5/6 条）。
         for s in &knowledge_bucket {
             if let Some(hash) = &s.candidate.reference.content_hash {
@@ -516,17 +547,21 @@ impl Broker {
                 correlation_id: req.correlation_id.clone(),
             },
         };
+        // Budget the model-facing projection, not the full audit envelope.
+        // Eviction records, warnings and audit metadata are returned to operators
+        // but are not sent to the Planner; counting them as prompt tokens made
+        // large candidate sets falsely exceed the context budget.
         let serialized =
-            serde_json::to_string(&context).map_err(|e| ContextBrokerError::Source {
+            serialize_prompt_projection(&context).map_err(|e| ContextBrokerError::Source {
                 source: "assemble".to_string(),
-                reason: format!("serialize AssembledContext: {e}"),
+                reason: format!("serialize prompt projection: {e}"),
             })?;
         let inline_est = est_tokens(&serialized);
         if inline_est > self.policy.total_tokens() {
             return Err(ContextBrokerError::InvalidInput {
                 field: "budget_report.used".to_string(),
                 reason: format!(
-                    "serialized AssembledContext needs ~{inline_est} tokens over total budget {}; fail fast (设计稿 §9.2 第 5 条)",
+                    "model-facing context projection needs ~{inline_est} tokens over total budget {}; fail fast (设计稿 §9.2 第 5 条)",
                     self.policy.total_tokens()
                 ),
             });
@@ -812,6 +847,7 @@ fn process_entropy_u64() -> u64 {
 struct ScoredCandidate {
     candidate: Candidate,
     score: f64,
+    relevance: usize,
     signals: Vec<String>,
 }
 
@@ -1111,7 +1147,7 @@ pub struct AuditInfo {
     pub correlation_id: String,
 }
 
-/// 装配输出契约（设计稿 §9.1；序列化后整体过预算闸，§9.2 第 5 条）。
+/// 装配输出契约（设计稿 §9.1；模型可见投影过预算闸，审计信封独立返回）。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AssembledContext {
     /// 结构版本。
@@ -1142,6 +1178,26 @@ pub struct AssembledContext {
     pub audit: AuditInfo,
 }
 
+/// Serialize only the context fields intended for the model-facing Planner prompt.
+/// Audit/eviction/warning envelopes remain in `AssembledContext` but are not prompt input.
+fn serialize_prompt_projection(context: &AssembledContext) -> Result<String, serde_json::Error> {
+    let projection = serde_json::json!({
+        "schema_version": context.schema_version,
+        "context_id": context.context_id,
+        "manifest_id": context.manifest_id,
+        "intent": context.intent,
+        "layers": {
+            "l0": context.layers.l0,
+            "l1": context.layers.l1,
+            "knowledge_summaries": context.layers.l2.knowledge_summaries,
+            "tool_briefs": context.layers.l2.tool_briefs,
+            "l3_refs": context.layers.l3_refs
+        },
+        "citations": context.citations
+    });
+    serde_json::to_string(&projection)
+}
+
 /// expand 结果（设计稿 §9.2 第 1 条：返回增量 tokens）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expanded {
@@ -1166,4 +1222,91 @@ pub struct ManifestView {
     pub items: Vec<ItemRow>,
     /// 引用事件集。
     pub ref_events: Vec<RefEventRow>,
+}
+
+#[cfg(test)]
+mod prompt_projection_tests {
+    use super::*;
+
+    fn zero_usage() -> ComponentUsage {
+        ComponentUsage {
+            l0_rules: 0,
+            l1_catalog: 0,
+            l2_knowledge: 0,
+            l2_tools: 0,
+            l3_reserved: 0,
+            memory_history: 0,
+            reserve_output: 0,
+        }
+    }
+
+    fn context_with_diagnostics(eviction_count: usize) -> AssembledContext {
+        AssembledContext {
+            schema_version: CONTEXT_SCHEMA_VERSION.to_string(),
+            context_id: "ctx-projection-test".to_string(),
+            manifest_id: "ctxm-projection-test".to_string(),
+            task_id: "task-projection-test".to_string(),
+            created_at: "2026-11-27T00:00:00Z".to_string(),
+            broker_version: BROKER_VERSION.to_string(),
+            policy_version: "policy-1".to_string(),
+            intent: IntentSummary {
+                status: "ok".to_string(),
+                families: vec!["web".to_string()],
+                target_slots: vec![],
+                confidence: 1.0,
+                alternatives: vec![],
+            },
+            layers: Layers {
+                l0: L0Layer {
+                    rule_pack: "rp-web".to_string(),
+                    rules_ref: "rules:rp-web".to_string(),
+                },
+                l1: L1Layer {
+                    catalog_digest_ref: "catalog:digest".to_string(),
+                    counts: CatalogCounts {
+                        tools: 1,
+                        knowledge: 1,
+                        plugins: 0,
+                        rules: 1,
+                    },
+                },
+                l2: L2Layer {
+                    knowledge_summaries: vec![],
+                    tool_briefs: vec![],
+                },
+                l3_refs: vec![],
+            },
+            citations: vec![],
+            budget_report: BudgetReport {
+                total_tokens: 100,
+                allocated: zero_usage(),
+                used: zero_usage(),
+                evicted: (0..eviction_count)
+                    .map(|index| EvictionRecord {
+                        item_id: format!("evicted-{index}"),
+                        source: "knowledge".to_string(),
+                        kind: "knowledge".to_string(),
+                        score: 0.1,
+                        reason: "budget:l2_knowledge exhausted".to_string(),
+                    })
+                    .collect(),
+            },
+            warnings: vec!["diagnostic-warning-should-not-be-prompted".to_string()],
+            audit: AuditInfo {
+                correlation_id: "corr-projection-test".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn diagnostic_evictions_do_not_consume_prompt_budget() {
+        let context = context_with_diagnostics(2_000);
+        let full = serde_json::to_string(&context).unwrap();
+        let projection = serialize_prompt_projection(&context).unwrap();
+        assert!(full.len() > projection.len() * 10);
+        assert!(!projection.contains("evicted-"));
+        assert!(!projection.contains("diagnostic-warning"));
+        assert!(projection.contains("knowledge_summaries"));
+        assert!(projection.contains("tool_briefs"));
+    }
 }

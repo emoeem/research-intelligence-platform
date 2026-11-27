@@ -132,7 +132,7 @@ CURATED_SEARCH_BIN = _repo_path((os.environ.get("RP_SEARCH_INDEX_BIN") or
                                   "target/debug/rp-search-index").strip())
 CURATED_SEARCH_UNIFIED_BIN = _repo_path((os.environ.get("RP_SEARCH_UNIFIED_BIN") or
                                          "target/debug/rp-search-unified").strip())
-CURATED_SEARCH_INDEX_SCHEMA_VERSION = 7
+CURATED_SEARCH_INDEX_SCHEMA_VERSION = 8
 UNIFIED_SEARCH_QUERY_TIMEOUT_S = 45
 CURATED_SEARCH_INDEX_DB = _repo_path(os.environ.get("RP_CURATED_SEARCH_INDEX_DB") or
                                      "rip-data/derived/curated-poc-search.db")
@@ -1105,6 +1105,7 @@ def handle_unified_search(_conn: sqlite3.Connection, params: dict) -> dict:
         "poc_verification_result": "poc-verification-result",
         "poc_dedup_status": "poc-dedup-status",
         "poc_missing_evidence": "poc-missing-evidence",
+        "include_candidates": "include-candidates",
     }
     filters = []
     applied = {}
@@ -1122,10 +1123,10 @@ def handle_unified_search(_conn: sqlite3.Connection, params: dict) -> dict:
             value = value.upper()
             if not re.fullmatch(r"CWE-[0-9]{1,6}", value):
                 raise ApiError(400, "bad_search_filter", f"{param_name} 不是有效 CWE ID")
-        elif param_name == "poc_missing_evidence":
+        elif param_name in {"poc_missing_evidence", "include_candidates"}:
             value = value.lower()
             if value not in {"true", "false"}:
-                raise ApiError(400, "bad_search_filter", "poc_missing_evidence 仅支持 true/false")
+                raise ApiError(400, "bad_search_filter", f"{param_name} 仅支持 true/false")
         filters.append(f"{cli_name}={value}")
         applied[param_name] = value
 

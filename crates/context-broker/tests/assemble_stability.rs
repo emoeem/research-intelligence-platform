@@ -283,7 +283,12 @@ fn cb1_minimal_diff_reassembly_keeps_l0_l1_prefix_intact() {
         ),
     ];
     let mut extended = base.clone();
-    let mut added = knowledge_candidate(&source_id, "doc:added-1", "无关词条丙", "增量知识桶候选");
+    let mut added = knowledge_candidate(
+        &source_id,
+        "doc:added-1",
+        "Kingdee 新增知识条目",
+        "Kingdee HTTP 增量知识桶候选",
+    );
     added.kind = ContextItemKind::Doc;
     extended.push(added);
 

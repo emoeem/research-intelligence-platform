@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "as_of": "2026-11-27",
+  "review_mode": "batch",
+  "status": "READY_FOR_HUMAN_REVIEW",
+  "global_guardrails": {
+    "auto_approval": false,
+    "auto_merge": false,
+    "poc_or_nuclei_execution": false,
+    "target_contact": false,
+    "raw_source_bodies_exported": false,
+    "persistent_database_mutation": false
+  },
+  "queues": {
+    "vulnerabilities": {
+      "candidate_count": 5657,
+      "batch_size": 200,
+      "batch_count": 29,
+      "generated_batches": [
+        "docs/knowledge-governance/vulnerability-review-batch-001-2026-11-27.json"
+      ],
+      "next_offset": 200,
+      "priority_distribution": {
+        "P0": 1207,
+        "P1": 598,
+        "P2": 0,
+        "P3": 0,
+        "P4": 0,
+        "P5": 3852,
+        "P6": 0
+      },
+      "generator": "scripts/security-intel/build_vulnerability_review_batch.py",
+      "status": "CANDIDATE_PENDING_HUMAN_REVIEW"
+    },
+    "weapon_assets": {
+      "candidate_count": 610,
+      "batch_size": 100,
+      "batch_count": 7,
+      "generated_batches": [
+        "docs/knowledge-governance/weapon-review-batch-001-2026-11-27.json"
+      ],
+      "next_offset": 100,
+      "priority_distribution": {
+        "P0": 35,
+        "P1": 39,
+        "P2": 9,
+        "P3": 69,
+        "P4": 136,
+        "P5": 300,
+        "P6": 7,
+        "P7": 15
+      },
+      "actual_poc_kind_count": 41,
+      "generator": "scripts/security-intel/build_weapon_review_batch.py",
+      "status": "CANDIDATE_PENDING_HUMAN_REVIEW"
+    },
+    "poc_specific": {
+      "candidate_count": 41,
+      "generated_batches": [
+        "docs/knowledge-governance/poc-review-batch-001-2026-11-27.json"
+      ],
+      "sensitive_review_count": 35,
+      "sensitive_batch": "docs/knowledge-governance/poc-sensitive-review-batch-001-2026-11-27.json",
+      "status": "CANDIDATE_PENDING_HUMAN_REVIEW"
+    },
+    "nuclei_templates": {
+      "candidate_count": 14111,
+      "batch_size": 200,
+      "batch_count": 71,
+      "generated_batches": [
+        "docs/knowledge-governance/nuclei-review-batch-001-2026-11-27.json"
+      ],
+      "next_offset": 200,
+      "priority_distribution": {
+        "P0": 2,
+        "P1": 525,
+        "P2": 27,
+        "P3": 4541,
+        "P4": 1594,
+        "P5": 7422
+      },
+      "generator": "scripts/security-intel/build_nuclei_review_batch.py",
+      "engine_validation_performed": false,
+      "status": "CANDIDATE_PENDING_HUMAN_REVIEW"
+    },
+    "skill_tool_relations": {
+      "candidate_count": 146,
+      "skills_with_candidates": 67,
+      "review_status": "CANDIDATE",
+      "source_file": "docs/knowledge-governance/skill-tool-mapping-candidates-2026-11-27.json",
+      "persistent_import_applied": false
+    },
+    "skill_knowledge_vulnerability_template_relations": {
+      "candidate_count": 173,
+      "skill_cve_pairs": 42,
+      "unique_nuclei_templates": 82,
+      "review_status": "CANDIDATE",
+      "source_file": "docs/knowledge-governance/skill-knowledge-candidates-2026-11-27.json",
+      "persistent_import_applied": false
+    }
+  },
+  "persistence": {
+    "workspace_mode": "personal",
+    "database_environment": "podman",
+    "write_applied": false,
+    "reason": "Two existing Podman PostgreSQL databases remain plausible targets; no database was guessed or mutated."
+  },
+  "review_policy": {
+    "candidate_status_is_not_approval": true,
+    "source_records_remain_independent": true,
+    "legacy_verified_is_not_lab_proof": true,
+    "Nuclei_parsed_is_not_engine_validated": true,
+    "skill_relation_requires_human_review_before_activation": true
+  },
+  "search_validation": {
+    "exact_cve_active_lane_report": "docs/knowledge-governance/exact-cve-search-self-consistency-v8-2026-11-27.json",
+    "exact_cve_candidate_lane_report": "docs/knowledge-governance/exact-cve-search-candidate-lane-v8-2026-11-27.json",
+    "queries_per_lane": 100,
+    "structured_identity_recall_at_10": 1.0,
+    "structured_identity_mrr": 1.0,
+    "not_a_human_judged_relevance_benchmark": true,
+    "natural_language_relevance_qrels_pending": true,
+    "cross_source_exact_cve_example": {
+      "cve": "CVE-2021-44228",
+      "index_path": "rip-data/dev/asset-governance-search-cve-fix.db",
+      "total_results": 46,
+      "by_source": {
+        "knowledge.cisa-kev": 1,
+        "knowledge.pocindex-kev": 1,
+        "knowledge.nuclei-templates": 44
+      },
+      "agent_e2e": "SUCCEEDED",
+      "agent_token_budget": 12000
+    },
+    "cisa_identity_projection": "implemented_and_unit_tested",
+    "rtis_weapon_cve_linkage": "missing_in_source_records_pending_review"
+  }
+}

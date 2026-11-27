@@ -214,6 +214,8 @@ impl SearchEngine {
                 canonical_url: d.canonical_url.clone(),
                 description: d.description.clone(),
                 resource_type: d.resource_type.clone(),
+                lifecycle_status: d.lifecycle.clone(),
+                governance_status: d.governance.clone(),
                 quality_final_score: d.quality_final_score,
                 quality_grade: d.quality_grade.clone(),
                 license_status: Some(d.license_status.clone()),
@@ -286,8 +288,11 @@ impl SearchEngine {
 
     /// 过滤后的文档行（治理可见性 + filters 等值条件，参数化查询）。
     fn load_docs_filtered(&self, filters: &SearchFilters) -> Result<Vec<IndexedRow>, SearchError> {
-        let mut where_clause =
-            "governance NOT IN ('QUARANTINED','REJECTED','ARCHIVED')".to_string();
+        let mut where_clause = if filters.include_candidates {
+            "governance IN ('ACTIVE','CANDIDATE')".to_string()
+        } else {
+            "governance = 'ACTIVE'".to_string()
+        };
         let mut params: Vec<String> = Vec::new();
         if let Some(grade) = &filters.grade {
             where_clause.push_str(" AND quality_grade = ?");

@@ -48,11 +48,12 @@ fn usage() -> &'static str {
                               [--poc-source-integrity S] [--poc-verification-result R]
                               [--poc-dedup-status S] [--poc-missing-evidence true|false]
                               [--canonical-key KEY] [--vulnerability-id CVE]
+                              [--include-candidates]
 
 build  从 platform/catalog 构建基础索引；可选 --plugin-db 装载独立插件知识库；可选 --rtis-db + --curation-overlay
        将 Overlay 明确审核的自有 POC 元数据加入同一 FTS5 索引。RTIS 只读；
        不读取 POC 正文、description、usage 或 verified_note。--rebuild 重建派生索引
-query  对已构建索引库执行混合检索（bm25 50% / quality 30% / keyword 覆盖 20%）
+query  对已构建索引库执行混合检索（默认仅 ACTIVE；--include-candidates 显式纳入 CANDIDATE/DISCOVERED）
 
 exit: ok=0, 运行失败=2（error + usage 到 stderr）
 help: rp-search-index --help（stdout, exit 0）"
@@ -95,6 +96,7 @@ fn parse_args() -> Result<Args, String> {
     while i < argv.len() {
         match argv[i].as_str() {
             "--rebuild" => rebuild = true,
+            "--include-candidates" => filters.include_candidates = true,
             "--platform-db" => {
                 platform_db = Some(PathBuf::from(need_value(&argv, &mut i, "--platform-db")?))
             }

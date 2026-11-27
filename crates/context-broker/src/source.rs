@@ -71,6 +71,18 @@ pub trait ContextSource: Send + Sync {
         limit: usize,
     ) -> Result<Vec<Candidate>, ContextBrokerError>;
 
+    /// Task-scoped candidate lookup. Sources without task affinity retain their
+    /// ordinary query behavior; artifact sources should override this to avoid
+    /// injecting unrelated outputs from previous tasks into a new context.
+    fn candidates_for_task(
+        &self,
+        q: &IntentQuery,
+        _task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<Candidate>, ContextBrokerError> {
+        self.candidates(q, limit)
+    }
+
     /// 按权威引用取内容（L3 按需展开；ref 无法解析时返回 [`ContextBrokerError::Source`]）。
     fn load(&self, r: &ContentRef) -> Result<Content, ContextBrokerError>;
 

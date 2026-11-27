@@ -15,7 +15,7 @@
 use crate::intent::ClassifyResult;
 use crate::source::Candidate;
 use crate::{est_tokens, ToolFamily};
-use resource_engine::tokenizer::{expand_keywords, keyword_hits, tokenize};
+use resource_engine::tokenizer::keyword_hits;
 
 /// 默认族匹配权重（设计稿 §4.3 w1）。
 pub const W_FAMILY_MATCH: f64 = 0.40;
@@ -106,6 +106,8 @@ pub struct Scored {
     /// 命中信号（family:/kw:/slot:/verb:/kint:，来自 intent 信号 + 词元级
     /// 关键词命中 keyword_hits，设计稿 §4.3 matched_signals[]）。
     pub matched_signals: Vec<String>,
+    /// 去除通用任务词后的唯一查询词命中数，用于候选过滤与排序。
+    pub relevance: usize,
 }
 
 /// 五分项明细。
@@ -146,6 +148,183 @@ fn clamp01(value: Option<f64>, neutral: f64) -> f64 {
     match value {
         Some(v) => v.clamp(0.0, 1.0),
         None => neutral,
+    }
+}
+
+/// Query terms that carry useful retrieval information. Generic task wording must
+/// not make every security record look relevant (e.g. "for", "evidence",
+/// "vulnerability"). If a query contains only generic terms, retain its original
+/// terms so broad discovery requests still work.
+const GENERIC_QUERY_TERMS: &[&str] = &[
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "by",
+    "can",
+    "check",
+    "could",
+    "data",
+    "evidence",
+    "find",
+    "for",
+    "from",
+    "get",
+    "give",
+    "help",
+    "how",
+    "in",
+    "into",
+    "is",
+    "it",
+    "list",
+    "me",
+    "of",
+    "on",
+    "or",
+    "please",
+    "provide",
+    "related",
+    "research",
+    "review",
+    "search",
+    "show",
+    "some",
+    "the",
+    "this",
+    "to",
+    "use",
+    "using",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+    "within",
+    "without",
+    "would",
+    "security",
+    "vulnerability",
+    "vulnerabilities",
+    "vuln",
+    "vulns",
+    "issue",
+    "issues",
+    "information",
+    "details",
+    "overview",
+    "analysis",
+    "analyze",
+    "audit",
+    "test",
+    "testing",
+    "tool",
+    "tools",
+    "resource",
+    "resources",
+    "knowledge",
+    "database",
+    "platform",
+    "remote",
+    "code",
+    "execution",
+    "rce",
+    "remote-code",
+    "remote-execution",
+    "apache",
+    "http",
+    "检索",
+    "搜索",
+    "查询",
+    "查找",
+    "研究",
+    "分析",
+    "审计",
+    "测试",
+    "漏洞",
+    "安全",
+    "工具",
+    "证据",
+    "证据链",
+    "资料",
+    "记录",
+    "来源",
+    "核验",
+];
+
+/// Normalize a user query into specific retrieval terms, preserving CVE ids,
+/// product names, technologies and CJK bigrams. This is a relevance signal, not
+/// a replacement for the source's full-text search implementation.
+pub fn relevance_terms(query: &str) -> Vec<String> {
+    let expanded = search_engine::tokenizer::expand_query_terms(
+        &search_engine::tokenizer::coverage_tokens(query),
+    );
+    let specific: Vec<String> = expanded
+        .iter()
+        .filter(|term| !GENERIC_QUERY_TERMS.contains(&term.as_str()))
+        .cloned()
+        .collect();
+    let mut terms = if specific.is_empty() {
+        expanded
+    } else {
+        specific
+    };
+    terms.sort();
+    terms.dedup();
+    terms
+}
+
+/// Extract normalized CVE identifiers without a regex dependency.
+fn cve_ids(text: &str) -> Vec<String> {
+    let parts: Vec<String> = text
+        .to_ascii_uppercase()
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect();
+    let mut ids = Vec::new();
+    for window in parts.windows(3) {
+        if window[0] == "CVE"
+            && window[1].len() == 4
+            && window[1].bytes().all(|b| b.is_ascii_digit())
+            && !window[2].is_empty()
+            && window[2].bytes().all(|b| b.is_ascii_digit())
+        {
+            ids.push(format!("CVE-{}-{}", window[1], window[2]));
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+/// Count distinct query terms present in a candidate title/summary. An explicit
+/// CVE identifier is an identity constraint: a record for another CVE is never
+/// considered relevant merely because both contain the token "CVE" or year.
+pub fn relevance_score(query: &str, candidate_text: &str) -> usize {
+    let query_cves = cve_ids(query);
+    if !query_cves.is_empty() {
+        let candidate_primary_cve = cve_ids(candidate_text).into_iter().next();
+        if !candidate_primary_cve
+            .as_ref()
+            .is_some_and(|id| query_cves.contains(id))
+        {
+            return 0;
+        }
+    }
+    let terms = relevance_terms(query);
+    let candidate_terms = search_engine::tokenizer::coverage_tokens(candidate_text);
+    let matched = resource_engine::tokenizer::keyword_hits(&terms, &candidate_terms).len();
+    // Multi-term searches need at least two independent query anchors. A single
+    // shared word such as "Apache" must not pull every Apache-family RCE record
+    // into an "Apache Struts" context. Single-term lookups remain supported.
+    let minimum = terms.len().min(2);
+    if matched < minimum {
+        0
+    } else {
+        matched
     }
 }
 
@@ -197,10 +376,19 @@ pub fn score_candidate(
         + weights.past_success * components.past_success;
 
     // 词元级关键词命中信号（kw: 前缀）。
-    let intent_tokens = tokenize(&intent.query.text_normalized);
-    let keywords = expand_keywords(&intent_tokens);
-    let candidate_tokens = tokenize(&format!("{} {}", candidate.title, candidate.summary));
+    let keywords = relevance_terms(&intent.query.text_normalized);
+    let candidate_tokens = search_engine::tokenizer::coverage_tokens(&format!(
+        "{} {} {} {}",
+        candidate.title, candidate.summary, candidate.item_id, candidate.reference.ref_id
+    ));
     let hits = keyword_hits(&keywords, &candidate_tokens);
+    let relevance = relevance_score(
+        &intent.query.text_normalized,
+        &format!(
+            "{} {} {} {}",
+            candidate.title, candidate.summary, candidate.item_id, candidate.reference.ref_id
+        ),
+    );
 
     let mut matched_signals: Vec<String> = intent
         .matched_signals
@@ -235,14 +423,14 @@ pub fn score_candidate(
         components,
         veto_reason,
         matched_signals,
+        relevance,
     }
 }
 
 /// 候选摘要形态 token 数（装配预算口径的换算入口，P4-4 使用）。
 pub fn candidate_est_tokens(candidate: &Candidate) -> u64 {
-    if candidate.est_tokens > 0 {
-        candidate.est_tokens
-    } else {
-        est_tokens(&candidate.summary)
-    }
+    // Source-side est_tokens may have been computed with a different model or
+    // tokenizer version. Recount the exact summary text with the current prompt
+    // tokenizer (or the documented conservative fallback) at assembly time.
+    est_tokens(&candidate.summary)
 }

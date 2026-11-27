@@ -1,0 +1,886 @@
+{
+  "schema_version": "1.0.0",
+  "batch_id": "poc-sensitive-review-001-2026-11-27",
+  "status": "RESTRICTED_LOCAL_REVIEW_REQUIRED",
+  "task_count": 35,
+  "tasks": [
+    {
+      "candidate_id": "rtis:poc:15",
+      "rtis_id": 15,
+      "title": "授权态写接口归属校验探针（body uid vs token，读回 oracle 双对照）",
+      "source_hashes": {
+        "content": "0c22222096db85435567a87516081f38da97af3f844aa561c7818f8a68efeeab",
+        "file": "f58c2b01e93ab8ecf27ec65298ffc04cee8e2b28d6313b9aa3a1f58e569dec65",
+        "verification_note": "1b0d00b6869648401e25a0668f80cc27bb3c459c4d1436304fe00d295dafa786"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:16",
+      "rtis_id": 16,
+      "title": "Spring Cloud Alibaba Actuator 泄露 Nacos 凭据（绕过 show-values 掩码）",
+      "source_hashes": {
+        "content": "4234d76212507bc7bcb5fbc1e25d79e31ab71ee203110befa04a83c50d4e3a01",
+        "file": null,
+        "verification_note": "3d9b3cc3e90ea1c6c011b7201697d448f20e06c0dc6781c9119904563efe9019"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:31",
+      "rtis_id": 31,
+      "title": "包网 H5 API：签名仅校验非空判定 + 会话 token 跨路径复用（成对重放）",
+      "source_hashes": {
+        "content": "b8b80717b3502c1712bcca12131441ec59f23cbe761bf064a1a5c14a067de8ae",
+        "file": "15fa1f9451167e941ef8b821e240bfe79335e0260146e7a14c984104275fd932",
+        "verification_note": "f04b0066442892e85bcec4c517f4bdb086d9bef3d2592e6ec1267ff0bc93d538"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:36",
+      "rtis_id": 36,
+      "title": "包网 miWen → 请求签名 SECRET 派生（js-base64 容错吃掉注入垃圾）",
+      "source_hashes": {
+        "content": "069f7d0b5c4c1f1f9b5f34c432109efd98eb117a198986c7156b193709db3483",
+        "file": "aa5f4bdd07e7ddf5f5b4f4cdb15bdaff40b03b3419f56d85eb95783d45da8021",
+        "verification_note": "24766c1c896b750ebc609b246c85f07278841ad6c80ce0cc7fbca72517be1430"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:57",
+      "rtis_id": 57,
+      "title": "包网会员站代理自助注册 addAgent.json 参数契约枚举（未鉴权 + 逐字段业务码 oracle）",
+      "source_hashes": {
+        "content": "f271fcac72fbe9d58467fa02123802ed8817c249899ab24533d888951beb4aec",
+        "file": "a0b98ca7f4633134a28606909e6e11f48c8bbbdf13da17b9b06554fd72d50cb8",
+        "verification_note": "16eb9a92d8b52f2c254427eb18eae0bade43c2fe349d1530f3f7dece1569d87f"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:60",
+      "rtis_id": 60,
+      "title": "包网 BBIN 系 registeragent/addAgent.json：代理在线注册参数契约 + account「首字母×长度」规则的两维业务码盲反推法",
+      "source_hashes": {
+        "content": "03ac63cffa7b24993b0e3da219642d45b1a6624d6dc58e1aacc03d8d46cb175d",
+        "file": "55c0f4e83513fe2ce2b90ac4824fcdea259371fac11af5f8bc591dcac4028f6c",
+        "verification_note": "dcfd69c1647e03fedfc75aaf738c051ee2eeffe3664754851b515db095d0bded"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:78",
+      "rtis_id": 78,
+      "title": "/bkapi 加密通道反推：AES-128-ECB key 隐写解码（25进制+XOR118）+ WebSDK 设备头要求",
+      "source_hashes": {
+        "content": "3f1c6e5a57780c825c16d2cb744a9515d4a8af9c10ff9de0b1ec80f084318d1f",
+        "file": "28a877aa1293211d461aac92f0c5c069d51e47fb48fbd526b5486a997534a016",
+        "verification_note": "0f4e21672ea55d97f10e0eaf87feae3f7483cd991152eb707688b3b42ba24c41"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:89",
+      "rtis_id": 89,
+      "title": "小程序 wxapkg 全自动解包与敏感信息提取流水线（unveilr 主链 + 纯 python 拆段兜底）",
+      "source_hashes": {
+        "content": "de38b21cb3360be66d0d9b7ec726c26ae7d9fea80ca6f9dfa9af0d197cfc7b2d",
+        "file": "de38b21cb3360be66d0d9b7ec726c26ae7d9fea80ca6f9dfa9af0d197cfc7b2d",
+        "verification_note": "7a9cfe0ec99f153f4312e9b9450b866821264f7f9a33812d7311081a6165ee29"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:93",
+      "rtis_id": 93,
+      "title": "Log4j JNDI 无害探测：8 个 header 注入位 + 5 种嵌套绕过变体 + dnslog 令牌定位",
+      "source_hashes": {
+        "content": "fce78524c08bd783950597c051b99895805baf3b1721c868fc28aed7e544df2d",
+        "file": "fce78524c08bd783950597c051b99895805baf3b1721c868fc28aed7e544df2d",
+        "verification_note": "7a9cfe0ec99f153f4312e9b9450b866821264f7f9a33812d7311081a6165ee29"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:401",
+      "rtis_id": 401,
+      "title": "API Key Leaks — Tools",
+      "source_hashes": {
+        "content": "8eded9fe4e322fa06c442d7a89550b63871b48fa4823196e7e942b624ea9aa62",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:402",
+      "rtis_id": 402,
+      "title": "API Key Leaks — Methodology",
+      "source_hashes": {
+        "content": "e3d790fd28c9e1320e231b06ac13788ab52a48b5effffefdfd2cc92f0bb628be",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:437",
+      "rtis_id": 437,
+      "title": "GraphQL Injection — Methodology",
+      "source_hashes": {
+        "content": "e1a0cf3855e9afe5d20e01a7b21e149f1a69a1e3cf7de377f01bb30b42478b6e",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:455",
+      "rtis_id": 455,
+      "title": "JSON Web Token — JWT Signature",
+      "source_hashes": {
+        "content": "3e16d2a3d1f717ba94057a9a493bd19ec0e4392465f8bdc4349c154daf550ec2",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "jwt_like"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:456",
+      "rtis_id": 456,
+      "title": "JSON Web Token — JWT Secret",
+      "source_hashes": {
+        "content": "4a18769a921a3e8183d2cca7176e47b36f0c9b1520c572cb8960f535243f6f16",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "jwt_like"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:463",
+      "rtis_id": 463,
+      "title": "LDAP Injection — Scripts",
+      "source_hashes": {
+        "content": "089d09550699c9a7a074a89617944a6009f8647bce9082de7da393c193fc063f",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:518",
+      "rtis_id": 518,
+      "title": "Web Sockets — Methodology",
+      "source_hashes": {
+        "content": "677ece77291c7dd4e73745cdf2ed3a357fc83283ff5269f0498230320151241e",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:637",
+      "rtis_id": 637,
+      "title": "GraphQL批量查询攻击",
+      "source_hashes": {
+        "content": "26f5defe12b858c551f25890ea7f05b71f3acc91abdd19b0fce0fcffd5cacece",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:639",
+      "rtis_id": 639,
+      "title": "JWT None算法攻击",
+      "source_hashes": {
+        "content": "8b0359d8251f76818da21ad6a11842a11323be45d7c633dc9851e97c65052ec8",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "bearer_token",
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:640",
+      "rtis_id": 640,
+      "title": "JWT密钥混淆攻击",
+      "source_hashes": {
+        "content": "457ffc0f3e0b9292c49f7e37cd84e88ce4defb160ff459fbb0a3dc1ee63c867b",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:641",
+      "rtis_id": 641,
+      "title": "IDOR不安全的直接对象引用",
+      "source_hashes": {
+        "content": "533748ab5e1d6d9a6c0c8199d855b894586e5d9133d2c4f6e470fd506d9e4ead",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:670",
+      "rtis_id": 670,
+      "title": "密码重置漏洞",
+      "source_hashes": {
+        "content": "0980a83169fd5641742e746112c7d61ae1576395fb78b79593b091310688fd79",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:671",
+      "rtis_id": 671,
+      "title": "OAuth漏洞",
+      "source_hashes": {
+        "content": "dea14d32445781c3905cfd94babde2ff4a50c9ac84d9c79875b9c7252c355d30",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:674",
+      "rtis_id": 674,
+      "title": "验证码绕过",
+      "source_hashes": {
+        "content": "e3f2fb871a1b146b4847d8a320c6338d2bc1711ac31346d1059d9c5892a1e596",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:675",
+      "rtis_id": 675,
+      "title": "记住我漏洞",
+      "source_hashes": {
+        "content": "21a723e84a83c4c198e73704c0afa4a56e4791ceb340479d70c5cf934f06ecdb",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:676",
+      "rtis_id": 676,
+      "title": "JWT认证漏洞",
+      "source_hashes": {
+        "content": "3a4ec218c3c435baad68fab943047277a86c458049a2f2723b773c3e854bda44",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment",
+        "jwt_like"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:684",
+      "rtis_id": 684,
+      "title": "CDN绕过",
+      "source_hashes": {
+        "content": "88be77aa9e95a81601e69c002d14be55c8708e7f57776084e0bdd156f900ce59",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:694",
+      "rtis_id": 694,
+      "title": "密码重置逻辑缺陷",
+      "source_hashes": {
+        "content": "5a143ddde0a1fc6022160db4bfe4357c6d18f93b83391e798f40c8396b5fdc72",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:696",
+      "rtis_id": 696,
+      "title": "JWT None算法攻击",
+      "source_hashes": {
+        "content": "86390315ea73d6cce311efffdabe9e81efc981244852bcd1b4b71d4866ed274d",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "jwt_like"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:698",
+      "rtis_id": 698,
+      "title": "JWT密钥爆破",
+      "source_hashes": {
+        "content": "4af0602f92fe4c20a413d34c263c45ae1020950b14d07a94a00581f6d51cd8e3",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:701",
+      "rtis_id": 701,
+      "title": "CI/CD管道投毒",
+      "source_hashes": {
+        "content": "c5649f445d16b1f8a8b074314c80bc31645e3d2cc3887b7a8dd928561a0d0541",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:705",
+      "rtis_id": 705,
+      "title": "原型链污染结合NoSQL注入",
+      "source_hashes": {
+        "content": "15f95823553d45d7663fed66159798995d59e86c9775e6bcb9ffc98f10cd0180",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:712",
+      "rtis_id": 712,
+      "title": "WebSocket认证与授权绕过",
+      "source_hashes": {
+        "content": "4c3781fa2942abb9d824f2724017ef6f0dbe91310f1e6b7fb7b58dc71a0bdd22",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:740",
+      "rtis_id": 740,
+      "title": "令牌窃取与模拟",
+      "source_hashes": {
+        "content": "c9cf48283d135a5c59f14645fd9f9039f6fbcb53594b4e79040bde6381cc853d",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:800",
+      "rtis_id": 800,
+      "title": "DSRM后门",
+      "source_hashes": {
+        "content": "490a407355863912abed7e72931c5bb364173518211e823048b1820ffe122a88",
+        "file": null,
+        "verification_note": null
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    },
+    {
+      "candidate_id": "rtis:poc:900009",
+      "rtis_id": 900009,
+      "title": "pig4cloud 系白牌包网 OSS/API 双层加密通道密钥还原（\"thanks,pig4cloud\" + md5(token+md5(token))）",
+      "source_hashes": {
+        "content": "9721a220cf332ae1b2a998b123913f227b38ed58ca06a069f72dbaadf37f3c71",
+        "file": "a1c17d7348f41b3e2b520e0e3fed0a07f0fecb654605f211c1de1e6b5e452902",
+        "verification_note": "fbd01c317d4958ef445f61d36b50188c8781785a3f09895f38c5587925a2f051"
+      },
+      "indicator_types": [
+        "credential_assignment"
+      ],
+      "review": {
+        "confirm_false_positive": "PENDING",
+        "remove_or_redact_secret": "PENDING",
+        "rotate_credential_if_real": "PENDING",
+        "review_source_history": "PENDING",
+        "status": "CANDIDATE"
+      },
+      "guardrails": {
+        "raw_value_exported": false,
+        "source_content_exported": false,
+        "credential_usable": false
+      }
+    }
+  ],
+  "raw_secret_values_exported": false
+}

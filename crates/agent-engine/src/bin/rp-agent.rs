@@ -57,7 +57,7 @@ fn usage_text() -> &'static str {
      subcommands:\n\
      \x20 run <agent_id> --goal <text> [--input <json>] [--task-id <id>] [--agent-version <v>]\n\
      \x20   [--db <path>] [--budget <n>] [--workspace <id>] [--artifacts-dir <dir>]\n\
-     \x20   [--max-tool-calls <n>] [--max-confirm-rounds <n>] [--rulepack-dir <dir>]\n\
+     \x20   [--max-tool-calls <n>] [--max-confirm-rounds <n>] [--planner auto|keyword|llm] [--rulepack-dir <dir>]\n\
      \x20   [--manifest-dirs <csv>] [--migrations-dir <dir>] [--out <path>]\n\
      \x20 def-add --agent-id <id> --version <v> --name <n> [--caps \"tool@ver,tool2\"]\n\
      \x20   [--policy <json>] [--db <path>]\n\
@@ -108,6 +108,7 @@ struct Flags {
     fold_growth_tokens: u64,
     fold_min_interval_rounds: usize,
     fold_hot_window_rounds: usize,
+    planner: String,
 }
 
 fn parse_flags(args: &[String]) -> Flags {
@@ -141,6 +142,7 @@ fn parse_flags(args: &[String]) -> Flags {
         fold_growth_tokens: 12_000,
         fold_min_interval_rounds: 4,
         fold_hot_window_rounds: 2,
+        planner: "auto".to_string(),
     };
     let mut iter = args.iter();
     while let Some(flag) = iter.next() {
@@ -183,6 +185,7 @@ fn parse_flags(args: &[String]) -> Flags {
             "--fold-min-interval-rounds" => {
                 flags.fold_min_interval_rounds = value(&mut iter).parse().unwrap_or(4);
             }
+            "--planner" => flags.planner = value(&mut iter),
             "--fold-hot-window-rounds" => {
                 flags.fold_hot_window_rounds = value(&mut iter).parse().unwrap_or(2);
             }
@@ -860,6 +863,14 @@ fn run() -> i32 {
                     exit(1);
                 }),
             );
+            let planner: Box<dyn agent_engine::Planner> =
+                match agent_engine::build_planner(&flags.planner) {
+                    Ok(planner) => planner,
+                    Err(error) => {
+                        eprintln!("planner configuration failed: {error}");
+                        return 2;
+                    }
+                };
             let mut request = RunRequest {
                 agent_id,
                 agent_version: flags.agent_version.clone(),
@@ -869,7 +880,7 @@ fn run() -> i32 {
                 run_id: None,
                 input: flags.input.clone(),
                 caller_id: flags.caller_id.clone(),
-                planner: Box::new(agent_engine::KeywordSearchPlanner),
+                planner,
                 confirmer: Box::new(confirmer),
             };
             match loop_.run(&mut request) {
@@ -902,4 +913,27 @@ fn flag_value(raw: &[String], flag: &str) -> Option<String> {
         .position(|a| a == flag)
         .and_then(|i| raw.get(i + 1))
         .cloned()
+}
+
+#[cfg(test)]
+mod planner_flag_tests {
+    use super::parse_flags;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn planner_defaults_to_auto_for_backward_compatibility() {
+        let flags = parse_flags(&args(&[]));
+        assert_eq!(flags.planner, "auto");
+    }
+
+    #[test]
+    fn planner_mode_is_explicitly_selectable() {
+        for mode in ["auto", "keyword", "llm"] {
+            let flags = parse_flags(&args(&["--planner", mode]));
+            assert_eq!(flags.planner, mode);
+        }
+    }
 }

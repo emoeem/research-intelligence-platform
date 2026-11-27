@@ -1,0 +1,423 @@
+//! Rust library for OpenAI
+//!
+//! ## Creating client
+//!
+//! ```
+//! use async_openai::{Client, config::OpenAIConfig};
+//!
+//! // Create a OpenAI client with api key from env var OPENAI_API_KEY and default base url.
+//! let client = Client::new();
+//!
+//! // Above is shortcut for
+//! let config = OpenAIConfig::default();
+//! let client = Client::with_config(config);
+//!
+//! // OR use API key from different source and a non default organization
+//! let api_key = "sk-..."; // This secret could be from a file, or environment variable.
+//! let config = OpenAIConfig::new()
+//!     .with_api_key(api_key)
+//!     .with_org_id("the-continental");
+//!
+//! let client = Client::with_config(config);
+//!
+//! // Use custom reqwest client
+//! let http_client = reqwest::ClientBuilder::new().user_agent("async-openai").build().unwrap();
+//! let client = Client::new().with_http_client(http_client);
+//! ```
+//!
+//!
+//! ## Making requests
+//!
+//!```
+//!# tokio_test::block_on(async {
+//! use async_openai::{Client, types::responses::{CreateResponseArgs}};
+//!
+//! // Create client
+//! let client = Client::new();
+//!
+//! // Create request using builder pattern
+//! // Every request struct has companion builder struct with same name + Args suffix
+//! let request = CreateResponseArgs::default()
+//!     .model("gpt-5-mini")
+//!     .input("tell me the recipe of pav bhaji")
+//!     .max_output_tokens(512u32)
+//!     .build()?;
+//!
+//! // Call API
+//! let response = client
+//!     .responses()      // Get the API "group" (responses, images, etc.) from the client
+//!     .create(request)  // Make the API call in that "group"
+//!     .await?;
+//!
+//! println!("{:?}", response.output_text());
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # });
+//!```
+//!
+//! ## OpenAI Compatible Providers
+//!
+//! Even though the scope of the crate is official OpenAI APIs, it is very configurable to work with compatible providers.
+//!
+//! ### Bring Your Own Types
+//!
+//! To use custom types for inputs and outputs, enable `byot` feature which provides additional generic methods with same name and `_byot` suffix.
+//! This feature is available on methods whose return type is not `Bytes`
+//!
+//!```
+//!# #[cfg(feature = "byot")]
+//!# tokio_test::block_on(async {
+//! use async_openai::Client;
+//! use serde_json::{Value, json};
+//!
+//! let client = Client::new();
+//!
+//! let response: Value = client
+//!        .chat()
+//!        .create_byot(json!({
+//!            "messages": [
+//!                {
+//!                    "role": "developer",
+//!                    "content": "You are a helpful assistant"
+//!                },
+//!                {
+//!                    "role": "user",
+//!                    "content": "What do you think about life?"
+//!                }
+//!            ],
+//!            "model": "gpt-4o",
+//!            "store": false
+//!        }))
+//!        .await?;
+//!
+//!  if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
+//!     println!("{}", content);
+//!  }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # });
+//!```
+//!
+//! **References: Borrow Instead of Move**
+//!
+//! With `byot` use reference to request types
+//!
+//! ```
+//! # #[cfg(feature = "byot")]
+//! # tokio_test::block_on(async {
+//! # use async_openai::{Client, types::responses::{CreateResponse, Response}};
+//! # let client = Client::new();
+//! # let request = CreateResponse::default();
+//! let response: Response = client
+//!   .responses()
+//!   .create_byot(&request).await?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # });
+//! ```
+//!
+//! ### Configurable Requests
+//! Configure path, headers, and query parameters for a HTTP request.
+//!
+//! **Request Options**
+//!
+//! Use `path()`, `.query()`, `.header()`, `.headers()` on the API group. Path overrides the default path but all other methods are additive - adds to existing query or headers.
+//!
+//! For demonstration:
+//! ```
+//! # tokio_test::block_on(async {
+//! # use async_openai::Client;
+//! # use async_openai::traits::RequestOptionsBuilder;
+//! # let client = Client::new();
+//! client
+//!   .chat()
+//!   // override default path
+//!   .path("/v1/messages")
+//!   // query can be a struct or a map too - additive
+//!   .query(&[("limit", "10")])?
+//!   // header for unique id for this API request - additive
+//!   .header("x-request-id", "id123")?
+//!   .list()
+//!   .await?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # });
+//! ```
+//!
+//! **Modifying all Requests**
+//!
+//! Use `Config`, `OpenAIConfig` etc. for configuring url, headers or query parameters globally for all requests.
+//!
+//!
+//! ### Dynamic Dispatch
+//!
+//! This allows you to use same code (say a `fn`) to call APIs on different OpenAI-compatible providers.
+//!
+//! Create a client with `Box` or `Arc` wrapped configuration.
+//!
+//! For example:
+//! ```
+//! use async_openai::{Client, config::{Config, OpenAIConfig}};
+//!
+//! // Use `Box` or `std::sync::Arc` to wrap the config
+//! let config = Box::new(OpenAIConfig::default()) as Box<dyn Config>;
+//! // create client
+//! let client: Client<Box<dyn Config>> = Client::with_config(config);
+//!
+//! // A function can now accept a `&Client<Box<dyn Config>>` parameter
+//! // which can invoke any openai compatible api
+//! fn chat_completion(client: &Client<Box<dyn Config>>) {
+//!     todo!()
+//! }
+//! ```
+//!
+//! ### Microsoft Azure
+//!
+//! ```
+//! use async_openai::{Client, config::AzureConfig};
+//!
+//! let config = AzureConfig::new()
+//!     .with_api_base("https://my-resource-name.openai.azure.com")
+//!     .with_api_version("2023-03-15-preview")
+//!     .with_deployment_id("deployment-id")
+//!     .with_api_key("...");
+//!
+//! let client = Client::with_config(config);
+//!
+//!
+//! ```
+//!
+//!
+//! ## Rust Types
+//!
+//! To only use Rust types from the crate - use feature flag `types`.
+//!
+//! There are granular feature flags like `response-types`, `chat-completion-types`, etc.
+//!
+//! These granular types are enabled when the corresponding API feature is enabled - for example `responses` will enable `response-types`.
+//!
+//! ## WASM
+//! WASM is supported for all APIs.
+//! See [examples/wasm-responses](https://github.com/64bit/async-openai/tree/main/examples/wasm-responses) or [examples/tower-wasm](https://github.com/64bit/async-openai/tree/main/examples/tower-wasm).
+//!
+//!
+//! ## Middleware
+//!
+//! Middleware is supported via Tower ecosystem. See [`middleware`] for more detail.
+//!
+//! ## Examples
+//! For full working examples for all supported features see [examples](https://github.com/64bit/async-openai/tree/main/examples) directory in the repository.
+//!
+//! ## OpenAPI
+//!
+//! Enable `openapi` together with `chat-completion-types` and/or `completion-types`
+//! to use utoipa 5's `ToSchema` with those request, response, streaming chat, and
+//! nested types. Other API families are not yet covered.
+//!
+//! For example, compose an upstream request with your own fields:
+//!
+//! ```
+//! # #[cfg(all(feature = "openapi", feature = "chat-completion-types"))]
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use async_openai::types::chat::CreateChatCompletionRequest;
+//! use serde::{Deserialize, Serialize};
+//! use utoipa::{OpenApi, ToSchema};
+//!
+//! #[derive(Serialize, Deserialize, ToSchema)]
+//! struct ExtendedChatRequest {
+//!     #[serde(flatten)]
+//!     request: CreateChatCompletionRequest,
+//!     application_tag: Option<String>,
+//! }
+//!
+//! #[derive(OpenApi)]
+//! #[openapi(components(schemas(ExtendedChatRequest)))]
+//! struct ApiDoc;
+//!
+//! let json = ApiDoc::openapi().to_pretty_json()?;
+//! # assert!(json.contains("async_openai.CreateChatCompletionRequest"));
+//! # Ok(())
+//! # }
+//! # #[cfg(not(all(feature = "openapi", feature = "chat-completion-types")))]
+//! # fn main() {}
+//! ```
+//!
+//! OpenAPI component names use a flat `async_openai.` prefix, for example
+//! `async_openai.ImageDetail`, to distinguish them from downstream types. These
+//! names are document identifiers, not Rust module paths; imports remain under
+//! `async_openai::types::chat` or `async_openai::types::completions`. Shared types
+//! keep one component name regardless of which public module re-exports them.
+//!
+//! Request schemas include documented OpenAI numeric ranges for sampling parameters,
+//! counts, and logit biases. These are schema constraints only: they do not add
+//! validation to Serde, builders, or HTTP requests. The schemas do not express every
+//! server rule, including model-dependent limits and relationships between fields.
+//!
+//! Downstream servers can use [`utoipa::Modify`](https://docs.rs/utoipa/5/utoipa/trait.Modify.html)
+//! or edit the generated document to replace or remove constraints. For example,
+//! changing the `n` property's `maximum` from 128 to 255 widens its documented range;
+//! clearing `minimum` and `maximum` removes the explicit bounds. This does not
+//! widen the Rust field's `u8` range. Edits to a shared component affect all its
+//! references; clone and rename it for endpoint-specific changes. Adding an
+//! `allOf` constraint can narrow an inherited range, but cannot widen it.
+//! Schema generation does not enable the HTTP client.
+//!
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(all(feature = "_api", feature = "byot"))]
+#[allow(unused_imports)]
+pub(crate) use async_openai_macros::byot;
+
+#[cfg(all(feature = "_api", not(feature = "byot")))]
+#[allow(unused_imports)]
+pub(crate) use async_openai_macros::byot_passthrough as byot;
+
+// #[cfg(all(not(feature = "_api"), not(feature = "byot")))]
+// #[macro_export]
+// macro_rules! byot {
+//     ($($tt:tt)*) => {
+//         $($tt)*
+//     };
+// }
+
+#[cfg(feature = "administration")]
+mod admin;
+#[cfg(feature = "audio")]
+mod audio;
+#[cfg(feature = "batch")]
+mod batches;
+#[cfg(feature = "chat-completion")]
+mod chat;
+#[cfg(feature = "chatkit")]
+mod chatkit;
+#[cfg(feature = "_api")]
+mod client;
+#[cfg(feature = "completions")]
+mod completion;
+#[cfg(feature = "_api")]
+pub mod config;
+#[cfg(feature = "container")]
+mod containers;
+#[cfg(feature = "image")]
+mod download;
+#[cfg(feature = "embedding")]
+mod embedding;
+pub mod error;
+#[cfg(feature = "evals")]
+mod evals;
+#[cfg(feature = "_api")]
+mod executor;
+#[cfg(feature = "file")]
+mod file;
+#[cfg(feature = "finetuning")]
+mod fine_tuning;
+#[cfg(feature = "image")]
+mod image;
+#[cfg(feature = "_api")]
+mod impls;
+#[cfg(feature = "middleware")]
+pub mod middleware;
+#[cfg(feature = "model")]
+mod model;
+#[cfg(feature = "moderation")]
+mod moderation;
+#[cfg(feature = "realtime")]
+mod realtime;
+#[cfg(feature = "_api")]
+mod request_options;
+#[cfg(feature = "responses")]
+mod responses;
+#[cfg(feature = "_api")]
+#[allow(dead_code)]
+#[path = "middleware/retry/mod.rs"]
+mod retry;
+#[cfg(feature = "skill")]
+mod skills;
+#[cfg(feature = "_api")]
+pub mod traits;
+pub mod types;
+#[cfg(feature = "upload")]
+mod uploads;
+#[cfg(any(
+    feature = "content-provenance-checks",
+    feature = "audio",
+    feature = "file",
+    feature = "upload",
+    feature = "image",
+    feature = "video",
+    feature = "container",
+    feature = "skill"
+))]
+mod util;
+#[cfg(feature = "vectorstore")]
+mod vectorstores;
+#[cfg(feature = "video")]
+mod video;
+#[cfg(feature = "webhook")]
+pub mod webhooks;
+
+// admin::* would be good - however its expanded here so that docs.rs shows the feature flags
+#[cfg(feature = "administration")]
+pub use admin::{
+    Admin, AdminAPIKeys, AuditLogs, Certificates, ExternalKeys, ExternalStorage, GroupRoles,
+    GroupUsers, Groups, Invites, OrganizationDataRetentions, OrganizationSpendAlerts,
+    OrganizationSpendLimit, ProjectAPIKeys, ProjectCertificates, ProjectDataRetentions,
+    ProjectGroupRoles, ProjectGroups, ProjectHostedToolPermission, ProjectModelPermission,
+    ProjectRateLimits, ProjectRoles, ProjectServiceAccounts, ProjectSpendAlerts, ProjectSpendLimit,
+    ProjectUserRoles, ProjectUsers, Projects, Roles, Usage, UserRoles, Users,
+};
+#[cfg(feature = "audio")]
+#[allow(deprecated)]
+pub use audio::{Audio, Speech, Transcriptions, Translations};
+#[cfg(feature = "batch")]
+pub use batches::Batches;
+#[cfg(feature = "chat-completion")]
+pub use chat::Chat;
+#[cfg(feature = "chatkit")]
+pub use chatkit::Chatkit;
+#[cfg(feature = "_api")]
+pub use client::Client;
+#[cfg(feature = "completions")]
+pub use completion::Completions;
+#[cfg(feature = "container")]
+pub use containers::{ContainerFiles, Containers};
+#[cfg(feature = "embedding")]
+pub use embedding::Embeddings;
+#[cfg(feature = "evals")]
+pub use evals::{EvalRunOutputItems, EvalRuns, Evals};
+#[cfg(feature = "file")]
+pub use file::Files;
+#[cfg(feature = "finetuning")]
+pub use fine_tuning::FineTuning;
+#[cfg(feature = "image")]
+pub use image::Images;
+#[cfg(feature = "model")]
+pub use model::Models;
+#[cfg(feature = "moderation")]
+pub use moderation::Moderations;
+#[cfg(feature = "realtime")]
+pub use realtime::{Realtime, RealtimeTranslations};
+#[cfg(feature = "_api")]
+pub use request_options::RequestOptions;
+#[cfg(feature = "responses")]
+pub use responses::{ConversationItems, Conversations, Responses};
+#[cfg(feature = "skill")]
+pub use skills::{SkillVersions, Skills};
+#[cfg(feature = "upload")]
+pub use uploads::Uploads;
+#[cfg(feature = "vectorstore")]
+pub use vectorstores::{VectorStoreFileBatches, VectorStoreFiles, VectorStores};
+#[cfg(feature = "video")]
+#[allow(deprecated)]
+pub use video::Videos;
+
+#[cfg(feature = "safety")]
+mod safety;
+#[cfg(feature = "safety")]
+pub use safety::*;
+
+#[cfg(feature = "content-provenance-checks")]
+mod content_provenance_checks;
+#[cfg(feature = "content-provenance-checks")]
+pub use content_provenance_checks::ContentProvenanceChecks;
+
+#[cfg(feature = "decisions")]
+mod decisions;
+#[cfg(feature = "decisions")]
+pub use decisions::Decisions;

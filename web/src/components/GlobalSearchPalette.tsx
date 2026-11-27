@@ -1,12 +1,9 @@
 /** ⌘K 全局搜索面板：匹配/分组/排序在 lib/global-search.ts（P5-2 纯模块），
  *  本组件只负责取数与交互（模式沿自参照实现 Layout.tsx 的搜索面板段）。
  *
- *  索引源全部是真实端点（P5-3 落地）：/api/tools、/api/knowledge、/api/tasks，
- *  另加一个「页面」组（workspaces.ts 的真实路由，静态数据）。打开面板时一次性
- *  拉取、关闭即卸载（下次打开重新拉取拿到新数据），limit=200 用满服务端
- *  MAX_LIMIT 即索引上限，超出部分属已知取舍（与参照实现同口径）。
- *  工具/知识/任务详情页尚未落地（P5-5/P5-6），命中落所属列表页并带定位参数，
- *  由对应批次消费。 */
+ *  页面/工具/任务入口仍使用各自列表数据；知识、资源、Nuclei 与 POC 命中
+ *  统一走 /api/search（PostgreSQL + SQLite），输入防抖后服务端检索，不再被
+ *  /api/knowledge 的 200 条客户端截断限制。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -16,6 +13,7 @@ import {
   searchGlobalSearch,
   type GlobalSearchGroupSource,
   type GlobalSearchHit,
+  type GlobalSearchGroupResult,
 } from "../lib/global-search";
 import { WORKSPACES } from "../workspaces";
 import { trapFocusWithin } from "./focus-trap";
@@ -27,16 +25,23 @@ interface ToolRow {
   lifecycle?: string | null;
 }
 
-interface KnowledgeRow {
-  knowledge_id: string;
-  title: string;
-  component?: string | null;
-}
-
 interface TaskRow {
   task_id: string;
   title: string;
   state?: string | null;
+}
+
+interface UnifiedSearchHit {
+  store: string;
+  id: string;
+  title: string;
+  detail?: Record<string, unknown>;
+}
+
+interface UnifiedSearchResponse {
+  hits?: UnifiedSearchHit[];
+  returned?: number;
+  channels?: { pg_intel?: number; sqlite_knowledge?: number; sqlite_error?: string | null };
 }
 
 /** 「页面」组：workspaces.ts 的真实路由 + 总览，静态数据（不是假索引）。 */
@@ -71,11 +76,19 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
 
   const tools = useApi<{ items?: ToolRow[] }>("/api/tools?limit=200");
-  const knowledge = useApi<{ items?: KnowledgeRow[] }>("/api/knowledge?limit=200");
   const tasks = useApi<{ items?: TaskRow[] }>("/api/tasks?limit=200");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const searchPath = debouncedQuery
+    ? `/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=20`
+    : null;
+  const unified = useApi<UnifiedSearchResponse>(searchPath);
 
   const sources = useMemo<GlobalSearchGroupSource[]>(() => {
     const translatedPages: GlobalSearchGroupSource = {
@@ -95,14 +108,6 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
       ...(tool.lifecycle ? { meta: tool.lifecycle } : {}),
     }));
     if (toolItems.length > 0) groups.push({ group: "tools", label: ui("工具"), items: toolItems });
-    const knowledgeItems = (knowledge.data?.items ?? []).map((item) => ({
-      text: `${item.title} ${item.component ?? ""}`,
-      title: item.title,
-      to: `/knowledge?knowledge_id=${encodeURIComponent(item.knowledge_id)}`,
-      ...(item.component ? { meta: item.component } : {}),
-    }));
-    if (knowledgeItems.length > 0)
-      groups.push({ group: "knowledge", label: ui("知识"), items: knowledgeItems });
     const taskItems = (tasks.data?.items ?? []).map((item) => ({
       text: `${item.title} ${item.task_id}`,
       title: item.title,
@@ -111,9 +116,57 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
     }));
     if (taskItems.length > 0) groups.push({ group: "tasks", label: ui("任务"), items: taskItems });
     return groups;
-  }, [tools.data, knowledge.data, tasks.data, ui]);
+  }, [tools.data, tasks.data, ui]);
 
-  const result = useMemo(() => searchGlobalSearch(sources, query), [sources, query]);
+  const localResult = useMemo(() => searchGlobalSearch(sources, query), [sources, query]);
+  const remoteGroups = useMemo<GlobalSearchGroupResult[]>(() => {
+    const groups = new Map<string, GlobalSearchGroupResult>();
+    for (const hit of unified.data?.hits ?? []) {
+      const detail = hit.detail ?? {};
+      const resourceType = String(detail.resource_type ?? "");
+      const group =
+        hit.store === "pg-intel"
+          ? "knowledge-cards"
+          : resourceType === "rtis_poc"
+            ? "poc-arsenal"
+            : resourceType === "nuclei_template"
+              ? "nuclei-arsenal"
+              : "knowledge-sources";
+      const label =
+        group === "poc-arsenal"
+          ? ui("自有 POC")
+          : group === "nuclei-arsenal"
+            ? ui("Nuclei 模板")
+            : group === "knowledge-cards"
+              ? ui("知识")
+              : ui("知识来源");
+      const to =
+        hit.store === "pg-intel"
+          ? `/knowledge?knowledge_id=${encodeURIComponent(hit.id)}`
+          : resourceType === "rtis_poc"
+            ? `/knowledge?view=pocs&q=${encodeURIComponent(hit.title)}`
+            : `/knowledge?view=sources&q=${encodeURIComponent(hit.title)}`;
+      const evidence = detail.evidence_level ? `证据 ${String(detail.evidence_level)}` : "";
+      const quality = detail.quality_grade ? `质量 ${String(detail.quality_grade)}` : "";
+      const meta = [
+        hit.store === "pg-intel" ? "PostgreSQL" : "SQLite",
+        resourceType,
+        evidence || quality,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const current = groups.get(group) ?? { group, label, hits: [] };
+      if (current.hits.length < 5) {
+        current.hits.push({ group, title: hit.title, to, meta });
+      }
+      groups.set(group, current);
+    }
+    return [...groups.values()];
+  }, [unified.data, ui]);
+  const result = useMemo(() => {
+    const groups = [...localResult.groups, ...remoteGroups];
+    return { query: localResult.query, groups, hits: groups.flatMap((group) => group.hits) };
+  }, [localResult, remoteGroups, query]);
   // 键盘上下选择走扁平 hits；组渲染需要「命中在扁平序列里的位置」。
   const hitIndexes = useMemo(
     () => new Map(result.hits.map((hit, index) => [hit, index])),
@@ -152,10 +205,14 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
     navigate(hit.to);
   };
 
-  const isLoading = tools.loading || knowledge.loading || tasks.loading;
+  const waitingForDebounce = query.trim() !== debouncedQuery;
+  const isLoading = tools.loading || tasks.loading || waitingForDebounce || unified.loading;
   const loadFailed =
     !isLoading &&
-    [tools, knowledge, tasks].every((source) => source.error !== null && source.data === null);
+    localResult.hits.length === 0 &&
+    unified.error !== null &&
+    tools.error !== null &&
+    tasks.error !== null;
 
   return (
     <div
@@ -245,31 +302,40 @@ export function GlobalSearchPalette({ onClose }: { onClose: () => void }) {
             <div className="search-hint">{ui("数据载入失败，请关闭后重试。")}</div>
           ) : result.groups.length === 0 ? (
             <div className="search-hint">
-              {ui("没有找到相关内容")}「{query.trim()}」
+              {unified.error
+                ? unified.error.message
+                : `${ui("没有找到相关内容")}「${query.trim()}」`}
             </div>
           ) : (
-            result.groups.map((group) => (
-              <section key={group.group}>
-                <h3 className="search-group-label">{group.label}</h3>
-                {group.hits.map((hit) => {
-                  const index = hitIndexes.get(hit) ?? 0;
-                  const active = index === activeIndex;
-                  return (
-                    <button
-                      key={`${group.group}-${index}`}
-                      type="button"
-                      className={`search-hit${active ? " is-active" : ""}`}
-                      data-active={active || undefined}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      onClick={() => openHit(hit)}
-                    >
-                      <span className="search-hit-title">{hit.title}</span>
-                      {hit.meta ? <span className="search-hit-meta">{hit.meta}</span> : null}
-                    </button>
-                  );
-                })}
-              </section>
-            ))
+            <>
+              {unified.error ? (
+                <div className="search-hint">
+                  {ui("知识搜索暂不可用")}: {unified.error.message}
+                </div>
+              ) : null}
+              {result.groups.map((group) => (
+                <section key={group.group}>
+                  <h3 className="search-group-label">{group.label}</h3>
+                  {group.hits.map((hit) => {
+                    const index = hitIndexes.get(hit) ?? 0;
+                    const active = index === activeIndex;
+                    return (
+                      <button
+                        key={`${group.group}-${index}`}
+                        type="button"
+                        className={`search-hit${active ? " is-active" : ""}`}
+                        data-active={active || undefined}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => openHit(hit)}
+                      >
+                        <span className="search-hit-title">{hit.title}</span>
+                        {hit.meta ? <span className="search-hit-meta">{hit.meta}</span> : null}
+                      </button>
+                    );
+                  })}
+                </section>
+              ))}
+            </>
           )}
         </div>
         <footer className="search-footnote">{ui("↑↓ 选择 · Enter 打开 · Esc 关闭")}</footer>

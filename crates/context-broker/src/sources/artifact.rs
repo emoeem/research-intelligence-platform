@@ -36,17 +36,30 @@ impl ContextSource for ArtifactSource {
     fn candidates(
         &self,
         _q: &IntentQuery,
+        _limit: usize,
+    ) -> Result<Vec<Candidate>, ContextBrokerError> {
+        // Artifacts are task-scoped. The legacy unscoped port intentionally
+        // returns no rows rather than leaking unrelated outputs into context.
+        Ok(Vec::new())
+    }
+
+    fn candidates_for_task(
+        &self,
+        _q: &IntentQuery,
+        task_id: &str,
         limit: usize,
     ) -> Result<Vec<Candidate>, ContextBrokerError> {
-        // 最近登记优先（证据新鲜度；关键词过滤随 P4-6 校准后接 run/task 维度）。
         let rows: Vec<ArtifactRowTuple> = self
             .pool
             .with_conn(|c| {
                 let mut stmt = c.prepare(
-                    "SELECT artifact_id, run_id, role, uri, sha256, size_bytes, mime_type
-                     FROM artifact ORDER BY rowid DESC LIMIT ?1",
+                    "SELECT a.artifact_id, a.run_id, a.role, a.uri, a.sha256, a.size_bytes, a.mime_type
+                     FROM artifact a
+                     JOIN tool_run tr ON tr.run_id = a.run_id
+                     WHERE tr.task_id = ?1
+                     ORDER BY a.rowid DESC LIMIT ?2",
                 )?;
-                let mapped = stmt.query_map([limit.max(1) as i64], |r| {
+                let mapped = stmt.query_map(database::rusqlite::params![task_id, limit.max(1) as i64], |r| {
                     Ok((
                         r.get::<_, String>(0)?,
                         r.get::<_, String>(1)?,

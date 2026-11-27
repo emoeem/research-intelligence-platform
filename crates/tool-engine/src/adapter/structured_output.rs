@@ -20,6 +20,30 @@ pub fn shape_task(tool_id: &str, input: &Value) -> Result<Value, String> {
         _ => {}
     }
     let args: Vec<String> = match tool_id {
+        "rip.kb.unified_search" => {
+            let keyword = obj
+                .get("query")
+                .or_else(|| obj.get("keyword"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| "query must be a string".to_string())?;
+            let limit = obj.get("limit").and_then(Value::as_u64).unwrap_or(10);
+            if keyword.trim().is_empty() || keyword.len() > 200 {
+                return Err("query must contain 1..=200 characters".to_string());
+            }
+            if !(1..=20).contains(&limit) {
+                return Err("limit must be between 1 and 20".to_string());
+            }
+            let mut args = vec![keyword.to_string(), limit.to_string()];
+            if let Some(include) = obj.get("include_candidates") {
+                let enabled = include
+                    .as_bool()
+                    .ok_or_else(|| "include_candidates must be a boolean".to_string())?;
+                if enabled {
+                    args.push("true".to_string());
+                }
+            }
+            args
+        }
         "rip.kb.keyword_search" => {
             let keyword = obj
                 .get("keyword")
@@ -171,6 +195,15 @@ pub fn shape_task(tool_id: &str, input: &Value) -> Result<Value, String> {
 /// 工具 output_schema 形状。无适配规则的工具恒等返回（B1 行为不变）。
 pub fn adapt(tool_id: &str, input: &Value, data: &Value) -> Result<Value, String> {
     match tool_id {
+        "rip.kb.unified_search" => {
+            let keyword = input
+                .get("query")
+                .or_else(|| input.get("keyword"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(10);
+            parse_unified_search(keyword, limit, data)
+        }
         "rip.kb.keyword_search" => {
             let keyword = input
                 .get("keyword")
@@ -276,6 +309,67 @@ fn raw_of(data: &Value) -> Result<&str, String> {
         ));
     }
     Ok(stdout)
+}
+
+/// rip.kb.unified_search：解析 rp-search-unified JSON，保留跨库来源与服务端排序。
+fn parse_unified_search(keyword: &str, limit: u64, data: &Value) -> Result<Value, String> {
+    let stdout = raw_of(data)?;
+    let payload: Value = serde_json::from_str(stdout)
+        .map_err(|e| format!("rp-search-unified stdout is not JSON: {e}"))?;
+    if let Some(error) = payload.get("error") {
+        return Err(format!("unified search returned an error: {error}"));
+    }
+    let hits = payload
+        .get("hits")
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| "unified search payload missing hits array".to_string())?;
+    let channels = payload
+        .get("channels")
+        .cloned()
+        .ok_or_else(|| "unified search payload missing channels".to_string())?;
+    let mut groups: Vec<Value> = Vec::new();
+    for hit in &hits {
+        let store = hit
+            .get("store")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let resource_type = hit
+            .pointer("/detail/resource_type")
+            .and_then(Value::as_str)
+            .unwrap_or("knowledge");
+        let (key, label) = match (store, resource_type) {
+            ("pg-intel", _) => ("pg-knowledge", "知识卡片"),
+            (_, "nuclei_template") => ("nuclei-templates", "Nuclei 模板"),
+            (_, "rtis_poc") => ("curated-pocs", "精选 POC"),
+            (_, "rtis_weapon_candidate") => ("weapon-candidates", "待审核武器候选"),
+            (_, "catalog_entry") => ("source-catalog", "知识来源"),
+            (_, "github_repo" | "github_page") => ("research-resources", "研究资源"),
+            _ => ("other-knowledge", "其他知识"),
+        };
+        let index = groups
+            .iter()
+            .position(|g| g.get("group").and_then(Value::as_str) == Some(key));
+        let group = match index {
+            Some(i) => &mut groups[i],
+            None => {
+                groups.push(json!({"group": key, "label": label, "hits": []}));
+                groups.last_mut().expect("group just inserted")
+            }
+        };
+        group["hits"]
+            .as_array_mut()
+            .ok_or_else(|| "corrupt unified search group".to_string())?
+            .push(hit.clone());
+    }
+    Ok(json!({
+        "keyword": keyword,
+        "limit": limit,
+        "total_hits": hits.len(),
+        "channels": channels,
+        "groups": groups,
+        "hits": hits,
+    }))
 }
 
 /// rip.kb.keyword_search：解析分组文本行
@@ -594,6 +688,68 @@ mod tests {
             adapt("rip.doc.parse", &json!({}), &passthrough).unwrap(),
             passthrough
         );
+    }
+
+    #[test]
+    fn unified_search_adapter_preserves_cross_store_hits_and_groups() {
+        let stdout = json!({
+            "query": "CVE-2021-44228",
+            "channels": {"pg_intel": 2, "sqlite_knowledge": 4},
+            "hits": [
+                {"store": "pg-intel", "id": "kc-1", "title": "Log4Shell analysis", "detail": {}},
+                {"store": "sqlite-knowledge", "id": "nuclei-1", "title": "Log4Shell template", "detail": {"resource_type": "nuclei_template"}},
+                {"store": "sqlite-knowledge", "id": "poc-1", "title": "Log4Shell POC", "detail": {"resource_type": "rtis_poc"}},
+                {"store": "sqlite-knowledge", "id": "candidate-1", "title": "Unreviewed weapon", "detail": {"resource_type": "rtis_weapon_candidate", "governance_status": "CANDIDATE", "lifecycle_status": "DISCOVERED"}}
+            ]
+        }).to_string();
+        let out = adapt(
+            "rip.kb.unified_search",
+            &json!({"query": "CVE-2021-44228", "limit": 5}),
+            &wrapper(&stdout),
+        )
+        .unwrap();
+        assert_eq!(out["total_hits"], 4);
+        assert_eq!(out["channels"]["pg_intel"], 2);
+        assert_eq!(out["groups"].as_array().unwrap().len(), 4);
+        assert_eq!(out["groups"][0]["label"], "知识卡片");
+        assert_eq!(out["groups"][3]["group"], "weapon-candidates");
+        assert_eq!(out["groups"][3]["label"], "待审核武器候选");
+        assert_eq!(
+            out["groups"][3]["hits"][0]["detail"]["governance_status"],
+            "CANDIDATE"
+        );
+        assert_eq!(
+            out["groups"][3]["hits"][0]["detail"]["lifecycle_status"],
+            "DISCOVERED"
+        );
+        assert_eq!(out["hits"][1]["id"], "nuclei-1");
+    }
+
+    #[test]
+    fn unified_search_shape_validates_query_and_limit() {
+        assert_eq!(
+            shape_task(
+                "rip.kb.unified_search",
+                &json!({"query": "CVE-2021-44228", "limit": 5})
+            )
+            .unwrap(),
+            json!({"args": ["CVE-2021-44228", "5"]})
+        );
+        assert_eq!(
+            shape_task(
+                "rip.kb.unified_search",
+                &json!({"query": "Log4Shell", "limit": 5, "include_candidates": true})
+            )
+            .unwrap(),
+            json!({"args": ["Log4Shell", "5", "true"]})
+        );
+        assert!(shape_task("rip.kb.unified_search", &json!({"query": " "})).is_err());
+        assert!(shape_task("rip.kb.unified_search", &json!({"query": "x", "limit": 99})).is_err());
+        assert!(shape_task(
+            "rip.kb.unified_search",
+            &json!({"query": "x", "include_candidates": "true"})
+        )
+        .is_err());
     }
 
     #[test]

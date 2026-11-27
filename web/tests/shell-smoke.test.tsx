@@ -332,6 +332,58 @@ describe("Panels and global actions", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "全局搜索" })).toBeNull());
   });
 
+  it("uses unified cross-store search and opens a source-filtered knowledge deep link", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const parsed = new URL(String(input), window.location.origin);
+      const body =
+        parsed.pathname === "/api/search"
+          ? {
+              available: true,
+              returned: 1,
+              channels: { pg_intel: 0, sqlite_knowledge: 1 },
+              hits: [
+                {
+                  store: "sqlite-knowledge",
+                  id: "nuclei:template:fixture",
+                  title: "Spring Cloud Gateway Actuator exposure",
+                  score: 0.03,
+                  detail: { resource_type: "nuclei_template", quality_grade: "A" },
+                  sources: [{ store: "sqlite-knowledge", id: "nuclei:template:fixture" }],
+                },
+              ],
+            }
+          : (API_STUBS[parsed.pathname + parsed.search] ?? API_STUBS[parsed.pathname] ?? {});
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("textbox", { name: "搜索关键词" });
+    fireEvent.change(input, { target: { value: "Spring Cloud Gateway" } });
+    const result = await screen.findByRole("button", {
+      name: /Spring Cloud Gateway Actuator exposure/,
+    });
+    fireEvent.click(result);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/knowledge");
+      expect(window.location.search).toContain("view=sources");
+      expect(decodeURIComponent(window.location.search)).toContain("Spring Cloud Gateway");
+    });
+    await waitFor(() => {
+      const sourceSearch = fetchMock.mock.calls.some((call) => {
+        const url = new URL(String(call[0]), window.location.origin);
+        return (
+          url.pathname === "/api/knowledge_sources" &&
+          url.searchParams.get("q") === "Spring Cloud Gateway Actuator exposure"
+        );
+      });
+      expect(sourceSearch).toBe(true);
+    });
+  });
+
   it("switches between Chinese, English and Japanese and persists the choice", async () => {
     render(<App />);
     const language = screen.getByRole("combobox", { name: "界面语言" }) as HTMLSelectElement;

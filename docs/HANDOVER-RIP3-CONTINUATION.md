@@ -225,7 +225,7 @@ selftest 全集。D4 阈值实测数据点：同义改写对 0.8358（语义面�
 
 P4-3 交付摘要：rerank 全链收口（rerank_search unimplemented! → hybrid+正文
 ANY 批读+容器排序；rerank_hits 8KiB UTF-8 安全截断；rp-kc --mode rerank）+
-tokenizers 接入（context-broker tokenizer.rs；EMBEDDING_TOKENIZER_DIR 优先，
+tokenizers 接入（context-broker tokenizer.rs；RIP_LLM_TOKENIZER_DIR 优先，
 缺省仓库模型，双缺席回落；est_tokens 单点切换；vendor 增量 tokenizers
 0.21.4+fancy-regex 闭包 39 crate）+ 缓存升级（intel-db search_cache.rs 同构
 cache.rs:117-207；query-vector + retrieval 双缓存；治理态指纹失效）+
@@ -248,3 +248,29 @@ bench.rs 指标纯函数（单测钉值）+ rp-kc bench 子命令 + 四模式基
 bug 修复（tool-engine 管道死锁 / MMR 尺度错位 / 缓存键漏 query，详见
 P4-4-BENCHMARK.md G 节）+ RELEASE_2026-11-17_RIP3-PHASE4.md（Phase 4 收口）。
 Yakit UI 参考图落 docs/rip3/ui-reference/yakit/（Phase 5 P5-1 前置素材）。
+
+
+## 十二、2026-11-27 LLM Planner 接入与本地验收（未提交）
+
+- 按成熟库优先原则接入 `async-openai 0.43.0`（仅 `rustls` + `chat-completion` features），不另引入完整 Agent 框架；Provider 通过 OpenAI-compatible API base 配置连接 DeepSeek、Moonshot/Kimi、OpenAI 或 loopback 本地端点。早期 `async-openai 0.30.1` 因 `backoff` / `instant` unmaintained advisories 被拒绝，已升级到 0.43.0；许可证与 advisory 门禁通过。
+- 新增 `crates/agent-engine/src/llm_planner.rs`：保留 Planner trait / Agent Loop / Tool Engine，LLM 每轮最多提出一个 next-step；候选工具必须属于 Agent capability_refs 与 Broker L2 tool_briefs 的交集，版本只由 CapabilityRef 决定（None 按 Registry current 语义解析，不把 L2 的 `current` 哨兵当 SemVer），输入为 JSON object，最终仍经现有 Tool Engine 的 workspace / caller / budget / approval / audit 闸门。关键词规划器保留作 fallback。
+- `rp-agent` 增加 `--planner auto|keyword|llm`；Workflow Agent-node runtime 复用 `RIP_LLM_PLANNER` 工厂，但 P8-3 CLI gate 仍 fail-closed，不绕过既有策略。
+- API key 只从 `RIP_LLM_API_KEY_ENV` 指定的环境变量读取；base URL 禁止明文远程 HTTP、URL 内凭据/query/fragment；Provider 请求有超时；日志只记录模型名、token 数、tokenizer 来源和 usage，不输出 key 或 prompt 正文。
+- Token preflight 使用显式配置的模型匹配 HF `tokenizer.json`（`RIP_LLM_TOKENIZER_DIR`），缺省保守估算并标记 estimated；Provider prompt usage 解析后在当前 Planner 实例内对后续估算单向上调 5% 安全系数，不跨模型持久化。Embedding 的 BGE tokenizer 不冒充生成模型 tokenizer。
+- 测试新增 loopback OpenAI-compatible HTTP mock：验证 endpoint、Authorization header、JSON mode、max_tokens、usage 解析和超时；另有 fake-provider 测试验证 capability allowlist、单步限制、显式 input 优先、预算超限不发请求、usage calibration；新增 AgentLoop 集成测试实跑 LLM Planner 选择 `rip.kb.keyword_search` → Broker → Tool Engine → Artifact/Evidence 完整闭环。另新增 Planner Abort 故障闭环测试：Provider 超时/预算/解析错误走 `Decision::Abort`，Run 标记 `FAILED`，写 `agent.run.guardrail` 审计，不再误报成功。
+- 集成测试发现并修复了版本哨兵问题：L2 ToolBrief 的版本可能是非 SemVer `current`，不得转换为 `CapabilityRef(Some(version))`；保留原始 capability（None 即 Registry current），由 Registry 解析当前版本。
+- 本地结果：`cargo test -p agent-engine --offline`（46 lib + 2 CLI + integration tests）通过；`cargo test -p agent-engine --test closed_loop_p7_2 --offline -- --test-threads=1` 4/4 通过；`cargo clippy -p agent-engine --all-targets --offline -- -D warnings` 通过。全 workspace `cargo check --workspace --all-targets --offline`、`cargo clippy --workspace --all-targets --offline -- -D warnings`、`cargo test --offline --workspace --no-fail-fast -- --test-threads=1` 均 exit 0。`cargo deny check licenses` 与 `cargo deny check advisories` 均通过。Web `npm run build` 与 `npm run test` 通过（22 files / 159 tests）；全局搜索 UI 测试验证 authenticated unified `/api/search` 与 source-filtered Knowledge deep link。
+- 当前设备环境未配置 `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `MOONSHOT_API_KEY`，也没有 `RIP_LLM_MODEL`；因此尚未执行真实 Provider 计费请求。模型在环验收需由用户在本机安全注入密钥后完成。没有 commit/push。
+
+## 2026-11-27 — 六域资产库存与治理覆盖审计
+
+- 新增只读审计器：`scripts/security-intel/audit_asset_domains.py`。
+- 新增六域报告：`docs/knowledge-governance/ASSET-DOMAIN-INVENTORY-2026-11-27.md`。
+- 新增机器可读快照：`docs/knowledge-governance/asset-domain-inventory-2026-11-27.json`。
+- 审计范围：Platform DB、活动插件版本 KSE、RTIS knowledge DB、curated search projection；所有数据库以 SQLite read-only/query-only 打开，四个 integrity_check 均为 ok。
+- 当前口径：46 平台知识卡；17,471 活动知识源条目（历史版本合计 18,102）；CISA KEV 1,805、PoCIndex KEV 1,296；RTIS 14,721 记录，其中非 Nuclei 610（`kind=poc` 41）；Nuclei 14,111；工具 20；技能 125。
+- 质量覆盖：活动 KSE 3,659 APPROVED / 13,797 DISCOVERED / 15 REJECTED；Nuclei 14,109 metadata parsed / 1 invalid_yaml / 1 body_unavailable；非 Nuclei 610 条中 571 条缺 affected versions、仅 28 条具结构化 verification_basis；Skill required_tools / knowledge_refs 均为 0。
+- 来源覆盖：活动源的 source URL、source commit、license status 字段均完整；Nuclei canonical_url 字段为 0，具体来源定位依赖 item_key/source_path + pinned commit。工具 20/20 有 provenance_ref；技能 125/125 有 body_ref/source_pk。
+- 明确限制：Nuclei `parsed` 不等于 Nuclei Engine `-validate`；历史 `verified=1` 不等于当前 POC 实验室复现；CISA/PoCIndex/RTIS CVE 数不可直接相加。没有执行模板/POC，没有访问目标，没有修改审核状态。
+- 验收：审计脚本成功生成 JSON；JSON 断言通过；现有 `test_audit_ai_knowledge_arsenal.py` 2/2 通过；`git diff --check` 通过。
+- 下一阶段：跨源 CVE 主键对账；先处理高危/KEV POC 的版本和证据缺口；Nuclei 逐批引擎验证与请求副作用分类；人工审核 Skill→Tool/Knowledge 映射候选；扩展分域检索与人工 qrel。

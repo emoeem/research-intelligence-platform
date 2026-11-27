@@ -8,7 +8,7 @@ use unified_search::{UnifiedOutcome, UnifiedSearch};
 fn usage() -> ! {
     eprintln!(
         "usage: rp-search-unified --query Q [--workspace W] [--limit N] [--type T]\n\
-         [--index-db PATH] [--sqlite-filters grade=A,license=…,evidence-level=K2,poc-severity=high,poc-missing-evidence=true]\n\
+         [--index-db PATH] [--sqlite-filters grade=A,license=…,evidence-level=K2,poc-severity=high,poc-missing-evidence=true,include-candidates=true]\n\
          [--pg-dsn DSN] [--run-db P] [--manifest-dir D] [--include-unapproved]\n\
 \n\
 env: RP_PG_DSN（PG 情报核，intel-db 缺省口径）\n\
@@ -76,7 +76,7 @@ fn main() {
         }
     };
 
-    // SQLite 索引面（server-managed schema v7 派生索引；缺席降级空通道）。
+    // SQLite 索引面（server-managed schema v8 派生索引；缺席降级空通道）。
     let index_db =
         opt("index-db").unwrap_or_else(|| "rip-data/derived/curated-poc-search.db".to_string());
     let sqlite_pool = database::Pool::open(database::PoolConfig {
@@ -179,6 +179,16 @@ fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilter
                 f.poc_verification_result = Some(v.trim().to_ascii_lowercase())
             }
             "poc-dedup-status" => f.poc_dedup_status = Some(v.trim().to_ascii_lowercase()),
+            "include-candidates" => {
+                f.include_candidates = match v.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        eprintln!("include-candidates 仅支持 true/false：{v:?}");
+                        std::process::exit(2);
+                    }
+                };
+            }
             "poc-missing-evidence" => {
                 f.poc_missing_evidence = Some(match v.trim().to_ascii_lowercase().as_str() {
                     "true" => true,
@@ -191,7 +201,7 @@ fn parse_sqlite_filters(raw: Option<&str>) -> search_engine::model::SearchFilter
             }
             other => {
                 eprintln!(
-                    "sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type/nuclei-severity/nuclei-protocol/cve-id/cwe-id/canonical-key/vulnerability-id/evidence-level/knowledge-lifecycle/poc-severity/poc-category/poc-cve-id/poc-source-integrity/poc-verification-result/poc-dedup-status/poc-missing-evidence）"
+                    "sqlite-filters 未知键 {other:?}（grade/license/maintenance/resource-type/nuclei-severity/nuclei-protocol/cve-id/cwe-id/canonical-key/vulnerability-id/evidence-level/knowledge-lifecycle/poc-severity/poc-category/poc-cve-id/poc-source-integrity/poc-verification-result/poc-dedup-status/poc-missing-evidence/include-candidates）"
                 );
                 std::process::exit(2);
             }
@@ -227,5 +237,7 @@ mod tests {
             Some("nuclei:example-1234")
         );
         assert_eq!(filters.vulnerability_id.as_deref(), Some("CVE-2025-1234"));
+        let candidate_filters = parse_sqlite_filters(Some("include-candidates=true"));
+        assert!(candidate_filters.include_candidates);
     }
 }

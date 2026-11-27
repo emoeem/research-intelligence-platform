@@ -83,6 +83,203 @@ pub struct RelationAssertion<'a> {
     pub valid_to: Option<SystemTime>,
 }
 
+/// Atomic input for an evidence-backed Skill -> Tool mapping candidate.
+#[derive(Debug, Clone)]
+pub struct SkillToolMappingCandidateInput {
+    pub skill: EntityRefInput,
+    pub tool: EntityRefInput,
+    pub evidence: EntityRefInput,
+    pub evidence_metadata: Value,
+    pub relation_source: String,
+    pub confidence: f32,
+}
+
+/// Idempotent result of registering a Skill -> Tool candidate and its Evidence.
+#[derive(Debug, Clone)]
+pub struct SkillToolMappingCandidateRecord {
+    pub skill: KnowledgeEntityRefRecord,
+    pub tool: KnowledgeEntityRefRecord,
+    pub evidence: KnowledgeEntityRefRecord,
+    pub relation_id: KnowledgeRelationId,
+    pub relation_created: bool,
+    pub evidence_link_created: bool,
+}
+
+/// Atomic input for a Skill -> Vulnerability/Template/POC/Knowledge reference.
+#[derive(Debug, Clone)]
+pub struct SkillEntityReferenceCandidateInput {
+    pub skill: EntityRefInput,
+    pub target: EntityRefInput,
+    pub evidence: EntityRefInput,
+    pub relation_type: RelationType,
+    pub evidence_metadata: Value,
+    pub relation_source: String,
+    pub confidence: f32,
+}
+
+/// Idempotent result of an evidence-backed Skill -> entity candidate.
+#[derive(Debug, Clone)]
+pub struct SkillEntityReferenceCandidateRecord {
+    pub skill: KnowledgeEntityRefRecord,
+    pub target: KnowledgeEntityRefRecord,
+    pub evidence: KnowledgeEntityRefRecord,
+    pub relation_id: KnowledgeRelationId,
+    pub relation_created: bool,
+    pub evidence_link_created: bool,
+}
+
+/// Register a Skill, typed target and immutable Skill-body Evidence, then add
+/// one candidate relation atomically. Only the semantic relation pairings
+/// `security_tool/USES_TOOL` and other supported entity types/`REFERENCES` are
+/// accepted. No relation or source assessment is approved by this function.
+pub fn add_skill_entity_reference_candidate(
+    pool: &PgPool,
+    input: &SkillEntityReferenceCandidateInput,
+) -> IntelResult<SkillEntityReferenceCandidateRecord> {
+    let target_type = input.target.entity_type;
+    let valid_target = matches!(
+        target_type,
+        KnowledgeEntityType::SecurityTool
+            | KnowledgeEntityType::Vulnerability
+            | KnowledgeEntityType::DetectionTemplate
+            | KnowledgeEntityType::Poc
+            | KnowledgeEntityType::KnowledgeCard
+            | KnowledgeEntityType::TechnicalDocument
+    );
+    let expected_relation = if target_type == KnowledgeEntityType::SecurityTool {
+        RelationType::UsesTool
+    } else {
+        RelationType::References
+    };
+    if input.skill.entity_type != KnowledgeEntityType::Skill
+        || !valid_target
+        || input.evidence.entity_type != KnowledgeEntityType::Evidence
+        || input.relation_type != expected_relation
+    {
+        return Err(IntelError::Invalid(
+            "invalid Skill mapping entity/relation types; security_tool requires USES_TOOL, other targets require REFERENCES".to_string(),
+        ));
+    }
+    if input.relation_source.trim().is_empty() {
+        return Err(IntelError::Invalid(
+            "relation source must be non-empty".to_string(),
+        ));
+    }
+    let mut conn = pool.get()?;
+    let mut tx = conn.transaction()?;
+    let skill = register_entity_ref_tx(&mut tx, &input.skill)?;
+    let target = register_entity_ref_tx(&mut tx, &input.target)?;
+    let evidence = register_entity_ref_tx(&mut tx, &input.evidence)?;
+    let (relation_id, relation_created) = add_relation_tx(
+        &mut tx,
+        skill.entity_ref_id.as_str(),
+        target.entity_ref_id.as_str(),
+        RelationAssertion {
+            relation_type: input.relation_type,
+            evidence: Some(&input.evidence_metadata),
+            source: &input.relation_source,
+            confidence: input.confidence,
+            valid_from: None,
+            valid_to: None,
+        },
+    )?;
+    let relation_status: String = tx
+        .query_one(
+            "SELECT review_status FROM knowledge_relations WHERE relation_id=$1 FOR UPDATE",
+            &[&relation_id.as_str()],
+        )?
+        .get(0);
+    if relation_status != "CANDIDATE" {
+        return Err(IntelError::Invalid(format!(
+            "refusing to attach a generated Skill mapping to a non-candidate relation ({relation_status})"
+        )));
+    }
+    let evidence_link_created = link_relation_evidence_tx(
+        &mut tx,
+        &relation_id,
+        &evidence.entity_ref_id,
+        &evidence.source_ref_id,
+        RelationEvidenceRole::Supports,
+    )?;
+    tx.commit()?;
+    Ok(SkillEntityReferenceCandidateRecord {
+        skill,
+        target,
+        evidence,
+        relation_id,
+        relation_created,
+        evidence_link_created,
+    })
+}
+
+/// Register all three identities, create a `USES_TOOL` candidate and attach the
+/// immutable Skill-body Evidence in one PostgreSQL transaction. Nothing is
+/// approved here; source assessment and relation review remain separate gates.
+pub fn add_skill_tool_mapping_candidate(
+    pool: &PgPool,
+    input: &SkillToolMappingCandidateInput,
+) -> IntelResult<SkillToolMappingCandidateRecord> {
+    if input.skill.entity_type != KnowledgeEntityType::Skill
+        || input.tool.entity_type != KnowledgeEntityType::SecurityTool
+        || input.evidence.entity_type != KnowledgeEntityType::Evidence
+    {
+        return Err(IntelError::Invalid(
+            "Skill mapping endpoints must be skill, security_tool and evidence entities"
+                .to_string(),
+        ));
+    }
+    if input.relation_source.trim().is_empty() {
+        return Err(IntelError::Invalid(
+            "relation source must be non-empty".to_string(),
+        ));
+    }
+    let mut conn = pool.get()?;
+    let mut tx = conn.transaction()?;
+    let skill = register_entity_ref_tx(&mut tx, &input.skill)?;
+    let tool = register_entity_ref_tx(&mut tx, &input.tool)?;
+    let evidence = register_entity_ref_tx(&mut tx, &input.evidence)?;
+    let (relation_id, relation_created) = add_relation_tx(
+        &mut tx,
+        skill.entity_ref_id.as_str(),
+        tool.entity_ref_id.as_str(),
+        RelationAssertion {
+            relation_type: RelationType::UsesTool,
+            evidence: Some(&input.evidence_metadata),
+            source: &input.relation_source,
+            confidence: input.confidence,
+            valid_from: None,
+            valid_to: None,
+        },
+    )?;
+    let relation_status: String = tx
+        .query_one(
+            "SELECT review_status FROM knowledge_relations WHERE relation_id=$1 FOR UPDATE",
+            &[&relation_id.as_str()],
+        )?
+        .get(0);
+    if relation_status != "CANDIDATE" {
+        return Err(IntelError::Invalid(format!(
+            "refusing to attach a generated Skill mapping to a non-candidate relation ({relation_status})"
+        )));
+    }
+    let evidence_link_created = link_relation_evidence_tx(
+        &mut tx,
+        &relation_id,
+        &evidence.entity_ref_id,
+        &evidence.source_ref_id,
+        RelationEvidenceRole::Supports,
+    )?;
+    tx.commit()?;
+    Ok(SkillToolMappingCandidateRecord {
+        skill,
+        tool,
+        evidence,
+        relation_id,
+        relation_created,
+        evidence_link_created,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationEvidenceRole {
     Supports,
@@ -431,13 +628,31 @@ pub fn link_relation_evidence(
     evidence_source_ref_id: &str,
     role: RelationEvidenceRole,
 ) -> IntelResult<bool> {
+    let mut conn = pool.get()?;
+    let mut tx = conn.transaction()?;
+    let inserted = link_relation_evidence_tx(
+        &mut tx,
+        relation_id,
+        evidence_ref_id,
+        evidence_source_ref_id,
+        role,
+    )?;
+    tx.commit()?;
+    Ok(inserted)
+}
+
+fn link_relation_evidence_tx(
+    tx: &mut postgres::Transaction<'_>,
+    relation_id: &KnowledgeRelationId,
+    evidence_ref_id: &KnowledgeEntityRefId,
+    evidence_source_ref_id: &str,
+    role: RelationEvidenceRole,
+) -> IntelResult<bool> {
     if evidence_source_ref_id.trim().is_empty() {
         return Err(IntelError::Invalid(
             "evidence_source_ref_id must be non-empty".to_string(),
         ));
     }
-    let mut conn = pool.get()?;
-    let mut tx = conn.transaction()?;
     let source = tx.query_opt(
         "SELECT s.content_sha256, s.canonical_uri, s.source_state
          FROM knowledge_entity_sources s
@@ -469,7 +684,6 @@ pub fn link_relation_evidence(
             &role.as_str(),
         ],
     )?;
-    tx.commit()?;
     Ok(inserted == 1)
 }
 

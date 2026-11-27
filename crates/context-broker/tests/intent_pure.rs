@@ -331,3 +331,58 @@ fn intent_event_best_effort_never_fails_caller() {
     let emitted = emit_intent_event(&engine, &result, "corr-p43-2", None, "test-agent");
     assert!(!emitted, "写失败旁路返回 false，不影响装配");
 }
+
+#[test]
+fn relevance_terms_remove_generic_task_words_but_keep_cve_identity() {
+    use context_broker::score::{relevance_score, relevance_terms};
+
+    let terms = relevance_terms("Find CVE-2021-44228 Log4Shell evidence for me");
+    assert!(terms.contains(&"cve".to_string()));
+    assert!(terms.contains(&"2021".to_string()));
+    assert!(terms.contains(&"44228".to_string()));
+    assert!(terms.contains(&"log4shell".to_string()));
+    assert!(!terms.contains(&"for".to_string()));
+    assert!(!terms.contains(&"evidence".to_string()));
+
+    let exact = relevance_score(
+        "Find CVE-2021-44228 Log4Shell evidence",
+        "CVE-2021-44228 Apache Log4j Log4Shell remote code execution",
+    );
+    let unrelated = relevance_score(
+        "Find CVE-2021-44228 Log4Shell evidence",
+        "Cisco ASA local file inclusion vulnerability",
+    );
+    assert!(
+        exact >= 4,
+        "specific CVE and product terms should all hit: {exact}"
+    );
+    assert_eq!(
+        unrelated, 0,
+        "generic security wording must not create relevance"
+    );
+}
+
+#[test]
+fn relevance_kingdee_http_task_keeps_kingdee_candidate() {
+    use context_broker::score::{relevance_score, relevance_terms};
+    let terms = relevance_terms("kingdee HTTP 检索");
+    let score = relevance_score(
+        "kingdee HTTP 检索",
+        "K3Cloud 差分脚本 kingdee k3cloud 差分探测与判定方法 kb:kingdee-1",
+    );
+    assert!(terms.contains(&"kingdee".to_string()));
+    assert!(score > 0);
+}
+
+#[test]
+fn relevance_apache_struts_phrase_keeps_struts_assets() {
+    use context_broker::score::{relevance_score, relevance_terms};
+    let query = "Find Apache Struts remote code execution evidence 证据";
+    let terms = relevance_terms(query);
+    let score = relevance_score(
+        query,
+        "Apache Struts 2 - DefaultActionMapper Prefixes OGNL Code Execution",
+    );
+    assert!(terms.contains(&"struts".to_string()));
+    assert!(score > 0);
+}

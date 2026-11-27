@@ -61,6 +61,25 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
+fn positional_args(args: &[String]) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut skip_value = false;
+    for arg in args {
+        if skip_value {
+            skip_value = false;
+            continue;
+        }
+        if arg == "--db" {
+            skip_value = true;
+            continue;
+        }
+        if !arg.starts_with("--") {
+            out.push(arg.as_str());
+        }
+    }
+    out
+}
+
 fn parse_manifest(path: &str) -> Value {
     let text = std::fs::read_to_string(path)
         .unwrap_or_else(|e| die_json("manifest_read_failed", &format!("read {path:?}: {e}")));
@@ -172,7 +191,7 @@ fn main() {
             let Some(db) = flag_value("--db") else {
                 usage()
             };
-            let Some(tool_id) = rest.iter().find(|a| !a.starts_with("--")) else {
+            let Some(tool_id) = positional_args(rest).first().copied() else {
                 usage()
             };
             let pool = open_pool(&db);
@@ -392,4 +411,19 @@ fn ephemeral_token() -> String {
         "rp-mcp-ephemeral"
     );
     tool_registry::hash::sha256_hex(material.as_bytes())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::positional_args;
+
+    #[test]
+    fn get_skips_database_flag_value_before_tool_id() {
+        let args = vec![
+            "--db".to_string(),
+            "migrations/dev-p7.db".to_string(),
+            "rip.kb.unified_search".to_string(),
+        ];
+        assert_eq!(positional_args(&args), vec!["rip.kb.unified_search"]);
+    }
 }

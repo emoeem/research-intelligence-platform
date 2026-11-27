@@ -1,4 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+
+// CodeMirror's extension graph depends on instanceof identity across packages;
+// jsdom is not a browser integration environment. Unit-test this wrapper's
+// contract with a semantic stand-in; browser rendering remains covered by E2E.
+vi.mock("@uiw/react-codemirror", () => ({
+  default: (props: {
+    value: string;
+    readOnly?: boolean;
+    "aria-label"?: string;
+  }) =>
+    createElement("textarea", {
+      value: props.value,
+      readOnly: props.readOnly,
+      "aria-label": props["aria-label"],
+    }),
+}));
 import { fireEvent, render, screen, cleanup, within } from "@testing-library/react";
 import { DataTable, type DataColumn } from "../src/components/data";
 import { FilterBuilder, type FilterRule } from "../src/components/data/FilterBuilder";
@@ -316,7 +333,9 @@ describe("M3 MessageViewer / MessageEditor", () => {
         label="只读消息编辑器"
       />,
     );
-    expect(screen.getAllByLabelText("只读消息编辑器").length).toBeGreaterThan(0);
+    const editor = screen.getByRole("textbox", { name: "只读消息编辑器" }) as HTMLTextAreaElement;
+    expect(editor.value).toBe('{"safe":true}');
+    expect(editor.readOnly).toBe(true);
   });
 });
 

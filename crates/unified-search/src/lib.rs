@@ -66,6 +66,41 @@ pub struct UnifiedSearch<'a> {
     pub sqlite_filters: SqliteFilters,
 }
 
+/// Return the sole exact CVE token in a query. Multiple CVEs are left to
+/// ordinary full-text search until the filter model supports a set-valued CVE facet.
+fn extract_exact_cve(query: &str) -> Option<String> {
+    let mut found = Vec::new();
+    for token in query.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '-')) {
+        let upper = token.to_ascii_uppercase();
+        let parts: Vec<&str> = upper.split('-').collect();
+        if parts.len() == 3
+            && parts[0] == "CVE"
+            && parts[1].len() == 4
+            && parts[1].bytes().all(|b| b.is_ascii_digit())
+            && parts[2].len() >= 4
+            && parts[2].bytes().all(|b| b.is_ascii_digit())
+        {
+            found.push(upper);
+        }
+    }
+    found.sort();
+    found.dedup();
+    (found.len() == 1).then(|| found.remove(0))
+}
+
+fn sqlite_query_terms(query: &str, exact_cve: Option<&str>) -> Vec<String> {
+    // Exact CVE identity is authoritative. Do not intersect it with FTS terms:
+    // many templates carry the CVE only in structured classification metadata.
+    if exact_cve.is_some() {
+        return Vec::new();
+    }
+    query
+        .split(|ch: char| ch.is_whitespace() || ch == ',')
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn sqlite_query(
     pool: &database::Pool,
     filters: &SqliteFilters,
@@ -73,15 +108,21 @@ fn sqlite_query(
     limit: u32,
 ) -> Result<Vec<UnifiedHit>, search_engine::SearchError> {
     let engine = search_engine::SearchEngine::new(pool.clone());
-    // 关键词拆分（rp-search-index 同口径：空白/逗号分隔多词，FTS OR 语义）。
-    let keywords: Vec<String> = query
-        .split(|c: char| c.is_whitespace() || c == ',')
-        .filter(|w| !w.is_empty())
-        .map(|w| w.to_string())
-        .collect();
+    // Exact CVE identity is already indexed as structured JSON. Route CVE tokens
+    // to the exact facet and leave only the remaining terms for FTS/BM25.
+    let exact_cve = filters
+        .vulnerability_id
+        .clone()
+        .or_else(|| filters.cve_id.clone())
+        .or_else(|| extract_exact_cve(query));
+    let mut effective_filters = filters.clone();
+    if effective_filters.vulnerability_id.is_none() && effective_filters.cve_id.is_none() {
+        effective_filters.vulnerability_id = exact_cve.clone();
+    }
+    let keywords = sqlite_query_terms(query, exact_cve.as_deref());
     let hits = engine.search(&SqliteQuery {
         keywords,
-        filters: filters.clone(),
+        filters: effective_filters,
         limit: limit as usize,
         offset: 0,
     })?;
@@ -94,6 +135,8 @@ fn sqlite_hit_to_unified(h: search_engine::model::SearchHit) -> UnifiedHit {
     let detail = serde_json::json!({
         "canonical_url": h.canonical_url,
         "resource_type": h.resource_type,
+        "lifecycle_status": h.lifecycle_status,
+        "governance_status": h.governance_status,
         "quality_grade": h.quality_grade,
         "evidence_level": h.evidence_level,
         "knowledge_lifecycle": h.knowledge_lifecycle,
@@ -438,6 +481,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exact_cve_queries_route_to_structured_filter_and_keep_other_terms() {
+        let cve = extract_exact_cve("Find CVE-2021-44228, Log4Shell evidence");
+        assert_eq!(cve.as_deref(), Some("CVE-2021-44228"));
+        assert_eq!(
+            sqlite_query_terms("Find CVE-2021-44228, Log4Shell evidence", cve.as_deref()),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            extract_exact_cve("CVE-2021-44228 CVE-2021-45046"),
+            None,
+            "multiple CVE identities must not be silently narrowed to the first one"
+        );
+        assert_eq!(
+            extract_exact_cve("CVE-2021-44228"),
+            Some("CVE-2021-44228".to_string())
+        );
+    }
+
+    #[test]
     fn sqlite_projection_preserves_review_facets_and_source_fields() {
         let hit = search_engine::model::SearchHit {
             resource_id: "rtis:poc:19".into(),
@@ -445,6 +507,8 @@ mod tests {
             canonical_url: "rtis://poc/19".into(),
             description: None,
             resource_type: "rtis_poc".into(),
+            lifecycle_status: "CURATED".into(),
+            governance_status: "ACTIVE".into(),
             quality_final_score: None,
             quality_grade: None,
             license_status: None,
@@ -491,6 +555,8 @@ mod tests {
         let unified = sqlite_hit_to_unified(hit);
         assert_eq!(unified.id, "rtis:poc:19");
         assert_eq!(unified.detail["evidence_level"], "K2");
+        assert_eq!(unified.detail["lifecycle_status"], "CURATED");
+        assert_eq!(unified.detail["governance_status"], "ACTIVE");
         assert_eq!(unified.detail["knowledge_lifecycle"], "Researched");
         assert_eq!(unified.detail["source_commit"], "abc123");
         assert_eq!(unified.detail["identity"]["entity_type"], "poc");

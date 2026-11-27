@@ -3,8 +3,8 @@
 //!
 //! 每轮上下文唯一来源为 Broker（[`broker_link::BrokerLink`]），本模块零
 //! 库表直读（知识/工具候选全从 AssembledContext 取）；规划为端口注入
-//! （[`Planner`]），内置确定性规划器 [`KeywordSearchPlanner`]，模型在环
-//! 属 P7-5 后续（ROADMAP §8.5 风险 3：确定性测试与模型在环分离）。
+//! （[`Planner`]），生产规划器由 `llm_planner::LlmPlanner` 提供；
+//! [`KeywordSearchPlanner`] 保留作显式 deterministic fallback 与测试工具。
 //!
 //! 护栏（P7-2 最小面 + P7-4 九类控制全项，不留「先上循环后补护栏」缺口，
 //! ROADMAP §8.5 风险 1）：步数上限 [`LoopConfig::max_tool_calls`]、能力绑定
@@ -104,6 +104,11 @@ pub enum Decision {
     /// 结束（原因进报告）。
     Finish {
         /// 结束原因。
+        reason: String,
+    },
+    /// Planner/provider failed; this is a failed run, never a successful finish.
+    Abort {
+        /// Failure reason.
         reason: String,
     },
 }
@@ -1124,6 +1129,18 @@ impl AgentLoop {
             match p.planner.plan(&ctx) {
                 Decision::Finish { reason } => {
                     finish_reason = reason;
+                    break 'rounds;
+                }
+                Decision::Abort { reason } => {
+                    any_failed = true;
+                    finish_reason = format!("planner failed: {reason}");
+                    self.audit_emit(
+                        control::actions::GUARDRAIL,
+                        p.run_id_str,
+                        p.trace_id.as_deref(),
+                        p.actor,
+                        json!({"kind": "planner_failure", "round": round, "reason": reason}),
+                    );
                     break 'rounds;
                 }
                 Decision::Steps(plan_steps) => {
@@ -2433,7 +2450,11 @@ impl Planner for KeywordSearchPlanner {
                                 .to_string(),
                     };
                 }
-                json!({"keyword": keyword})
+                if reference.tool_id() == "rip.kb.unified_search" {
+                    json!({"query": keyword})
+                } else {
+                    json!({"keyword": keyword})
+                }
             }
         };
         Decision::Steps(vec![PlanStep {

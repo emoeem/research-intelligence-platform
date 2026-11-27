@@ -1,20 +1,15 @@
-//! token 估算器（设计稿 §5.2 口径，纯函数，零 IO）。
+//! token 估算器（模型感知的 prompt 预算口径）。
 //!
-//! `est_tokens(text) = ceil(ascii_chars / 4 + cjk_chars * 1.0 + other_chars / 2)`。
+//! `est_tokens(text)` 优先使用 `RIP_LLM_TOKENIZER_DIR` 指向的模型匹配 HF
+//! tokenizer.json；未配置时回退 `est_tokens_formula`。回退值明确是估算值，
+//! 不代表 DeepSeek/Kimi 或其他生成模型的精确 Token 数。
 //!
-//! 这是近似值，未对真实 tokenizer 校准（设计稿 §13.1 待验证；ROADMAP §5.5
-//! 风险 1：P4-6 前用 models/bge-small-zh-v1.5/tokenizer.json 离线抽样校准，
-//! 校准只修常数不改结构）。分母口径：ASCII 约 4 字符 1 token，CJK 表意
-//! 字符约 1 字符 1 token，其余约 2 字符 1 token。
+//! `EMBEDDING_TOKENIZER_DIR` / BGE tokenizer 只属于 Embedding 模型，不参与
+//! 生成模型上下文预算。候选来源自带的 `est_tokens` 仅作来源元数据；装配时
+//! 对实际摘要文本按当前进程的 prompt tokenizer 重新计量，避免跨模型复用旧值。
 //!
-//! CJK 判定范围（本实现口径，校准时随常数一并复核）：U+3000..=U+303F
-//! （CJK 符号与标点）、U+3040..=U+30FF（平假名/片假名）、U+3400..=U+4DBF
-//! （汉字扩展 A）、U+4E00..=U+9FFF（CJK 统一表意）、U+F900..=U+FAFF（CJK
-//! 兼容表意）、U+FF00..=U+FFEF（半角全角形式）、U+20000..=U+2FA1F（表意
-//! 补充与兼容补充）。
-//!
-//! 使用纪律（设计稿 §5.2）：候选入库时预计算 est_tokens（摘要与正文分开
-//! 算），装配期只做加法，不重复扫文本。
+//! CJK 字符分类范围：U+3000..=U+303F、U+3040..=U+30FF、U+3400..=U+4DBF、
+//! U+4E00..=U+9FFF、U+F900..=U+FAFF、U+FF00..=U+FFEF、U+20000..=U+2FA1F。
 
 /// 字符分类计数（est_tokens 的中间量，暴露供测试与校准抽样使用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,10 +64,9 @@ pub fn count_chars(text: &str) -> CharCounts {
 
 /// 估算文本 token 数（设计稿 §5.2 公式，向上取整；空文本为 0）。
 ///
-/// P4-3 起（R2 6.6 Tokenizer Adapter）：`EMBEDDING_TOKENIZER_DIR`（或缺省仓库
-/// models/bge-small-zh-v1.5）tokenizer.json 在位时走 HF tokenizers 真实计数
-///（见 crate::tokenizer），公式仅作回落保守口径——库 crate 不强制运行时文件，
-/// 全部调用点行为一致性由本函数单点承载（不逐点改写）。
+/// `RIP_LLM_TOKENIZER_DIR` 指向模型匹配 tokenizer.json 时走 HF tokenizers
+/// 真实计数；不使用 BGE/Embedding tokenizer。未配置时使用保守 Unicode 公式，
+/// 该值是估算而非真实模型 token 数。所有预算调用点由本函数单点承载。
 pub fn est_tokens(text: &str) -> u64 {
     if let Some(n) = crate::tokenizer::count_tokens(text) {
         return n;
@@ -80,8 +74,7 @@ pub fn est_tokens(text: &str) -> u64 {
     est_tokens_formula(text)
 }
 
-/// 保守公式本体（adapter 缺席口径；calibration 抽样对照面，校准只修常数
-/// 不改结构，ROADMAP §5.5）。
+/// Unicode 公式回退口径（adapter 缺席时使用；始终标记为估算）。
 pub fn est_tokens_formula(text: &str) -> u64 {
     let counts = count_chars(text);
     let raw = counts.ascii as f64 / 4.0 + counts.cjk as f64 * 1.0 + counts.other as f64 / 2.0;

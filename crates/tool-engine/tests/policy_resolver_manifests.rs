@@ -1,4 +1,4 @@
-//! RT-3 S4 集成期望表：30 份派发面 Manifest（29 JSON + 1 YAML-only）文件系统
+//! RT-3 S4 集成期望表：32 份派发面 Manifest（31 JSON + 1 YAML-only）文件系统
 //! 直读（防漂移——不复制 Manifest 内容入测试，以文件系统为准），经 D3/D4/D5
 //! 派生函数 + RT-1 CapabilityProvider 既有面（D10c 注入式消费）产出
 //! RuntimeDecision，逐份断言 verdict/runtime/cross_check/gap。
@@ -47,7 +47,7 @@ const SEED: &str = concat!(
 /// 元数据条目（R7 不派发面；RT-3-TASK §2 A9）。
 const METADATA_ENTRY: &str = "rip.ops.worker-runtime";
 
-/// YAML-only Manifest（无 JSON 孪生；合计 30 份）。
+/// YAML-only Manifest（无 JSON 孪生；合计 32 份）。
 const YAML_ONLY: &str = "rip.http.tls_inspect.yaml";
 
 /// Manifest 事实面（全部 owned，供三档路由重建 DecisionInput）。
@@ -216,7 +216,7 @@ fn to_input<'a>(
     d
 }
 
-/// 30 份派发面 Manifest 文件系统直读（29 JSON + 1 YAML-only；YAML 有 JSON
+/// 32 份派发面 Manifest 文件系统直读（31 JSON + 1 YAML-only；YAML 有 JSON
 /// 孪生的跳过——孪生文件是展示副本，派发面以 JSON 为准）。
 fn load_dispatch_face() -> Vec<(PathBuf, serde_json::Value)> {
     let dir = Path::new(TOOLS_DIR);
@@ -250,7 +250,7 @@ fn provider() -> StaticCatalogProvider {
     StaticCatalogProvider::load(Path::new(SEED)).expect("能力种子加载（RT-1 16 条）")
 }
 
-/// 判据 5：31 份逐份断言（30 assign + 1 not_applicable；DI-3/RT-4 迁移后
+/// 判据 5：31 份逐份断言（31 assign + 1 not_applicable；DI-3/RT-4 迁移后
 /// 基线——3 处 RT-3 inconsistent 全部收敛，inconsistent 快照零成员；
 /// WSW-7 zap 登记随更 30 份；WSW-8 browser 登记随更 31 份（设计内扩展非钉值
 /// 改动——WSW-8-TASK §2.1）；verdict/runtime/cross_check/gap/reason 逐字段）。
@@ -258,7 +258,7 @@ fn provider() -> StaticCatalogProvider {
 fn manifests_expectation_table_30() {
     let provider = provider();
     let face = load_dispatch_face();
-    assert_eq!(face.len(), 31, "30 JSON + 1 YAML-only = 31 份派发面");
+    assert_eq!(face.len(), 32, "31 JSON + 1 YAML-only = 32 份派发面");
     let mut assign_runtimes: Vec<String> = Vec::new();
     let mut counts = [0usize; 4]; // assign/inconsistent/reject/not_applicable
     for (path, manifest) in &face {
@@ -308,8 +308,8 @@ fn manifests_expectation_table_30() {
     }
     assert_eq!(
         counts,
-        [30, 0, 0, 1],
-        "DI-3/RT-4 判据 1 分布：30 assign + 1 not_applicable（inconsistent 快照零成员；WSW-7 zap 随更 + WSW-8 browser 随更）"
+        [31, 0, 0, 1],
+        "DI-3/RT-4 判据 1 分布：31 assign + 1 not_applicable（inconsistent 快照零成员；WSW-7 zap 随更 + WSW-8 browser 随更）"
     );
     // 判据 2：native_rust/python_worker/podman_host 三行在期望表内有 assign 成员。
     for word in ["native_rust", "python_worker", "podman_host"] {
@@ -362,7 +362,7 @@ fn manifests_three_tier_risk_routing() {
             );
         }
         // high（high_risk）：VM 闸 → Reject(RT3_VM_NOT_READY) 零降级
-        // （DI-3/RT-4 迁移后 N6 声明冲突语境在 30 份快照零成员）。
+        // （DI-3/RT-4 迁移后 N6 声明冲突语境在 31 份快照零成员）。
         let high = decide(&to_input(&facts, &provider, InputRisk::HighRisk));
         assert_eq!(high.verdict, Verdict::Reject, "{} high", facts.tool_id);
         assert_eq!(
@@ -453,8 +453,8 @@ fn assign_constraints_vocabulary() {
         }
     }
     assert_eq!(
-        checked, 30,
-        "30 份 assign 全部过 constraints 断言（DI-3/RT-4 迁移后基线；WSW-7 zap 随更 + WSW-8 browser 随更）"
+        checked, 31,
+        "31 份 assign 全部过 constraints 断言（含 T37 unified search；DI-3/RT-4 与 WSW 更新基线）"
     );
 }
 
@@ -474,7 +474,7 @@ fn integration_uses_existing_input_risk_enum() {
     assert!(matches!(Freshness::Fresh, Freshness::Fresh));
 }
 
-/// S8 快照 dump（任务书交付物 5：RT-4 前置输入 = 30 份 RuntimeDecision 全量
+/// S8 快照 dump（任务书交付物 5：RT-4 前置输入 = 31 份 RuntimeDecision 全量
 /// 快照 + 三档风险评估；机器可判 JSON）。默认 no-op，设 `RT3_SNAPSHOT_DUMP=1`
 /// 并以 `--nocapture` 实跑输出（离线零网络；输出只落批次报告 §5，决策面
 /// 本身零写路径——红线 1 由矩阵面源码 grep 断言承载）。
@@ -485,7 +485,7 @@ fn rt3_snapshot_dump_for_batch_report() {
     }
     let provider = provider();
     let face = load_dispatch_face();
-    assert_eq!(face.len(), 31, "31 份派发面快照");
+    assert_eq!(face.len(), 32, "31 份派发面快照");
     for (path, manifest) in &face {
         let facts = extract_facts(manifest);
         // 基线档 = trusted_low_risk（报告 §1 A8 表同口径）。

@@ -14,7 +14,7 @@
 //!
 //! 运行配置：RP_PG_DSN（缺省 postgres://postgres:postgres@127.0.0.1:5432/postgres，
 //! 指向 localhost/rip-pg17 容器服务，digest 见 containerfiles/README.md 台账）。
-//! 迁移：migrations_pg/V0001 扩展装载 + V0002 起 Document 域，refinery 每文件
+//! 迁移：migrations_pg/V0001 扩展装载 + V0002 起 Document 域（当前 V0013），refinery 每文件
 //! 事务 + checksum（12-STORAGE 第三节纪律）。
 
 pub mod bench;

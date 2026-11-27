@@ -920,7 +920,8 @@ impl AgentLoopDriver {
                 // PAUSED 续接：目标文本从 014 goal_text 续接，已完成步骤不重跑。
                 let mut req = agent_engine::agent_loop::ResumeRequest {
                     run_id: request.agent_run_id.clone(),
-                    planner: Box::new(agent_engine::KeywordSearchPlanner),
+                    planner: agent_engine::planner_from_env()
+                        .map_err(|e| format!("workflow Agent planner configuration failed: {e}"))?,
                     confirmer: Box::new(self.build_confirmer()?),
                 };
                 loop_
@@ -940,7 +941,8 @@ impl AgentLoopDriver {
                     // MA-3 D1 接线点（原硬编码 None）：节点 caller 绑定解析
                     // 值直通 MA-2 既有通道（agent-engine 零 diff 全链生效）。
                     caller_id: resolved_caller,
-                    planner: Box::new(agent_engine::KeywordSearchPlanner),
+                    planner: agent_engine::planner_from_env()
+                        .map_err(|e| format!("workflow Agent planner configuration failed: {e}"))?,
                     confirmer: Box::new(self.build_confirmer()?),
                 };
                 loop_

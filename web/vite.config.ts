@@ -10,6 +10,20 @@ export default defineConfig(({ mode }) => {
   const apiTarget = env.RP_API_TARGET || "http://127.0.0.1:7800";
   return {
     plugins: [react(), tailwindcss()],
+    // CodeMirror extensions rely on instanceof checks across packages. Force a
+    // single module instance in Vitest/Vite even when pnpm's symlink graph is
+    // traversed through both @uiw/react-codemirror and direct language imports.
+    resolve: {
+      dedupe: [
+        "@codemirror/state",
+        "@codemirror/view",
+        "@codemirror/language",
+        "@codemirror/autocomplete",
+        "@codemirror/commands",
+        "@codemirror/search",
+        "@codemirror/lint",
+      ],
+    },
     server: {
       proxy: {
         "/api": {

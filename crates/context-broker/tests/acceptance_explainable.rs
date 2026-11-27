@@ -180,22 +180,10 @@ fn acceptance_explainable_every_item_has_reason_and_signals() {
         }
     }
 
-    // 断言一补：零信号样本真实出现在装配中并走退化形态（构造面固定）。
-    let unrelated = view
-        .items
-        .iter()
-        .find(|i| i.item_id == "kb:unrelated-9")
-        .expect("zero-signal sample installed");
+    // 断言一补：有区分度的查询不得把零相关知识塞进 L2。
     assert!(
-        unrelated.reason.starts_with("source-order:") && unrelated.reason.contains("+score:"),
-        "退化形态实测: {:?}",
-        unrelated.reason
-    );
-    let unrelated_signals: Vec<String> =
-        serde_json::from_str(&unrelated.matched_signals_json).unwrap();
-    assert!(
-        unrelated_signals.is_empty(),
-        "零信号样本构造口径: {unrelated_signals:?}"
+        view.items.iter().all(|i| i.item_id != "kb:unrelated-9"),
+        "zero-relevance knowledge must be excluded from model context"
     );
 
     // 断言二：L2 条目的信号可解释到命中（关键词/族匹配/来源注记）。

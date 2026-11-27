@@ -11,6 +11,7 @@
 use agent_engine::agent_loop::{AgentLoop, KeywordSearchPlanner, LoopConfig, RunRequest};
 use agent_engine::broker_link::{BrokerLink, FirstFamilyConfirmer};
 use agent_engine::evidence::EvidenceRegistrar;
+use agent_engine::llm_planner::{ChatProvider, LlmPlanner, ProviderReply};
 use agent_engine::store::AgentStore;
 use agent_engine::tool_link::{MockDriver, ToolLink};
 use context_broker::{
@@ -20,6 +21,7 @@ use database::{DbPath, Pool, PoolConfig};
 use domain::{AgentDefinition, AgentId, CapabilityRef};
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tool_engine::Engine;
 use tool_registry::Registry;
@@ -76,6 +78,21 @@ fn register_test_tool(pool: &Pool) {
     pool.with_conn(|c| {
         c.execute(
             "UPDATE tool SET lifecycle = 'ENABLED' WHERE tool_id = 'rip.kb.keyword_search'",
+            [],
+        )
+    })
+    .unwrap();
+}
+
+fn register_unified_search_tool(pool: &Pool) {
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../manifests/tools/rip.kb.unified_search.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(manifest_path).unwrap()).unwrap();
+    Registry::open(pool.clone()).register(&manifest).unwrap();
+    pool.with_conn(|c| {
+        c.execute(
+            "UPDATE tool SET lifecycle = 'ENABLED' WHERE tool_id = 'rip.kb.unified_search'",
             [],
         )
     })
@@ -379,4 +396,211 @@ fn guardrail_rejects_step_tool_outside_capability_refs() {
     assert!(report.steps.is_empty(), "绑定外步骤不得执行");
     let stored = store.run(&report.run_id).unwrap().unwrap();
     assert_eq!(stored.run.state(), domain::AgentRunState::Failed);
+}
+
+struct FixedJsonProvider {
+    responses: Vec<String>,
+    requests: Arc<Mutex<Vec<String>>>,
+}
+
+impl ChatProvider for FixedJsonProvider {
+    fn complete(
+        &self,
+        model: &str,
+        system: &str,
+        user: &str,
+        _max_output_tokens: u32,
+    ) -> Result<ProviderReply, String> {
+        assert_eq!(model, "mock-model");
+        assert!(system.contains("authorization"));
+        let mut requests = self.requests.lock().unwrap();
+        requests.push(user.to_string());
+        let response_index = requests.len() - 1;
+        let response = self
+            .responses
+            .get(response_index)
+            .cloned()
+            .unwrap_or_else(|| {
+                r#"{"decision":"finish","reason":"no further step" ,"steps":[]}"#.to_string()
+            });
+        Ok(ProviderReply {
+            text: response,
+            prompt_tokens: Some(180),
+            completion_tokens: Some(32),
+        })
+    }
+}
+
+#[test]
+fn llm_planner_closes_loop_through_broker_tool_engine_and_evidence() {
+    let pool = migrated_pool();
+    seed_plugin_knowledge(&pool);
+    register_unified_search_tool(&pool);
+
+    let store = AgentStore::open(pool.clone(), Registry::open(pool.clone()));
+    let definition = AgentDefinition::try_new(
+        AgentId::try_new("agent.research.llm-test").unwrap(),
+        "0.1.0".to_string(),
+        "{\"l0_rules\":true}".to_string(),
+        vec![CapabilityRef::try_new("rip.kb.unified_search", None).unwrap()],
+    )
+    .unwrap();
+    store
+        .register_definition(&definition, "LLM Planner 闭环集成测试")
+        .unwrap();
+
+    let engine = Engine::open(pool.clone(), Registry::open(pool.clone()));
+    let tool_link = ToolLink::new(
+        engine,
+        Box::new(MockDriver::succeed(
+            json!({
+                "keyword": "CVE-2021-44228",
+                "limit": 5,
+                "total_hits": 0,
+                "channels": {"postgresql": 0, "sqlite": 0},
+                "groups": [],
+                "hits": []
+            }),
+            "跨库统一检索完成（LLM planner integration）",
+        )),
+    );
+    let loop_ = AgentLoop::new(
+        store.clone(),
+        build_broker_link(&pool),
+        tool_link,
+        EvidenceRegistrar::new(pool.clone()),
+        Some(audit_engine::AuditEngine::new(pool.clone())),
+        LoopConfig::default(),
+    );
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let planner = LlmPlanner::with_provider(
+        "mock-model",
+        12_000,
+        128,
+        None,
+        Box::new(FixedJsonProvider {
+            responses: vec![
+                r#"{"decision":"steps","reason":"search the unified knowledge and weapon catalog","steps":[{"tool_id":"rip.kb.unified_search","input":{"query":"CVE-2021-44228","limit":5},"rationale":"Search approved cross-store evidence before drawing conclusions"}]}"#.to_string(),
+                r#"{"decision":"finish","reason":"the authorized search completed","steps":[]}"#.to_string(),
+            ],
+            requests: requests.clone(),
+        }),
+    );
+    let report = loop_
+        .run(&mut RunRequest {
+            agent_id: "agent.research.llm-test".to_string(),
+            agent_version: None,
+            goal: "检索 CVE-2021-44228 的跨库知识、POC 与检测模板并调用统一检索工具".to_string(),
+            task_id: Some("task-llm-loop-accept".to_string()),
+            trace_id: None,
+            run_id: None,
+            input: None,
+            caller_id: None,
+            planner: Box::new(planner),
+            confirmer: Box::new(FirstFamilyConfirmer::new(
+                context_broker::IntentConfig::from_dir(
+                    &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rulepacks/rip-rules"),
+                )
+                .unwrap(),
+            )),
+        })
+        .unwrap();
+
+    assert_eq!(report.state, "SUCCEEDED", "report: {report:?}");
+    assert_eq!(report.steps.len(), 1);
+    assert_eq!(report.steps[0].tool_id, "rip.kb.unified_search");
+    assert_eq!(report.steps[0].status, "SUCCEEDED");
+    assert!(report.steps[0].artifact_id.is_some());
+    assert!(report.steps[0].evidence_id.is_some());
+    assert_eq!(requests.lock().unwrap().len(), 2);
+    assert!(requests.lock().unwrap()[0].contains("allowed_tools"));
+    assert!(requests.lock().unwrap()[0].contains("rip.kb.unified_search"));
+
+    let stored = store.run(&report.run_id).unwrap().unwrap();
+    assert_eq!(stored.run.state(), domain::AgentRunState::Succeeded);
+    assert!(stored
+        .run
+        .memory_refs()
+        .iter()
+        .any(|reference| { reference == &format!("mem://manifest/{}", report.manifest_id) }));
+}
+
+/// Provider/Planner 故障必须将 Agent Run 置为 FAILED，而不能伪装成正常完成。
+#[test]
+fn planner_abort_marks_run_failed_and_audits_guardrail() {
+    let pool = migrated_pool();
+    seed_plugin_knowledge(&pool);
+    register_test_tool(&pool);
+
+    let store = AgentStore::open(pool.clone(), Registry::open(pool.clone()));
+    let definition = AgentDefinition::try_new(
+        AgentId::try_new("agent.research.abort-test").unwrap(),
+        "0.1.0".to_string(),
+        "{\"l0_rules\":true}".to_string(),
+        vec![CapabilityRef::try_new("rip.kb.keyword_search", None).unwrap()],
+    )
+    .unwrap();
+    store
+        .register_definition(&definition, "Planner abort failure-state test")
+        .unwrap();
+
+    struct AbortPlanner;
+    impl agent_engine::agent_loop::Planner for AbortPlanner {
+        fn plan(
+            &self,
+            _ctx: &agent_engine::agent_loop::PlanContext<'_>,
+        ) -> agent_engine::agent_loop::Decision {
+            agent_engine::agent_loop::Decision::Abort {
+                reason: "mock provider timeout".to_string(),
+            }
+        }
+    }
+
+    let loop_ = AgentLoop::new(
+        store.clone(),
+        build_broker_link(&pool),
+        ToolLink::new(
+            Engine::open(pool.clone(), Registry::open(pool.clone())),
+            Box::new(MockDriver::succeed(json!({}), "must not execute")),
+        ),
+        EvidenceRegistrar::new(pool.clone()),
+        Some(audit_engine::AuditEngine::new(pool.clone())),
+        LoopConfig::default(),
+    );
+    let report = loop_
+        .run(&mut RunRequest {
+            agent_id: "agent.research.abort-test".to_string(),
+            agent_version: None,
+            goal: "检索 nmap 端口扫描知识".to_string(),
+            task_id: None,
+            trace_id: None,
+            run_id: None,
+            input: None,
+            caller_id: None,
+            planner: Box::new(AbortPlanner),
+            confirmer: Box::new(FirstFamilyConfirmer::new(
+                context_broker::IntentConfig::from_dir(
+                    &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rulepacks/rip-rules"),
+                )
+                .unwrap(),
+            )),
+        })
+        .unwrap();
+
+    assert_eq!(report.state, "FAILED", "report: {report:?}");
+    assert!(report.finish_reason.contains("mock provider timeout"));
+    assert!(
+        report.steps.is_empty(),
+        "failed planner must not dispatch tools"
+    );
+    let stored = store.run(&report.run_id).unwrap().unwrap();
+    assert_eq!(stored.run.state(), domain::AgentRunState::Failed);
+
+    let actions: Vec<String> = audit_engine::AuditEngine::new(pool)
+        .trace(&report.run_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.event.action)
+        .collect();
+    assert!(actions.iter().any(|action| action == "agent.run.guardrail"));
 }

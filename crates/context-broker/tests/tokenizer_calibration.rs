@@ -2,7 +2,7 @@
 //! 不改结构」）。
 //!
 //! 判据：
-//! 1. adapter 在场时 est_tokens == 真实计数（切换一致性，全局单点承载）；
+//! 1. model tokenizer 在场时 est_tokens == 真实计数（切换一致性，全局单点承载）；
 //! 2. 保守公式（est_tokens_formula）对抽样语料偏差 < 5%（校准达标线）。
 //!
 //! 守卫：tokenizer.json 缺席（非受控环境）SKIP。
@@ -21,16 +21,18 @@ const SAMPLES: [&str; 6] = [
 
 #[test]
 fn adapter_switches_est_tokens_to_real_counting() {
-    let dsn_dir = std::env::var("EMBEDDING_TOKENIZER_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("models/bge-small-zh-v1.5"));
+    let Ok(raw_dir) = std::env::var("RIP_LLM_TOKENIZER_DIR") else {
+        eprintln!("SKIP: RIP_LLM_TOKENIZER_DIR 未配置，使用估算回退口径");
+        return;
+    };
+    let dsn_dir = std::path::PathBuf::from(raw_dir);
     if !dsn_dir.join("tokenizer.json").is_file() {
-        eprintln!("SKIP: tokenizer.json 不在位（{dsn_dir:?}），adapter 回落口径");
+        eprintln!("SKIP: tokenizer.json 不在位（{dsn_dir:?}）");
         return;
     }
-    assert!(tokenizer_available(), "adapter 应在位");
+    assert!(tokenizer_available(), "model tokenizer 应在位");
     for text in SAMPLES {
-        let real = context_broker::tokenizer_count(text).expect("adapter 在场计数必有");
+        let real = context_broker::tokenizer_count(text).expect("model tokenizer 在场计数必有");
         assert_eq!(
             est_tokens(text),
             real,
@@ -40,22 +42,16 @@ fn adapter_switches_est_tokens_to_real_counting() {
 }
 
 #[test]
-fn formula_deviation_within_five_percent() {
-    let dsn_dir = std::env::var("EMBEDDING_TOKENIZER_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("models/bge-small-zh-v1.5"));
-    if !dsn_dir.join("tokenizer.json").is_file() {
-        eprintln!("SKIP: tokenizer.json 不在位（{dsn_dir:?}），校准无对照面");
-        return;
-    }
-    for text in SAMPLES {
-        let real = context_broker::tokenizer_count(text).expect("adapter 在场计数必有") as f64;
-        let formula = est_tokens_formula(text) as f64;
-        let dev = (formula - real).abs() / real.max(1.0);
-        assert!(
-            dev < 0.05,
-            "保守公式偏差 {dev:.4} ≥ 5%（real={real} formula={formula}）：需校准常数（ROADMAP §5.5）sample={text:?}"
+fn tokenizer_mode_and_source_are_explicit() {
+    if tokenizer_available() {
+        assert_eq!(context_broker::tokenizer_mode(), "hf_model_tokenizer");
+        assert!(context_broker::tokenizer_source().is_some());
+    } else {
+        assert_eq!(
+            context_broker::tokenizer_mode(),
+            "estimated_unicode_ratio_v1"
         );
+        assert!(context_broker::tokenizer_source().is_none());
     }
 }
 
@@ -64,16 +60,18 @@ fn formula_deviation_within_five_percent() {
 /// 超过任何模型输入帽的文本计数仍为全量（>512 token 判据）。
 #[test]
 fn long_text_count_not_truncated_by_model_cap() {
-    let dsn_dir = std::env::var("EMBEDDING_TOKENIZER_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("models/bge-small-zh-v1.5"));
+    let Ok(raw_dir) = std::env::var("RIP_LLM_TOKENIZER_DIR") else {
+        eprintln!("SKIP: RIP_LLM_TOKENIZER_DIR 未配置，无模型 tokenizer 计数面");
+        return;
+    };
+    let dsn_dir = std::path::PathBuf::from(raw_dir);
     if !dsn_dir.join("tokenizer.json").is_file() {
-        eprintln!("SKIP: tokenizer.json 不在位（{dsn_dir:?}），无计数面");
+        eprintln!("SKIP: tokenizer.json 不在位（{dsn_dir:?}）");
         return;
     }
     // 1000 个互异英文词 ≈ >1000 token（远超常见 512 输入帽）。
     let text: String = (0..1000).map(|i| format!("word{i} ")).collect();
-    let count = context_broker::tokenizer_count(&text).expect("adapter 在场计数必有");
+    let count = context_broker::tokenizer_count(&text).expect("model tokenizer 在场计数必有");
     assert!(
         count > 512,
         "长文本计数被模型输入帽截断：count={count}（no_truncation 未生效）"

@@ -184,20 +184,11 @@ impl PluginSource {
     }
 }
 
-/// 关键词命中（ASCII 词忽略大小写，CJK 字符直接包含；任一词命中即召回，
-/// 与 knowledge 源的检索召回面同向）。
-fn keyword_hit(keywords: &[String], haystack: &str) -> bool {
-    let lower = haystack.to_lowercase();
-    keywords.iter().any(|kw| {
-        if kw.is_empty() {
-            return false;
-        }
-        if kw.is_ascii() {
-            lower.contains(&kw.to_lowercase())
-        } else {
-            haystack.contains(kw.as_str())
-        }
-    })
+/// Plugin candidates are ranked by specific query-term overlap before applying
+/// the caller's limit. Scanning the complete approved active-version set avoids
+/// returning the first arbitrary 64 records that merely contain "CVE".
+fn keyword_relevance(query: &str, haystack: &str) -> usize {
+    crate::score::relevance_score(query, haystack)
 }
 
 impl ContextSource for PluginSource {
@@ -222,7 +213,7 @@ impl ContextSource for PluginSource {
         };
         // 关键词取 coverage_tokens（resource-engine ASCII 词 + CJK 2-gram，
         // search-engine 覆盖计分同源口径；CJK 意图同样可召回）。
-        let keywords = search_engine::tokenizer::coverage_tokens(&q.text_normalized);
+        let keywords = crate::score::relevance_terms(&q.text_normalized);
         if keywords.is_empty() {
             return Ok(Vec::new());
         }
@@ -232,17 +223,24 @@ impl ContextSource for PluginSource {
                     source: self.source_id.to_string(),
                     reason: e.to_string(),
                 })?;
-        let mut out = Vec::new();
+        let mut ranked = Vec::new();
         for (kind, key, title, description, body, sha, version, url) in entries {
-            if out.len() >= limit.max(1) {
-                break;
-            }
             let snippet: String = body.chars().take(SUMMARY_SNIPPET_CHARS).collect();
             let summary = description.clone().unwrap_or(snippet.clone());
-            let haystack = format!("{title} {summary} {snippet}");
-            if !keyword_hit(&keywords, &haystack) {
+            let haystack = format!("{key} {title} {summary} {snippet}");
+            let relevance = keyword_relevance(&q.text_normalized, &haystack);
+            if relevance == 0 {
                 continue;
             }
+            ranked.push((
+                relevance, kind, key, title, summary, snippet, sha, version, url,
+            ));
+        }
+        ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+        let mut out = Vec::new();
+        for (_, kind, key, title, summary, _snippet, sha, version, url) in
+            ranked.into_iter().take(limit.max(1))
+        {
             let ref_id = format!("kse:{}:{kind}:{key}", self.plugin_id);
             out.push(Candidate {
                 item_id: ref_id.clone(),
@@ -479,6 +477,15 @@ mod tests {
             &pool,
             "p.nuclei",
             "nuclei_template",
+            "cloud/cves/2025/CVE-2025-00001.yaml",
+            "Unrelated CVE SQL Injection",
+            "id: cve-2025-00001\ninfo:\n  severity: medium\n",
+            "APPROVED",
+        );
+        insert_entry(
+            &pool,
+            "p.nuclei",
+            "nuclei_template",
             "cloud/cves/2025/CVE-2025-12345.yaml",
             "Example SQL Injection",
             "id: cve-2025-12345\ninfo:\n  severity: high\n  tags: cve,sqli\n",
@@ -506,7 +513,7 @@ mod tests {
         })
         .unwrap();
         let source = PluginSource::new(pool, "p.nuclei");
-        let hits = source.candidates(&query("CVE-2025-12345"), 10).unwrap();
+        let hits = source.candidates(&query("CVE-2025-12345"), 1).unwrap();
         assert_eq!(
             hits.len(),
             1,

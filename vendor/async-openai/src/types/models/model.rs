@@ -1,0 +1,30 @@
+use serde::{Deserialize, Serialize};
+
+/// Describes an OpenAI model offering that can be used with the API.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
+pub struct Model {
+    /// The model identifier, which can be referenced in the API endpoints.
+    pub id: String,
+    /// The object type, which is always "model".
+    pub object: String,
+    /// The Unix timestamp (in seconds) when the model was created.
+    pub created: u32,
+    /// The organization that owns the model.
+    pub owned_by: String,
+    /// The date when the model will shut down, or null if not announced.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shutdown_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Serialize, Default)]
+pub struct ListModelResponse {
+    pub object: String,
+    pub data: Vec<Model>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Serialize, Default)]
+pub struct DeleteModelResponse {
+    pub id: String,
+    pub object: String,
+    pub deleted: bool,
+}
