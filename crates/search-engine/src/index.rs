@@ -634,10 +634,23 @@ fn load_platform_tools(platform: &Pool, docs: &mut Vec<IndexDoc>) -> Result<(), 
         if !exists {
             return Ok(());
         }
-        let mut stmt = c.prepare(
+        // purpose 列在旧夹具 schema 可能缺席（CI sk1_extended_ingest 夹具），
+        // 列探测后以 NULL 占位对齐列位。
+        let has_purpose: bool = c
+            .query_row(
+                "SELECT count(*)>0 FROM pragma_table_info('tool') WHERE name='purpose'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        let tool_sql = if has_purpose {
             "SELECT tool_id, name, purpose, lifecycle, governance, permission_level
-             FROM tool ORDER BY tool_id",
-        )?;
+             FROM tool ORDER BY tool_id"
+        } else {
+            "SELECT tool_id, name, NULL, lifecycle, governance, permission_level
+             FROM tool ORDER BY tool_id"
+        };
+        let mut stmt = c.prepare(tool_sql)?;
         let rows = stmt.query_map([], |r| {
             let tool_id: String = r.get(0)?;
             let name: String = r.get(1)?;
