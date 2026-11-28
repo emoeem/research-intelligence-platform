@@ -555,8 +555,128 @@ fn load_docs(
         load_rtis_curated_pocs(rtis, overlay_path, &mut docs)?;
         load_rtis_candidate_weapons(rtis, overlay_path, &mut docs)?;
     }
+    load_platform_skills(platform, &mut docs)?;
+    load_platform_tools(platform, &mut docs)?;
 
     Ok(docs)
+}
+
+/// M8 修复：Skill 注册表入统一检索投影。enabled=1 → ACTIVE，其余 →
+/// CANDIDATE（候选通道）；治理状态随表照抄，不做任何提升。
+fn load_platform_skills(platform: &Pool, docs: &mut Vec<IndexDoc>) -> Result<(), SearchError> {
+    platform.with_conn(|c| -> rusqlite::Result<()> {
+        // 表缺失（旧库/内存夹具）按空源跳过。
+        let exists: bool = c
+            .query_row(
+                "SELECT count(*)>0 FROM sqlite_master WHERE type='table' AND name='skill'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        if !exists {
+            return Ok(());
+        }
+        let mut stmt = c.prepare(
+            "SELECT skill_id, name, description, when_to_use, governance, enabled
+             FROM skill ORDER BY skill_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let skill_id: String = r.get(0)?;
+            let name: String = r.get(1)?;
+            let description: Option<String> = r.get(2)?;
+            let when_to_use: Option<String> = r.get(3)?;
+            let _governance: Option<String> = r.get(4)?;
+            let enabled: Option<i64> = r.get(5)?;
+            let lane = if enabled.unwrap_or(0) == 1 { "ACTIVE" } else { "CANDIDATE" };
+            let summary = match (description, when_to_use) {
+                (Some(d), Some(w)) => Some(format!("{d}；适用场景：{w}")),
+                (Some(d), None) => Some(d),
+                (None, Some(w)) => Some(format!("适用场景：{w}")),
+                _ => None,
+            };
+            Ok(IndexDoc {
+                resource_id: format!("skill:{skill_id}"),
+                name,
+                description: summary,
+                canonical_url: format!("ripskill://{skill_id}"),
+                resource_type: "skill".to_string(),
+                lifecycle: lane.to_string(),
+                governance: lane.to_string(),
+                identity: Some(crate::model::SearchIdentity {
+                    entity_type: Some("skill".to_string()),
+                    canonical_key: Some(format!("skill:{skill_id}")),
+                    source_system: Some("platform.skill".to_string()),
+                    source_entity_id: Some(skill_id),
+                    ..crate::model::SearchIdentity::default()
+                }),
+                ..IndexDoc::default()
+            })
+        })?;
+        for row in rows {
+            docs.push(row?);
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// M8 修复：安全工具注册表入统一检索投影。lifecycle 非 DISABLED 且
+/// governance=ACTIVE → ACTIVE，其余 → CANDIDATE。
+fn load_platform_tools(platform: &Pool, docs: &mut Vec<IndexDoc>) -> Result<(), SearchError> {
+    platform.with_conn(|c| -> rusqlite::Result<()> {
+        let exists: bool = c
+            .query_row(
+                "SELECT count(*)>0 FROM sqlite_master WHERE type='table' AND name='tool'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        if !exists {
+            return Ok(());
+        }
+        let mut stmt = c.prepare(
+            "SELECT tool_id, name, purpose, lifecycle, governance, permission_level
+             FROM tool ORDER BY tool_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let tool_id: String = r.get(0)?;
+            let name: String = r.get(1)?;
+            let purpose: Option<String> = r.get(2)?;
+            let lifecycle: Option<String> = r.get(3)?;
+            let governance: Option<String> = r.get(4)?;
+            let permission_level: Option<String> = r.get(5)?;
+            let lane = if lifecycle.as_deref() != Some("DISABLED")
+                && governance.as_deref() == Some("ACTIVE")
+            {
+                "ACTIVE"
+            } else {
+                "CANDIDATE"
+            };
+            Ok(IndexDoc {
+                resource_id: format!("tool:{tool_id}"),
+                name,
+                description: purpose,
+                canonical_url: format!("riptool://{tool_id}"),
+                resource_type: "security_tool".to_string(),
+                lifecycle: lifecycle.unwrap_or_else(|| "UNKNOWN".to_string()),
+                governance: lane.to_string(),
+                identity: Some(crate::model::SearchIdentity {
+                    entity_type: Some("security_tool".to_string()),
+                    canonical_key: Some(format!("tool:{tool_id}")),
+                    source_system: Some("platform.tool".to_string()),
+                    source_entity_id: Some(tool_id),
+                    ..crate::model::SearchIdentity::default()
+                }),
+                topics: permission_level.into_iter().collect(),
+                ..IndexDoc::default()
+            })
+        })?;
+        for row in rows {
+            docs.push(row?);
+        }
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// 第三源装载（知识条目 + 可见插件过滤；两表任一缺失即空集跳过）。

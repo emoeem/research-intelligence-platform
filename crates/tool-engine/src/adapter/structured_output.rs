@@ -343,6 +343,8 @@ fn parse_unified_search(keyword: &str, limit: u64, data: &Value) -> Result<Value
             (_, "nuclei_template") => ("nuclei-templates", "Nuclei 模板"),
             (_, "rtis_poc") => ("curated-pocs", "精选 POC"),
             (_, "rtis_weapon_candidate") => ("weapon-candidates", "待审核武器候选"),
+            (_, "skill") => ("skills", "Skills"),
+            (_, "security_tool") => ("security-tools", "安全工具"),
             (_, "catalog_entry") => ("source-catalog", "知识来源"),
             (_, "github_repo" | "github_page") => ("research-resources", "研究资源"),
             _ => ("other-knowledge", "其他知识"),
