@@ -39,5 +39,9 @@ name = "rp-skill-ref-map"
 path = "src/bin/rp-skill-ref-map.rs"
 
 [[bin]]
+name = "rp-batch-review"
+path = "src/bin/rp-batch-review.rs"
+
+[[bin]]
 name = "rp-db-migrate"
 path = "src/bin/rp-db-migrate.rs"

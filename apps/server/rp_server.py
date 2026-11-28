@@ -136,6 +136,14 @@ CURATED_SEARCH_INDEX_SCHEMA_VERSION = 8
 UNIFIED_SEARCH_QUERY_TIMEOUT_S = 45
 CURATED_SEARCH_INDEX_DB = _repo_path(os.environ.get("RP_CURATED_SEARCH_INDEX_DB") or
                                      "rip-data/derived/curated-poc-search.db")
+
+# M10 批次审核台账（rip_platform PG）经 rp-batch-review 子进程；本进程零直连 PG。
+# 正式库 DSN 来自 RP_PLATFORM_PG_DSN（dev_up.sh 从 600 env 文件注入）；缺位 fail-closed。
+BATCH_REVIEW_BIN = _repo_path((os.environ.get("RP_BATCH_REVIEW_BIN") or
+                               "target/debug/rp-batch-review").strip())
+BATCH_REVIEW_DSN = (os.environ.get("RP_PLATFORM_PG_DSN") or "").strip()
+BATCH_REVIEW_TIMEOUT_S = int(os.environ.get("RP_BATCH_REVIEW_TIMEOUT_S") or "120")
+REVIEW_QUEUE_DIR = _repo_path("docs/knowledge-governance")
 CURATED_SEARCH_CATALOG_DB = _repo_path(os.environ.get("RP_SEARCH_CATALOG_DB") or
                                        "migrations/sources-snapshot/catalog.db")
 CURATED_SEARCH_RTIS_DB = _repo_path(os.environ.get("RP_SEARCH_RTIS_DB") or
@@ -718,6 +726,175 @@ def handle_resources(conn: sqlite3.Connection, params: dict) -> dict:
 
 VALID_QUEUES = ("d5", "license", "mapping")
 REVIEW_QUEUE_LABELS = {"d5": "D5 重复对", "license": "License 许可", "mapping": "Mapping 映射"}
+
+
+def _batch_id_arg(params_or_body) -> str:
+    """batch_id 入参校验（URL query 或 POST body 通用）。"""
+    raw = params_or_body.get("batch_id") or ""
+    if isinstance(raw, list):
+        raw = (raw[0] if raw else "")
+    batch_id = str(raw).strip()
+    if not batch_id or len(batch_id) > 128 or not re.fullmatch(r"[A-Za-z0-9._-]+", batch_id):
+        raise ApiError(400, "bad_batch_id", f"batch_id 非法：{batch_id!r}")
+    return batch_id
+
+
+def _rp_batch_review_json(extra_args: list, timeout_s: int = 0) -> dict:
+    """跑 rp-batch-review 子进程并解析 JSON stdout。本进程不直连 rip_platform。"""
+    import subprocess
+
+    if not BATCH_REVIEW_DSN:
+        raise ApiError(503, "batch_review_unconfigured",
+                       "缺 RP_PLATFORM_PG_DSN（正式库连接）；dev_up.sh 会从 "
+                       "rip-data/dev/rip-platform-dsn.env 注入")
+    env = dict(os.environ)
+    env["RP_PG_DSN"] = BATCH_REVIEW_DSN
+    try:
+        proc = subprocess.run(
+            [BATCH_REVIEW_BIN, *extra_args], capture_output=True, text=True,
+            timeout=timeout_s or BATCH_REVIEW_TIMEOUT_S, cwd=REPO_ROOT, env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "batch_review_timeout", f"rp-batch-review 超时：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "batch_review_spawn_failed", f"rp-batch-review 启动失败：{exc}") from exc
+    if proc.returncode != 0:
+        inner = {}
+        for stream in (proc.stdout, proc.stderr):
+            try:
+                parsed = json.loads(stream) if stream.strip() else {}
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict) and parsed.get("error"):
+                inner = parsed["error"]
+                break
+        raise ApiError(502, inner.get("code", "batch_review_failed"),
+                       inner.get("message", f"rp-batch-review 退出码 {proc.returncode}"))
+    try:
+        return json.loads(proc.stdout) if proc.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "batch_review_bad_output", f"rp-batch-review 返回非 JSON：{exc}")
+
+
+def handle_review_batches(_conn: sqlite3.Connection, params: dict) -> dict:  # noqa: ARG001
+    """GET /api/review-batches：批次列表（各决策状态计数）。"""
+    return _rp_batch_review_json(["list"])
+
+
+def handle_review_batch_detail(_conn: sqlite3.Connection, params: dict) -> dict:  # noqa: ARG001
+    """GET /api/review-batches/detail：批次条目分页（payload 随行供证据展示）。"""
+    batch_id = _batch_id_arg(params)
+    args = ["show", "--batch", batch_id]
+    decision = (params.get("decision") or [""])[0].strip().upper()
+    if decision:
+        if decision not in {"PENDING", "APPROVED", "REJECTED", "DEFERRED"}:
+            raise ApiError(400, "bad_decision",
+                           "decision 仅支持 PENDING/APPROVED/REJECTED/DEFERRED")
+        args += ["--decision", decision]
+    limit = parse_limit(params)
+    args += ["--limit", str(limit)]
+    raw_offset = (params.get("offset") or ["0"])[0].strip()
+    try:
+        offset = max(0, min(int(raw_offset), 10_000_000))
+    except ValueError as exc:
+        raise ApiError(400, "bad_pagination", "offset 必须为整数") from exc
+    args += ["--offset", str(offset)]
+    return _rp_batch_review_json(args)
+
+
+def handle_review_batch_export(_conn: sqlite3.Connection, params: dict) -> dict:  # noqa: ARG001
+    """GET /api/review-batches/export：批次决策台账导出（含完整历史）。"""
+    batch_id = _batch_id_arg(params)
+    return _rp_batch_review_json(["export", "--batch", batch_id])
+
+
+def review_batches_post(action: str, body: dict) -> dict:
+    """POST /api/review-batches/{decide,undo,apply,import}：dry-run 默认，
+    body["apply"]=true 才提交（decide/undo）或执行权威路由（apply）。"""
+    if not isinstance(body, dict):
+        raise ApiError(400, "bad_body", "JSON object body required")
+    if action in {"decide", "undo", "apply"}:
+        batch_id = _batch_id_arg(body)
+    reviewer = str(body.get("reviewer") or "").strip()
+    if reviewer:
+        if len(reviewer) > 64 or not re.fullmatch(r"[A-Za-z0-9._@-]+", reviewer):
+            raise ApiError(400, "bad_reviewer", "reviewer 仅允许 [A-Za-z0-9._@-]{1,64}")
+    reason = str(body.get("reason") or "").strip()
+    if len(reason) > 512:
+        raise ApiError(400, "bad_reason", "reason 最长 512 字符")
+    ids = body.get("ids")
+    if ids is not None:
+        if not isinstance(ids, list) or not ids or len(ids) > 500:
+            raise ApiError(400, "bad_ids", "ids 必须为非空数组且 ≤500 条")
+        ids = [str(x).strip() for x in ids]
+        if any(not x or len(x) > 300 for x in ids):
+            raise ApiError(400, "bad_ids", "ids 内含非法 candidate_id")
+
+    if action == "decide":
+        decision = str(body.get("decision") or "").strip().upper()
+        if decision not in {"APPROVED", "REJECTED", "DEFERRED"}:
+            raise ApiError(400, "bad_decision",
+                           "decision 仅支持 APPROVED/REJECTED/DEFERRED")
+        if not reason:
+            raise ApiError(400, "reason_required", "每次决策必须给 reason（审核纪律）")
+        if not reviewer:
+            reviewer = "web-workbench"
+        args = ["decide", "--batch", batch_id, "--decision", decision,
+                "--reviewer", reviewer, "--reason", reason]
+        band = str(body.get("band") or "").strip().upper()
+        if ids:
+            args += ["--ids", ",".join(ids)]
+        elif band:
+            if band not in {"P0", "P1", "P2", "P3"}:
+                raise ApiError(400, "bad_band", "band 仅支持 P0/P1/P2/P3")
+            args += ["--band", band]
+        elif body.get("pending") is True:
+            args += ["--pending"]
+        else:
+            raise ApiError(400, "selector_required",
+                           "需要 ids / band / pending 之一作为条目选择器")
+        if body.get("apply") is True:
+            args.append("--apply")
+        return _rp_batch_review_json(args)
+
+    if action == "undo":
+        if not ids:
+            raise ApiError(400, "ids_required", "undo 需要 ids")
+        if not reviewer:
+            reviewer = "web-workbench"
+        args = ["undo", "--batch", batch_id, "--ids", ",".join(ids),
+                "--reviewer", reviewer]
+        if reason:
+            args += ["--reason", reason]
+        if body.get("apply") is True:
+            args.append("--apply")
+        return _rp_batch_review_json(args)
+
+    if action == "apply":
+        args = ["apply", "--batch", batch_id]
+        if ids:
+            args += ["--ids", ",".join(ids)]
+        if body.get("apply") is True:
+            args.append("--apply")
+        return _rp_batch_review_json(args)
+
+    if action == "import":
+        name = str(body.get("file") or "").strip()
+        if not name or "/" in name or "\\" in name or ".." in name or not name.endswith(".json"):
+            raise ApiError(400, "bad_file",
+                           "file 必须为 docs/knowledge-governance 下的纯文件名（*.json）")
+        path = (REVIEW_QUEUE_DIR / name).resolve()
+        if not str(path).startswith(str(REVIEW_QUEUE_DIR.resolve())):
+            raise ApiError(400, "bad_file", "file 越界")
+        if not path.is_file():
+            raise ApiError(404, "batch_file_not_found", f"批次文件不存在：{name}")
+        args = ["import", "--file", str(path)]
+        domain = str(body.get("domain") or "").strip()
+        if domain:
+            args += ["--domain", domain]
+        return _rp_batch_review_json(args)
+
+    raise ApiError(404, "unknown_review_action", f"未知动作：{action}")
 
 
 def handle_reviews(conn: sqlite3.Connection, params: dict) -> dict:
@@ -6411,6 +6588,9 @@ API_ROUTES = {
     "/api/metrics": handle_api_metrics,
     "/api/resources": handle_resources,
     "/api/reviews": handle_reviews,
+    "/api/review-batches": handle_review_batches,
+    "/api/review-batches/detail": handle_review_batch_detail,
+    "/api/review-batches/export": handle_review_batch_export,
     "/api/tasks": handle_tasks,
     "/api/overview": handle_overview,
     "/api/knowledge": handle_knowledge,
@@ -6958,6 +7138,16 @@ class RpHandler(BaseHTTPRequestHandler):
                                    "文档导入写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
                 body = self._read_json_body(DOC_IMPORT_MAX_BYTES * 2)
                 self.send_json(documents_import_post(body))
+                return
+            # M10 批次审核写面：decide/undo/apply（dry-run 默认）+ import。
+            if parsed.path.startswith("/api/review-batches/"):
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "批次审核写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
+                body = self._read_json_body()
+                action = parsed.path[len("/api/review-batches/"):].strip("/")
+                self.send_json(review_batches_post(action, body))
                 return
             if parsed.path == "/api/projects":
                 self.require_auth()

@@ -35,6 +35,14 @@ else
 fi
 
 echo "== 2. 后端 rp_server（127.0.0.1:${BACK_PORT}）"
+# M10 批次审核面：正式库（rip_platform @ rip-m4-personal-pg:55432）DSN 从
+# 600 权限 env 文件注入（不入库、不打印）；缺文件时批次审核端点 fail-closed。
+if [ -f "${REPO}/rip-data/dev/rip-platform-dsn.env" ]; then
+  # shellcheck disable=SC1091
+  . "${REPO}/rip-data/dev/rip-platform-dsn.env"
+  export RP_PLATFORM_PG_DSN
+  echo "  [ok] RP_PLATFORM_PG_DSN 已注入（rip-platform-dsn.env）"
+fi
 if port_up "${BACK_PORT}"; then
   echo "  [ok] 端口已在监听（复用既有进程）"
 else
@@ -42,6 +50,7 @@ else
   setsid nohup env RP_PORT="${BACK_PORT}" \
     RP_DB_PATH="${REPO}/migrations/platform.db" \
     RP_AUTH_TOKEN_FILE="${REPO}/.rp-workbench-token" \
+    RP_PG_DSN="${RP_PG_DSN:-postgres://postgres:pgselftest@127.0.0.1:5432/postgres}" \
     python3 "${REPO}/apps/server/rp_server.py" \
     > "${RUN_DIR}/rp_server.log" 2>&1 < /dev/null &
   echo $! > "${RUN_DIR}/rp_server.pid"

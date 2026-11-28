@@ -17,6 +17,7 @@
 //! 迁移：migrations_pg/V0001 扩展装载 + V0002 起 Document 域（当前 V0013），refinery 每文件
 //! 事务 + checksum（12-STORAGE 第三节纪律）。
 
+pub mod batch_review;
 pub mod bench;
 pub mod card_repo;
 pub mod commit;
