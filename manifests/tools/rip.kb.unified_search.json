@@ -2,7 +2,7 @@
   "schema_version": "1",
   "id": "rip.kb.unified_search",
   "name": "Unified Knowledge Search",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "kind": "tool",
   "family": "knowledge",
   "description": "跨 PostgreSQL 与 SQLite 统一检索知识卡片、漏洞、来源目录、Nuclei 模板、精选 POC 和待审核候选；默认仅返回已批准数据，显式 include_candidates 才返回候选且标明治理状态。",
@@ -18,6 +18,9 @@
     ],
     "working_dir": "repo://research-platform",
     "restart": "pooled",
+    "env": {
+      "RP_PG_DSN": "postgres://postgres:pgselftest@127.0.0.1:5432/postgres"
+    },
     "venv": {
       "path": "workers/python/.venv",
       "direct_deps": [

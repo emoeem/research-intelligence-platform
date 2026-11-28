@@ -1004,12 +1004,25 @@ fn build_python_adapter(
         ),
         _ => None,
     };
+    // D4：runtime.env 声明块 → extra_env（validator 已拒 LD_*；此前面
+    // 为空实现导致 Manifest env 静默丢弃，修复对齐声明/派发面，同 rp-agent）。
+    let extra_env: Vec<(String, String)> = match runtime.get("env") {
+        Some(v) => v
+            .as_object()
+            .map(|o| {
+                o.iter()
+                    .filter_map(|(k, val)| val.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
     Ok(PythonWorkerAdapter::new(PythonWorkerConfig {
         worker_name,
         command,
         working_dir,
         restart: RestartPolicy::Pooled,
-        extra_env: Vec::new(),
+        extra_env,
         handshake_timeout: Duration::from_secs(10),
         venv_config,
         venv_identity: None,
