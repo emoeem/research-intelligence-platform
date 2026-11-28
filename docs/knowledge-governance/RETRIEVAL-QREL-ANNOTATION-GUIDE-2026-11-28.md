@@ -36,6 +36,12 @@
 
 评测器输出 Recall@5/10、Precision@5/10、MRR、nDCG@10、No-result Rate、Source Coverage、Candidate Leakage Rate（按文档 §M8 口径，relevant = relevance >= 2）。
 
+评测器支持双轨：
+- `--label-mode ai-assisted-characterization`：用于系统自动运行和持续监测，
+  明确标记不是真人 Ground Truth，适合现有 `annotator=ai-assist` 数据集。
+- `--label-mode human-ground-truth`：用于人工修复或争议裁决形成的正式
+  校准集，要求 `annotator` 为 `human`、`reviewer` 或 `human-review`。
+
 ## 边界
 
 - 查询结果取自 Schema 8 派生索引（18,147 docs）的真实 API 返回，冻结于 2026-11-28；索引重建后需重新生成任务单再标注。

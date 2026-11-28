@@ -82,7 +82,9 @@ fn parse_args() -> Result<Args, String> {
         let flag = argv[i].as_str();
         let value = |i: &mut usize| -> Result<String, String> {
             *i += 1;
-            argv.get(*i).cloned().ok_or_else(|| format!("{flag} requires a value"))
+            argv.get(*i)
+                .cloned()
+                .ok_or_else(|| format!("{flag} requires a value"))
         };
         match flag {
             "--file" => args.file = Some(PathBuf::from(value(&mut i)?)),
@@ -135,12 +137,16 @@ fn main() {
     }
     let result = match args.cmd.as_str() {
         "import" => {
-            let Some(file) = args.file else { die("import requires --file") };
+            let Some(file) = args.file else {
+                die("import requires --file")
+            };
             batch_review::import_batch_file(&pool, &file, args.domain.as_deref())
         }
         "list" => batch_review::list_batches(&pool),
         "show" => {
-            let Some(batch) = args.batch.clone() else { die("show requires --batch") };
+            let Some(batch) = args.batch.clone() else {
+                die("show requires --batch")
+            };
             batch_review::batch_detail(
                 &pool,
                 &batch,
@@ -150,14 +156,18 @@ fn main() {
             )
         }
         "decide" => {
-            let Some(batch) = args.batch.clone() else { die("decide requires --batch") };
+            let Some(batch) = args.batch.clone() else {
+                die("decide requires --batch")
+            };
             let Some(decision) = args.decision.clone() else {
                 die("decide requires --decision")
             };
             let Some(reviewer) = args.reviewer.clone() else {
                 die("decide requires --reviewer")
             };
-            let Some(reason) = args.reason.clone() else { die("decide requires --reason") };
+            let Some(reason) = args.reason.clone() else {
+                die("decide requires --reason")
+            };
             let selector = if let Some(ids) = args.ids.clone() {
                 batch_review::Selector::Ids(ids)
             } else if let Some(band) = args.band.clone() {
@@ -168,29 +178,31 @@ fn main() {
                 die("decide requires one of --ids / --band / --pending")
             };
             batch_review::decide(
-                &pool,
-                &batch,
-                &selector,
-                &decision,
-                &reviewer,
-                &reason,
-                args.apply,
+                &pool, &batch, &selector, &decision, &reviewer, &reason, args.apply,
             )
         }
         "undo" => {
-            let Some(batch) = args.batch.clone() else { die("undo requires --batch") };
-            let Some(ids) = args.ids.clone() else { die("undo requires --ids") };
+            let Some(batch) = args.batch.clone() else {
+                die("undo requires --batch")
+            };
+            let Some(ids) = args.ids.clone() else {
+                die("undo requires --ids")
+            };
             let Some(reviewer) = args.reviewer.clone() else {
                 die("undo requires --reviewer")
             };
             batch_review::undo(&pool, &batch, &ids, &reviewer, args.apply)
         }
         "apply" => {
-            let Some(batch) = args.batch.clone() else { die("apply requires --batch") };
+            let Some(batch) = args.batch.clone() else {
+                die("apply requires --batch")
+            };
             batch_review::apply_batch(&pool, &batch, args.ids.clone(), args.apply)
         }
         "export" => {
-            let Some(batch) = args.batch.clone() else { die("export requires --batch") };
+            let Some(batch) = args.batch.clone() else {
+                die("export requires --batch")
+            };
             batch_review::export_batch(&pool, &batch)
         }
         "project" => batch_review::projection_plan(&pool),

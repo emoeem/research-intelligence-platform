@@ -47,18 +47,19 @@
 
 | 状态码 | 机器码（词表） | 场景 |
 | --- | --- | --- |
-| 400 | bad_json / bad_limit / bad_level / bad_verified / bad_grade / missing_id / bad_input / bad_run_id / definition_required / bad_definition_schema / bad_workflow_id / bad_graph / definition_unparsable / no_route 之外的形状类拒绝 | 请求形状违规（完整词表以实现为准） |
+| 400 | bad_json / bad_limit / bad_level / bad_verified / bad_grade / missing_id / bad_input / bad_run_id / definition_required / bad_definition_schema / bad_workflow_id / bad_graph / definition_unparsable / bad_workspace_id / bad_idempotency_key / idempotency_key_mismatch / bad_report_id / unsupported_ingestion_source / no_route 之外的形状类拒绝 | 请求形状违规（完整词表以实现为准） |
 | 401 | unauthorized | 缺少或无效令牌（携带 WWW-Authenticate: Bearer） |
-| 403 | auth_required_for_write / production_db_refused | 写端点鉴权关闭；写面目标库指向 platform*.db（红线拒绝） |
-| 404 | no_route / not_found / no_knowledge / no_tool / no_run / no_agent / no_agent_run / plugin_not_found | 路由或实体不存在 |
+| 403 | auth_required_for_write / production_db_refused / ingestion_workspace_forbidden | 写端点鉴权关闭；写面目标库指向 platform*.db（红线拒绝）；摄入 API workspace 未授权 |
+| 404 | no_route / not_found / no_knowledge / no_tool / no_run / no_agent / no_agent_run / plugin_not_found / ingestion_not_found / ingestion_source_not_found | 路由或实体不存在 |
+| 409 | idempotency_conflict / ingestion_workspace_conflict | 同一 workspace 幂等键已被不同请求使用；任务的既有 workspace 与请求不一致 |
 | 405 | readonly | POST/PUT/DELETE/PATCH 打白名单外路径 |
 | 413 | payload_too_large | 请求体超 1 MiB |
 | 422 | definition_rejected | workflow 定义静态校验拒绝（REJECTED 汇总透传） |
 | 429 | rate_limited | 全局限频超限（带 Retry-After） |
 | 500 | internal | 兜底（不含堆栈） |
-| 502 | plugin_cmd_spawn_failed / workflow_cmd_spawn_failed / workflow_bin_missing / plugin_cmd_failed | 子进程启动失败或 CLI 拒绝 |
-| 503 | db_missing / db_unavailable / plugin_db_missing / plugin_db_unavailable / workflow_db_not_configured | 数据面不可用（真实空态说明的强失败面） |
-| 504 | plugin_cmd_timeout / workflow_cmd_timeout | 子进程超时（见 七） |
+| 502 | plugin_cmd_spawn_failed / workflow_cmd_spawn_failed / workflow_bin_missing / plugin_cmd_failed / knowledge_ingestion_spawn_failed / knowledge_ingestion_failed / knowledge_ingestion_bad_output | 子进程启动失败或 CLI 拒绝 |
+| 503 | db_missing / db_unavailable / plugin_db_missing / plugin_db_unavailable / workflow_db_not_configured / knowledge_ingestion_unconfigured | 数据面不可用（真实空态说明的强失败面） |
+| 504 | plugin_cmd_timeout / workflow_cmd_timeout / knowledge_ingestion_timeout | 子进程超时（见 七） |
 
 ## 五、trace 关联透出（SESSION-HANDOFF §十 Phase 9 追加项）
 
@@ -103,7 +104,7 @@
 
 ## 九、端点总览（与 ROUTES 逐条对账）
 
-下表由 selftest_phase9_rest.sh 第 10 段机器对账：23 条 `API_ROUTES` 只读路由逐条在场且标 GET；动态详情路径与白名单写面逐条核对；写动作词表（`PLUGIN_WRITE_ACTIONS`/`WORKFLOW_WRITE_ACTIONS`，含 upgrade）与 rp_server.py 词表逐 token 一致；标记段内不得出现表外路径。
+下表由 selftest_phase9_rest.sh 第 10 段机器对账：25 条 `API_ROUTES` 只读路由逐条在场且标 GET；动态详情路径与白名单写面逐条核对；写动作词表（`PLUGIN_WRITE_ACTIONS`/`WORKFLOW_WRITE_ACTIONS`，含 upgrade）与 rp_server.py 词表逐 token 一致；标记段内不得出现表外路径。
 
 <!-- ENDPOINTS:BEGIN -->
 | 方法 | 路径 | 说明 | 鉴权 |
@@ -115,6 +116,7 @@
 | GET | /api/metrics | 平台指标只读投影 | Bearer |
 | GET | /api/resources | 资源库读面 | Bearer |
 | GET | /api/reviews | 评审队列读面 | Bearer |
+| GET | /api/review-batches | 批次审核统计与决策计数（rip_platform） | Bearer |
 | GET | /api/tasks | 任务列表 | Bearer |
 | GET | /api/projects | 独立研究项目列表（workspace/status/q/limit） | Bearer |
 | GET | /api/projects/<project_id> | 独立项目详情 | Bearer |
@@ -123,6 +125,7 @@
 | GET | /api/overview | Overview 聚合 | Bearer |
 | GET | /api/knowledge | 知识库列表（keyword 过滤） | Bearer |
 | GET | /api/curated-pocs/search | RTIS + curation Overlay 自有 POC FTS 检索（关键词、K 级、Lifecycle、Severity、Category、CVE、来源完整性、核验结论、去重状态、缺失证据） | Bearer |
+| GET | /api/search | SQLite + PostgreSQL 统一检索（caller 仅 default workspace） | Bearer |
 
 `GET /api/knowledge_sources` 对 CISA KEV `catalog_entry` 返回 `cve_record` 结构化对象（CVE ID、vendor/product、CISA 收录日期、修复期限、ransomware/forensicTriage、CWE、requiredAction）；对 Nuclei 条目返回 `nuclei_template`（severity、协议、CVE/CWE、解析状态等）。三类对象均为元数据投影，不返回模板或 PoC 正文；CISA KEV 未提供的 `cvss_score` / `epss_score` 保持 `null`，`poc_status=not_assessed`、`current_target_status=not_tested`。PoC Index `pocindex_record` 保留 EPSS、CVSS assessments、advisory URL、Nuclei 元数据及 snapshot provenance。知识来源读面使用 `RIP_PLUGIN_DB`（默认 `migrations/dev-p6.db`），与 core `RP_DB_PATH` 分离；插件安装、审核和同步必须针对同一个插件数据面。
 | GET | /api/curated-pocs/summary | 自有 POC curation Overlay 治理覆盖统计（只读元数据） | Bearer |
@@ -134,6 +137,8 @@
 | GET | /api/agents | Agent 定义读面 | Bearer |
 | GET | /api/agent-runs | AgentRun 列表；?id= 详情（correlation_id + 关联头） | Bearer |
 | GET | /api/documents | RIP3 文档列表（?workspace= 过滤，all=1 含软删；RIP3 P1-1 起） | Bearer |
+| GET | /api/knowledge-ingestions/<ingestion_id> | 摄入任务状态（workspace_id 必填；当前仅 default） | Bearer |
+| GET | /api/knowledge-ingestions/<ingestion_id>/candidates/<candidate_id> | 候选状态及有界、标注为不可信的来源证据片段（workspace_id 必填；当前仅 default） | Bearer |
 | GET | /api/workflows | Workflow 定义读面；?id= 全版本 + graph | Bearer |
 | GET | /api/workflow-runs | WorkflowRun 读面；?id= 详情（六 ID correlation + correlation_id + 关联头） | Bearer |
 | POST | /api/projects | 创建独立研究项目（rp-verify 子进程） | Bearer（写面强制） |
@@ -150,9 +155,13 @@
 | POST | /api/workflow-runs | 受理新 run（run_id 预生成，异步 Popen；action=run） | Bearer（写面强制） |
 | POST | /api/workflow-runs/<action> | 控制面形状一：action ∈ pause, resume, retry（run_id 在 body） | Bearer（写面强制） |
 | POST | /api/workflow-runs/<run_id>/<action> | 控制面形状二（REST 动态路径）：action ∈ pause, resume, retry | Bearer（写面强制） |
+| POST | /api/knowledge-ingestions | 提交已存储 Research Report IR 或已解析 Document Revision 摄入（Idempotency-Key 或 body key） | Bearer（写面强制） |
+| POST | /api/knowledge-ingestions/<ingestion_id>/retry | 重试失败或回收过期 PROCESSING 摄入任务（body 含 workspace_id） | Bearer（写面强制） |
 <!-- ENDPOINTS:END -->
 
-动态词表来源：插件写动作 `enable/disable/uninstall/ingest/review` 加 `upgrade`（rp_server.py `PLUGIN_WRITE_ACTIONS` + upgrade 特例）；`review` 仅接受 1–100 个唯一 `item_keys`，`status` ∈ `APPROVED/REJECTED/DEPRECATED/UNREVIEWED/DISCOVERED`，经 `rp-plugin review` 写入并由 audit-engine 记录；workflow 控制动作 `pause/resume/retry`（`WORKFLOW_WRITE_ACTIONS`）。词表外动作 404 `no_route`；白名单外 POST 一律 405 `readonly`。
+动态词表来源：插件写动作 `enable/disable/uninstall/ingest/review` 加 `upgrade`（rp_server.py `PLUGIN_WRITE_ACTIONS` + upgrade 特例）；`review` 仅接受 1-100 个唯一 `item_keys`，`status` ∈ `APPROVED/REJECTED/DEPRECATED/UNREVIEWED/DISCOVERED`，经 `rp-plugin review` 写入并由 audit-engine 记录；workflow 控制动作 `pause/resume/retry`（`WORKFLOW_WRITE_ACTIONS`）。词表外动作 404 `no_route`；白名单外 POST 一律 405 `readonly`。
+
+Knowledge Ingestion 请求的来源可为 `{ "kind":"research_report","report_id":"rep-..." }`，或 `{ "kind":"document_revision","document_id":"doc-...","revision_id":"drev-..." }`。`Idempotency-Key` 请求头可替代 body 中的 key，二者同时提供时必须一致。API 当前 fail-closed 仅允许 `default` workspace，直到 caller-workspace ACL 建立。Report adapter 进入既有 Report IR → Finding/Evidence → feedback candidate 流程。Document adapter 只接受已解析且 parse_state 为 `APPROVED` 或 `REVIEW_PENDING` 的 Document Revision；它仅抽取 CVE/CWE 标识符提及，保存 block/page/location、Unicode 字符偏移及来源哈希，并创建 `knowledge_ingestion` review batch。同一文档修订差异按 block SHA-256 记录；变更区块中的既有标识符标为 `VERSION_CHANGE_REVIEW`，不合并或覆盖。review batch 的 APPROVED/apply 仅表示人工审阅了提及，不代表验证或发布知识事实；无候选时状态为 `COMPLETED`，有待审候选时为 `REVIEW_PENDING`。候选详情端点返回最多 100 条匹配证据，每条仅包含最多 240 字符的上下文片段，并以 `source_text_untrusted: true` 明确标记不可信来源文本。未解析 revision 返回 409 `ingestion_source_not_parsed`；相同 workspace/key 与不同请求体返回 409。
 
 ## 十、写面响应语义
 
@@ -169,5 +178,6 @@
 - 自有 POC 治理统计：`GET /api/curated-pocs/summary`。只读取 Overlay JSON 元数据，返回纳入总量、K 级/Lifecycle/来源完整性/核验结论分布、待补证条数、来源路径覆盖和关系数量，不访问 POC 正文。
 - 派生索引默认写入 `rip-data/derived/curated-poc-search.db`，可通过 `RP_CURATED_SEARCH_INDEX_DB` 重定位；源数据库以只读方式构建，索引缺失或源文件更新时自动重建。Search index schema v5，旧索引必须重建。
 - 鉴权 11 项回归：apps/server/selftest_auth.sh（Bearer + 常时比较 + 失败节流 + WWW-Authenticate + 只读语义 + 路径穿越 + 开发模式告警）。
-- 已知边界（如实登记，不是缺口伪装成完整）：CLI 面（11 bin 帮助面统一口径与逐 bin 参考）见 docs/guides/CLI-REFERENCE.md，本文件不重复；MCP 面契约（握手鉴权、目录分页、isError 语义）见 docs/phase9/PHASE9-DESIGN.md；REST 面当前不提供 run_tool 直执端点（执行通道 = POST /api/workflow-runs 受理 workflow 或外部 AI 经 MCP rip.run_tool），P9-4 一致性载具将双通道对账。
+- Knowledge Ingestion accepts stored Research Report IR and parsed Document Revisions; authenticated REST exposes job status and workspace-scoped candidate evidence. The API remains fail-closed to `default` workspace until caller-workspace ACL exists. Repository URL and independent-file adapters, an internal Agent Tool, and Workflow orchestration are not connected.
+- 已知边界（如实登记，不是缺口伪装成完整）：CLI 面（12 bin 帮助面统一口径与逐 bin 参考）见 docs/guides/CLI-REFERENCE.md，本文件不重复；MCP 面契约（握手鉴权、目录分页、isError 语义）见 docs/phase9/PHASE9-DESIGN.md；REST 面当前不提供 run_tool 直执端点（执行通道 = POST /api/workflow-runs 受理 workflow 或外部 AI 经 MCP rip.run_tool），P9-4 一致性载具将双通道对账。
 - 本文件与实现漂移即债：改 rp_server.py 路由/词表/信封时必须同步更新本文件与 selftest 对账段（DOC-STANDARD 三道门禁不扫 markdown，对账由 selftest 承担）。

@@ -1,6 +1,6 @@
 # SESSION HANDOFF：跨会话交接文档（RIP 主线）
 
-更新：2026-11-26　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
+更新：2026-11-28　用途：新会话接续执行的唯一状态源。配合自动加载的记忆索引（MEMORY.md）使用。
 
 ## Quality remediation status（2026-11-23 续批）
 
@@ -395,3 +395,392 @@ User decisions: Projects=independent; Research Assets=independent; M7=reference;
 - Security: repository scan PASS; cargo-deny full check PASS (duplicate dependency warnings); SQLite benchmark 1,000 docs / 10,000 chunks, backup/restore verified.
 - M4 batch 001 accepted by user sample review with individual labels waived. Zero saved human labels and null relevance metrics remain factual and unchanged.
 - M7 closed for reference-based scope after the user's UI acceptance. M8 remains staged per user decision.
+
+## 2026-11-28 documentation and configuration correction
+
+- Added the RIP 1.0 release document set under `docs/release/` and indexed it in `docs/README.md`.
+- Corrected the formal start path: `apps/server/rp_service.sh` and `apps/server/dev_up.sh` now share `apps/server/platform_env.sh` for `RP_PLATFORM_PG_DSN`.
+- The shared DSN file is `rip-data/dev/rip-platform-dsn.env` by default and must be mode 600. It is excluded from source control and must not be written into logs or documentation.
+- The systemd unit uses `EnvironmentFile=-<DSN_FILE>`, so PostgreSQL batch-review features receive the same configuration as development startup.
+- Missing DSN remains fail-closed: batch-review APIs return `503 batch_review_unconfigured`.
+- Updated the release operations and disaster recovery reports with PostgreSQL `rip_platform` backup, restore, verification and rollback boundaries.
+- Fixed the DSN loader exit-code capture and `rp_service.sh install` to require a persistent 600-permission DSN file. Direct shell-only DSN is not inherited by systemd.
+- Completed a 2026-11-28 isolated drill: real user systemd service on 7815 accepted the DSN and `/api/review-batches` returned 200; custom dump/pg_restore to a separate template0 database restored 2/2 rows. Drill unit, databases and temp files were removed.
+
+## 2026-11-28 production gate freeze
+
+- DSN and PostgreSQL recovery code/docs are frozen; no further edits or reinterpretive rewrites are allowed in that area.
+- Added `docs/release/RIP-1.0-PRODUCTION-GATE-STATUS.md` as the remaining production acceptance gate table.
+- Current snapshot: 7800 live, 7801 closed, formal rp-workbench.service absent, provider secrets unset, M4 has 140 rows and zero human grades.
+- Next gates: formal PostgreSQL backup policy, M8 TLS/rollback promotion, real Provider E2E, authorized POC/Nuclei execution and production rollback evidence.
+
+## 2026-11-28 knowledge ingestion architecture review
+
+- Added `docs/knowledge-governance/KNOWLEDGE-INGESTION-FEEDBACK-ARCHITECTURE-1.0.md`.
+- The document proposes one unified Raw/Candidate/Published pipeline for AI
+  findings and external document, repository, vulnerability, POC, Nuclei,
+  tool and Skill ingestion.
+- Repository audit confirms reuse of Document Domain/IR, Document Router,
+  Finding feedback, Evidence provenance, KnowledgeCard, entity relations,
+  source assessment, batch review and workflow/search infrastructure.
+- The missing core is a unified Ingestion Service and API/CLI/Agent Tool,
+  document chunk evidence mapping, structured extraction, dedup/version
+  diff, risk-aware review UI and publish/index refresh.
+- Docling, Unstructured and MarkItDown are comparison candidates only.
+  Existing native/document-router capability remains the first implementation
+  choice; no parser dependency is installed or selected by this document.
+- Project status remains scoped closeout: M4 has zero human grades and null relevance metrics; M8 is staged; real Provider E2E and production reverse-proxy/TLS/rollback remain open.
+
+## 2026-11-28 Knowledge Ingestion P1 vertical slice
+
+- Implemented PostgreSQL migration `migrations_pg/V0015__knowledge_ingestion.sql`
+  and typed protocol/state service in `crates/intel-db/src/ingestion.rs`.
+- The initial adapter accepts an already stored Research Report IR and delegates
+  Finding/Evidence processing to `maintenance::ingest_report`; resulting
+  candidates remain pending human review and are never auto-published.
+- Added `rp-ingest report/status/retry` and authenticated REST submit/status/
+  retry routes. API is fail-closed to `default` workspace until caller-workspace
+  ACL mapping exists. CLI calls retain existing workspace isolation checks.
+- Idempotency is scoped to `(workspace_id, idempotency_key)`. Reusing a key for
+  a different request is rejected. Failed jobs can be retried; stale PROCESSING
+  jobs can be reclaimed after the 30-minute lease.
+- Updated the REST contract, CLI reference, architecture status and REST route
+  selftest. Validation: 8/8 Phase 7 PostgreSQL integration tests (including the
+  new ingestion replay/workspace test) passed in a disposable database; 34/34
+  intel-db library tests passed; Clippy passed with `-D warnings`; ingestion API
+  tests 6/6 and unified-search workspace regression tests 7/7 passed; the full
+  apps/server Python suite passed 19/19; REST/CLI selftest passed 33/33 and
+  production SQLite fingerprints were unchanged.
+- This is not completion of the full ingestion architecture: Document/URL/
+  repository input, Chunk-to-Evidence mapping, extraction orchestration,
+  dedup/version diff, Agent Tool and publish/index refresh remain unimplemented.
+- DSN loader, systemd start/recovery code and the PostgreSQL recovery module
+  remain frozen and were not part of this change.
+
+## Knowledge Ingestion document adapter continuation
+
+- Added additive PostgreSQL migration `V0016__document_knowledge_ingestion.sql`:
+  document-revision source references, immutable block evidence anchors,
+  identifier candidates, occurrence offsets and links to the existing review
+  ledger. Raw source bytes remain in Document Domain/CAS.
+- Added `rp-ingest document` and REST support for
+  `source.kind=document_revision`. It requires an existing revision in the
+  requested workspace with parse_state `APPROVED` or `REVIEW_PENDING`; parsing
+  continues to use `rp-doc parse` and the existing parser/provider pipeline.
+- Added immutable block SHA-256 multiset diffs against the immediately prior
+  revision (added/removed/unchanged counts). A repeated identifier in a changed
+  block is a `VERSION_CHANGE_REVIEW` candidate linked to its prior candidate;
+  unchanged blocks and cross-document exact matches remain duplicate signals.
+  No candidate is merged or overwritten.
+- Extraction is intentionally narrow and non-authoritative: it recognizes
+  exact CVE/CWE identifier mentions, stores parser/source/block/page/offset
+  provenance, detects exact candidate/entity duplicates and creates review
+  batch items. It does not infer a vulnerability or weakness claim.
+- Connected the `knowledge_ingestion` review domain to batch apply/undo.
+  APPROVED/apply records a human-reviewed mention (`REVIEWED`) only; it does not
+  publish a KnowledgeCard or modify authoritative vulnerability facts or
+  search indexes. Undo restores the prior candidate status.
+- Added REST contract/API tests and a PostgreSQL integration test covering
+  parsed revision acceptance, page/block/offset provenance, repeated mentions,
+  cross-ingestion exact duplicates, historical revision diff/change candidates,
+  unparsed-source rejection, prompt-injection risk priority, review apply and
+  undo. `cargo test --offline -p intel-db --test parser_pipeline --test
+  phase7_maintenance -- --test-threads=1` passed 14/14 with
+  `RP_REQUIRE_PG_TESTS=1` against a disposable database on `rip-pg17`; its
+  temporary database and temporary superuser role were dropped afterward.
+- Additional validation: intel-db library tests 36/36, Clippy
+  (`-p intel-db --all-targets -- -D warnings`) clean, apps/server Python tests
+  22/22, Knowledge Ingestion API tests 9/9, REST/CLI selftest 33/33,
+  `git diff --check` clean, and production SQLite fingerprints unchanged.
+- Extended the pinned-parser end-to-end test to submit its committed revision
+  into ingestion and assert the resulting job envelope. This environment lacks
+  the digest-pinned `rip-parser` image, so that one gated test reports SKIP here;
+  no image was installed. Its remaining V-9 execution is still required.
+- Remaining: additional document format/parser sample validation, broad
+  structured extraction, semantic similarity, full risk/
+  quality review UI, authoritative knowledge promotion/index refresh, and
+  Agent/MCP Tool + Workflow integration. Do not mark the ingestion architecture
+  complete until these are implemented and separately verified.
+- DSN loader, systemd start/recovery code and PostgreSQL disaster-recovery
+  module remain frozen.
+
+## 2026-11-28 ingestion evidence read surface
+
+- Added workspace- and ingestion-scoped candidate detail retrieval to
+  `rp-ingest candidate` and authenticated
+  `GET /api/knowledge-ingestions/{ingestion_id}/candidates/{candidate_id}`.
+  Returned evidence is bounded to 100 occurrences and 240 characters per
+  snippet; source text is explicitly marked untrusted. Wrong-workspace,
+  wrong-ingestion and invalid IDs fail closed.
+- Added integration assertions for repeated evidence offsets, bounded source
+  snippets and ingestion scoping; Knowledge Ingestion API contract tests pass
+  11/11. Isolated PostgreSQL suites pass 14/14; Clippy passes with
+  `-D warnings`; REST/CLI selftest passes 33/33 and production SQLite
+  fingerprints are unchanged.
+- Added three MCP capability tools for Knowledge Ingestion:
+  `rip.submit_knowledge_ingestion`, `rip.get_knowledge_ingestion_status`, and
+  `rip.get_knowledge_ingestion_candidate`. All fail closed without a resolved
+  caller, fix workspace to `default`, derive requester from caller identity, and
+  invoke the configured `rp-ingest` child (`RP_INGEST_BIN`, default
+  `target/debug/rp-ingest`). MCP callers cannot provide a workspace override or
+  database DSN. The candidate tool reuses the bounded, untrusted evidence output.
+- Verification for this MCP increment: `cargo test --offline -p mcp-server`,
+  `cargo clippy --offline -p mcp-server --all-targets -- -D warnings`,
+  `cargo test --offline -p rp-mcp-parity`, and
+  `SELFTEST_PORT=27864 bash apps/server/selftest_phase9_mcp.sh` pass. The MCP
+  self-test reports PASS=26/FAIL=0 and confirms unchanged production SQLite
+  fingerprints.
+- Remaining blockers: pinned `rip-parser` is absent locally, so real parser-format
+  gates remain blocked. Candidate vectorization and review-only similarity
+  suggestions are implemented through the pinned `rip-embed` worker, but a
+  human-labeled Duplicate/Related/Distinct dataset with independent
+  calibration/test splits is still required before quality acceptance.
+  Additional structured extractors, factual publication, and approved internal
+  Agent/Workflow service credentials also remain incomplete. These MCP tools
+  serve authorized MCP callers only; they do not constitute internal
+  Agent/Workflow integration. Do not pass database credentials through
+  ToolCallRequest, native_rust manifests or arbitrary workers.
+- DSN/systemd and PostgreSQL recovery modules remain frozen.
+
+## 2026-11-28 Bounded Nuclei Metadata Extraction
+
+- Added PostgreSQL migration V0017 to admit `nuclei_template` review candidates.
+  The Document Revision adapter now recognizes bounded YAML blocks and records
+  only the source template ID, `info.name`, and allowlisted severity as
+  `nuclei-template-metadata.v1`. IDs are used exactly as supplied for identity;
+  title or corpus URL is not used for deduplication.
+- Extraction is static and capped at 64 KiB per block. Request/payload and other
+  template content is not persisted or executed. Extracted metadata is marked
+  untrusted, linked to the template ID's block offset, and remains review-only.
+  If the same ID occurs with differing metadata in one ingestion, the review
+  payload flags the conflict and preserves up to eight metadata variants.
+- Candidate detail returns the schema version, untrusted metadata, conflict
+  signal, and existing bounded evidence. CVE/CWE mentions remain a separate
+  non-publishable candidate type.
+- Matching blocks with invalid YAML/metadata, unsupported severity, or a size
+  above 64 KiB now produce bounded diagnostics in the ingestion result (up to
+  100 entries plus a truncation count); source text is not copied into errors.
+- Verification: intel-db library tests 39/39, Clippy with `-D warnings`, and
+  `parser_pipeline` 6/6 against a disposable PostgreSQL container using the
+  locally verified `rip-pg17` image. The container used a temporary writable
+  layer and was removed after the test. The digest-pinned `rip-parser` image
+  remains absent, so real parser-format sample validation is still blocked; the
+  synthetic IR fixture is not parser acceptance.
+- Remaining: additional structured asset types, semantic similarity,
+  authoritative factual publication/index refresh, broader risk/quality review,
+  and approved internal Agent/Workflow service credentials and correlation.
+- DSN/systemd and PostgreSQL recovery modules remain frozen.
+
+## 2026-11-28 Parser and Embedding Acceptance Update
+
+- Runtime inventory: the `rip-parser` manifest pins
+  `sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a`,
+  but that image is absent from the local Podman store; no approved OCI archive
+  was found in the checked repository/runtime/backup paths. No pull, rebuild, or
+  replacement was attempted. Real parser acceptance remains blocked.
+- The pinned `rip-embed` image is present at
+  `sha256:bca7d0b4343f35afe199a781dbf3794c1d1afdf5924b12105d55dc0fb2291788`.
+  Against disposable PostgreSQL, the actual `EmbedWorkerProvider` / Tool
+  Engine / `podman_host` path generated and persisted three 512-dimensional
+  vectors as `bge-small-zh-v1.5`, worker `0.2.0`. One card-only smoke pair
+  measured cosine 0.8358 (paraphrase) / 0.4949 (unrelated) at threshold 0.80.
+  This is runtime validation, not candidate semantic-dedup acceptance or a
+  calibrated benchmark.
+- `gov_semantic` now uses a unique system temporary directory instead of the
+  pre-existing `rip-data/parse/test-ops.db` and `test-ws`; the test owns and
+  removes only that temporary directory.
+- Verification: `gov_semantic` 1/1 against the pinned embed image and disposable
+  PostgreSQL; intel-db library tests 40/40; Clippy `-D warnings`, rustfmt and
+  `git diff --check` pass. The previous `parser_pipeline` 6/6 is PostgreSQL
+  integration coverage over synthetic IR, not real parser acceptance.
+- P1 still lacks a curated 40+ real-sample corpus and parser execution.
+  Candidate-level Duplicate/Related/Distinct labels, metrics, authoritative
+  factual publication and the Agent/Workflow return path are also incomplete.
+- Frozen DSN/systemd and PostgreSQL disaster-recovery modules were not changed.
+
+## 2026-11-28 Candidate Semantic Suggestion Implementation
+
+- Added PostgreSQL V0018 candidate vector and similarity suggestion tables for
+  static Nuclei metadata only. `rp-ingest semantic-scan` reuses the pinned
+  `EmbedWorkerProvider` / Tool Engine / `podman_host` route, enforces workspace
+  isolation and explicit threshold/top-K bounds, and exposes suggestions as
+  review-only in candidate details. It never merges, approves, publishes, or
+  deletes candidates.
+- Verified against a newly created disposable PostgreSQL container using the
+  pinned `rip-pg17` digest and pinned `rip-embed` digest:
+  `parser_pipeline` 6/6 passed, with the parser container test explicitly SKIP
+  because the pinned parser image is absent. Its candidate fixture generated
+  two vectors, persisted 512-dimension/model/worker metadata, stored a
+  review-only similarity suggestion, and passed an idempotent rescan. The
+  candidate test also injected a missing embed manifest and a suggestion-table
+  constraint failure: no partial vectors were written, failed suggestion
+  persistence preserved the prior result, and both retries passed.
+- Re-ran `gov_semantic` 1/1 against the pinned embedding image; the card-only
+  smoke remains separate from candidate-quality acceptance. `intel-db` library
+  tests 41/41, `cargo clippy --offline -p intel-db --all-targets -- -D warnings`,
+  package rustfmt check, `git diff --check`, and `rp-ingest --help` passed.
+- The candidate smoke threshold is not calibrated. No human
+  Duplicate/Related/Distinct labels, independent splits, metrics, real parser
+  corpus, factual publication/index refresh, parser-process exit recovery, or
+  PostgreSQL connection interruption evidence exists. These remain release
+  blockers; synthetic IR integration is not parser acceptance.
+- The disposable PostgreSQL test container and test-owned temporary worker
+  directory were removed. DSN/systemd and PostgreSQL recovery modules remain
+  frozen and unchanged.
+
+## 2026-11-28 final regression verification
+
+- `cargo test --offline --workspace` passed after the M4 projection-count and
+  SK3 network-guard test corrections: 1,485 passed, 0 failed, 6 explicitly
+  ignored (two opt-in latency benchmarks, three installed-corpus audits, one
+  Chromium-sensitive browser-capture test). Formatting checks for changed Rust
+  packages and `git diff --check` pass.
+- `cd web && npm run test:visual:gate` passed the production build and all 85
+  Playwright visual/accessibility tests. The Web `format:check` still reports
+  differences in unchanged `pnpm-lock.yaml` and
+  `tests/m3-components.test.tsx`; not modified as unrelated.
+- These checks do not clear ingestion acceptance blockers: the exact pinned
+  parser image and 40+ real Golden Corpus are unavailable; human
+  Duplicate/Related/Distinct labels and independent metrics are absent; factual
+  publish/index refresh and parser/PostgreSQL interruption drills remain
+  unverified. Do not mark production-ready or push until those gates are
+  satisfied. DSN/systemd and PostgreSQL recovery modules remain frozen.
+
+## 2026-11-28 P0 closure / P1 start
+
+- P0 is complete as a project-state audit and freeze phase. `Production Ready =
+  false` remains unchanged.
+- P0 deliverables: `PRODUCTION-BASELINE.md`,
+  `PRODUCTION-BLOCKERS.md`, `PRODUCTION-TEST-MATRIX.md`,
+  `PRODUCTION-DEPENDENCY-MATRIX.md`, and `PRODUCTION-DATA-INVENTORY.md`.
+- P1 started with Batch A (core execution capability) and Batch B (data
+  protection). Batch C and Batch D remain gated.
+- Batch B SQLite roundtrip passed 16/16, including backup, controlled damage,
+  restore, FTS rebuild, retention archive and production fingerprint checks.
+- Batch A remains blocked: exact pinned `rip-parser`
+  `sha256:9a59eef52bf80aeb2562d9ca32cada455946c775fe92a0b0fb044a527dd8bf7a`
+  is absent.
+- P1 retry found and fixed a MCP Knowledge Ingestion compile defect:
+  `RunChannel` now exposes and dispatches `rip.submit_knowledge_ingestion`,
+  `rip.get_knowledge_ingestion_status`, and
+  `rip.get_knowledge_ingestion_candidate` through the existing `rp-ingest`
+  process boundary. Targeted MCP tests and workspace Clippy pass.
+- P1 batch 1 host parser implementation: `rp-doc parse` now defaults to
+  `HostParserProvider`, reusing Document Router, Tool Engine and Python
+  parsing worker. `--container` selects the Podman fallback explicitly.
+- Added real host smoke tests for Markdown/TXT IR, PDF, DOCX, PPTX and XLSX.
+  PDF/Office/text/OCR passed after refreshing the Tesseract 5.5.5 SHA-256 pin.
+- P1 batch 2 retrieval quality: the application evaluator is available in
+  `apps/server/rip_retrieval_evaluator.py` and rejects
+  unlabeled/invalid/noisy ranked rows, duplicate source-document identities,
+  and AI-only provenance. The 301-row v3 set is blocked at
+  `annotator=ai-assist`; no human MRR/NDCG metrics are claimed. Added metrics
+  JSON snapshot discipline and application-level dual-mode regression tests.
+- P1 batch 3 PostgreSQL recovery: the existing `rip_pg_recovery_gate.py`
+  remains unchanged as a protected script; independent restore is in
+  `apps/server/rip_pg_independent_restore.py`, which restores a table dump into
+  `template0`, verifies 2/2 rows and cleans source/restore objects.
+  Isolated local gate passed `PG_INDEPENDENT_RESTORE=PASS`; formal backup
+  owner/frequency/offsite/RTO/RPO sign-off remains open.
+- P1 final continuation: added host OCR SHA-256 pin refresh, real-corpus plan/
+  execute automation, app-layer AI/human retrieval evaluator, independent
+  PostgreSQL restore app script, and a host-backed Workflow restart recovery
+  drill. The workflow drill passed: run `wfr-*` persisted, was read after a new
+  CLI process, and returned `succeeded` with evidence and tool-run trace.
+- Scope correction: a 40+ corpus suite, human Ground Truth, external DeepSeek
+  credentials, public HTTPS/TLS, and formal offsite backup/RTO/RPO are not
+  startup gates for the local automated knowledge pipeline. They remain optional
+  scale/deployment additions.
+- Host-first parser verification passed for PDF text, Tesseract OCR,
+  Pandoc Markdown and LibreOffice DOCX/PPTX/XLSX conversion. The exact
+  parser container is no longer a default P1 dependency.
+- MCP knowledge closure implemented: `rip.search_knowledge`,
+  `rip.get_knowledge_detail`, `rip.list_knowledge_review_queue`,
+  `rip.submit_knowledge_candidate`, and `rip.review_knowledge_candidate`
+  are wired. Workspace is fixed to `default`; AI callers cannot override it;
+  MCP review excludes `approve`, and publication remains under the existing
+  human/service review gate.
+- MCP/REST capability parity passes 5/5. Candidate-envelope enforcement,
+  evidence minimum, source hash and AI-approval rejection are covered by
+  MCP ingestion dispatch tests.
+- Authorized real-target review on `002237.xyz` found valid TLS, restrictive
+  security headers and no low-risk exposure finding in the bounded pass.
+- Publication replay closed PB-010/PB-012 (2026-11-28): the full
+  candidate-to-publication chain is regression-locked at two levels.
+  Library: `crates/intel-db/tests/publication_replay.rs` (2 live-PG tests,
+  `RP_TEST_PG_DSN` gated) proves donor submits land `CANDIDATE` only,
+  approve-before-score / hard-flag / rejected-content gates block unsafe
+  publication, and after human approval the default search returns the card
+  with no separate index rebuild step (bm25 index follows row updates).
+  Binary: `apps/server/selftest_knowledge_publish.sh` 18/18 PASS on an
+  isolated `rip-pg17` container, real `rp-mcp` stdio JSON-RPC, caller resolved
+  through `rp-admin caller-add`/`key-gen`, production `migrations/platform*.db`
+  fingerprints unchanged. MCP `approve` stays rejected ("MCP never approves");
+  the human/service approval face is `rp-kc score` + `rp-kc review
+  --decision approve`.
+- Fix found by the replay: rmcp can dispatch parallel `tools/call` requests,
+  so two `rp-kc` processes raced refinery first-migration on a fresh database
+  (`error asserting migrations table`); `intel_db::run_migrations` now
+  serializes with a session `pg_advisory_lock` released before the connection
+  returns to the pool. intel-db suite 87 passed / 0 failed, clippy clean;
+  live replay 2/2. Spec: `docs/knowledge-governance/MCP-KNOWLEDGE-CANDIDATE-SPEC.md`
+  (Publication replay section).
+- Remaining production-blocker register closed 2026-11-28 (PB-001/003/004/005/
+  006/007/008/009; PB-002 stays post-launch by design). All work on isolated
+  disposable environments; production `migrations/platform*.db` and RTIS
+  `knowledge.db` untouched; no commit/push (worktree discipline unchanged).
+  - PB-001: 41 real documents (8 formats, zero personal files) through
+    `scripts/rip_golden_corpus_build.py` (new) + `rip_golden_corpus_ingest.py
+    --execute` on isolated rip-pg17, 41/41 pass; re-parse idempotent and CAS
+    dedup proven (44 docs / 40 distinct sha). Three parser defects fixed:
+    run-DB manifest re-register raced VersionComparable (now register-if-absent),
+    txt route wrote `document_type=txt` outside the IR enum (now maps to
+    `other` like detect), empty-text documents emitted a fabricated empty
+    block (now skipped, overall=poor drives REVIEW_PENDING). 1 MiB stdout cap
+    boundary documented (multi-MB PDFs excluded by corpus builder).
+    Report: docs/knowledge-governance/GOLDEN-CORPUS-ACCEPTANCE-2026-11-28.md.
+  - PB-003: ground-truth characterization acceptance
+    `apps/server/selftest_characterization_acceptance.sh` 9/9 (12 cards,
+    3 exact / 1 near / 4 distinct; D2 SAME_CONTENT exact; D4 NEAR_DUPLICATE
+    at threshold 0.85 with GT pair cosine 0.8825 logged in relation evidence;
+    distinct zero false-merge; no auto-merge asserted). Matrix artifact:
+    docs/knowledge-governance/CHARACTERIZATION-MATRIX-2026-11-28.json.
+  - PB-004: dual-track enforcement added to
+    `scripts/security-intel/evaluate_retrieval.py` (--label-mode; AI rows
+    exit-3 rejected from human-GT track); selftest_qrel_discipline.sh 9/9;
+    v3 301 AI rows evaluated in ai-assisted track only (mrr 0.9286) with
+    artifact docs/knowledge-governance/retrieval-eval-v3-ai-assisted-2026-11-28.json.
+    Human labeling remains the user's queued task per annotation guide.
+  - PB-005: docs/operations/OFFSITE-BACKUP-POLICY.md (RPO/RTO per store,
+    daily chain, retention, quarterly restore drill) +
+    selftest_offsite_backup.sh 9/9 (backup → verify-archive → rsync offsite
+    + sha256 → restore reconciliation → reten-archive; prod fingerprints clean).
+  - PB-006: selftest_llm_readiness.sh 10/10 (five BLOCKED/READY boundary
+    states, secret never echoed). Live provider call stays conditional on
+    real RIP_LLM_* credentials.
+  - PB-007: containerfiles/https-cutover/ (Caddyfile + nginx sample),
+    docs/operations/HTTPS-CUTOVER-RUNBOOK.md; production probe hardened
+    (RP_PRODUCTION_CACERT / RP_PROBE_TOKEN / RP_PROBE_PORT; fixed
+    host-with-port openssl connect bug); selftest_https_entry.sh 10/10 on a
+    disposable DB clone with local TLS-terminating proxy harness
+    (apps/server/https_proxy_probe.py, drill-only).
+  - PB-008: selftest_poc_execution_drill.sh 7/7 — isolated self-owned
+    loopback container targets, nuclei v3.11.1 (rate-limited, no OAST),
+    positive hit=1 / negative hit=0, raw curl double-check, containers
+    removed after run. Template verified and backfilled to RTIS KB
+    (id 900065, verified=true, used_on logged). Evidence:
+    docs/phase-pb008/POC-EXECUTION-DRILL-2026-11-28.md. Destructive POC
+    execution remains explicitly out of scope.
+  - PB-009: selftest_recovery_drills.sh 18/18 — parser SIGKILL mid-parse
+    (health alive, replay APPROVED), live container restart mid-ingest (all
+    requests conclude, conditional replay fills gaps, CAS zero-duplicate),
+    parse --timeout guard concludes, full replay idempotent.
+    GNU find -size unit rounding pitfall recorded in the script header.
+  - Register-side red line: the B2 protected-scripts test
+    (crates/tool-engine/tests/first_batch_b2.rs) now explicitly registers this
+    batch's audited scripts/ modification (evaluate_retrieval.py, PB-004
+    dual-track enforcement); scripts/rip_golden_corpus_build.py enters as an
+    untracked new file (allowed by the ?? rule). Frozen paths
+    (scripts/security-intel/data/, download_trickest_cve_pages.sh,
+    test-results/) remain untouched; production fingerprints unchanged
+    (platform-search 2da952ca…, dev-p6 0c1091dd…).

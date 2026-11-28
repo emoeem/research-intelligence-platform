@@ -143,6 +143,8 @@ BATCH_REVIEW_BIN = _repo_path((os.environ.get("RP_BATCH_REVIEW_BIN") or
                                "target/debug/rp-batch-review").strip())
 BATCH_REVIEW_DSN = (os.environ.get("RP_PLATFORM_PG_DSN") or "").strip()
 BATCH_REVIEW_TIMEOUT_S = int(os.environ.get("RP_BATCH_REVIEW_TIMEOUT_S") or "120")
+KNOWLEDGE_INGESTION_BIN = _repo_path((os.environ.get("RP_INGEST_BIN") or
+                                      "target/debug/rp-ingest").strip())
 REVIEW_QUEUE_DIR = _repo_path("docs/knowledge-governance")
 CURATED_SEARCH_CATALOG_DB = _repo_path(os.environ.get("RP_SEARCH_CATALOG_DB") or
                                        "migrations/sources-snapshot/catalog.db")
@@ -774,6 +776,144 @@ def _rp_batch_review_json(extra_args: list, timeout_s: int = 0) -> dict:
         return json.loads(proc.stdout) if proc.stdout.strip() else {}
     except json.JSONDecodeError as exc:
         raise ApiError(502, "batch_review_bad_output", f"rp-batch-review 返回非 JSON：{exc}")
+
+
+def _rp_knowledge_ingestion_json(extra_args: list) -> dict:
+    """Run rp-ingest via the configured platform DSN; the server never writes PG directly."""
+    import subprocess
+
+    if not BATCH_REVIEW_DSN:
+        raise ApiError(503, "knowledge_ingestion_unconfigured",
+                       "缺 RP_PLATFORM_PG_DSN（正式知识库连接）")
+    env = dict(os.environ)
+    env["RP_PG_DSN"] = BATCH_REVIEW_DSN
+    try:
+        proc = subprocess.run(
+            [KNOWLEDGE_INGESTION_BIN, *extra_args], capture_output=True, text=True,
+            timeout=BATCH_REVIEW_TIMEOUT_S, cwd=REPO_ROOT, env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ApiError(504, "knowledge_ingestion_timeout",
+                       f"rp-ingest 超时：{exc}") from exc
+    except OSError as exc:
+        raise ApiError(502, "knowledge_ingestion_spawn_failed",
+                       f"rp-ingest 启动失败：{exc}") from exc
+    if proc.returncode != 0:
+        message = proc.stderr.strip() or proc.stdout.strip() or \
+            f"rp-ingest 退出码 {proc.returncode}"
+        for line in (proc.stderr + "\n" + proc.stdout).splitlines():
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and parsed.get("error"):
+                message = str(parsed["error"])
+                break
+        if "idempotency_key was already used" in message:
+            raise ApiError(409, "idempotency_conflict", message)
+        if "already belongs to workspace" in message:
+            raise ApiError(409, "ingestion_workspace_conflict", message)
+        if "report not found" in message or "document revision not found" in message:
+            raise ApiError(404, "ingestion_source_not_found", message)
+        if "must be parsed before ingestion" in message:
+            raise ApiError(409, "ingestion_source_not_parsed", message)
+        if "ingestion not found" in message:
+            raise ApiError(404, "ingestion_not_found", message)
+        if "candidate not found" in message:
+            raise ApiError(404, "ingestion_candidate_not_found", message)
+        raise ApiError(502, "knowledge_ingestion_failed", message)
+    try:
+        return json.loads(proc.stdout) if proc.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise ApiError(502, "knowledge_ingestion_bad_output",
+                       f"rp-ingest 返回非 JSON：{exc}") from exc
+
+
+def knowledge_ingestion_post(body: dict, requester: str) -> dict:
+    """Submit stored Report IR or a parsed Document Revision."""
+    if not isinstance(body, dict):
+        raise ApiError(400, "bad_body", "JSON object body required")
+    workspace = str(body.get("workspace_id") or "").strip()
+    idempotency_key = str(body.get("idempotency_key") or "").strip()
+    source = body.get("source")
+    if not workspace or len(workspace) > 200:
+        raise ApiError(400, "bad_workspace_id", "workspace_id 必须为 1-200 字符")
+    if workspace != "default":
+        raise ApiError(403, "ingestion_workspace_forbidden",
+                       "当前摄入 API 仅允许 default workspace，直到 caller-workspace ACL 建立")
+    if not idempotency_key or len(idempotency_key) > 256:
+        raise ApiError(400, "bad_idempotency_key", "idempotency_key 必须为 1-256 字符")
+    if not isinstance(source, dict):
+        raise ApiError(400, "unsupported_ingestion_source",
+                       "source 必须是 JSON object")
+    source_kind = source.get("kind")
+    if source_kind == "research_report":
+        report_id = str(source.get("report_id") or "").strip()
+        if not re.fullmatch(r"rep-[A-Za-z0-9._-]+", report_id):
+            raise ApiError(400, "bad_report_id", "source.report_id 格式无效")
+        args = ["report", "--report-id", report_id]
+    elif source_kind == "document_revision":
+        document_id = str(source.get("document_id") or "").strip()
+        revision_id = str(source.get("revision_id") or "").strip()
+        if not re.fullmatch(r"doc-[A-Za-z0-9._-]+", document_id):
+            raise ApiError(400, "bad_document_id", "source.document_id 格式无效")
+        if not re.fullmatch(r"drev-[A-Za-z0-9._-]+", revision_id):
+            raise ApiError(400, "bad_revision_id", "source.revision_id 格式无效")
+        args = [
+            "document", "--document-id", document_id, "--revision-id", revision_id,
+        ]
+    else:
+        raise ApiError(400, "unsupported_ingestion_source",
+                       "source.kind 必须为 research_report 或 document_revision")
+    args.extend([
+        "--workspace", workspace,
+        "--idempotency-key", idempotency_key, "--requester", requester,
+    ])
+    return _rp_knowledge_ingestion_json(args)
+
+
+def knowledge_ingestion_status(ingestion_id: str, workspace: str) -> dict:
+    if not re.fullmatch(r"ing-[A-Za-z0-9._-]+", ingestion_id):
+        raise ApiError(400, "bad_ingestion_id", "ingestion_id 格式无效")
+    if not workspace or len(workspace) > 200:
+        raise ApiError(400, "bad_workspace_id", "workspace_id 必须为 1-200 字符")
+    if workspace != "default":
+        raise ApiError(403, "ingestion_workspace_forbidden",
+                       "当前摄入 API 仅允许 default workspace，直到 caller-workspace ACL 建立")
+    return _rp_knowledge_ingestion_json(
+        ["status", "--ingestion-id", ingestion_id, "--workspace", workspace]
+    )
+
+
+def knowledge_ingestion_candidate(
+    ingestion_id: str, candidate_id: str, workspace: str
+) -> dict:
+    if not re.fullmatch(r"ing-[A-Za-z0-9._-]+", ingestion_id):
+        raise ApiError(400, "bad_ingestion_id", "ingestion_id 格式无效")
+    if not re.fullmatch(r"ingc-[A-Za-z0-9._-]+", candidate_id):
+        raise ApiError(400, "bad_ingestion_candidate_id", "candidate_id 格式无效")
+    if not workspace or len(workspace) > 200:
+        raise ApiError(400, "bad_workspace_id", "workspace_id 必须为 1-200 字符")
+    if workspace != "default":
+        raise ApiError(403, "ingestion_workspace_forbidden",
+                       "当前摄入 API 仅允许 default workspace，直到 caller-workspace ACL 建立")
+    return _rp_knowledge_ingestion_json([
+        "candidate", "--ingestion-id", ingestion_id,
+        "--candidate-id", candidate_id, "--workspace", workspace,
+    ])
+
+
+def knowledge_ingestion_retry(ingestion_id: str, workspace: str) -> dict:
+    if not re.fullmatch(r"ing-[A-Za-z0-9._-]+", ingestion_id):
+        raise ApiError(400, "bad_ingestion_id", "ingestion_id 格式无效")
+    if not workspace or len(workspace) > 200:
+        raise ApiError(400, "bad_workspace_id", "workspace_id 必须为 1-200 字符")
+    if workspace != "default":
+        raise ApiError(403, "ingestion_workspace_forbidden",
+                       "当前摄入 API 仅允许 default workspace，直到 caller-workspace ACL 建立")
+    return _rp_knowledge_ingestion_json(
+        ["retry", "--ingestion-id", ingestion_id, "--workspace", workspace]
+    )
 
 
 def handle_review_batches(_conn: sqlite3.Connection, params: dict) -> dict:  # noqa: ARG001
@@ -1629,7 +1769,7 @@ def handle_tools(conn: sqlite3.Connection, params: dict) -> dict:
     }
 
 
-# MCP 能力面固定词表（crates/mcp-server/src/lib.rs CAPABILITY_TOOLS 六条的
+# MCP 能力面固定词表（crates/mcp-server/src/lib.rs CAPABILITY_TOOLS 的
 # 同源镜像；P9-4 /api/mcp-catalog 对账用，wire 级一致由 rp-mcp-parity CI 门禁
 # 断言：MCP tools/list 能力面 == 本词表）。
 MCP_CAPABILITY_TOOLS = (
@@ -1639,6 +1779,20 @@ MCP_CAPABILITY_TOOLS = (
     "rip.search_knowledge",
     "rip.get_run_status",
     "rip.cancel_run",
+    "rip.run_subtask",
+    "rip.get_subtask_status",
+    "rip.claim_task",
+    "rip.complete_claim",
+    "rip.send_message",
+    "rip.fetch_messages",
+    "rip.contribute_knowledge",
+    "rip.submit_knowledge_ingestion",
+    "rip.get_knowledge_ingestion_status",
+    "rip.get_knowledge_ingestion_candidate",
+    "rip.get_knowledge_detail",
+    "rip.list_knowledge_review_queue",
+    "rip.submit_knowledge_candidate",
+    "rip.review_knowledge_candidate",
 )
 
 
@@ -1724,7 +1878,7 @@ def handle_mcp_catalog(conn: sqlite3.Connection, params: dict) -> dict:
         "capability_count": len(MCP_CAPABILITY_TOOLS),
         "capability_tools": list(MCP_CAPABILITY_TOOLS),
         "reconciliation": {
-            "ok": len(drift) == 0 and len(MCP_CAPABILITY_TOOLS) == 6,
+            "ok": len(drift) == 0 and len(MCP_CAPABILITY_TOOLS) == 20,
             "reconciled_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "drift": drift,
             "scope": "读面对账（注册面完整性 + 能力面词表）；跨通道 wire 对账归 rp-mcp-parity CI 门禁",
@@ -6828,6 +6982,27 @@ class RpHandler(BaseHTTPRequestHandler):
                     finally:
                         conn.close()
                     return
+                ingestion_match = re.fullmatch(
+                    r"/api/knowledge-ingestions/([^/]+)", parsed.path
+                )
+                ingestion_candidate_match = re.fullmatch(
+                    r"/api/knowledge-ingestions/([^/]+)/candidates/([^/]+)",
+                    parsed.path,
+                )
+                if ingestion_candidate_match:
+                    workspace = (params.get("workspace_id") or [""])[0].strip()
+                    self.send_json(knowledge_ingestion_candidate(
+                        unquote(ingestion_candidate_match.group(1)),
+                        unquote(ingestion_candidate_match.group(2)),
+                        workspace,
+                    ))
+                    return
+                if ingestion_match:
+                    workspace = (params.get("workspace_id") or [""])[0].strip()
+                    self.send_json(knowledge_ingestion_status(
+                        unquote(ingestion_match.group(1)), workspace
+                    ))
+                    return
                 # P6-8 插件详情动态路径：/api/plugins/<id>?level=1|2|3
                 if parsed.path.startswith("/api/plugins/"):
                     plugin_id = unquote(parsed.path[len("/api/plugins/"):]).strip("/")
@@ -7138,6 +7313,38 @@ class RpHandler(BaseHTTPRequestHandler):
                                    "文档导入写端点要求启用鉴权（配置 RP_AUTH_TOKEN 或令牌文件）")
                 body = self._read_json_body(DOC_IMPORT_MAX_BYTES * 2)
                 self.send_json(documents_import_post(body))
+                return
+            if parsed.path == "/api/knowledge-ingestions":
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "知识摄入写端点要求启用鉴权")
+                body = self._read_json_body()
+                if not isinstance(body, dict):
+                    raise ApiError(400, "bad_body", "JSON object body required")
+                header_key = self.headers.get("Idempotency-Key", "").strip()
+                if header_key:
+                    body_key = str(body.get("idempotency_key") or "").strip()
+                    if body_key and body_key != header_key:
+                        raise ApiError(400, "idempotency_key_mismatch",
+                                       "body idempotency_key 与 Idempotency-Key 不一致")
+                    body["idempotency_key"] = header_key
+                caller = getattr(self, "_audit_caller", None) or "authenticated-api"
+                self.send_json(knowledge_ingestion_post(body, caller))
+                return
+            ingestion_retry_match = re.fullmatch(
+                r"/api/knowledge-ingestions/([^/]+)/retry", parsed.path
+            )
+            if ingestion_retry_match:
+                self.require_auth()
+                if not AUTH_ENABLED:
+                    raise ApiError(403, "auth_required_for_write",
+                                   "知识摄入 retry 端点要求启用鉴权")
+                body = self._read_json_body()
+                workspace = str(body.get("workspace_id") or "").strip()
+                self.send_json(knowledge_ingestion_retry(
+                    unquote(ingestion_retry_match.group(1)), workspace
+                ))
                 return
             # M10 批次审核写面：decide/undo/apply（dry-run 默认）+ import。
             if parsed.path.startswith("/api/review-batches/"):

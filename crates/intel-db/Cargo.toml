@@ -18,11 +18,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
 sha2 = "0.10"
+regex = "=1.13.1"
 # P2-1 解析面（ADR-0003 裁决 3）：容器派发复用既有 tool-engine/Gateway 面；
 # IR 校验复用 tool_registry::jsonschema_lite（Tool Contract 同校验器）。
 tool-engine = { workspace = true }
 tool-registry = { workspace = true }
 runtime-gateway = { workspace = true }
+document-router = { workspace = true }
 # Report IR v1 is validated by its single-source schema before feedback ingestion.
 report-engine = { path = "../report-engine" }
 
@@ -45,3 +47,7 @@ path = "src/bin/rp-batch-review.rs"
 [[bin]]
 name = "rp-db-migrate"
 path = "src/bin/rp-db-migrate.rs"
+
+[[bin]]
+name = "rp-ingest"
+path = "src/bin/rp-ingest.rs"

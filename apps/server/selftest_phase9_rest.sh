@@ -3,7 +3,7 @@
 #   trace 六 ID + correlation_id 透出（响应体 + X-Trace-Id/X-Correlation-Id
 #   响应头）+ 全局限频（超限 429 + Retry-After）+ 对外访问审计 JSONL
 #   （019 SQL 形状验证）+ POST 白名单外 404/405 守卫 + 契约文档端点清单与
-#   rp_server.py ROUTES 逐条对账 + rp-* 11 bin 帮助面统一断言 +
+#   rp_server.py ROUTES 逐条对账 + rp-* 12 bin 帮助面统一断言 +
 #   生产库零写核对。输出 PASS/FAIL，全过 exit 0。
 #
 # 前置：仓库根运行（cargo 门禁按 CWD 发现 vendor 配置）；rp-tool/rp-workflow
@@ -61,6 +61,7 @@ SERVER_PID=""; SERVER2_PID=""
 echo "== 0. 构建（cargo --offline）"
 cargo build --offline -q -p tool-registry --bin rp-tool || { echo "rp-tool build FAIL"; exit 1; }
 cargo build --offline -q -p workflow-engine --bin rp-workflow || { echo "rp-workflow build FAIL"; exit 1; }
+cargo build --offline -q -p intel-db --bin rp-ingest || { echo "rp-ingest build FAIL"; exit 1; }
 RP_TOOL="target/debug/rp-tool"
 RP_WF="target/debug/rp-workflow"
 
@@ -229,7 +230,7 @@ doc = pathlib.Path("docs/phase9/REST-API-CONTRACT.md").read_text()
 # rp_server.py API_ROUTES 键（词含连字符：agent-runs / workflow-runs）
 block = re.search(r"API_ROUTES = \{(.*?)\n\}", src, re.S).group(1)
 routes = sorted(set(re.findall(r'"(/api/(?:[a-z0-9_-]+|research/assets|curated-pocs/(?:search|summary)))":', block)))
-assert len(routes) == 23, f"API_ROUTES 应 23 条只读路由（含 Projects 与 Research Assets），实得 {len(routes)}: {routes}"
+assert len(routes) == 25, f"API_ROUTES 应 25 条只读路由（含 Projects 与 Research Assets），实得 {len(routes)}: {routes}"
 
 # 文档端点总览段（标记之间）
 m = re.search(r"<!-- ENDPOINTS:BEGIN -->(.*?)<!-- ENDPOINTS:END -->", doc, re.S)
@@ -239,7 +240,9 @@ doc_get = {p for meth, p in rows if meth == "GET"}
 doc_post = {p for meth, p in rows if meth == "POST"}
 doc_patch = {p for meth, p in rows if meth == "PATCH"}
 
-dynamic_get = {"/api/plugins/<plugin_id>", "/api/projects/<project_id>", "/api/research/assets/<asset_id>"}
+dynamic_get = {"/api/plugins/<plugin_id>", "/api/projects/<project_id>", "/api/research/assets/<asset_id>",
+               "/api/knowledge-ingestions/<ingestion_id>",
+               "/api/knowledge-ingestions/<ingestion_id>/candidates/<candidate_id>"}
 expected_post = {
     "/api/projects",
     "/api/projects/<project_id>/tasks",
@@ -254,6 +257,8 @@ expected_post = {
     "/api/workflow-runs",
     "/api/workflow-runs/<action>",
     "/api/workflow-runs/<run_id>/<action>",
+    "/api/knowledge-ingestions",
+    "/api/knowledge-ingestions/<ingestion_id>/retry",
 }
 problems = []
 for r in routes:
@@ -266,8 +271,8 @@ if doc_post != expected_post:
 expected_patch = {"/api/projects/<project_id>"}
 if doc_patch != expected_patch:
     problems.append(f"文档 PATCH 集合不一致: doc={sorted(doc_patch)} expect={sorted(expected_patch)}")
-if len(doc_get) != 26:
-    problems.append(f"文档 GET 行应 26（23 静态 + 3 动态详情），实得 {len(doc_get)}")
+if len(doc_get) != 30:
+    problems.append(f"文档 GET 行应 30（25 静态 + 5 动态详情），实得 {len(doc_get)}")
 
 # 动作词表对账（rp_server.py 词表 ↔ 文档行内词表）
 plug = re.search(r"PLUGIN_WRITE_ACTIONS = \(([^)]*)\)", src).group(1)
@@ -298,22 +303,22 @@ DOCEOF
 )"
 ck "契约文档端点清单与 ROUTES/写面白名单/动作词表逐条一致" "PASS" "${DOC_RESULT}"
 
-echo "== 11. rp-* 11 bin 帮助面统一（--help stdout exit 0；误用 stderr exit 2）"
-BINS=(rp-agent rp-context rp-knowledge-fetch rp-plugin rp-research rp-resolve rp-review rp-search-index rp-tool rp-tool-health rp-workflow)
-ck "CLI bin 计数 = 11（rp-mcp 为协议面不计）" "11" "${#BINS[@]}"
+echo "== 11. rp-* 12 bin 帮助面统一（--help stdout exit 0；误用 stderr exit 2）"
+BINS=(rp-agent rp-context rp-ingest rp-knowledge-fetch rp-plugin rp-research rp-resolve rp-review rp-search-index rp-tool rp-tool-health rp-workflow)
+ck "CLI bin 计数 = 12（rp-mcp 为协议面不计）" "12" "${#BINS[@]}"
 HELP_OK="yes"
 for b in "${BINS[@]}"; do
   ./target/debug/$b --help >/tmp/rp93_help.out 2>/dev/null; rc=$?
   first="$(head -1 /tmp/rp93_help.out)"
   [[ $rc -eq 0 && "$first" == "usage: $b"* ]] || { HELP_OK="no($b rc=$rc first=$first)"; break; }
 done
-ck "11 bin --help：exit 0 + stdout 首行 usage: rp-<bin>" "yes" "${HELP_OK}"
+ck "12 bin --help：exit 0 + stdout 首行 usage: rp-<bin>" "yes" "${HELP_OK}"
 MISUSE_OK="yes"
 for b in "${BINS[@]}"; do
   ./target/debug/$b >/dev/null 2>/tmp/rp93_help.err; rc=$?
   [[ $rc -eq 2 ]] || { MISUSE_OK="no($b rc=$rc)"; break; }
 done
-ck "11 bin 无参误用：exit 2" "yes" "${MISUSE_OK}"
+ck "12 bin 无参误用：exit 2" "yes" "${MISUSE_OK}"
 
 echo "== 12. 生产库零写复核（指纹一致）"
 ck "platform.db 零写" "${PLAT_FP}" "$(db_fingerprint migrations/platform.db)"

@@ -180,7 +180,8 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
     );
     proc_.handshake("2024-11-05");
 
-    // 七枚新工具在 tools/list 目录（additive；既有 rip.* 仍在）。
+    // MA-3 七枚新工具与 Knowledge Ingestion 三工具在 tools/list 目录
+    // （additive；既有 rip.* 仍在）。
     let names = tools_list_names(&mut proc_);
     for tool in [
         "rip.run_subtask",
@@ -190,6 +191,14 @@ fn mcp_subtask_roundtrip_and_caller_attribution() {
         "rip.send_message",
         "rip.fetch_messages",
         "rip.contribute_knowledge",
+        "rip.submit_knowledge_ingestion",
+        "rip.get_knowledge_ingestion_status",
+        "rip.get_knowledge_ingestion_candidate",
+        "rip.search_knowledge",
+        "rip.get_knowledge_detail",
+        "rip.list_knowledge_review_queue",
+        "rip.submit_knowledge_candidate",
+        "rip.review_knowledge_candidate",
     ] {
         assert!(names.iter().any(|n| n == tool), "目录缺 {tool}: {names:?}");
     }
@@ -413,6 +422,22 @@ fn unknown_token_rejects_dispatch_but_keeps_catalog() {
             "rip.contribute_knowledge",
             json!({"type": "vuln_signature", "title": "t", "content": "c"}),
         ),
+        (
+            "rip.submit_knowledge_ingestion",
+            json!({
+                "source_kind": "research_report",
+                "report_id": "rep-test",
+                "idempotency_key": "mcp-ingestion-test",
+            }),
+        ),
+        (
+            "rip.get_knowledge_ingestion_status",
+            json!({"ingestion_id": "ing-test"}),
+        ),
+        (
+            "rip.get_knowledge_ingestion_candidate",
+            json!({"ingestion_id": "ing-test", "candidate_id": "ingc-test"}),
+        ),
     ] {
         let result = proc_.call(name, args.clone());
         assert_eq!(
@@ -428,6 +453,7 @@ fn unknown_token_rejects_dispatch_but_keeps_catalog() {
             "{name}: {payload}"
         );
     }
+
     proc_.wait_exit();
 }
 

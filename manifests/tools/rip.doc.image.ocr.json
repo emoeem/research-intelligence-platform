@@ -9,7 +9,7 @@
   "runtime": {
     "type": "native_rust",
     "binary": "/usr/bin/tesseract",
-    "binary_sha256": "44e4c41d9986e8b23f9684ef332189a4cb422c450b1d87112bf795772c1c35d0",
+    "binary_sha256": "402d9048d1f9162fea6d93bec1fe9a1fd81bcdfc2b3ad5f8256151248b270a6d",
     "capability_ref": "ocr.tesseract",
     "argv_template": [
       "{{input_path}}",

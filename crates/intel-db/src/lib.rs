@@ -19,11 +19,13 @@
 
 pub mod batch_review;
 pub mod bench;
+pub mod candidate_semantic;
 pub mod card_repo;
 pub mod commit;
 pub mod document_repo;
 pub mod embed_worker;
 pub mod gov_worker;
+pub mod ingestion;
 pub mod ir;
 pub mod knowledge_graph;
 pub mod maintenance;
@@ -143,10 +145,25 @@ mod embedded {
 
 /// 执行 migrations_pg 迁移（refinery：每文件事务 + checksum 校验）。
 /// 幂等：已应用版本跳过；返回应用报告（版本列表）。
+/// 并发守卫：session 级 advisory lock 串行化多进程同时首迁（空库上两个
+/// rp-kc 并发 migrate 曾撞 refinery `error asserting migrations table`：
+/// 供体提交经 MCP 并发派发实录，PB-012 发布回放自验捕获）。
 pub fn run_migrations(client: &mut PgConn) -> IntelResult<Vec<u32>> {
-    let report = embedded::migrations::runner()
+    client
+        .execute(
+            "SELECT pg_advisory_lock(hashtext('rip_refinery_migrations'))",
+            &[],
+        )
+        .map_err(|e| IntelError::Migrate(format!("advisory lock: {e}")))?;
+    let result = embedded::migrations::runner()
         .run(client)
-        .map_err(|e| IntelError::Migrate(e.to_string()))?;
+        .map_err(|e| IntelError::Migrate(e.to_string()));
+    // 解锁先行于错误透出（session 结束也会释放，显式释放归还连接池语义）。
+    let _ = client.execute(
+        "SELECT pg_advisory_unlock(hashtext('rip_refinery_migrations'))",
+        &[],
+    );
+    let report = result?;
     Ok(report
         .applied_migrations()
         .iter()

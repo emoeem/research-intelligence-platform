@@ -29,6 +29,7 @@ pub const DEFAULT_SEMANTIC_THRESHOLD: f32 = 0.92;
 const EMBED_MODEL_ID: &str = "bge-small-zh-v1.5";
 const EMBED_VERSION: &str = "0.2.0";
 const EMBED_BATCH: usize = 64;
+const MAX_EMBED_TEXT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, serde::Serialize)]
 pub struct EmbedOutcome {
@@ -278,6 +279,111 @@ impl EmbedWorkerProvider {
             .result
             .ok_or_else(|| ParserErr("result missing".to_string()))
     }
+
+    pub(crate) fn embed_texts(&self, texts: &[String]) -> IntelResult<Vec<pgvector::Vector>> {
+        if texts.is_empty() || texts.len() > EMBED_BATCH {
+            return Err(IntelError::Invalid(format!(
+                "embedding batch size must be 1..={EMBED_BATCH}"
+            )));
+        }
+        if texts.iter().any(|text| text.len() > MAX_EMBED_TEXT_BYTES) {
+            return Err(IntelError::Invalid(format!(
+                "embedding text exceeds {MAX_EMBED_TEXT_BYTES} bytes"
+            )));
+        }
+        let data = self
+            .dispatch(json!({ "texts": texts }))
+            .map_err(IntelError::from)?;
+        parse_embedding_output(&data, texts.len())
+    }
+}
+
+fn parse_embedding_output(
+    data: &Value,
+    expected_vectors: usize,
+) -> IntelResult<Vec<pgvector::Vector>> {
+    let model = data
+        .get("model")
+        .and_then(Value::as_str)
+        .ok_or_else(|| IntelError::Invalid("embedding model missing".to_string()))?;
+    if model != EMBED_MODEL_ID {
+        return Err(IntelError::Invalid(format!(
+            "embedding model mismatch: {model} != {EMBED_MODEL_ID}"
+        )));
+    }
+    let backend = data
+        .get("backend")
+        .and_then(Value::as_str)
+        .ok_or_else(|| IntelError::Invalid("embedding backend missing".to_string()))?;
+    if backend != format!("onnx:{EMBED_MODEL_ID}") {
+        return Err(IntelError::Invalid(format!(
+            "embedding backend mismatch: {backend}"
+        )));
+    }
+    let dim = data
+        .get("dim")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| IntelError::Invalid("embedding dim missing".to_string()))?;
+    if dim != 512 {
+        return Err(IntelError::Invalid(format!(
+            "embedding dim mismatch: {dim} != 512 (V0005 schema)"
+        )));
+    }
+    let vectors = data
+        .get("vectors")
+        .and_then(Value::as_array)
+        .ok_or_else(|| IntelError::Invalid("embedding vectors missing".to_string()))?;
+    if vectors.len() != expected_vectors {
+        return Err(IntelError::Invalid(format!(
+            "vectors length {} != texts length {expected_vectors}",
+            vectors.len()
+        )));
+    }
+
+    vectors
+        .iter()
+        .enumerate()
+        .map(|(index, vector)| {
+            let components = vector.as_array().ok_or_else(|| {
+                IntelError::Invalid(format!("embedding vector {index} is not an array"))
+            })?;
+            if components.len() != 512 {
+                return Err(IntelError::Invalid(format!(
+                    "embedding vector {index} dimension {} != 512",
+                    components.len()
+                )));
+            }
+            let values = components
+                .iter()
+                .map(|component| {
+                    let value = component
+                        .as_f64()
+                        .filter(|value| value.is_finite())
+                        .ok_or_else(|| {
+                            IntelError::Invalid(format!("embedding vector {index} has non-number"))
+                        })?;
+                    let value = value as f32;
+                    if !value.is_finite() {
+                        return Err(IntelError::Invalid(format!(
+                            "embedding vector {index} has non-finite f32 value"
+                        )));
+                    }
+                    Ok(value)
+                })
+                .collect::<IntelResult<Vec<_>>>()?;
+            let norm = values
+                .iter()
+                .map(|value| f64::from(*value) * f64::from(*value))
+                .sum::<f64>()
+                .sqrt();
+            if (norm - 1.0).abs() > 1e-3 {
+                return Err(IntelError::Invalid(format!(
+                    "embedding vector {index} is not L2-normalized: norm={norm}"
+                )));
+            }
+            Ok(pgvector::Vector::from(values))
+        })
+        .collect()
 }
 
 /// 批量嵌入卡片（缺向量者；64 条/批，容器内逐条推理 L2 归一化）→
@@ -318,43 +424,18 @@ pub fn embed_cards(
     while !pending.is_empty() {
         let batch: Vec<(String, String)> =
             pending.drain(..EMBED_BATCH.min(pending.len())).collect();
-        let texts: Vec<Value> = batch.iter().map(|(_, t)| json!(t)).collect();
-        let data = provider
-            .dispatch(json!({ "texts": texts }))
-            .map_err(IntelError::from)?;
-        let dim = data["dim"].as_i64().unwrap_or(0);
-        if dim != 512 {
-            return Err(IntelError::Invalid(format!(
-                "embedding dim mismatch: {dim} != 512 (V0005 schema)"
-            )));
-        }
-        let vectors = data["vectors"]
-            .as_array()
-            .ok_or_else(|| IntelError::Invalid("vectors missing".to_string()))?;
-        if vectors.len() != batch.len() {
-            return Err(IntelError::Invalid(format!(
-                "vectors length {} != texts length {}",
-                vectors.len(),
-                batch.len()
-            )));
-        }
+        let texts: Vec<String> = batch.iter().map(|(_, text)| text.clone()).collect();
+        let vectors = provider.embed_texts(&texts)?;
         let mut conn = pool.get()?;
         let mut tx = conn.transaction()?;
-        for ((card_id, _), v) in batch.iter().zip(vectors.iter()) {
-            let vals: Vec<f32> = v
-                .as_array()
-                .expect("vector array")
-                .iter()
-                .map(|x| x.as_f64().unwrap_or(0.0) as f32)
-                .collect();
-            let vector = pgvector::Vector::from(vals);
+        for ((card_id, _), vector) in batch.iter().zip(vectors.iter()) {
             tx.execute(
                 "INSERT INTO knowledge_card_vectors (card_id, embedding, embedding_model_id,
                      embedding_version, dimension)
                  VALUES ($1,$2,$3,$4,512)
                  ON CONFLICT (card_id) DO UPDATE SET embedding = EXCLUDED.embedding,
                      embedding_version = EXCLUDED.embedding_version, updated_at = now()",
-                &[&card_id, &vector, &EMBED_MODEL_ID, &EMBED_VERSION],
+                &[&card_id, vector, &EMBED_MODEL_ID, &EMBED_VERSION],
             )?;
             embedded += 1;
         }
@@ -451,4 +532,39 @@ pub fn semantic_scan(
         pairs,
         relations_created,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn embedding_output(vector: Value) -> Value {
+        json!({
+            "model": EMBED_MODEL_ID,
+            "backend": format!("onnx:{EMBED_MODEL_ID}"),
+            "dim": 512,
+            "vectors": [vector]
+        })
+    }
+
+    #[test]
+    fn embedding_output_requires_expected_model_and_normalized_finite_vectors() {
+        let mut unit_vector = vec![0.0; 512];
+        unit_vector[0] = 1.0;
+        let vectors = parse_embedding_output(&embedding_output(json!(unit_vector)), 1).unwrap();
+        assert_eq!(vectors.len(), 1);
+
+        let invalid = embedding_output(json!(vec![0.0; 512]));
+        assert!(parse_embedding_output(&invalid, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("not L2-normalized"));
+
+        let mut wrong_model = embedding_output(json!(unit_vector));
+        wrong_model["model"] = json!("unexpected-model");
+        assert!(parse_embedding_output(&wrong_model, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("model mismatch"));
+    }
 }

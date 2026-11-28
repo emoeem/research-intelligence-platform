@@ -5,7 +5,8 @@
 //! list / show / health；P2-1 增 parse（解析管线驱动）/ parse-status /
 //! approve（ADR-0003 裁决 2/4）。运行配置 RP_PG_DSN（lib.rs 缺省口径）；对象落
 //! Object Storage（LocalFsStore，RIP_OBJECT_STORE_DIR 口径见 object_store.rs）。
-//! parse 面经 PodmanParserProvider（rip-parser 容器族，network=none）。
+//! parse 面宿主优先：HostParserProvider复用 Document Router / Tool Engine，
+//! PodmanParserProvider 仅通过 --container 作为隔离回退。
 //!
 //! exit: ok=0，运行失败=1，用法错误=2（rp-* 家族惯例）。
 
@@ -13,7 +14,9 @@ use intel_db::commit;
 use intel_db::document_repo::{self, ImportInput};
 use intel_db::ir::DocumentIr;
 use intel_db::object_store::LocalFsStore;
-use intel_db::parser::{DocumentParser, ParserProviderConfig, PodmanParserProvider};
+use intel_db::parser::{
+    DocumentParser, HostParserProvider, ParserProviderConfig, PodmanParserProvider,
+};
 use intel_db::{health, run_migrations, IntelError, IntelResult, PgConfig};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -34,8 +37,9 @@ subcommands:\n\
   soft-delete --document D        软删文档（可恢复）\n\
   list [--workspace W] [--all]    文档列表（权限前置谓词示例面）\n\
   show --document D               版本历史（含 SUPERSEDED）\n\
-  parse --document D [--revision R] [--ocr] [--force] [--from-run WF_RUN] [--run-db P] [--manifest-dir D] [--timeout S]\n\
-    解析管线驱动：detect 路由 -> rip-parser 容器 parse/ocr -> IR 校验 -> blocks/assets\n\
+  parse --document D [--revision R] [--ocr] [--force] [--container] [--from-run WF_RUN] [--run-db P] [--manifest-dir D] [--timeout S]\n\
+    解析管线宿主优先：detect 路由 -> Poppler/Tesseract/LibreOffice/Python Worker\n\
+    -> IR 校验 -> blocks/assets；--container 明确选择 rip-parser 隔离回退。\n\
     落库 + parse_state 回填（quality/风险标记判 REVIEW_PENDING）；已提交版本幂等跳过，--force 重解析；\n\
   --from-run WF_RUN               run 产物接续：rp-workflow run 的解析产物直接落库（不经容器）\n\
   parse-status --document D [--revision R]   解析状态视图（九态/质量/计数）\n\
@@ -62,7 +66,7 @@ struct Args {
 
 fn parse_args(iter: impl Iterator<Item = String>) -> Args {
     // 布尔旗标（不带值；出现即 true）。
-    const BOOL_FLAGS: [&str; 3] = ["force", "all", "ocr"];
+    const BOOL_FLAGS: [&str; 4] = ["force", "all", "ocr", "container"];
     let mut flags = std::collections::HashMap::new();
     let mut subs = Vec::new();
     let mut i = iter.peekable();
@@ -250,13 +254,24 @@ fn parse_command(
         return parse_from_run(pool, store, &document, &revision, wf_run, &cfg);
     }
 
-    let provider = PodmanParserProvider::new(cfg);
-    let outcome = if args.flags.contains_key("ocr") {
-        let ocr: &dyn intel_db::parser::OCRProvider = &provider;
-        ocr.ocr(&input_path, "eng+chi_sim")?
+    let outcome = if args.flags.contains_key("container") {
+        let provider = PodmanParserProvider::new(cfg);
+        if args.flags.contains_key("ocr") {
+            let ocr: &dyn intel_db::parser::OCRProvider = &provider;
+            ocr.ocr(&input_path, "eng+chi_sim")?
+        } else {
+            let parser: &dyn DocumentParser = &provider;
+            parser.parse(&input_path)?
+        }
     } else {
-        let parser: &dyn DocumentParser = &provider;
-        parser.parse(&input_path)?
+        let provider = HostParserProvider::new(cfg);
+        if args.flags.contains_key("ocr") {
+            let ocr: &dyn intel_db::parser::OCRProvider = &provider;
+            ocr.ocr(&input_path, "eng+chi_sim")?
+        } else {
+            let parser: &dyn DocumentParser = &provider;
+            parser.parse(&input_path)?
+        }
     };
     let _ = std::fs::remove_dir_all(&input_dir);
 

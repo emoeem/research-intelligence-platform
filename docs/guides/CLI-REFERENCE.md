@@ -1,4 +1,4 @@
-# CLI 参考手册（rp-* 11 bin · Phase 9 P9-3 帮助面统一）
+# CLI 参考手册（rp-* 12 bin · Phase 9 P9-3 帮助面统一）
 
 | 项       | 值 |
 | ---      | --- |
@@ -7,14 +7,14 @@
 | 适用版本 | Phase 9 P9-2 工作树及之后 |
 | 相关     | docs/phase9/REST-API-CONTRACT.md（REST 面）、docs/phase9/PHASE9-DESIGN.md（MCP 面）、apps/server/selftest_phase9_rest.sh 第 11 段（帮助面统一口径机器断言）、crates/*/src/bin/*.rs（实现源） |
 
-> rp-* 全族共 12 个 bin：11 个 CLI 入口（本手册逐 bin 覆盖）+ 1 个协议面 rp-mcp（stdio JSON-RPC，非 CLI，见文末注记）。本批次把 11 个 CLI 的帮助面统一为一套口径，并在此给出逐 bin 参考与可复制命令。
+> rp-* 全族共 13 个 bin：12 个 CLI 入口（本手册逐 bin 覆盖）+ 1 个协议面 rp-mcp（stdio JSON-RPC，非 CLI，见文末注记）。本批次把 12 个 CLI 的帮助面统一为一套口径，并在此给出逐 bin 参考与可复制命令。
 
-## 一、帮助面统一口径（11 bin 全量一致）
+## 一、帮助面统一口径（12 bin 全量一致）
 
 1. `--help` / `-h`（argv 任意位置）：用法全文走 **stdout，exit 0**。
 2. 误用（无参数、未知子命令、缺必填旗标）：用法全文走 **stderr，exit 2**。
 3. 用法骨架统一：首行 `usage: rp-<bin> <synopsis>`；其后 `subcommands:`（或 `commands:` / `flags:`）分节；`exit:` 节声明退出码语义；`help:` 节自指。
-4. 机器断言：selftest_phase9_rest.sh 第 11 段实测 11 bin（--help exit 0 + stdout 首行 `usage: rp-<bin>`；无参误用 exit 2）。
+4. 机器断言：selftest_phase9_rest.sh 第 11 段实测 12 bin（--help exit 0 + stdout 首行 `usage: rp-<bin>`；无参误用 exit 2）。
 5. 统一前差异（本批收口，如实记录）：rp-agent/rp-workflow/rp-context/rp-research/rp-tool/rp-plugin/rp-knowledge-fetch/rp-tool-health 此前不支持 `--help`（只有误用时打 usage exit 2）；rp-review/rp-search-index 此前无参与 `--help` 同路径（stdout exit 0），现无参归误用路径；rp-resolve 此前错误路径不带 usage，现 error + usage 同出。P9-2 发布注记记录的「rp-tool run --help 输出八行用法（exit 2）」按 DOC-STANDARD 快照纪律不回改，行为以本手册与本批 RELEASE 为准（现 exit 0）。
 
 ## 二、速览表
@@ -32,6 +32,7 @@
 | rp-research | research-engine | 七能力契约化调用（mock 纯函数） | 无库（Schema 门 + 单行 JSON） | -p research-engine --bin rp-research |
 | rp-knowledge-fetch | tool-engine | 知识文档抓取（egress 白名单约束） | 必填 | -p tool-engine --bin rp-knowledge-fetch |
 | rp-tool-health | tool-engine | Worker Protocol v1 握手探测 | 无库（spawn worker） | -p tool-engine --bin rp-tool-health |
+| rp-ingest | intel-db | Report IR / parsed Document Revision 摄入、状态与重试 | RP_PG_DSN（rip_platform） | -p intel-db --bin rp-ingest |
 
 红线（全族一致）：生产 `migrations/platform*.db` 一律不写（ROADMAP §13）；rp-plugin 与 rp-workflow 显式拒绝 `--db` 指向 platform*.db（`production_db_refused`）。构建一律 `cargo build --offline`（vendor 配置按仓库根 CWD 发现）。
 
@@ -145,11 +146,35 @@
 - 命令：`ping --manifest <path> [--timeout-ms <n>]`：spawn worker 一次 Worker Protocol v1 initialize/ping 交换；ok=0，探测失败=1，用法错误=2。
 - 例子：`rp-tool-health ping --manifest manifests/tools/rip.doc.parse.json`
 
+### 3.12 rp-ingest（Knowledge Ingestion）
+
+- 子命令：`report`（已存储 Report IR → Finding/Evidence → review candidate）、`document`（已解析 Document Revision → block evidence/identifier mention candidate）、`status`、`candidate`（workspace/ingestion-scoped candidate and bounded evidence lookup）、`semantic-scan`（Nuclei 候选向量化及 review-only 相似建议）、`retry`。
+- 请求合同 1.0，要求 workspace、幂等键和 requester。当前 API 只允许 `default` workspace；CLI 可接受其他 workspace，但现有 feedback pipeline 会执行 workspace 隔离检查。
+- 摄入任务记录、状态和输出引用存入 PostgreSQL V0015-V0018。`document` 要求先用 `rp-doc parse` 处理对应 revision；仅接受 `APPROVED` 或 `REVIEW_PENDING` parse_state。来源原文不复制，Evidence 引用 IR block、页码/位置、block 哈希和字符偏移。
+- Document adapter 抽取 CVE/CWE 标识符提及，并对不超过 64 KiB 的 Nuclei YAML block 静态提取源模板 ID、`info.name` 和受限 severity 词表，作为 `nuclei-template-metadata.v1` 候选。模板请求、payload 等内容不持久化且不会执行；结构化 metadata 被标记为不可信。精确重复及已存在 vulnerability entity 会作为审核信号。新 revision 另记录 block SHA-256 差异；变更 block 上的既有标识符进入 `VERSION_CHANGE_REVIEW`，不合并或覆盖。`REVIEW_PENDING` 解析状态或缺少风险标记会提升审核优先级。`review-batch apply` 只记录人工审核，不验证或发布漏洞事实。
+- `semantic-scan` 必须显式传 `--threshold`，`--top-k` 默认为 10；当前只处理同 workspace 内未拒绝、无 metadata 冲突的 Nuclei 候选。向量通过 pinned `rip-embed` / Tool Engine 生成并记录模型、worker 版本和输入哈希。输出与候选详情中的相似项都是 review-only；阈值未完成人工校准，不能视为 Duplicate/Related/Distinct 评估，也不会合并或发布。
+- 例子：
+  ~~~bash
+  cargo build --offline -p intel-db --bin rp-ingest
+  export RP_PG_DSN='postgres://...'
+  rp-ingest report --report-id rep-... --workspace default \
+    --idempotency-key research-run-123 --requester analyst-1
+  rp-ingest document --document-id doc-... --revision-id drev-... \
+    --workspace default --idempotency-key document-run-123 --requester analyst-1
+  rp-ingest status --ingestion-id ing-... --workspace default
+  rp-ingest candidate --ingestion-id ing-... --candidate-id ingc-... \
+    --workspace default
+  # 仅作未校准的相似项建议；需按人工标注结果选择阈值
+  rp-ingest semantic-scan --ingestion-id ing-... --workspace default \
+    --threshold 0.80 --top-k 10
+  rp-ingest retry --ingestion-id ing-... --workspace default
+  ~~~
+
 ## 四、rp-mcp 注记（协议面，非 CLI）
 
-rp-mcp（crates/mcp-server）是平台 MCP 面（rip.* 前缀，stdio JSON-RPC 2.0 子集），消费方式是协议交换而非命令行旗标，故不入 11 bin CLI 统一口径：无 --help，启动即 stderr ready 横幅并等待 stdin 请求行。要点：`RP_MCP_TOKEN` 禁止匿名（未配置时全部请求 -32001 auth_required）；`RP_DB_PATH`/`RP_AUX_DB` 目录读面；`RP_RUN_DB` 运行库（缺省 rip-data/tool-runs.db）；外部 AI 完整走法见 docs/guides/EXTERNAL-AI-QUICKSTART.md。
+rp-mcp（crates/mcp-server）是平台 MCP 面（rip.* 前缀，stdio JSON-RPC 2.0 子集），消费方式是协议交换而非命令行旗标，故不入 12 bin CLI 统一口径：无 --help，启动即 stderr ready 横幅并等待 stdin 请求行。要点：`RP_MCP_TOKEN` 禁止匿名（未配置时全部请求 -32001 auth_required）；`RP_DB_PATH`/`RP_AUX_DB` 目录读面；`RP_RUN_DB` 运行库（缺省 rip-data/tool-runs.db）；外部 AI 完整走法见 docs/guides/EXTERNAL-AI-QUICKSTART.md。
 
 ## 五、对账与维护纪律
 
-- 帮助文本改动必须重跑 selftest_phase9_rest.sh 第 11 段（11 bin exit/首行断言）与三道门禁（cargo test / clippy / workers unittest）；本手册章节与 bin 实际输出漂移即债，改 bin 先改本手册（同批同提交）。
+- 帮助文本改动必须重跑 selftest_phase9_rest.sh 第 11 段（12 bin exit/首行断言）与三道门禁（cargo test / clippy / workers unittest）；本手册章节与 bin 实际输出漂移即债，改 bin 先改本手册（同批同提交）。
 - 新增 bin（后续批次）必须：实现 usage_text()/usage() 双路径（--help stdout exit 0，误用 stderr exit 2）、更新本手册速览表与逐 bin 节、更新 selftest BINS 数组。

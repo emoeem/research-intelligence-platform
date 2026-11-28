@@ -77,9 +77,18 @@ curl -s -H "Authorization: Bearer $RP_AUTH_TOKEN" http://127.0.0.1:7800/api/over
 
 ~~~bash
 apps/server/rp_service.sh gen-token      # 令牌文件仓库根 .rp-workbench-token（600）
+# 先写正式 PostgreSQL DSN 文件（仅该文件、权限 600）：
+mkdir -p rip-data/dev
+cat > rip-data/dev/rip-platform-dsn.env <<'EOF'
+RP_PLATFORM_PG_DSN=postgresql://USER:PASSWORD@127.0.0.1:55432/rip_platform
+EOF
+chmod 600 rip-data/dev/rip-platform-dsn.env
 apps/server/rp_service.sh install        # 写 ~/.config/systemd/user/rp-workbench.service 并启动
 apps/server/rp_service.sh status|logs|stop|restart|uninstall
 ~~~
+
+正式安装不会继承仅存在于调用 shell 的 `RP_PLATFORM_PG_DSN`。
+DSN 必须写入上面的 600 权限文件；缺文件、权限错误、空值或多余配置行均拒绝安装。
 
 服务单元固定 `RP_DB_PATH=<repo>/migrations/platform.db`：先用第三节路径 A/B 把该文件建出来
 再 install（空文件不算初始化）。ETL 路径 B 的产物是 platform-dryrun.db：用它跑服务时

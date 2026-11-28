@@ -1574,12 +1574,14 @@ name = "intel-db"
 version = "0.2.0"
 dependencies = [
  "database",
+ "document-router",
  "domain",
  "pgvector",
  "postgres",
  "r2d2",
  "r2d2_postgres",
  "refinery",
+ "regex",
  "report-engine",
  "runtime-gateway",
  "serde",

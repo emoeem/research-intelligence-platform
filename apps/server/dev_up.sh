@@ -5,6 +5,7 @@
 #       bash apps/server/dev_down.sh      # 停止（默认保留 PG；--with-pg 连 PG 一起停）
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${REPO}/apps/server/platform_env.sh"
 RUN_DIR="${REPO}/rip-data/run"
 mkdir -p "${RUN_DIR}"
 BACK_PORT="${RP_PORT:-7800}"
@@ -37,11 +38,15 @@ fi
 echo "== 2. 后端 rp_server（127.0.0.1:${BACK_PORT}）"
 # M10 批次审核面：正式库（rip_platform @ rip-m4-personal-pg:55432）DSN 从
 # 600 权限 env 文件注入（不入库、不打印）；缺文件时批次审核端点 fail-closed。
-if [ -f "${REPO}/rip-data/dev/rip-platform-dsn.env" ]; then
-  # shellcheck disable=SC1091
-  . "${REPO}/rip-data/dev/rip-platform-dsn.env"
-  export RP_PLATFORM_PG_DSN
-  echo "  [ok] RP_PLATFORM_PG_DSN 已注入（rip-platform-dsn.env）"
+if rip_load_platform_pg_env "${REPO}"; then
+  echo "  [ok] RP_PLATFORM_PG_DSN 已注入"
+else
+  rc=$?
+  if [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
+    echo "  [warn] 未配置 RP_PLATFORM_PG_DSN（审核批次端点将 fail-closed）"
+  else
+    exit "$rc"
+  fi
 fi
 if port_up "${BACK_PORT}"; then
   echo "  [ok] 端口已在监听（复用既有进程）"
@@ -51,6 +56,7 @@ else
     RP_DB_PATH="${REPO}/migrations/platform.db" \
     RP_AUTH_TOKEN_FILE="${REPO}/.rp-workbench-token" \
     RP_PG_DSN="${RP_PG_DSN:-postgres://postgres:pgselftest@127.0.0.1:5432/postgres}" \
+    RP_PLATFORM_PG_DSN="${RP_PLATFORM_PG_DSN:-}" \
     python3 "${REPO}/apps/server/rp_server.py" \
     > "${RUN_DIR}/rp_server.log" 2>&1 < /dev/null &
   echo $! > "${RUN_DIR}/rp_server.pid"

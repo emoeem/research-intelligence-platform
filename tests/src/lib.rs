@@ -191,7 +191,16 @@ pub fn build_search_index(tmp_dir: &Path) -> PathBuf {
         .expect("open index db");
     let report = search_engine::SearchIndex::rebuild(&platform, &catalog, &index)
         .expect("build search index");
-    assert_eq!(report.doc_count, 81, "real dryrun corpus is 81 resources");
+    let resource_count = platform
+        .with_conn(|connection| {
+            connection.query_row("SELECT count(*) FROM resource", [], |row| row.get::<_, i64>(0))
+        })
+        .expect("count platform resources");
+    assert_eq!(resource_count, 81, "real dryrun corpus is 81 resources");
+    assert!(
+        report.doc_count >= resource_count as usize,
+        "search projection includes every platform resource"
+    );
     assert_eq!(report.fts_rows, report.doc_count);
     index_db
 }

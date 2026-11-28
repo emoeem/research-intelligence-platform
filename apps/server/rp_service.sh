@@ -4,8 +4,10 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${REPO_ROOT}/apps/server/platform_env.sh"
 SERVER="${REPO_ROOT}/apps/server/rp_server.py"
 TOKEN_FILE="${RP_AUTH_TOKEN_FILE:-${REPO_ROOT}/.rp-workbench-token}"
+DSN_FILE="${RP_PLATFORM_PG_DSN_FILE:-${REPO_ROOT}/rip-data/dev/rip-platform-dsn.env}"
 UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT_NAME="rp-workbench.service"
 PORT="${RP_PORT:-7800}"
@@ -24,6 +26,15 @@ gen_token() {
 install_unit() {
   [[ -f "${TOKEN_FILE}" ]] || { echo "缺少令牌文件：${TOKEN_FILE}（先执行 gen-token）" >&2; exit 1; }
   [[ $(stat -c %a "${TOKEN_FILE}") == "600" ]] || { echo "令牌文件权限不是 600，拒绝安装" >&2; exit 1; }
+  # systemd 不继承任意调用 shell 环境；正式安装必须从模式 600 的文件加载。
+  unset RP_PLATFORM_PG_DSN
+  if rip_load_platform_pg_env "${REPO_ROOT}"; then
+    rc=0
+  else
+    rc=$?
+    echo "正式 systemd 安装需要有效的 PostgreSQL DSN 文件：${DSN_FILE}（退出码 ${rc}）" >&2
+    exit "$rc"
+  fi
   mkdir -p "${UNIT_DIR}"
   cat > "${UNIT_DIR}/${UNIT_NAME}" <<UNIT
 [Unit]
@@ -35,6 +46,7 @@ ExecStart=${PYTHON_BIN} ${SERVER}
 Environment=RP_PORT=${PORT}
 Environment=RP_DB_PATH=${REPO_ROOT}/migrations/platform.db
 Environment=RP_AUTH_TOKEN_FILE=${TOKEN_FILE}
+EnvironmentFile=-${DSN_FILE}
 WorkingDirectory=${REPO_ROOT}
 Restart=on-failure
 RestartSec=3

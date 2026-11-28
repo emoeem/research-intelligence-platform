@@ -1,10 +1,10 @@
 //! batch_review：M10 批次审核台账（rip_platform PG）。
 //!
 //! 定位：`review_batch` / `review_batch_item` / `review_batch_decision_log`
-//! 三表（V0014）承载 7 个审核域批次候选的决策台账。台账先行：`decide` /
-//! `undo` 只写台账；`apply` 才按域路由到权威存储（skill_relation_* 直接更新
-//! knowledge_relations + 关系审核日志；其余域在权威通道接线前明确报
-//! ledger_only，绝不静默扩散）。dry-run 是默认，`--apply` 显式提交。
+//! 三表（V0014）承载审核台账。`decide` / `undo` 追加决策日志；`apply` 按域
+//! 路由（skill_relation_* 更新 knowledge_relations；knowledge_ingestion 仅
+//! 更新提及候选状态；其他未接线域明确保持 ledger_only）。dry-run 是默认，
+//! `--apply` 显式提交。
 //! 红线：本模块不自动批准任何候选；不修改历史日志行（undo 是追加）。
 
 use crate::{IntelError, IntelResult, PgPool};
@@ -72,7 +72,8 @@ pub fn import_batch_file(
         .ok_or_else(|| IntelError::Invalid("path has no file stem".into()))?
         .to_string();
 
-    let (batch_id, domain, items) = if let Some(tasks) = value.get("tasks").and_then(|t| t.as_array())
+    let (batch_id, domain, items) = if let Some(tasks) =
+        value.get("tasks").and_then(|t| t.as_array())
     {
         let batch_id = value
             .get("batch_id")
@@ -93,7 +94,9 @@ pub fn import_batch_file(
                 .ok_or_else(|| IntelError::Invalid("task missing candidate_id".into()))?;
             items.push((
                 candidate_id.to_string(),
-                task.get("priority_rank").and_then(|v| v.as_i64()).map(|v| v as i32),
+                task.get("priority_rank")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32),
                 task.get("priority_band")
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
@@ -118,18 +121,24 @@ pub fn import_batch_file(
                 .and_then(|v| v.as_str())
                 .unwrap_or("REFERENCES");
             let candidate_id = if domain == "skill_relation_tool" {
-                let tool_id = candidate.get("tool_id").and_then(|v| v.as_str()).ok_or_else(
-                    || IntelError::Invalid("skill tool candidate missing tool_id".into()),
-                )?;
+                let tool_id = candidate
+                    .get("tool_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        IntelError::Invalid("skill tool candidate missing tool_id".into())
+                    })?;
                 format!("USES_TOOL:skill:{skill_id}:tool:{tool_id}")
             } else {
                 let target_type = candidate
                     .get("target_type")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let target_key = candidate.get("target_key").and_then(|v| v.as_str()).ok_or_else(
-                    || IntelError::Invalid("skill ref candidate missing target_key".into()),
-                )?;
+                let target_key = candidate
+                    .get("target_key")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        IntelError::Invalid("skill ref candidate missing target_key".into())
+                    })?;
                 format!("REFERENCES:skill:{skill_id}:{target_type}:{target_key}")
             };
             let mut payload = candidate.clone();
@@ -383,7 +392,11 @@ pub fn decide(
             "note": "no matching items",
         }));
     }
-    let samples: Vec<String> = items.iter().take(20).map(|(_, cid, _)| cid.clone()).collect();
+    let samples: Vec<String> = items
+        .iter()
+        .take(20)
+        .map(|(_, cid, _)| cid.clone())
+        .collect();
     if !apply {
         tx.rollback()?;
         return Ok(json!({
@@ -427,9 +440,8 @@ pub fn decide(
     }))
 }
 
-/// 撤销最近一次决策（追加 undo 日志；已 apply 的 skill_relation 条目同时把
-/// knowledge_relations.review_status 回退到 apply 前状态并补关系审核日志，
-/// 保证台账与权威侧一致）。
+/// 撤销最近一次决策（追加 undo 日志；已 apply 的关系和摄入审核同时恢复其
+/// 权威侧状态，保证台账与权威侧一致）。
 pub fn undo(
     pool: &PgPool,
     batch_id: &str,
@@ -442,7 +454,10 @@ pub fn undo(
     }
     let mut conn = pool.get()?;
     let domain: String = conn
-        .query_opt("SELECT domain FROM review_batch WHERE batch_id=$1", &[&batch_id])?
+        .query_opt(
+            "SELECT domain FROM review_batch WHERE batch_id=$1",
+            &[&batch_id],
+        )?
         .ok_or_else(|| IntelError::Invalid(format!("batch not found: {batch_id}")))?
         .get(0);
     let mut tx = conn.transaction()?;
@@ -471,7 +486,8 @@ pub fn undo(
              WHERE item_id=$1 AND action='decide' ORDER BY log_id DESC LIMIT 1",
             &[item_id],
         )?;
-        let from: String = last.map(|row| row.get::<_, String>("from_decision"))
+        let from: String = last
+            .map(|row| row.get::<_, String>("from_decision"))
             .unwrap_or_else(|| "PENDING".to_string());
         let applied: bool = tx
             .query_one(
@@ -552,6 +568,32 @@ pub fn undo(
             )?;
             authoritative_reverted += 1;
         }
+        if applied && domain == "knowledge_ingestion" {
+            let payload: Value = tx
+                .query_one(
+                    "SELECT payload FROM review_batch_item WHERE item_id=$1",
+                    &[item_id],
+                )?
+                .get(0);
+            let initial_status = payload
+                .get("candidate_status")
+                .and_then(|value| value.as_str())
+                .unwrap_or("PENDING_REVIEW");
+            let changed = tx.execute(
+                "UPDATE knowledge_ingestion_candidates
+                 SET status=$2,updated_at=now()
+                 WHERE candidate_id=$1 AND review_batch_id=$3",
+                &[candidate_id, &initial_status, &batch_id],
+            )?;
+            if changed != 1 {
+                failures.push(json!({
+                    "candidate_id": candidate_id,
+                    "error": "ingestion candidate not found for review undo"
+                }));
+                continue;
+            }
+            authoritative_reverted += 1;
+        }
         tx.execute(
             "UPDATE review_batch_item
              SET decision=$2, reviewer=$3,
@@ -592,7 +634,10 @@ pub fn apply_batch(
 ) -> IntelResult<Value> {
     let mut conn = pool.get()?;
     let domain: String = conn
-        .query_opt("SELECT domain FROM review_batch WHERE batch_id=$1", &[&batch_id])?
+        .query_opt(
+            "SELECT domain FROM review_batch WHERE batch_id=$1",
+            &[&batch_id],
+        )?
         .ok_or_else(|| IntelError::Invalid(format!("batch not found: {batch_id}")))?
         .get(0);
     let mut tx = conn.transaction()?;
@@ -644,6 +689,56 @@ pub fn apply_batch(
         // 子进程不能在 PG 读事务内长跑：先释放事务再派发。
         tx.rollback()?;
         return apply_nuclei_kse(pool, batch_id, &items, apply);
+    }
+    if domain == "knowledge_ingestion" {
+        let mut succeeded = 0usize;
+        let mut failures = Vec::new();
+        for (item_id, candidate_id, decision, reviewer, reason, _) in &items {
+            let next_status = match decision.as_str() {
+                "APPROVED" => "REVIEWED",
+                "REJECTED" => "REJECTED",
+                "DEFERRED" => "DEFERRED",
+                _ => continue,
+            };
+            let reviewer = reviewer.as_deref().unwrap_or("unknown");
+            let reason_text = reason.as_deref().unwrap_or("-");
+            let changed = tx.execute(
+                "UPDATE knowledge_ingestion_candidates
+                 SET status=$2,updated_at=now()
+                 WHERE candidate_id=$1 AND review_batch_id=$3",
+                &[candidate_id, &next_status, &batch_id],
+            )?;
+            if changed != 1 {
+                failures.push(json!({
+                    "candidate_id": candidate_id,
+                    "error": "ingestion candidate not found in batch"
+                }));
+                continue;
+            }
+            tx.execute(
+                "UPDATE review_batch_item SET applied_at=now() WHERE item_id=$1",
+                &[item_id],
+            )?;
+            tx.execute(
+                "INSERT INTO review_batch_decision_log
+                 (item_id,action,from_decision,to_decision,reviewer,reason)
+                 VALUES ($1,'apply',$2,$2,$3,$4)",
+                &[item_id, decision, &reviewer, &reason_text],
+            )?;
+            succeeded += 1;
+        }
+        tx.commit()?;
+        return Ok(json!({
+            "command": "apply",
+            "batch_id": batch_id,
+            "domain": domain,
+            "mode": "reviewed_candidate_only",
+            "matched": items.len(),
+            "succeeded": succeeded,
+            "failed": failures.len(),
+            "failures": failures,
+            "note": "approval records human review of an identifier mention only; it does not assert or publish a verified knowledge claim"
+        }));
     }
     if !domain.starts_with("skill_relation") {
         // 无权威通道的域：保持台账决策，不标 applied（诚实面）。
@@ -718,7 +813,13 @@ pub fn apply_batch(
             "INSERT INTO knowledge_relation_review_log
              (relation_id, from_status, to_status, reason, reviewer)
              VALUES ($1,$2,$3,$4,$5)",
-            &[&relation_id, &from_status, decision, &reason_text, &reviewer],
+            &[
+                &relation_id,
+                &from_status,
+                decision,
+                &reason_text,
+                &reviewer,
+            ],
         )?;
         tx.execute(
             "UPDATE review_batch_item SET applied_at=now() WHERE item_id=$1",
@@ -763,9 +864,9 @@ fn apply_nuclei_kse(
     let mut parse_failures: Vec<Value> = Vec::new();
     for item in items {
         let cid = &item.1;
-        let rest = cid.strip_prefix("nuclei:").ok_or_else(|| {
-            IntelError::Invalid(format!("nuclei candidate_id malformed: {cid}"))
-        })?;
+        let rest = cid
+            .strip_prefix("nuclei:")
+            .ok_or_else(|| IntelError::Invalid(format!("nuclei candidate_id malformed: {cid}")))?;
         let Some((version, key)) = rest.split_once(':') else {
             parse_failures.push(json!({"candidate_id": cid, "error": "missing key segment"}));
             continue;
@@ -807,7 +908,9 @@ fn apply_nuclei_kse(
     }
     let plugin_bin = std::path::Path::new("target/debug/rp-plugin");
     if !plugin_bin.exists() {
-        return Err(IntelError::Invalid("target/debug/rp-plugin not found".into()));
+        return Err(IntelError::Invalid(
+            "target/debug/rp-plugin not found".into(),
+        ));
     }
     let mut group_results: Vec<Value> = Vec::new();
     let mut applied_item_ids: Vec<(i64, String, String, String)> = Vec::new();
@@ -820,8 +923,8 @@ fn apply_nuclei_kse(
             "batch-review {batch_id}: {} item(s) routed from rip_platform review_batch ledger; per-item reasons live in the ledger",
             group.len()
         );
-        let plugin_db = std::env::var("RP_PLUGIN_DB")
-            .unwrap_or_else(|_| "migrations/dev-p6.db".to_string());
+        let plugin_db =
+            std::env::var("RP_PLUGIN_DB").unwrap_or_else(|_| "migrations/dev-p6.db".to_string());
         let output = std::process::Command::new(plugin_bin)
             .args(["--db", &plugin_db])
             .args([
@@ -846,7 +949,11 @@ fn apply_nuclei_kse(
             continue;
         };
         if !out.status.success() {
-            let tail = String::from_utf8_lossy(&out.stderr).chars().rev().take(400).collect::<String>();
+            let tail = String::from_utf8_lossy(&out.stderr)
+                .chars()
+                .rev()
+                .take(400)
+                .collect::<String>();
             let tail: String = tail.chars().rev().collect();
             group_results.push(json!({
                 "version": version, "status": status, "keys": keys.len(),
@@ -899,9 +1006,7 @@ fn reviewer_of(item: &ApplyItem) -> String {
     item.3.clone().unwrap_or_else(|| "unknown".into())
 }
 
-fn map_apply_rows(
-    rows: &[postgres::Row],
-) -> Vec<ApplyItem> {
+fn map_apply_rows(rows: &[postgres::Row]) -> Vec<ApplyItem> {
     rows.iter()
         .map(|r| {
             let payload: Value = r.get("payload");
@@ -916,7 +1021,6 @@ fn map_apply_rows(
         })
         .collect()
 }
-
 
 /// M7 投影计划（只读）：从 knowledge_relations 的 APPROVED 关系计算每个 Skill
 /// 的 required_tools / knowledge_refs 目标值。写回 platform.db 由
@@ -943,7 +1047,9 @@ pub fn projection_plan(pool: &PgPool) -> IntelResult<Value> {
         let src_key: String = row.get("src_key");
         let relation_type: String = row.get("relation_type");
         let dst_key: String = row.get("dst_key");
-        let Some(skill) = src_key.strip_prefix("skill:") else { continue };
+        let Some(skill) = src_key.strip_prefix("skill:") else {
+            continue;
+        };
         let review_status: String = row.get("review_status");
         let entry = skills.entry(skill.to_string()).or_default();
         if review_status != "APPROVED" {

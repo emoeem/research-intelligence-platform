@@ -347,7 +347,7 @@ fn tools_list_entries_are_standard_tool_objects() {
         pages += 1;
         assert!(pages < 50, "分页游标失灵");
     }
-    // 组合目录 = 能力面前段 13 条（MA-3 七枚 additive；CAPABILITY_TOOLS 固定次序）+ 注册面 5 行（4 主库 + 1 aux 新行，
+    // 组合目录 = 能力面前段（CAPABILITY_TOOLS 固定次序）+ 注册面 5 行（4 主库 + 1 aux 新行，
     // dup 去重）；注册面 Schema 缺省 = 宽松 object 形态（不省略必需 Schema）。
     let mut expected: Vec<String> = mcp_server::CAPABILITY_TOOLS
         .iter()
@@ -375,13 +375,28 @@ fn tools_list_entries_are_standard_tool_objects() {
         );
     }
     // aux 行的真实 Schema 列直读进 tools/list（与 tool 表 input_schema 同源）。
-    let reply = proc.request("tools/list", json!({}));
-    let rtis = reply["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|t| t["name"] == "rip.rip.kb.rtis")
-        .expect("aux schema row");
+    let mut cursor = String::new();
+    let rtis = loop {
+        let params = if cursor.is_empty() {
+            json!({})
+        } else {
+            json!({"cursor": cursor})
+        };
+        let reply = proc.request("tools/list", params);
+        let result = &reply["result"];
+        if let Some(tool) = result["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "rip.rip.kb.rtis")
+        {
+            break tool.clone();
+        }
+        let Some(next) = result.get("nextCursor").and_then(Value::as_str) else {
+            panic!("aux schema row missing from all pages");
+        };
+        cursor = next.to_string();
+    };
     assert_eq!(
         rtis["inputSchema"]["required"],
         json!(["q"]),
@@ -395,19 +410,13 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
     let (_m, _a, mut proc) = fixture("pagination");
     proc.handshake("2024-11-05");
     // 服务端固定页大小（MCP 标准分页只含 cursor；limit 参数不在标准面），
-    // 首页 = 13 能力面（MA-3 七枚协作派发工具 additive）+ 5 注册面：
-    // 18 总条数 <= 页大小 20 → 首页 18 行无下一页。
+    // 首页 = 21 能力面前段及少量注册面；总量随注册面变化。
     let reply = proc.request("tools/list", json!({}));
     let tools = reply["result"]["tools"].as_array().unwrap();
-    assert_eq!(
-        tools.len(),
-        18,
-        "夹具 18 条全量（13 能力面 + 5 注册面）: {}",
-        tools.len()
-    );
+    assert_eq!(tools.len(), 20, "首页按默认页大小 20 返回: {}", tools.len());
     assert!(
-        reply["result"].get("nextCursor").is_none(),
-        "全量一页内无 nextCursor"
+        reply["result"].get("nextCursor").is_some(),
+        "分页目录需返回 nextCursor"
     );
     // 非法游标 -32602。
     let reply = proc.request("tools/list", json!({"cursor": "v1-bad"}));
@@ -467,11 +476,7 @@ fn tools_list_pagination_is_server_paged_with_opaque_cursor() {
             _ => break,
         }
     }
-    assert_eq!(
-        seen.len(),
-        43,
-        "30 注册面 + 13 能力面全量遍历（MA-3 七枚协作派发工具 additive）"
-    );
+    assert_eq!(seen.len(), 50, "30 注册面 + 20 能力面全量遍历");
     let mut uniq = seen.clone();
     uniq.sort();
     uniq.dedup();
@@ -590,6 +595,23 @@ fn get_tool_schema_serves_registry_and_capability_on_demand() {
         payload["input_schema"]["required"],
         json!(["tool_id", "input"])
     );
+    let reply = proc.call(
+        "rip.get_tool_schema",
+        json!({"tool_id": "rip.submit_knowledge_ingestion"}),
+    );
+    let payload = payload_of(&reply);
+    assert_eq!(
+        payload["input_schema"]["required"],
+        json!(["source_kind", "idempotency_key"])
+    );
+    assert_eq!(
+        payload["input_schema"]["oneOf"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        payload["input_schema"]["additionalProperties"],
+        json!(false)
+    );
     // 工具不存在 = -32602。
     let reply = proc.call("rip.get_tool_schema", json!({"tool_id": "nope"}));
     assert_eq!(reply["error"]["code"], -32602);
@@ -607,16 +629,14 @@ fn get_tool_schema_serves_registry_and_capability_on_demand() {
 fn unwired_tools_return_structured_is_error() {
     let (_m, _a, mut proc) = fixture("unwired");
     proc.handshake("2024-11-05");
-    // 尚未接线的能力面（search_knowledge）：结构化 isError，不伪造成功。
-    let reply = proc.call("rip.search_knowledge", json!({}));
+    // search_knowledge 已接线；无 kc 二进制或无 DSN 时如实返回执行错误，不伪造成功。
+    let reply = proc.call(
+        "rip.search_knowledge",
+        json!({"q":"SQL injection","limit":5}),
+    );
     assert_eq!(
         reply["result"]["isError"], true,
-        "search_knowledge 未接线必须 isError=true"
-    );
-    let text = reply["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(
-        text.contains("\"wired_in\""),
-        "search_knowledge 指明接线归属: {text}"
+        "search_knowledge 缺运行依赖必须 isError=true"
     );
     // run face 未配置（RP_RUN_DB=none）：如实返回未配置说明。
     for (name, arguments) in [

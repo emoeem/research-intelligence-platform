@@ -28,8 +28,8 @@
 //!   * `tools/call`：接通 rip.list_tools / rip.get_tool_schema（发现面）与
 //!     rip.run_tool / rip.get_run_status / rip.cancel_run（执行与运行面，
 //!     经 [`dispatch::RunChannel`]，spawn_blocking 隔离 sqlite 与工具执行）；
-//!     rip.search_knowledge 仍为目录条目（调用返回结构化 isError，不伪造
-//!     成功）；注册面直呼 `rip.<tool_id>` 仍指向 rip.run_tool 通道提示；
+//!     rip.search_knowledge 已接通知识检索面；注册面直呼 `rip.<tool_id>`
+//!     仍指向 rip.run_tool 通道提示；
 //!   * `resources/list` / `resources/templates/list` / `resources/read` 与
 //!     `prompts/list` / `prompts/get`：见上；词表外资源 / prompt 回
 //!     -32602，数据面不可读回 -32603；
@@ -91,15 +91,17 @@ pub const CODE_INTERNAL: i64 = -32603;
 /// rip.run_tool / rip.get_run_status / rip.cancel_run 接通执行与运行面
 /// （[`dispatch::RunChannel`]）；`wired` 为 false 的条目（当前仅
 /// rip.search_knowledge）在 tools/call 返回结构化 isError，不伪造执行结果。
-/// MA-3（D4）：协作派发七工具 additive 接通（既有五枚 wired 词形零 diff
+/// MA-3（D4）：协作派发七工具 additive 接通；Knowledge Ingestion 三工具
+/// 复用受 caller 约束的 `rp-ingest` 子进程边界（workspace 固定 default）
+/// （既有五枚 wired 词形零 diff
 /// ——run_subtask/get_subtask_status/claim_task/complete_claim/send_message
 /// /fetch_messages/contribute_knowledge 全走 [`dispatch::RunChannel`]，
 /// caller 未解析时结构化拒绝 fail-closed）。
-pub const CAPABILITY_TOOLS: [(&str, bool); 13] = [
+pub const CAPABILITY_TOOLS: [(&str, bool); 20] = [
     ("rip.list_tools", true),
     ("rip.get_tool_schema", true),
     ("rip.run_tool", true),
-    ("rip.search_knowledge", false),
+    ("rip.search_knowledge", true),
     ("rip.get_run_status", true),
     ("rip.cancel_run", true),
     ("rip.run_subtask", true),
@@ -109,6 +111,13 @@ pub const CAPABILITY_TOOLS: [(&str, bool); 13] = [
     ("rip.send_message", true),
     ("rip.fetch_messages", true),
     ("rip.contribute_knowledge", true),
+    ("rip.submit_knowledge_ingestion", true),
+    ("rip.get_knowledge_ingestion_status", true),
+    ("rip.get_knowledge_ingestion_candidate", true),
+    ("rip.get_knowledge_detail", true),
+    ("rip.list_knowledge_review_queue", true),
+    ("rip.submit_knowledge_candidate", true),
+    ("rip.review_knowledge_candidate", true),
 ];
 
 /// 能力面工具的一行 description（标准 Tool 对象可选字段；只描述平台交互面，
@@ -118,7 +127,7 @@ pub fn capability_description(tool: &str) -> &'static str {
         "rip.list_tools" => "工具目录分页（注册面摘要，total/limit/items/nextCursor）",
         "rip.get_tool_schema" => "按需取工具入参 / 出参 Schema（注册面与能力面同一入口）",
         "rip.run_tool" => "执行工具（经 tool-engine 派发；T2 须带 authorization_ref）",
-        "rip.search_knowledge" => "知识检索（尚未接线，调用返回结构化 isError）",
+        "rip.search_knowledge" => "知识检索（BM25/向量/混合检索，workspace 固定 default）",
         "rip.get_run_status" => "查询 tool_run 终态与 Artifact / Evidence 引用",
         "rip.cancel_run" => "协作式取消（RUNNING / WAITING_FOR_RUNNER 期受理）",
         "rip.run_subtask" => "派发子任务（spawn rp-agent wait 终态返回 JSON 信封；caller 未署名结构化拒绝）",
@@ -128,6 +137,13 @@ pub fn capability_description(tool: &str) -> &'static str {
         "rip.send_message" => "邮箱消息发送（from = 会话 caller；to 必须在用 caller）",
         "rip.fetch_messages" => "邮箱收件（拉模型：未读行每次 fetch 均返回，首拉落 delivered_at）",
         "rip.contribute_knowledge" => "知识供体写入即候选（spawn rp-kc donor-submit；收据 {knowledge_id, review_status, normalized_hash}）",
+        "rip.submit_knowledge_ingestion" => "提交已存储 Report 或已解析 Document Revision（caller 署名，workspace 固定 default）",
+        "rip.get_knowledge_ingestion_status" => "读取 Knowledge Ingestion 状态（caller 署名，workspace 固定 default）",
+        "rip.get_knowledge_ingestion_candidate" => "读取候选及有界、不可信来源证据（caller 署名，workspace 固定 default）",
+        "rip.get_knowledge_detail" => "读取已批准知识卡详情、关系、来源文档和审核日志（workspace 固定 default）",
+        "rip.list_knowledge_review_queue" => "读取知识候选审核队列（workspace 固定 default）",
+        "rip.submit_knowledge_candidate" => "提交严格 KnowledgeCandidateEnvelope；自动进入 Candidate，永不直写 APPROVED",
+        "rip.review_knowledge_candidate" => "对候选执行 quarantine/reject/candidate/deprecate；不提供 AI 自动 approve",
         _ => "",
     }
 }
@@ -175,7 +191,8 @@ pub fn capability_input_schema(tool: &str) -> Value {
         "rip.search_knowledge" => s(
             json!({
                 "q": { "type": "string", "description": "检索词" },
-                "limit": { "type": "integer", "description": "条数上限" }
+                "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "条数上限" },
+                "mode": { "type": "string", "enum": ["bm25", "vector", "hybrid", "rerank"], "description": "检索模式" }
             }),
             &["q"],
         ),
@@ -256,6 +273,122 @@ pub fn capability_input_schema(tool: &str) -> Value {
             }),
             &["type", "title", "content"],
         ),
+        "rip.submit_knowledge_ingestion" => json!({
+            "type": "object",
+            "properties": {
+                "source_kind": { "type": "string", "enum": ["research_report", "document_revision"] },
+                "report_id": { "type": "string", "description": "research_report 时必填，rep- 标识" },
+                "document_id": { "type": "string", "description": "document_revision 时必填，doc- 标识" },
+                "revision_id": { "type": "string", "description": "document_revision 时必填，drev- 标识" },
+                "idempotency_key": { "type": "string", "description": "幂等键，最多 256 个 UTF-8 字节" }
+            },
+            "required": ["source_kind", "idempotency_key"],
+            "additionalProperties": false,
+            "oneOf": [
+                {
+                    "properties": { "source_kind": { "const": "research_report" } },
+                    "required": ["report_id"]
+                },
+                {
+                    "properties": { "source_kind": { "const": "document_revision" } },
+                    "required": ["document_id", "revision_id"]
+                }
+            ]
+        }),
+        "rip.get_knowledge_ingestion_status" => json!({
+            "type": "object",
+            "properties": {
+                "ingestion_id": { "type": "string", "description": "ing- 标识" }
+            },
+            "required": ["ingestion_id"],
+            "additionalProperties": false
+        }),
+        "rip.get_knowledge_ingestion_candidate" => json!({
+            "type": "object",
+            "properties": {
+                "ingestion_id": { "type": "string", "description": "ing- 标识" },
+                "candidate_id": { "type": "string", "description": "ingc- 标识" }
+            },
+            "required": ["ingestion_id", "candidate_id"],
+            "additionalProperties": false
+        }),
+        "rip.get_knowledge_detail" => json!({
+            "type": "object",
+            "properties": {
+                "knowledge_id": { "type": "string", "description": "kc- 知识卡标识" }
+            },
+            "required": ["knowledge_id"],
+            "additionalProperties": false
+        }),
+        "rip.list_knowledge_review_queue" => json!({
+            "type": "object",
+            "properties": {
+                "status": { "type": "string", "enum": ["CANDIDATE", "DISCOVERED", "QUARANTINED", "REJECTED"], "default": "CANDIDATE" },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+            },
+            "additionalProperties": false
+        }),
+        "rip.submit_knowledge_candidate" => json!({
+            "type": "object",
+            "properties": {
+                "contract_version": { "type": "string", "const": "1.0" },
+                "idempotency_key": { "type": "string", "minLength": 8, "maxLength": 256 },
+                "knowledge_type": { "type": "string", "enum": ["vuln_principle", "vuln_signature", "exploit_condition", "detection_method", "fix_method", "security_technique", "tool_usage", "research_case"] },
+                "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "summary": { "type": "string", "maxLength": 2000 },
+                "content": { "type": "string", "minLength": 1, "maxLength": 1048576 },
+                "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                "source": {
+                    "type": "object",
+                    "properties": {
+                        "type": { "type": "string", "enum": ["document", "url", "report", "tool_output", "ai_finding"] },
+                        "title": { "type": "string", "minLength": 1 },
+                        "uri": { "type": ["string", "null"] },
+                        "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                        "license": { "type": "string" },
+                        "source_commit": { "type": ["string", "null"] },
+                        "accessed_at": { "type": "string" },
+                        "parser_name": { "type": ["string", "null"] },
+                        "parser_version": { "type": ["string", "null"] }
+                    },
+                    "required": ["type", "title", "content_sha256", "license"],
+                    "additionalProperties": false
+                },
+                "evidence": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "artifact_id": { "type": ["string", "null"] },
+                            "tool_run_id": { "type": ["string", "null"] },
+                            "trace_id": { "type": ["string", "null"] },
+                            "document_id": { "type": ["string", "null"] },
+                            "revision_id": { "type": ["string", "null"] },
+                            "block_id": { "type": ["string", "null"] },
+                            "page": { "type": ["integer", "null"], "minimum": 1 },
+                            "char_start": { "type": ["integer", "null"], "minimum": 0 },
+                            "char_end": { "type": ["integer", "null"], "minimum": 1 },
+                            "quote_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "risk_flags": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["contract_version", "idempotency_key", "knowledge_type", "title", "content", "source", "evidence"],
+            "additionalProperties": false
+        }),
+        "rip.review_knowledge_candidate" => json!({
+            "type": "object",
+            "properties": {
+                "knowledge_id": { "type": "string", "description": "kc- 知识卡标识" },
+                "decision": { "type": "string", "enum": ["quarantine", "reject", "candidate", "deprecate"] },
+                "reason": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            },
+            "required": ["knowledge_id", "decision", "reason"],
+            "additionalProperties": false
+        }),
         _ => permissive_object_schema(),
     }
 }

@@ -5,7 +5,7 @@
 | 项       | 值                   |
 | -------- | -------------------- |
 | 状态     | 生效中               |
-| 日期     | 2026-11-24           |
+| 日期         | 2026-11-28           |
 
 ## 日常看
 
@@ -20,6 +20,9 @@
 | rp-* CLI 怎么用（11 bin 帮助面统一口径） | [guides/CLI-REFERENCE.md](guides/CLI-REFERENCE.md)      |
 | REST API 对外契约（信封/错误/鉴权/限频/trace 透出） | [phase9/REST-API-CONTRACT.md](phase9/REST-API-CONTRACT.md) |
 | MCP 资源与 prompt 面设计、双通道一致性载具口径 | [phase9/PHASE9-DESIGN.md](phase9/PHASE9-DESIGN.md) §十二 |
+| RIP 1.0 正式交付文档集 | [release/](release/) |
+| Knowledge Ingestion 与反馈架构 1.0 | [knowledge-governance/KNOWLEDGE-INGESTION-FEEDBACK-ARCHITECTURE-1.0.md](knowledge-governance/KNOWLEDGE-INGESTION-FEEDBACK-ARCHITECTURE-1.0.md) |
+| Knowledge Ingestion 专项验收状态（2026-11-28） | [knowledge-governance/INGESTION-ACCEPTANCE-2026-11-28.md](knowledge-governance/INGESTION-ACCEPTANCE-2026-11-28.md) |
 
 ## 目标与设计
 

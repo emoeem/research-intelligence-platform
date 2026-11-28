@@ -1,5 +1,6 @@
 //! Phase 7 PostgreSQL integration: report feedback, evidence provenance,
 //! idempotent replay, human-only promotion, and maintenance audit.
+use intel_db::ingestion::{self, IngestionSource, KnowledgeIngestionRequest, CONTRACT_VERSION};
 use intel_db::maintenance;
 use intel_db::report_repo::{self, StoreReportInput};
 use intel_db::{open_pool, run_migrations, PgConfig};
@@ -269,6 +270,90 @@ fn phase7_task_workspace_is_immutable_and_fail_closed() {
     assert_eq!(
         report_count, 1,
         "rejected cross-workspace report must not link"
+    );
+}
+
+#[test]
+fn knowledge_ingestion_report_jobs_are_idempotent_and_workspace_scoped() {
+    let Some(pool) = pool() else { return };
+    let tag = suffix();
+    let task = format!("task-ingestion-{tag}");
+    let report = report_repo::store_report(&pool, &fixture(&task)).unwrap();
+    let workspace = format!("ws-ingestion-{tag}");
+    let request = KnowledgeIngestionRequest {
+        contract_version: CONTRACT_VERSION.to_string(),
+        workspace_id: workspace.clone(),
+        idempotency_key: format!("ingestion-key-{tag}"),
+        source: IngestionSource::ResearchReport {
+            report_id: report.report_id.clone(),
+        },
+        requester: "integration-test".to_string(),
+        run_id: None,
+        trace_id: None,
+    };
+
+    let pool_a = pool.clone();
+    let request_a = request.clone();
+    let submit_a =
+        std::thread::spawn(move || ingestion::submit_report(&pool_a, &request_a).unwrap());
+    let pool_b = pool.clone();
+    let request_b = request.clone();
+    let submit_b =
+        std::thread::spawn(move || ingestion::submit_report(&pool_b, &request_b).unwrap());
+    let first = submit_a.join().unwrap();
+    let concurrent_replay = submit_b.join().unwrap();
+    assert_eq!(concurrent_replay.ingestion_id, first.ingestion_id);
+    let first = ingestion::get_status(&pool, &workspace, &first.ingestion_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.status, "REVIEW_PENDING");
+    assert_eq!(first.attempt_count, 1);
+    assert_eq!(
+        first.result.as_ref().unwrap()["candidate_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let replay = ingestion::submit_report(&pool, &request).unwrap();
+    assert_eq!(replay.ingestion_id, first.ingestion_id);
+    assert_eq!(replay.attempt_count, 1);
+
+    let mut conflicting = request.clone();
+    conflicting.requester = "different-requester".to_string();
+    assert!(ingestion::submit_report(&pool, &conflicting).is_err());
+    let mut conn = pool.get().unwrap();
+    let candidate_id: String = conn
+        .query_one(
+            "SELECT candidate_id FROM knowledge_feedback_candidates WHERE report_id=$1",
+            &[&report.report_id],
+        )
+        .unwrap()
+        .get(0);
+    drop(conn);
+    maintenance::reject_feedback_candidate(
+        &pool,
+        &workspace,
+        &candidate_id,
+        "reviewer-ingestion",
+        "Integration test resolved the candidate",
+    )
+    .unwrap();
+    let mut replay_after_review = request.clone();
+    replay_after_review
+        .idempotency_key
+        .push_str("-after-review");
+    let resolved = ingestion::submit_report(&pool, &replay_after_review).unwrap();
+    assert_eq!(resolved.status, "COMPLETED");
+    assert_eq!(
+        resolved.result.as_ref().unwrap()["candidate_ids"][0],
+        candidate_id
+    );
+    assert!(
+        ingestion::get_status(&pool, "another-workspace", &first.ingestion_id)
+            .unwrap()
+            .is_none()
     );
 }
 

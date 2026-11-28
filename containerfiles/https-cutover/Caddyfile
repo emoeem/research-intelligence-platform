@@ -1,0 +1,13 @@
+# PB-007 生产 HTTPS 切换样例（Caddy）：[DOMAIN] 部署时替换。
+# Caddy 自动签发/续期 Let's Encrypt；反代到本机 rp_server HTTP 入口。
+[DOMAIN] {
+	# 自动 TLS（ACME HTTP-01）；如用私有 CA 改 tls /path/ca.crt /path/ca.key
+	reverse_proxy	127.0.0.1:7800
+
+	header {
+		Strict-Transport-Security	"max-age=31536000; includeSubDomains"
+		X-Content-Type-Options		"nosniff"
+		X-Frame-Options				"DENY"
+		Referrer-Policy				"strict-origin-when-cross-origin"
+	}
+}

@@ -348,18 +348,24 @@ impl ServerHandler for McpServer {
                 .await
                 .map(Into::into)
             }
-            // MA-3（D4）协作派发七工具（additive；既有五枚词形零 diff）：
-            // 全走 RunChannel（claim/message store 挂 RP_RUN_DB Pool +
-            // run_subtask spawn rp-agent wait + contribute_knowledge spawn
-            // rp-kc）；caller 未解析时结构化拒绝 fail-closed（RunChannel
-            // collab_caller None → POLICY_DENIED 载荷），目录面零影响。
+            // MA-3 协作派发七工具及 Knowledge Ingestion 三工具均经 RunChannel；
+            // ingestion 只 spawn 固定配置的 rp-ingest，workspace/requester
+            // 由服务端钉定。caller 未解析时结构化拒绝 fail-closed。
             "rip.run_subtask"
             | "rip.get_subtask_status"
             | "rip.claim_task"
             | "rip.complete_claim"
             | "rip.send_message"
             | "rip.fetch_messages"
-            | "rip.contribute_knowledge" => {
+            | "rip.contribute_knowledge"
+            | "rip.submit_knowledge_ingestion"
+            | "rip.get_knowledge_ingestion_status"
+            | "rip.get_knowledge_ingestion_candidate"
+            | "rip.search_knowledge"
+            | "rip.get_knowledge_detail"
+            | "rip.list_knowledge_review_queue"
+            | "rip.submit_knowledge_candidate"
+            | "rip.review_knowledge_candidate" => {
                 let kind = name.clone();
                 run_face_blocking(self.run_channel.clone(), &name, move |channel| {
                     match kind.as_str() {
@@ -370,6 +376,20 @@ impl ServerHandler for McpServer {
                         "rip.send_message" => channel.send_message(&args),
                         "rip.fetch_messages" => channel.fetch_messages(&args),
                         "rip.contribute_knowledge" => channel.contribute_knowledge(&args),
+                        "rip.submit_knowledge_ingestion" => {
+                            channel.submit_knowledge_ingestion(&args)
+                        }
+                        "rip.get_knowledge_ingestion_status" => {
+                            channel.knowledge_ingestion_status(&args)
+                        }
+                        "rip.get_knowledge_ingestion_candidate" => {
+                            channel.knowledge_ingestion_candidate(&args)
+                        }
+                        "rip.search_knowledge" => channel.search_knowledge(&args),
+                        "rip.get_knowledge_detail" => channel.get_knowledge_detail(&args),
+                        "rip.list_knowledge_review_queue" => channel.list_knowledge_review_queue(&args),
+                        "rip.submit_knowledge_candidate" => channel.submit_knowledge_candidate(&args),
+                        "rip.review_knowledge_candidate" => channel.review_knowledge_candidate(&args),
                         other => Err(serde_json::json!({
                             "ok": false,
                             "error": {"category": "INFRA", "message": format!("unrouted collab tool {other}")}

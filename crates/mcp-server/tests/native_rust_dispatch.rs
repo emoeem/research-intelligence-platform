@@ -89,6 +89,7 @@ impl Fixture {
             collab_caller: None,
             agent_bin: std::path::PathBuf::from("target/debug/rp-agent"),
             kc_bin: std::path::PathBuf::from("target/debug/rp-kc"),
+            ingest_bin: std::path::PathBuf::from("target/debug/rp-ingest"),
             subtask_timeout_s: 600,
         }
     }

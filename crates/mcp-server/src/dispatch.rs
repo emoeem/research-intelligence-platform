@@ -122,6 +122,9 @@ pub struct RunChannel {
     /// 缺省 target/debug/rp-kc；RP_PG_DSN 环境继承——进程边界即数据边界，
     /// mcp-server 零 PG 依赖维持）。
     pub kc_bin: PathBuf,
+    /// rp-ingest 可执行路径（Knowledge Ingestion 三工具通过固定 workspace/
+    /// requester 子进程边界派发；caller 不得在参数中改写 workspace/requester）。
+    pub ingest_bin: PathBuf,
     /// 子任务超时秒（bin 层 RP_SUBTASK_TIMEOUT_S，缺省 600；超时结构化
     /// 信封 + agent_run 行留查）。
     pub subtask_timeout_s: u64,
@@ -1744,6 +1747,12 @@ impl RunChannel {
     /// 继承，进程边界即数据边界）。
     pub fn contribute_knowledge(&self, args: &Value) -> Result<Value, Value> {
         let caller = caller_required(&self.collab_caller)?;
+        if args.get("workspace").is_some() || args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
         let mut cmd = std::process::Command::new(&self.kc_bin);
         cmd.arg("donor-submit")
             .arg("--donor-caller")
@@ -1759,9 +1768,7 @@ impl RunChannel {
         if let Some(summary) = opt_str(args, "summary") {
             cmd.arg("--summary").arg(&summary);
         }
-        if let Some(workspace) = opt_str(args, "workspace") {
-            cmd.arg("--workspace").arg(&workspace);
-        }
+        cmd.arg("--workspace").arg("default");
         if let Some(conf) = args.get("confidence") {
             let v = conf
                 .as_f64()
@@ -1801,6 +1808,480 @@ impl RunChannel {
             )
         })?;
         Ok(json!({"ok": true, "receipt": receipt}))
+    }
+
+    fn run_kc(&self, argv: &[String]) -> Result<Value, Value> {
+        let mut cmd = std::process::Command::new(&self.kc_bin);
+        cmd.args(argv)
+            .current_dir(
+                self.working_dir
+                    .clone()
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            )
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let output = cmd.output().map_err(|e| {
+            err_payload(
+                &format!(
+                    "rp-kc spawn failed (构建产物在位? {}): {e}",
+                    self.kc_bin.display()
+                ),
+                "INFRA",
+            )
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        if !output.status.success() {
+            return Err(err_payload(
+                &format!(
+                    "rp-kc exited {} stdout=[{}] stderr=[{}]",
+                    output.status,
+                    stdout.trim(),
+                    stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n")
+                ),
+                "EXECUTION",
+            ));
+        }
+        let payload: Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+            err_payload(
+                &format!("rp-kc JSON parse failed: {e}; raw={stdout:?}"),
+                "INFRA",
+            )
+        })?;
+        Ok(json!({"ok": true, "report": payload}))
+    }
+
+    /// `rip.search_knowledge`: spawn the existing `rp-kc search` interface
+    /// inside the server-fixed `default` workspace and return its evidence-bearing report.
+    pub fn search_knowledge(&self, args: &Value) -> Result<Value, Value> {
+        caller_required(&self.collab_caller)?;
+        if args.get("workspace").is_some() || args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let q = need_str(args, "q")?;
+        let limit = opt_usize_arg(args, "limit")?.unwrap_or(10);
+        if !(1..=50).contains(&limit) {
+            return Err(err_payload("limit must be in 1..=50", "VALIDATION"));
+        }
+        let mode = opt_str(args, "mode").unwrap_or_else(|| "hybrid".to_string());
+        if !["bm25", "vector", "hybrid", "rerank"].contains(&mode.as_str()) {
+            return Err(err_payload(
+                "mode must be bm25|vector|hybrid|rerank",
+                "VALIDATION",
+            ));
+        }
+        self.run_kc(&[
+            "search".to_string(),
+            "--query".to_string(),
+            q,
+            "--mode".to_string(),
+            mode,
+            "--limit".to_string(),
+            limit.to_string(),
+            "--workspace".to_string(),
+            "default".to_string(),
+        ])
+    }
+
+    /// `rip.get_knowledge_detail`: read one knowledge card and its review/evidence
+    /// projection through `rp-kc show` in the server-fixed `default` workspace.
+    pub fn get_knowledge_detail(&self, args: &Value) -> Result<Value, Value> {
+        caller_required(&self.collab_caller)?;
+        if args.get("workspace").is_some() || args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let knowledge_id = need_str(args, "knowledge_id")?;
+        self.run_kc(&[
+            "show".to_string(),
+            "--card".to_string(),
+            knowledge_id,
+            "--workspace".to_string(),
+            "default".to_string(),
+        ])
+    }
+
+    /// `rip.list_knowledge_review_queue`: read Candidate/Discovery review rows
+    /// through `rp-kc list` without allowing caller workspace override.
+    pub fn list_knowledge_review_queue(&self, args: &Value) -> Result<Value, Value> {
+        caller_required(&self.collab_caller)?;
+        if args.get("workspace").is_some() || args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let status = opt_str(args, "status").unwrap_or_else(|| "CANDIDATE".to_string());
+        if !["CANDIDATE", "DISCOVERED", "QUARANTINED", "REJECTED"].contains(&status.as_str()) {
+            return Err(err_payload(
+                "status is not an accepted review status",
+                "VALIDATION",
+            ));
+        }
+        let limit = opt_usize_arg(args, "limit")?.unwrap_or(50);
+        if !(1..=100).contains(&limit) {
+            return Err(err_payload("limit must be in 1..=100", "VALIDATION"));
+        }
+        self.run_kc(&[
+            "list".to_string(),
+            "--status".to_string(),
+            status,
+            "--workspace".to_string(),
+            "default".to_string(),
+        ])
+    }
+
+    /// `rip.submit_knowledge_candidate`: validate a strict candidate envelope,
+    /// then submit only as `CANDIDATE` through `rp-kc donor-submit`.
+    pub fn submit_knowledge_candidate(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        if args.get("workspace").is_some() || args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let contract = need_str(args, "contract_version")?;
+        if contract != "1.0" {
+            return Err(err_payload("contract_version must be 1.0", "VALIDATION"));
+        }
+        let idempotency = need_str(args, "idempotency_key")?;
+        if !(8..=256).contains(&idempotency.len()) {
+            return Err(err_payload(
+                "idempotency_key must be 8..=256 bytes",
+                "VALIDATION",
+            ));
+        }
+        let knowledge_type = need_str(args, "knowledge_type")?;
+        let allowed_types = [
+            "vuln_principle",
+            "vuln_signature",
+            "exploit_condition",
+            "detection_method",
+            "fix_method",
+            "security_technique",
+            "tool_usage",
+            "research_case",
+        ];
+        if !allowed_types.contains(&knowledge_type.as_str()) {
+            return Err(err_payload(
+                "knowledge_type is outside the domain vocabulary",
+                "VALIDATION",
+            ));
+        }
+        let title = need_str(args, "title")?;
+        let content = need_str(args, "content")?;
+        let source = args
+            .get("source")
+            .and_then(Value::as_object)
+            .ok_or_else(|| err_payload("source is required", "VALIDATION"))?;
+        let evidence = args
+            .get("evidence")
+            .and_then(Value::as_array)
+            .ok_or_else(|| err_payload("evidence is required", "VALIDATION"))?;
+        if evidence.is_empty() {
+            return Err(err_payload(
+                "evidence must contain at least one item",
+                "VALIDATION",
+            ));
+        }
+        let source_sha = source
+            .get("content_sha256")
+            .and_then(Value::as_str)
+            .ok_or_else(|| err_payload("source.content_sha256 is required", "VALIDATION"))?;
+        if source_sha.len() != 64
+            || !source_sha
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(err_payload(
+                "source.content_sha256 must be 64 lowercase hex chars",
+                "VALIDATION",
+            ));
+        }
+        let envelope = json!({
+            "contract_version": "1.0",
+            "idempotency_key": idempotency,
+            "source": source,
+            "knowledge": {
+                "knowledge_type": knowledge_type,
+                "title": title,
+                "summary": args.get("summary").and_then(Value::as_str).unwrap_or(""),
+                "content": content,
+                "confidence": args.get("confidence").and_then(Value::as_f64).unwrap_or(0.5),
+            },
+            "evidence": evidence,
+            "risk_flags": args.get("risk_flags").and_then(Value::as_array).cloned().unwrap_or_default(),
+            "ai_derived": true,
+        });
+        let mut cmd_args = vec![
+            "donor-submit".to_string(),
+            "--donor-caller".to_string(),
+            caller,
+            "--donor-channel".to_string(),
+            "mcp".to_string(),
+            "--type".to_string(),
+            knowledge_type,
+            "--title".to_string(),
+            title,
+            "--content".to_string(),
+            content,
+            "--content-json".to_string(),
+            serde_json::to_string(&envelope).map_err(|e| {
+                err_payload(
+                    &format!("KnowledgeCandidateEnvelope serialize: {e}"),
+                    "INFRA",
+                )
+            })?,
+            "--workspace".to_string(),
+            "default".to_string(),
+        ];
+        if let Some(summary) = args.get("summary").and_then(Value::as_str) {
+            cmd_args.extend(["--summary".to_string(), summary.to_string()]);
+        }
+        if let Some(confidence) = args.get("confidence").and_then(Value::as_f64) {
+            cmd_args.extend(["--confidence".to_string(), confidence.to_string()]);
+        }
+        if let Some(risk_flags) = args.get("risk_flags").and_then(Value::as_array) {
+            let flags = risk_flags
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(",");
+            if !flags.is_empty() {
+                cmd_args.extend(["--flags".to_string(), flags]);
+            }
+        }
+        self.run_kc(&cmd_args)
+    }
+
+    /// `rip.review_knowledge_candidate`: quarantine/reject/candidate/deprecate a
+    /// card. MCP intentionally excludes the `approve` transition.
+    pub fn review_knowledge_candidate(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        if args.get("workspace").is_some() || args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let knowledge_id = need_str(args, "knowledge_id")?;
+        let decision = need_str(args, "decision")?;
+        if !["quarantine", "reject", "candidate", "deprecate"].contains(&decision.as_str()) {
+            return Err(err_payload(
+                "decision must be quarantine|reject|candidate|deprecate; MCP never approves",
+                "VALIDATION",
+            ));
+        }
+        let reason = need_str(args, "reason")?;
+        self.run_kc(&[
+            "review".to_string(),
+            "--card".to_string(),
+            knowledge_id,
+            "--decision".to_string(),
+            decision,
+            "--reason".to_string(),
+            reason,
+            "--reviewer".to_string(),
+            caller,
+            "--workspace".to_string(),
+            "default".to_string(),
+        ])
+    }
+
+    fn run_ingest(&self, args: &[String]) -> Result<Value, Value> {
+        let mut cmd = std::process::Command::new(&self.ingest_bin);
+        cmd.args(args)
+            .current_dir(
+                self.working_dir
+                    .clone()
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            )
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| {
+            err_payload(
+                &format!(
+                    "rp-ingest spawn failed (构建产物在位? {}): {e}",
+                    self.ingest_bin.display()
+                ),
+                "INFRA",
+            )
+        })?;
+        let started = std::time::Instant::now();
+        let timeout = Duration::from_secs(self.subtask_timeout_s.max(1));
+        loop {
+            match child
+                .try_wait()
+                .map_err(|e| err_payload(&format!("rp-ingest wait failed: {e}"), "INFRA"))?
+            {
+                Some(status) => {
+                    let mut stdout = String::new();
+                    if let Some(mut out) = child.stdout.take() {
+                        use std::io::Read;
+                        let _ = out.read_to_string(&mut stdout);
+                    }
+                    let mut stderr = String::new();
+                    if let Some(mut err) = child.stderr.take() {
+                        use std::io::Read;
+                        let _ = err.read_to_string(&mut stderr);
+                    }
+                    if !status.success() {
+                        let tail: String =
+                            stderr.lines().rev().take(6).collect::<Vec<_>>().join("\n");
+                        return Err(err_payload(
+                            &format!(
+                                "rp-ingest exited {} stdout=[{}] stderr=[{}]",
+                                status,
+                                stdout.trim(),
+                                tail
+                            ),
+                            "EXECUTION",
+                        ));
+                    }
+                    let report: Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+                        err_payload(
+                            &format!("rp-ingest JSON parse failed: {e}; raw={stdout:?}"),
+                            "INFRA",
+                        )
+                    })?;
+                    return Ok(json!({
+                        "ok": true,
+                        "elapsed_ms": started.elapsed().as_millis() as u64,
+                        "report": report,
+                    }));
+                }
+                None => {
+                    if started.elapsed() > timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(json!({
+                            "ok": false,
+                            "error": {
+                                "category": "INFRA",
+                                "code": "ingestion_timeout",
+                                "message": format!(
+                                    "Knowledge Ingestion exceeded RP_SUBTASK_TIMEOUT_S={}s",
+                                    self.subtask_timeout_s
+                                ),
+                            }
+                        }));
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
+    }
+
+    /// rip.submit_knowledge_ingestion：只接受 Report 或已解析 Document
+    /// Revision，workspace 固定 default，请求者固定为当前 caller。
+    pub fn submit_knowledge_ingestion(&self, args: &Value) -> Result<Value, Value> {
+        let caller = caller_required(&self.collab_caller)?;
+        if args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace_id is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let source_kind = need_str(args, "source_kind")?;
+        let idempotency_key = need_str(args, "idempotency_key")?;
+        let mut argv = Vec::new();
+        match source_kind.as_str() {
+            "research_report" => {
+                let report_id = need_str(args, "report_id")?;
+                if !report_id.starts_with("rep-") {
+                    return Err(err_payload("report_id must start with rep-", "VALIDATION"));
+                }
+                argv.extend([
+                    "report".to_string(),
+                    "--report-id".to_string(),
+                    report_id,
+                    "--workspace".to_string(),
+                    "default".to_string(),
+                    "--idempotency-key".to_string(),
+                    idempotency_key,
+                    "--requester".to_string(),
+                    caller,
+                ]);
+            }
+            "document_revision" => {
+                let document_id = need_str(args, "document_id")?;
+                let revision_id = need_str(args, "revision_id")?;
+                argv.extend([
+                    "document".to_string(),
+                    "--document-id".to_string(),
+                    document_id,
+                    "--revision-id".to_string(),
+                    revision_id,
+                    "--workspace".to_string(),
+                    "default".to_string(),
+                    "--idempotency-key".to_string(),
+                    idempotency_key,
+                    "--requester".to_string(),
+                    caller,
+                ]);
+            }
+            _ => {
+                return Err(err_payload(
+                    "source_kind must be research_report or document_revision",
+                    "VALIDATION",
+                ));
+            }
+        }
+        if let Some(run_id) = opt_str(args, "run_id") {
+            argv.extend(["--run-id".to_string(), run_id]);
+        }
+        if let Some(trace_id) = opt_str(args, "trace_id") {
+            argv.extend(["--trace-id".to_string(), trace_id]);
+        }
+        self.run_ingest(&argv)
+    }
+
+    /// rip.get_knowledge_ingestion_status：workspace 固定 default。
+    pub fn knowledge_ingestion_status(&self, args: &Value) -> Result<Value, Value> {
+        caller_required(&self.collab_caller)?;
+        if args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace_id is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let ingestion_id = need_str(args, "ingestion_id")?;
+        self.run_ingest(&[
+            "status".to_string(),
+            "--ingestion-id".to_string(),
+            ingestion_id,
+            "--workspace".to_string(),
+            "default".to_string(),
+        ])
+    }
+
+    /// rip.get_knowledge_ingestion_candidate：workspace 固定 default。
+    pub fn knowledge_ingestion_candidate(&self, args: &Value) -> Result<Value, Value> {
+        caller_required(&self.collab_caller)?;
+        if args.get("workspace_id").is_some() {
+            return Err(err_payload(
+                "workspace_id is server-fixed; MCP callers cannot override it",
+                "VALIDATION",
+            ));
+        }
+        let ingestion_id = need_str(args, "ingestion_id")?;
+        let candidate_id = need_str(args, "candidate_id")?;
+        self.run_ingest(&[
+            "candidate".to_string(),
+            "--ingestion-id".to_string(),
+            ingestion_id,
+            "--candidate-id".to_string(),
+            candidate_id,
+            "--workspace".to_string(),
+            "default".to_string(),
+        ])
     }
 }
 

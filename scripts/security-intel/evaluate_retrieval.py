@@ -46,13 +46,62 @@ def ndcg_at_k(ranked_rel: list[int], k: int) -> float:
     return dcg / idcg if idcg > 0 else 0.0
 
 
+HUMAN_ANNOTATORS = {"human", "reviewer", "human-review"}
+AI_ANNOTATORS = {"ai-assist", "ai-assisted", "ai"}
+
+
+def enforce_label_mode(rows: list[dict], label_mode: str) -> dict:
+    """PB-004 双轨强制：AI-only 行不得进 human Ground Truth 轨。
+
+    ai-assisted-characterization（缺省）：系统自动运行/持续监测轨，
+    允许 ai-* 与空 annotator；human-ground-truth：仅人工标注行，
+    命中 ai-* annotator 直接 exit 3 拒绝（不产出可被误引用为人工
+    GT 的指标行）。
+    """
+    annotator_counts: dict[str, int] = {}
+    for row in rows:
+        annotator = (row.get("annotator") or "unlabeled").strip().lower() or "unlabeled"
+        annotator_counts[annotator] = annotator_counts.get(annotator, 0) + 1
+    ai_rows = sum(v for k, v in annotator_counts.items() if k in AI_ANNOTATORS)
+    human_rows = sum(v for k, v in annotator_counts.items() if k in HUMAN_ANNOTATORS)
+    if label_mode == "human-ground-truth":
+        if ai_rows > 0:
+            print(json.dumps({
+                "error": "ai-assisted rows cannot be promoted to human Ground Truth",
+                "label_mode": label_mode,
+                "ai_assist_rows": ai_rows,
+                "fix": "rerun with --label-mode ai-assisted-characterization, "
+                       "or replace AI scores via human review/dispute repair",
+            }, ensure_ascii=False))
+            sys.exit(3)
+        if human_rows == 0:
+            print(json.dumps({
+                "error": "human-ground-truth mode requires annotator in "
+                         f"{sorted(HUMAN_ANNOTATORS)} on rows",
+                "label_mode": label_mode,
+            }, ensure_ascii=False))
+            sys.exit(3)
+    return {
+        "label_mode": label_mode,
+        "human_ground_truth": label_mode == "human-ground-truth",
+        "annotator_counts": annotator_counts,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--labeled", required=True)
     ap.add_argument("--relevant-min", type=int, default=RELEVANT_MIN)
+    ap.add_argument(
+        "--label-mode",
+        choices=["ai-assisted-characterization", "human-ground-truth"],
+        default="ai-assisted-characterization",
+        help="缺省 ai-assisted-characterization（PB-004：AI-only 行不进人工 GT 轨）",
+    )
     args = ap.parse_args()
 
     rows = load(Path(args.labeled))
+    label_track = enforce_label_mode(rows, args.label_mode)
     by_query: dict[str, list[dict]] = defaultdict(list)
     no_result_queries: set[str] = set()
     for row in rows:
@@ -106,6 +155,7 @@ def main() -> int:
         "command": "evaluate_retrieval",
         "labeled_file": args.labeled,
         "relevant_min": args.relevant_min,
+        "label_track": label_track,
         "queries_labeled": len(by_query),
         "no_result_queries": len(no_result_queries),
         "no_result_rate": round(len(no_result_queries) /

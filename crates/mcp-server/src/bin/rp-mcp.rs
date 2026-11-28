@@ -30,11 +30,12 @@
 //!    - RP_RUNTIME_NODE_ID 容器 Runner 节点 id（默认 host-local）
 //!    - MA-3（D4）：RP_MCP_TOKEN 启动一次性解析 caller（sha256 → api_key
 //!      JOIN caller 吊销判定，rp_server.py _resolve_caller_key 同款 SQL
-//!      直查只读，主库 RP_DB_PATH 面）——未知/吊销 = 七枚协作派发工具
+//!      直查只读，主库 RP_DB_PATH 面）——未知/吊销 = 协作与 ingestion 派发工具
 //!      结构化拒绝 fail-closed，目录既有 rip.* 零影响；
-//!    - RP_AGENT_BIN / RP_KC_BIN 派发子进程可执行路径（缺省
-//!      target/debug/rp-agent / target/debug/rp-kc）；RP_SUBTASK_TIMEOUT_S
-//!      子任务超时秒（缺省 600）。
+//!    - RP_AGENT_BIN / RP_KC_BIN / RP_INGEST_BIN 派发子进程可执行路径（缺省
+//!      target/debug/rp-agent / target/debug/rp-kc / target/debug/rp-ingest）；
+//!      rp-ingest 复用受信 MCP 进程继承的 RP_PG_DSN，调用方不得传 DSN；
+//!      RP_SUBTASK_TIMEOUT_S 子任务超时秒（缺省 600）。
 //! 3. rmcp serve（transport-io stdio transport）拉起服务并等连接收尾
 //!    （EOF 即退出 0）。
 //!
@@ -203,6 +204,11 @@ fn main() {
                     .map(PathBuf::from)
                     .filter(|p| !p.as_os_str().is_empty())
                     .unwrap_or_else(|| PathBuf::from("target/debug/rp-kc")),
+                ingest_bin: std::env::var("RP_INGEST_BIN")
+                    .ok()
+                    .map(PathBuf::from)
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or_else(|| PathBuf::from("target/debug/rp-ingest")),
                 subtask_timeout_s: std::env::var("RP_SUBTASK_TIMEOUT_S")
                     .ok()
                     .and_then(|v| v.trim().parse::<u64>().ok())

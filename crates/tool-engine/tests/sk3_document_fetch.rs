@@ -123,7 +123,10 @@ fn sk3_approved_gate_only_accepts_registry_approved_canonical() {
     assert!(
         matches!(
             err.code(),
-            "dns_resolve_failed" | "transport_error" | "host_not_allowlisted"
+            "dns_resolve_failed"
+                | "transport_error"
+                | "host_not_allowlisted"
+                | "private_network_blocked"
         ),
         "闸放行后止于后续闸（无网环境任一），got {err:?}"
     );

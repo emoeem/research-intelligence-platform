@@ -1,0 +1,25 @@
+{
+  "generated": "2026-11-28",
+  "gate": "PB-003 characterization acceptance",
+  "ground_truth": {
+    "exact_duplicate_pairs": 3,
+    "near_duplicate_pairs": 1,
+    "distinct_cards": 4
+  },
+  "d2_dedup_scan": {
+    "same_content_relations": 3,
+    "verdict": "PASS"
+  },
+  "d4_semantic_scan": {
+    "enabled": true,
+    "threshold": 0.85,
+    "near_duplicate_gt_hit": 1,
+    "distinct_false_merge": 0,
+    "verdict": "PASS"
+  },
+  "no_auto_merge": {
+    "card_state_changes": 0,
+    "relations_are_suggestions_only": true
+  },
+  "human_repair_queue": "relations stay DISCOVERED/CANDIDATE; repair is human-only"
+}

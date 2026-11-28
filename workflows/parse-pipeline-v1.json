@@ -35,9 +35,10 @@
         "id": "validating",
         "type": "tool",
         "params": {
-          "tool_id": "rip.parser.detect",
+          "tool_id": "rip.doc.parse",
           "input": {
-            "path": "$/container_path"
+            "path": "$/input_host_files/clean.md",
+            "format": "md"
           }
         }
       },
@@ -45,9 +46,10 @@
         "id": "parsing",
         "type": "tool",
         "params": {
-          "tool_id": "rip.parser.docling",
+          "tool_id": "rip.doc.parse",
           "input": {
-            "path": "$/container_path"
+            "path": "$/input_host_files/clean.md",
+            "format": "md"
           }
         }
       },

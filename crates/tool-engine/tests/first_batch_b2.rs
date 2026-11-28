@@ -290,6 +290,9 @@ fn b2_protected_scripts_untouched_by_tests() {
     let audited_security_intel = [
         "build_nuclei_metadata_package.py",
         "test_build_nuclei_metadata_package.py",
+        // PB-004（2026-11-28）双轨强制面：--label-mode + AI-only 行禁入人工
+        // GT 轨（exit 3），配套 apps/server/selftest_qrel_discipline.sh 9/9。
+        "evaluate_retrieval.py",
     ];
     for line in stdout.lines() {
         let code = line.chars().take(2).collect::<String>();
