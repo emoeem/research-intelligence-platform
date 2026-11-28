@@ -35,6 +35,10 @@ pub const CJK_BRIDGE: &[(&str, &[&str])] = &[
     ("端口", &["scan", "recon"]),
     ("跳板", &["tunnel", "pivot"]),
     ("隧道", &["tunnel"]),
+    // M8 检索缺口补充（2026-11-28，同步自 legacy/eri/eri_p2.py CJK_BRIDGE）：
+    ("横向移动", &["lateral", "movement"]), ("内网", &["intranet", "internal"]),
+    ("提权", &["privilege", "escalation"]), ("反序列化", &["deserialization"]),
+    ("命令执行", &["rce", "command", "execution"]),
 ];
 
 /// 字符是否为 Han（CJK 统一表意文字区段）。

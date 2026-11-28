@@ -54,6 +54,10 @@ CJK_BRIDGE = {                              # profile dims 中文特征 -> 检�
     "移动": ["mobile", "android"], "安卓": ["android", "apk"], "接口": ["api"],
     "渗透": ["pentest"], "溯源": ["osint"], "口令": ["password"], "密码": ["password"],
     "端口": ["scan", "recon"], "跳板": ["tunnel", "pivot"], "隧道": ["tunnel"],
+    # M8 检索缺口补充（2026-11-28，与 search-engine tokenizer 同步）：
+    "横向移动": ["lateral", "movement"], "内网": ["intranet", "internal"],
+    "提权": ["privilege", "escalation"], "反序列化": ["deserialization"],
+    "命令执行": ["rce", "command", "execution"],
 }
 EXCLUDED_STATUSES = {"QUARANTINED", "REJECTED", "UNAVAILABLE"}
 DEFAULT_TOP_K = 5

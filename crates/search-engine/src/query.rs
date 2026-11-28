@@ -25,8 +25,9 @@ fn quote_fts(term: &str) -> String {
     format!("\"{}\"", term.replace('"', "\"\""))
 }
 
-/// 关键词 -> FTS5 MATCH 串。CJK 词为 gram 短语（要求连续命中），ASCII 词为
-/// 转义 OR 项（eri SQL LIKE 预筛的 OR 语义）。
+/// 关键词 -> FTS5 MATCH 串。CJK 词为 gram 短语（要求连续命中）+ 尾部
+/// 2-gram 短语松弛（原文短语跨词界/换词表述时仍可召回，如「内网横向移动」
+/// 对「域内横向移动」），ASCII 词为转义 OR 项（eri SQL LIKE 预筛的 OR 语义）。
 pub fn build_match_query(keywords: &[String]) -> Result<String, SearchError> {
     let expanded = expand_query_terms(keywords);
     if expanded.is_empty() {
@@ -41,8 +42,19 @@ pub fn build_match_query(keywords: &[String]) -> Result<String, SearchError> {
             match grams.len() {
                 0 => continue,
                 1 => clauses.push(quote_fts(&grams[0])),
-                // 多 gram 以短语连接：gram 必须连续出现，避免单 gram 误召回
-                _ => clauses.push(quote_fts(&grams.join(" "))),
+                // 多 gram 以短语连接：gram 必须连续出现，避免单 gram 误召回；
+                // 松弛分支：尾部 3-gram 短语（gram ≥3 时）或末 2-gram，短语
+                // 连续性仍受约束，只是窗口缩短（bm25 对多命中自然排序）。
+                n => {
+                    let full = quote_fts(&grams.join(" "));
+                    let relaxed_grams = if n >= 3 { &grams[n - 3..] } else { &grams[..] };
+                    let relaxed = quote_fts(&relaxed_grams.join(" "));
+                    if relaxed == full {
+                        clauses.push(full);
+                    } else {
+                        clauses.push(format!("({full} OR {relaxed})"));
+                    }
+                }
             }
         } else {
             clauses.push(quote_fts(term));
@@ -127,6 +139,9 @@ impl SearchEngine {
 
         // 4) 混合打分（缺证轴剔除后归一）+ 排序（eri tie-break：分数、质量、ID）
         let mut hits: Vec<SearchHit> = Vec::new();
+        let mut abstained = 0usize;
+        let orig_keywords: Vec<String> =
+            query.keywords.iter().map(|k| k.to_lowercase()).collect();
         for (d, bm) in &matched {
             let mut reasons: Vec<String> = Vec::new();
             let mut weights_used: Vec<(f64, f64)> = Vec::new();
@@ -208,6 +223,24 @@ impl SearchEngine {
             } else {
                 0.0 // 全轴无证据（浏览模式且无质量证据）：0 分保留在结果中
             };
+            // M8 弃权门：原始关键词（非别名扩展，扩展会把 crypto→cryptography
+            // 之类的次生命中计进来）≥3 词而命中 <2 词视为词面巧合（如无意义
+            // 探针 "quantum crypto jellyfish unicorn" 仅命中产品名 Quantum），
+            // 不进结果；单/双词查询不受影响。
+            if orig_keywords.len() >= 3 {
+                let tokens = coverage_token_set(d);
+                let orig_hit = orig_keywords
+                    .iter()
+                    .filter(|k| {
+                        tokens.iter().any(|t| t == k.as_str())
+                            || tokens.iter().any(|t| t.as_str() == format!("{k}s"))
+                    })
+                    .count();
+                if orig_hit < 2 {
+                    abstained += 1;
+                    continue;
+                }
+            }
             hits.push(SearchHit {
                 resource_id: d.resource_id.clone(),
                 name: d.name.clone(),
