@@ -208,6 +208,9 @@ pub struct Hits {
     pub hits: Vec<SearchHit>,
     /// "ok" | "no_match"。
     pub search_status: String,
+    /// M8 弃权门剔除数（原始关键词 ≥3 且命中 <2 的词面巧合行）。
+    #[serde(default)]
+    pub abstained: usize,
     /// 权重配置快照。
     pub weights: WeightsSnapshot,
     /// 检索耗时（毫秒）。

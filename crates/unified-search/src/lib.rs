@@ -106,7 +106,7 @@ fn sqlite_query(
     filters: &SqliteFilters,
     query: &str,
     limit: u32,
-) -> Result<Vec<UnifiedHit>, search_engine::SearchError> {
+) -> Result<(Vec<UnifiedHit>, usize), search_engine::SearchError> {
     let engine = search_engine::SearchEngine::new(pool.clone());
     // Exact CVE identity is already indexed as structured JSON. Route CVE tokens
     // to the exact facet and leave only the remaining terms for FTS/BM25.
@@ -126,7 +126,11 @@ fn sqlite_query(
         limit: limit as usize,
         offset: 0,
     })?;
-    Ok(hits.hits.into_iter().map(sqlite_hit_to_unified).collect())
+    let abstained = hits.abstained;
+    Ok((
+        hits.hits.into_iter().map(sqlite_hit_to_unified).collect(),
+        abstained,
+    ))
 }
 
 fn sqlite_hit_to_unified(h: search_engine::model::SearchHit) -> UnifiedHit {
@@ -458,10 +462,10 @@ pub fn unified_search(input: &UnifiedSearch<'_>, query: &str) -> IntelResult<Uni
 
     // SQLite 面：FTS5/BM25（2.0 既有面；失败降级为空通道——检索是只读派生
     // 面，单库缺席不阻断跨库归并，如实标注 channels）。
-    let (sqlite_hits, sqlite_err) =
+    let (sqlite_hits, sqlite_abstained, sqlite_err) =
         match sqlite_query(input.sqlite_pool, &input.sqlite_filters, query, input.limit) {
-            Ok(hits) => (hits, None),
-            Err(e) => (Vec::new(), Some(e.to_string())),
+            Ok((hits, abstained)) => (hits, abstained, None),
+            Err(e) => (Vec::new(), 0, Some(e.to_string())),
         };
     let sqlite_count = sqlite_hits.len();
 
@@ -470,6 +474,7 @@ pub fn unified_search(input: &UnifiedSearch<'_>, query: &str) -> IntelResult<Uni
         channels: serde_json::json!({
             "pg_intel": pg_count,
             "sqlite_knowledge": sqlite_count,
+            "sqlite_abstained": sqlite_abstained,
             "sqlite_error": sqlite_err,
         }),
         hits: merged,

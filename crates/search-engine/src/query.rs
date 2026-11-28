@@ -11,6 +11,11 @@ use crate::index::{coverage_token_set, ensure_ready};
 use crate::model::{Hits, IndexDoc, SearchFilters, SearchHit, SearchQuery, WeightsSnapshot};
 use crate::tokenizer::{cjk_grams, expand_query_terms, has_han};
 use crate::weights::{FTS_BM25_WEIGHT, KEYWORD_COVER_BOOST, KEYWORD_COVER_WEIGHT, QUALITY_WEIGHT};
+
+/// M8 主题词轴权重（原始首关键词命中）。1.5 使主题命中可压过多通用词
+/// 文档（bm25 结果集内归一后通用长文档仍近满分；0.5 实测被稀释，zabbix 查询
+/// 仍被 Exchange RCE 淹没；单词查询全体同值，排序不变）。
+const SUBJECT_WEIGHT: f64 = 1.5;
 use database::{rusqlite, Pool};
 use std::time::Instant;
 
@@ -143,6 +148,7 @@ impl SearchEngine {
         let orig_keywords: Vec<String> =
             query.keywords.iter().map(|k| k.to_lowercase()).collect();
         for (d, bm) in &matched {
+            let cov_tokens = coverage_token_set(d);
             let mut reasons: Vec<String> = Vec::new();
             let mut weights_used: Vec<(f64, f64)> = Vec::new();
 
@@ -174,12 +180,11 @@ impl SearchEngine {
             let mut coverage_val = 0.0f64;
             let mut kw_hits: Vec<String> = Vec::new();
             if has_keywords {
-                let tokens = coverage_token_set(d);
                 kw_hits = expanded_kw
                     .iter()
                     .filter(|k| {
-                        tokens.iter().any(|t| t == k.as_str())
-                            || tokens.iter().any(|t| t.as_str() == format!("{k}s"))
+                        cov_tokens.iter().any(|t| t == k.as_str())
+                            || cov_tokens.iter().any(|t| t.as_str() == format!("{k}s"))
                     })
                     .cloned()
                     .collect();
@@ -197,6 +202,16 @@ impl SearchEngine {
                             .join(", ")
                     ));
                 }
+            }
+
+            // M8 主题词轴：原始首关键词（查询主题）命中加 0.5 权重——OR 语义
+            // 下通用词（remote/code/execution）会压过主题词（如 zabbix 查询被
+            // Exchange RCE 文档淹没），主题词命中是意图对齐的最强信号。
+            if !orig_keywords.is_empty() {
+                let subject = &orig_keywords[0];
+                let subject_hit = cov_tokens.iter().any(|t| t == subject.as_str())
+                    || cov_tokens.iter().any(|t| t.as_str() == format!("{subject}s"));
+                weights_used.push((SUBJECT_WEIGHT, if subject_hit { 1.0 } else { 0.0 }));
             }
 
             // 缺证轴提示（可解释性，eri 文案口径）
@@ -228,15 +243,22 @@ impl SearchEngine {
             // 探针 "quantum crypto jellyfish unicorn" 仅命中产品名 Quantum），
             // 不进结果；单/双词查询不受影响。
             if orig_keywords.len() >= 3 {
-                let tokens = coverage_token_set(d);
                 let orig_hit = orig_keywords
                     .iter()
                     .filter(|k| {
-                        tokens.iter().any(|t| t == k.as_str())
-                            || tokens.iter().any(|t| t.as_str() == format!("{k}s"))
+                        cov_tokens.iter().any(|t| t == k.as_str())
+                            || cov_tokens.iter().any(|t| t.as_str() == format!("{k}s"))
                     })
                     .count();
-                if orig_hit < 2 {
+                // 主题词命中豁免：首词（查询主题）单独命中即意图对齐，
+                // "zabbix remote code execution" 只命中 zabbix 的模板不放逐。
+                let subject_matched = cov_tokens
+                    .iter()
+                    .any(|t| t == orig_keywords[0].as_str())
+                    || cov_tokens
+                        .iter()
+                        .any(|t| t.as_str() == format!("{}s", orig_keywords[0]));
+                if orig_hit < 2 && !subject_matched {
                     abstained += 1;
                     continue;
                 }
@@ -298,6 +320,7 @@ impl SearchEngine {
                 .then_with(|| a.resource_id.cmp(&b.resource_id))
         });
 
+        let abstained_total = abstained;
         let total_matched = hits.len();
         let page: Vec<SearchHit> = hits
             .into_iter()
@@ -310,6 +333,7 @@ impl SearchEngine {
             total_matched,
             hits: page,
             search_status: search_status.to_string(),
+            abstained: abstained_total,
             weights: WeightsSnapshot {
                 fts_bm25: FTS_BM25_WEIGHT,
                 quality: QUALITY_WEIGHT,
